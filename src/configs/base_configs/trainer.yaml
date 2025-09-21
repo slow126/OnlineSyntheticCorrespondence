@@ -1,0 +1,33 @@
+# Config for Raytune on TSS dataset for research computing
+seed_everything: 333333333
+trainer:
+  enable_checkpointing: true
+  default_root_dir: logs/__tests/raytune0
+  num_nodes: 1
+  devices: 1
+  accelerator: gpu
+  strategy: auto
+  enable_progress_bar: true
+  check_val_every_n_epoch: 1
+  max_epochs: 100
+  log_every_n_steps: 50
+  precision: 16-mixed
+  num_sanity_val_steps: 0
+  gradient_clip_val: 1.0
+  use_distributed_sampler: true
+  callbacks:
+  - class_path: pytorch_lightning.callbacks.ModelCheckpoint
+    init_args:
+      dirpath: ${trainer.default_root_dir}/checkpoints
+      filename: '{epoch}'
+      save_weights_only: false
+  - class_path: pytorch_lightning.callbacks.LearningRateMonitor
+  - class_path: src.callbacks.progress_callback.PrintProgressCallback
+  - class_path: src.callbacks.ckpt_squeeze_callback.CheckpointSqueezeCallback
+    init_args:
+      policy: all
+  logger:
+  - class_path: pytorch_lightning.loggers.TensorBoardLogger
+    init_args:
+      save_dir: ${trainer.default_root_dir}/tensorboard
+      name: ''

@@ -1,0 +1,17 @@
+class_path: src.data.synth.datamodule.OnlineComponentsDatamodule
+init_args:
+  root: ${oc.env:WORKDIR}/rendering/shaders/quatJulia.c
+  val_root: ${oc.env:DATADIR}/synthetic/julia3d/eval/
+  num_samples: 8000
+  num_samples_val: 1024
+  background_sampler: null
+  foreground_sampler: null
+  julia_sampler: null
+  angle_sampler: null
+  scale_sampler: null
+  img_res: 256
+  normalize: imagenet
+  batch_size: 32
+  num_workers: 1
+
+

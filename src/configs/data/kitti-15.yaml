@@ -1,0 +1,7 @@
+class_path: src.data.real.datamodule.KITTIDatamodule
+init_args:
+  root: ${oc.env:DATADIR}/correspondence/kitti-2015/training
+  occ: true
+  normalize: true
+  batch_size: 1
+  num_workers: 4

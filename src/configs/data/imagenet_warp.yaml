@@ -1,0 +1,11 @@
+class_path: src.data.real.datamodule.WarpSupervisionDatamodule
+init_args:
+  root: ${oc.env:DATADIR}/imagenet100/
+  dataset_config:
+    name: imagenet
+  batch_img_keys: null
+  warp_params: basic
+  flow_map: relative
+  size: 256
+  batch_size: 32
+  num_workers: 4

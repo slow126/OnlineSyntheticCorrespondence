@@ -1,0 +1,14 @@
+class_path: src.data.synth.datamodule.ComponentsDatamodule
+init_args:
+  root: ${oc.env:DATADIR}/synthetic/ifs3d/depth_3/
+  overlap_sampling: uniform
+  overlap_params:
+  - 0.05
+  - 1.0
+  num_samples: 20000
+  img_res: 256
+  background: texture
+  texture_alpha: 3.0
+  consistent_texture: true
+  batch_size: 32
+  num_workers: 5

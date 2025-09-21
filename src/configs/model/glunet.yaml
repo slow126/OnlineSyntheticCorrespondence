@@ -1,0 +1,13 @@
+class_path: src.model.glunet.glunet_lightning.GLUNet
+init_args:
+  model_kwargs:
+    model_name: resnet50
+    weights: IMAGENET1K_V2
+    freeze: true
+    local_window_size: 9
+    decoder_dense_connect: false
+  finetune: auto
+  lr: 1e-3
+  ft_lr_scale: 0.01
+  warmup: 0.05
+  weight_decay: 5e-4

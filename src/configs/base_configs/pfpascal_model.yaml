@@ -1,0 +1,22 @@
+model:
+  class_path: src.model.glunet.glunet_lightning.GLUNet
+  init_args:
+    model_kwargs:
+      model_name: resnet50
+      weights: IMAGENET1K_V2
+      freeze: true
+      local_window_size: 9
+      decoder_dense_connect: false
+    checkpoint: null
+    finetune: auto
+    src_key: src
+    trg_key: trg
+    val_src_key: src
+    val_trg_key: trg
+    flow_key: flow
+    bidirectional_eval: false
+    eval_metric: null
+    lr: 0.001
+    ft_lr_scale: 0.01
+    warmup: 0.05
+    weight_decay: 0.0005

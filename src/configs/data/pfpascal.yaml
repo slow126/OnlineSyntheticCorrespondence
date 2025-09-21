@@ -1,0 +1,10 @@
+class_path: src.data.real.datamodule.SemanticFlowDatamodule
+init_args:
+  root: ${oc.env:DATADIR}/correspondence
+  benchmark: pfpascal
+  thres: img
+  data_kw:
+    feature_size: 256
+    normalize: true
+  batch_size: 32
+  num_workers: 4

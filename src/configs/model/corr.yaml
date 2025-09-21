@@ -1,0 +1,13 @@
+class_path: src.model.correspondence.CorrespondenceModel
+init_args:
+  model_type: CorrFlow
+  model_params:
+    model_name: resnet50
+    weights: IMAGENET1K_V2
+    post_proc: gate
+  finetune: auto
+  evaluate_pck: false
+  lr: 1e-3
+  ft_lr_scale: 0.01
+  warmup: 0.05
+  weight_decay: 1e-2

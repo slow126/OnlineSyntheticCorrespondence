@@ -1,0 +1,11 @@
+class_path: src.model.ancnet.ancnet_lightning.ANCNet
+init_args:
+  model_kwargs:
+    model_name: resnet101
+    weights: IMAGENET1K_V2
+    freeze: false
+  finetune: auto
+  lr: 1e-3
+  ft_lr_scale: 0.01
+  warmup: 0.1
+  weight_decay: 1e-4

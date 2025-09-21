@@ -1,0 +1,8 @@
+class_path: pytorch_lightning.loggers.WandbLogger
+init_args:
+  project: synth-corr
+  name: run-${path_seg:${.save_dir},-1}
+  id: "???"  # needs to be set externally
+  save_dir: ${trainer.default_root_dir}
+  resume: allow
+  offline: true

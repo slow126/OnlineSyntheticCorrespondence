@@ -1,0 +1,11 @@
+class_path: src.model.correspondence.CorrespondenceCoTeachingModel
+init_args:
+  model_params:
+    model_name: resnet50
+    weights: IMAGENET1K_V2
+  finetune: auto
+  evaluate_pck: true
+  lr: 1e-4
+  ft_lr_scale: 0.01
+  warmup: 0.05
+  weight_decay: 1e-2

@@ -1,0 +1,6 @@
+data:
+  class_path: src.data.real.datamodule.TSSDatamodule
+  init_args:
+    root: ${oc.env:DATADIR}/correspondence/TSS_CVPR2016/
+    size: 256
+    normalize: true

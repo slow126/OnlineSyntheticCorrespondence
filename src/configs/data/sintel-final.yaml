@@ -1,0 +1,7 @@
+class_path: src.data.real.datamodule.SintelDatamodule
+init_args:
+  root: ${oc.env:DATADIR}/correspondence/sintel/training
+  dtype: final
+  normalize: true
+  batch_size: 8
+  num_workers: 4

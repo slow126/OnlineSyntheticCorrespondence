@@ -1,0 +1,7 @@
+class_path: src.data.real.datamodule.AWADatamodule
+init_args:
+  root: ${oc.env:DATADIR}/correspondence/AwAPose/AwA-Pose/
+  thres: bbox
+  normalize: true
+  batch_size: 32
+  num_workers: 5

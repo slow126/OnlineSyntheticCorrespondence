@@ -1,0 +1,39 @@
+seed_everything: 12345
+trainer:
+  enable_checkpointing: true
+  default_root_dir: "???"  # needs to be set externally
+  num_nodes: 1
+  devices: 1
+  accelerator: gpu
+  strategy: auto
+  enable_progress_bar: true
+  check_val_every_n_epoch: 1
+  max_epochs: 40
+  log_every_n_steps: 50
+  precision: 16-mixed
+  num_sanity_val_steps: 0
+  gradient_clip_val: 1.0
+  # callbacks
+  callbacks:
+    - class_path: pytorch_lightning.callbacks.ModelCheckpoint
+      init_args:
+        dirpath: ${trainer.default_root_dir}/checkpoints
+        filename: "{epoch}"
+        save_weights_only: false
+    - class_path: pytorch_lightning.callbacks.LearningRateMonitor
+    # print training progress as text lines instead of using progress bar
+    - class_path: src.callbacks.progress_callback.PrintProgressCallback
+    # at the end of training, remove unneeded state from checkpoint files to reduce file footprint
+    - class_path: src.callbacks.ckpt_squeeze_callback.CheckpointSqueezeCallback
+      init_args:
+        policy: all
+  # logging
+  logger:
+    - class_path: pytorch_lightning.loggers.TensorBoardLogger
+      init_args:
+        save_dir: ${trainer.default_root_dir}/tensorboard
+        name: ""
+
+data: "???"
+
+model: "???"

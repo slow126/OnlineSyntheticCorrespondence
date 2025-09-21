@@ -1,0 +1,12 @@
+class_path: src.data.datamodule.JointCorrespondenceDatamodule
+init_args:
+  synth_root: ${oc.env:DATADIR}/julia3d/julia3d-simple/
+  imgs_root: ${oc.env:DATADIR}/imagenet5p/
+  imgs_type: hdf5
+  img_res: 256
+  flow_res: 64
+  synth_args: null
+  imgs_args: null
+  num_val_synth: 20
+  batch_size: 32
+  num_workers: 6

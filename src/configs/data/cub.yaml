@@ -1,0 +1,7 @@
+class_path: src.data.real.datamodule.CUBDatamodule
+init_args:
+  root: ${oc.env:DATADIR}/correspondence/CUB_200_2011/
+  thres: bbox
+  normalize: true
+  batch_size: 32
+  num_workers: 4

@@ -1,0 +1,180 @@
+data:
+  class_path: src.data.synth.datamodule.OnlineComponentsDatamodule
+  init_args:
+    angle_sampler:
+      x_components:
+        distribution: uniform
+        loc: -0.16667
+        scale: 0.33333
+      y_components:
+        distribution: uniform
+        loc: -0.16667
+        scale: 0.33333
+    background_sampler: null
+    batch_size: 32
+    bg_color_sampler_dict:
+      hue_offset: 0.0
+      hue_scale: 1.0
+      matching_prob: 0.5
+      saturation_offset: 0.0
+      saturation_scale: 0.5
+      value_offset: 0.25
+      value_scale: 0.75
+    foreground_sampler:
+      matching_prob: 0.5
+      texture_scale:
+        alpha:
+        - 2.0
+        - 3.0
+    img_res: 256
+    julia_sampler:
+      distribution: uniform
+      loc: 3
+      scale: 9
+    mandelbulb_sampler:
+      power_range:
+        min: 1.5
+        offset: 2.5
+    normalize: imagenet
+    num_samples: 8000
+    num_samples_val: 1024
+    num_workers: 15
+    random_flip: 0.25
+    root: ${oc.env:WORKDIR}/rendering/shaders/quatJulia.c
+    scale_sampler:
+      abs_components:
+        distribution: uniform
+        loc: 0.5
+        scale: 0.4
+      rel_components:
+        distribution: uniform
+        loc: -0.25
+        scale: 0.25
+    seed: 333333352
+    shaders:
+      merge: ${oc.env:WORKDIR}/rendering/shaders/merge.glsl
+      program0: ${oc.env:WORKDIR}/rendering/shaders/terrain_sdf.glsl
+      program1: ${oc.env:WORKDIR}/rendering/shaders/quatJulia.c
+    shuffle: true
+    texture_resolution: 64
+    use_grf_sampler: false
+    use_video_sampler: false
+    use_worley_sampler: true
+    val_root: ${oc.env:DATADIR}/synthetic/
+    worley_sampler_dict:
+      matching_prob: 0.5
+      mixing_param0:
+        alpha:
+          offset: 0.0
+          scale: 1.0
+      mixing_param1:
+        alpha:
+          offset: 0.0
+          scale: 1.0
+      terrain_matching_prob: 0.7
+      terrain_mixing_param0:
+        alpha:
+          offset: 0.0
+          scale: 1.0
+      terrain_mixing_param1:
+        alpha:
+          offset: 0.0
+          scale: 1.0
+      terrain_texture_scale0:
+        alpha:
+          offset: 0.0
+          scale: 0.5
+      terrain_texture_scale1:
+        alpha:
+          offset: 10.0
+          scale: 40.0
+      texture_scale0:
+        alpha:
+          offset: 0.5
+          scale: 7.5
+      texture_scale1:
+        alpha:
+          offset: 20.0
+          scale: 80.0
+  num_workers: 3
+model:
+  class_path: src.model.glunet.glunet_lightning.GLUNet
+  init_args:
+    bidirectional_eval: false
+    checkpoint: null
+    eval_metric: null
+    finetune: auto
+    flow_key: flow
+    ft_lr_scale: 0.01
+    lr: 0.001
+    model_kwargs:
+      decoder_dense_connect: false
+      freeze: true
+      local_window_size: 9
+      model_name: resnet50
+      weights: IMAGENET1K_V2
+    src_key: src
+    trg_key: trg
+    val_src_key: src_img
+    val_trg_key: trg_img
+    warmup: 0.05
+    weight_decay: 0.0005
+raytune:
+  concurrent_trials: 4
+  cpus_per_worker: 15
+  gpus_per_worker: 0.25
+  grace_period: 5
+  log_dir: ${oc.env:HOME_DIR}/raytune_logs_fixed/
+  max_t: 40
+  num_cpus: 16
+  num_gpus: 1
+  num_samples: 100
+  num_to_keep: 100
+  num_workers: 1
+  raytune_datamodule: src.data.synth_real_mixed.SynthRealMixedDatamodule
+  reuse_actors: true
+  val_data_name: pfpascal
+seed_everything: 333333333
+trainer:
+  accelerator: gpu
+  callbacks:
+  - class_path: pytorch_lightning.callbacks.ModelCheckpoint
+    init_args:
+      dirpath: ${trainer.default_root_dir}/checkpoints
+      filename: '{epoch}'
+      save_weights_only: false
+  - class_path: pytorch_lightning.callbacks.LearningRateMonitor
+  - class_path: src.callbacks.progress_callback.PrintProgressCallback
+  - class_path: src.callbacks.ckpt_squeeze_callback.CheckpointSqueezeCallback
+    init_args:
+      policy: all
+  check_val_every_n_epoch: 1
+  default_root_dir: logs/__tests/raytune0
+  devices: 1
+  enable_checkpointing: true
+  enable_progress_bar: true
+  gradient_clip_val: 1.0
+  log_every_n_steps: 50
+  logger:
+  - class_path: pytorch_lightning.loggers.TensorBoardLogger
+    init_args:
+      name: ''
+      save_dir: ${trainer.default_root_dir}/tensorboard
+  max_epochs: 100
+  num_nodes: 1
+  num_sanity_val_steps: 0
+  precision: 16-mixed
+  strategy: auto
+  use_distributed_sampler: true
+val_data:
+  class_path: src.data.real.datamodule.SemanticFlowDatamodule
+  init_args:
+    batch_size: 32
+    benchmark: pfpascal
+    data_kw:
+      feature_size: 256
+      normalize: true
+    num_workers: 4
+    root: ${oc.env:DATADIR}/correspondence
+    thres: img
+  num_workers: 3
