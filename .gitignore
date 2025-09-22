@@ -62,3 +62,7 @@ Thumbs.db
 
 # Debug outputs (if you don't want to track these)
 debug/test_outputs/
+
+# Datasets
+models/Datasets_CATs/
+snapshots/
