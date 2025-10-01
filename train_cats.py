@@ -28,7 +28,10 @@ from utils_training.evaluation import Evaluator
 from utils_training.utils import parse_list, load_checkpoint, save_checkpoint, boolean_string
 
 # Import our synthetic dataset wrapper
-from src.data.synth.datasets.cats_wrapper import CATsSyntheticDataset
+from src.data.synth.online_synth_datamodule import create_datamodule_from_config
+import torchvision
+from pathlib import Path
+
 
 
 def main():
@@ -55,18 +58,10 @@ def main():
     parser.add_argument('--backbone', type=str, default='resnet101')
     
     # Synthetic dataset parameters
-    parser.add_argument('--shader_code_path', type=str, 
-                        default='/home/spencer/Deployments/synthetic-correspondence/rendering/shaders/quatJulia.c',
-                        help='path to shader code file')
-    parser.add_argument('--num_samples', type=int, default=1000,
-                        help='number of synthetic samples')
-    parser.add_argument('--image_size', type=int, default=256,
-                        help='size of generated images')
-    parser.add_argument('--antialias', type=int, default=3,
-                        help='antialias passes for rendering')
-    parser.add_argument('--feature_size', type=int, default=32,
-                        help='feature size for CATs++ model')
-    
+    parser.add_argument('--train_config', type=str, default='src/configs/online_synth_configs/train_config.yaml', 
+                        help='Path to YAML config file')
+    parser.add_argument('--val_config', type=str, default='src/configs/online_synth_configs/val_config.yaml', 
+                        help='Path to YAML config file')
     # Training parameters
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
                         help='SGD momentum (default: 0.9)')
@@ -113,45 +108,17 @@ def main():
     
     # Create synthetic dataset
     print("Creating synthetic dataset...")
-    train_dataset = CATsSyntheticDataset(
-        shader_code_path=args.shader_code_path,
-        antialias=args.antialias,
-        num_samples=args.num_samples,
-        size=args.image_size,
-        split='trn',
-        augmentation=args.augmentation,
-        seed=args.seed,
-        feature_size=args.feature_size,
-    )
+    train_dataset = create_datamodule_from_config(args.train_config)
+    val_dataset = create_datamodule_from_config(args.val_config)
     
-    val_dataset = CATsSyntheticDataset(
-        shader_code_path=args.shader_code_path,
-        antialias=args.antialias,
-        num_samples=args.num_samples // 4,  # Smaller validation set
-        size=args.image_size,
-        split='val',
-        augmentation=False,  # No augmentation for validation
-        seed=args.seed + 1,  # Different seed for validation
-        feature_size=args.feature_size,
-    )
     
     # Create dataloaders
     # Note: Using num_workers=0 to avoid OpenGL context issues with multiprocessing
-    train_dataloader = DataLoader(
-        train_dataset,
-        batch_size=args.batch_size,
-        num_workers=args.n_threads,  # Use argument value (0 recommended for OpenGL)
-        shuffle=True
-    )
-    val_dataloader = DataLoader(
-        val_dataset,
-        batch_size=args.batch_size,
-        num_workers=args.n_threads,  # Use argument value (0 recommended for OpenGL)
-        shuffle=False
-    )
+    train_dataloader = train_dataset.train_dataloader()
+    val_dataloader = val_dataset.train_dataloader()
     
-    print(f"Train dataset size: {len(train_dataset)}")
-    print(f"Val dataset size: {len(val_dataset)}")
+    print(f"Train dataset size: {len(train_dataloader)}")
+    print(f"Val dataset size: {len(val_dataloader)}")
     
     # Initialize model
     print("Initializing CATs++ model...")
@@ -179,11 +146,11 @@ def main():
     # Setup scheduler
     if args.scheduler == 'cosine':
         scheduler = lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=args.epochs, eta_min=1e-6, verbose=True
+            optimizer, T_max=args.epochs, eta_min=1e-6
         )
     else:
         scheduler = lr_scheduler.MultiStepLR(
-            optimizer, milestones=parse_list(args.step), gamma=args.step_gamma, verbose=True
+            optimizer, milestones=parse_list(args.step), gamma=args.step_gamma
         )
     
     # Load pretrained model if specified
@@ -237,8 +204,6 @@ def main():
         scheduler.step(epoch)
         
         # Grab a sample batch from the training dataloader and save it to the debug folder
-        import torchvision
-        from pathlib import Path
 
         debug_dir = Path("debug")
         debug_dir.mkdir(exist_ok=True, parents=True)

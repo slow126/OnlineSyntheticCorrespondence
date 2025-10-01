@@ -1,0 +1,9 @@
+class_path: src.data.real.spair_datamodule.SPairDatamodule
+init_args:
+  root: ${oc.env:DATADIR}/correspondence/SPair-71k
+  layout: large
+  thres: bbox
+  feature_size: 256
+  normalize: true
+  batch_size: 32
+  num_workers: 4

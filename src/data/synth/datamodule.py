@@ -4,7 +4,7 @@ import warnings
 import pdb
 
 import torch
-from torchvision.transforms.functional import normalize, center_crop
+
 
 import os
 print(f"current working directory: {os.getcwd()}")
@@ -163,14 +163,6 @@ class BaseComponentsDatamodule(BaseDatamodule):
             specular_exp = torch.randint(9, 12, (b,), device=device, generator=self.rng_gpu).float(),
         )
 
-    def setup_for_gpu_once(self, device):
-        if not self.transferred:
-            # setup GPU-specific things: faiss index, random generator
-            idx = device.index
-            self.index = self.faiss.index_cpu_to_gpu(self.faiss.StandardGpuResources(), idx, self.index)
-            seed = torch.empty(1, dtype=torch.int64).random_(generator=self.rng).item()
-            self.rng_gpu = torch.Generator(device=device).manual_seed(seed)
-            self.transferred = True
 
     def render(self, **kwargs):
         geo: torch.Tensor = kwargs['geometry']
@@ -236,7 +228,6 @@ class BaseComponentsDatamodule(BaseDatamodule):
         from src.data.synth.datasets.online_dataset import debug_show_image
         debug_show_image(grid, f"volume_vis_{name}")
         return grid
-
 
     def on_after_batch_transfer(self, batch: Any, dataloader_idx: int=0):
         device = batch[0]['geometry'].device
@@ -324,6 +315,7 @@ class BaseComponentsDatamodule(BaseDatamodule):
         post_batch['flow'] = flow
 
         return post_batch
+
 
 
 

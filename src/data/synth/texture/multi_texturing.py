@@ -30,6 +30,17 @@ def apply_texture(
       
 ):
     if geometry.device.type == 'cpu':
+        # Convert parameters to appropriate types for CPU version
+        cpu_c_min = float(c_min) if isinstance(c_min, (int, float)) else c_min
+        cpu_c_max = float(c_max) if isinstance(c_max, (int, float)) else c_max
+        cpu_ambient = float(ambient) if isinstance(ambient, (int, float)) else ambient
+        cpu_diffuse = float(diffuse) if isinstance(diffuse, (int, float)) else diffuse
+        cpu_specular = float(specular) if isinstance(specular, (int, float)) else specular
+        cpu_specular_exp = float(specular_exp) if isinstance(specular_exp, (int, float)) else specular_exp
+        cpu_object_id = float(object_id) if isinstance(object_id, (int, float)) else object_id
+        cpu_worley_params = float(worley_params) if isinstance(worley_params, (int, float)) else worley_params
+        cpu_bg_solid_color = float(bg_solid_color) if isinstance(bg_solid_color, (int, float)) else bg_solid_color
+        
         textured = apply_texture_cpu(
             geometry.numpy(),
             normals.numpy(),
@@ -37,13 +48,17 @@ def apply_texture(
             background.numpy(),
             camera.numpy(),
             light.numpy(),
-            c_min,
-            c_max,
-            ambient,
-            diffuse,
-            specular,
-            specular_exp,
-            object_id
+            cpu_c_min,
+            cpu_c_max,
+            cpu_ambient,
+            cpu_diffuse,
+            cpu_specular,
+            cpu_specular_exp,
+            cpu_object_id,
+            cpu_worley_params,
+            use_grf,
+            use_worley,
+            cpu_bg_solid_color
         )
         textured = torch.from_numpy(textured).moveaxis(-1, 0).contiguous()
     else:           
@@ -218,7 +233,197 @@ def _vsub(u, v, out):
 
 
 @numba.njit
-# TODO: Add object_id to the function and make it same as the cuda version
+def _reflect(reflect_vec, light_vec, nrml):
+    """Compute reflection vector: R = 2 * (N · L) * N - L"""
+    dot_product = _dotprod(nrml, light_vec)
+    reflect_vec[0] = 2.0 * dot_product * nrml[0] - light_vec[0]
+    reflect_vec[1] = 2.0 * dot_product * nrml[1] - light_vec[1]
+    reflect_vec[2] = 2.0 * dot_product * nrml[2] - light_vec[2]
+    _normalize(reflect_vec, reflect_vec)
+
+
+@numba.njit
+def _fract(val):
+    """Mimics GLSL's fract() function"""
+    return val - math.floor(val)
+
+
+@numba.njit
+def _hash3(p0, p1, p2, hash_seed):
+    """Periodic hash function with wrapping to avoid seams."""
+    p0 = p0 % 289
+    p1 = p1 % 289
+    p2 = p2 % 289
+    return _fract(math.sin(p0 * 127.1 + p1 * 311.7 + p2 * 74.7) * hash_seed)
+
+
+@numba.njit
+def _random3(p, hash_seed, out):
+    """Generates repeatable pseudo-random feature points with wrapping."""
+    p0 = p[0] % 289
+    p1 = p[1] % 289
+    p2 = p[2] % 289
+    out[0] = _hash3(p0, p1, p2, hash_seed)
+    out[1] = _hash3(p0 + 1, p1, p2, hash_seed)
+    out[2] = _hash3(p0, p1, p2 + 1, hash_seed)
+
+
+@numba.njit
+def _worley_noise(coord, seed):
+    """Computes Worley noise with periodic wrapping to remove seams."""
+    pi = np.empty(3, dtype=np.int32)
+    pf = np.empty(3, dtype=np.float32)
+
+    for k in range(3):
+        pi[k] = int(math.floor(coord[k])) % 289  # Wrap indices to maintain continuity
+        pf[k] = coord[k] - math.floor(coord[k])
+
+    minDist = 1.0
+
+    for x in range(-1, 2):
+        for y in range(-1, 2):
+            for z in range(-1, 2):
+                neighbor = np.array([float(x), float(y), float(z)], dtype=np.float32)
+                featurePoint = np.empty(3, dtype=np.float32)
+                
+                tmp = np.empty(3, dtype=np.int32)
+                for i in range(3):
+                    tmp[i] = (pi[i] + int(neighbor[i])) % 289  # Wrap grid index
+
+                _random3(tmp, seed, featurePoint)
+
+                dist = math.sqrt(
+                    (featurePoint[0] + neighbor[0] - pf[0]) ** 2 +
+                    (featurePoint[1] + neighbor[1] - pf[1]) ** 2 +
+                    (featurePoint[2] + neighbor[2] - pf[2]) ** 2
+                )
+                minDist = min(minDist, dist)
+
+    return minDist
+
+
+@numba.njit
+def _worley_texture3d(buf, coord, scale, seed, shade):
+    """Computes Worley noise-based texture, ensuring seamless tiling."""
+    scaled_coord = np.empty(3, dtype=np.float32)
+    for i in range(3):
+        scaled_coord[i] = math.fmod(coord[i] * scale, 289)  # Wrap at 289
+
+    r_val = _worley_noise(scaled_coord, seed)
+
+    # Use structured offsets instead of arbitrary numbers
+    tile_offset = 57.3  # A repeatable tiling factor that ensures smooth wrapping
+
+    offset_coord = np.empty(3, dtype=np.float32)
+    
+    # Offset for green channel
+    for i in range(3):
+        offset_coord[i] = math.fmod(scaled_coord[i] + tile_offset, 289)
+    g_val = _worley_noise(offset_coord, seed)
+
+    # Offset for blue channel
+    for i in range(3):
+        offset_coord[i] = math.fmod(scaled_coord[i] + 2 * tile_offset, 289)
+    b_val = _worley_noise(offset_coord, seed)
+
+    # Clamp RGB values to [0,1] range
+    buf[0] = max(0.0, min(r_val, 1.0))
+    buf[1] = max(0.0, min(g_val, 1.0))
+    buf[2] = max(0.0, min(b_val, 1.0))
+
+    buf[0] = pow(min(max(0, buf[0] * shade), 1), 1.0 / 2.2)
+    buf[1] = pow(min(max(0, buf[1] * shade), 1), 1.0 / 2.2)
+    buf[2] = pow(min(max(0, buf[2] * shade), 1), 1.0 / 2.2)
+
+
+@numba.njit
+def _phong_shade_alt(buf, coord, nrml, light, camera, ambient, diffuse, specular, specular_exp):
+    """Alternative Phong shading with reflection vector approach"""
+    eye = np.empty(3, dtype=np.float32)
+    light_vec = np.empty(3, dtype=np.float32)
+    half_vec = np.empty(3, dtype=np.float32)
+
+    _vsub(camera, coord, eye)
+    _normalize(eye, eye)
+
+    _vsub(light, coord, light_vec)
+    _normalize(light_vec, light_vec)
+
+    # Light source and normal
+    L_N = _dotprod(light_vec, nrml)
+
+    half_vec[0] = 0.5 * (eye[0] + light_vec[0])
+    half_vec[1] = 0.5 * (eye[1] + light_vec[1])
+    half_vec[2] = 0.5 * (eye[2] + light_vec[2])
+    _normalize(half_vec, half_vec)
+
+    # Use reflection vector for straight phong approach
+    reflect_vec = np.empty(3, dtype=np.float32)
+    _reflect(reflect_vec, light_vec, nrml)
+    R_V = _dotprod(reflect_vec, eye)
+    spec = pow(max(R_V, 0.0), specular_exp) * specular
+
+    dif = max(L_N, 0.0) * diffuse
+
+    buf[0] = buf[0] * (ambient + dif) + spec
+    buf[1] = buf[1] * (ambient + dif) + spec
+    buf[2] = buf[2] * (ambient + dif) + spec
+
+
+@numba.njit
+def blend_to_background_with_distance(buf, background_col, dist):
+    """Blend object color with background based on distance (fog effect)"""
+    scaled_dist = dist / 40.0
+    fog_factor = math.exp(-0.05 * scaled_dist * scaled_dist * scaled_dist)  # Exponential fog
+
+    buf[0] = background_col[0] * (1.0 - fog_factor) + buf[0] * fog_factor
+    buf[1] = background_col[1] * (1.0 - fog_factor) + buf[1] * fog_factor
+    buf[2] = background_col[2] * (1.0 - fog_factor) + buf[2] * fog_factor
+
+
+@numba.njit
+def _phong_shade_dv_cpu(buf, coord, nrml, light, camera, ambient, diffuse, specular, specular_exp):
+    """CPU version of Phong shading"""
+    eye = np.empty(3, dtype=np.float32)
+    _vsub(camera, coord, eye)
+    _normalize(eye, eye)
+
+    _vsub(light, coord, buf)
+    _normalize(buf, buf)
+
+    # light source and normal
+    L_N = _dotprod(buf, nrml)
+
+    buf[0] = 0.5 * (eye[0] + buf[0])
+    buf[1] = 0.5 * (eye[1] + buf[1])
+    buf[2] = 0.5 * (eye[2] + buf[2])
+    _normalize(buf, buf)
+
+    # half-vector and normal
+    H_N = _dotprod(buf, nrml)
+
+    dif = max(L_N, 0.0) * diffuse
+    spec = pow(max(H_N, 0.0), specular_exp) * specular
+    shade = ambient + dif + spec
+    
+    return shade
+
+
+@numba.njit
+def _texture3d_dv_cpu(buf, coord, texture, shade, c_min, c_max):
+    """CPU version of 3D texture lookup with shading"""
+    buf[0] = (coord[0] - c_min) * (texture.shape[0] - 1) / (c_max - c_min)
+    buf[1] = (coord[1] - c_min) * (texture.shape[1] - 1) / (c_max - c_min)
+    buf[2] = (coord[2] - c_min) * (texture.shape[2] - 1) / (c_max - c_min)
+
+    _texture3d_interp(buf, texture, buf)
+
+    buf[0] = pow(min(max(0, buf[0] * shade), 1), 1.0 / 2.2)
+    buf[1] = pow(min(max(0, buf[1] * shade), 1), 1.0 / 2.2)
+    buf[2] = pow(min(max(0, buf[2] * shade), 1), 1.0 / 2.2)
+
+
+@numba.njit
 def apply_texture_cpu(
     geo,
     normals,
@@ -231,57 +436,97 @@ def apply_texture_cpu(
     ambient = np.float32(0.4),
     diffuse = np.float32(0.6),
     specular = np.float32(0.45),
-    specular_exp = np.float32(10.0)
+    specular_exp = np.float32(10.0),
+    object_id = np.float32(-1.0),
+    worley_params = np.float32(43758.5453123),
+    use_grf = False,
+    use_worley = False,
+    bg_solid_color = np.float32(0.0)
 ):
-    c_scale = (np.array(obj_texture.shape[:3], dtype=np.float32) - 1) / (c_max - c_min)
-    
     h, w = geo.shape[:2]
     shaded = np.empty((h, w, 3), dtype=np.float32)
 
     buf = np.empty(3, dtype=np.float32)
-    E = np.empty(3, dtype=np.float32)
+    background_col = np.empty(3, dtype=np.float32)
+    
+    # Set background color
+    background_col[0] = bg_solid_color
+    background_col[1] = bg_solid_color
+    background_col[2] = bg_solid_color
     
     for i in range(h):
-        y = 2 * i / h - 1
         for j in range(w):
             coord = geo[i, j]
 
+            # Calculate distance from camera
+            dist_0 = camera[0] - coord[0]
+            dist_1 = camera[1] - coord[1]
+            dist_2 = camera[2] - coord[2]
+            dist = math.sqrt(dist_0 * dist_0 + dist_1 * dist_1 + dist_2 * dist_2)
+
             if coord[0] != 0 or coord[1] != 0 or coord[2] != 0:
-                x = 2 * j / w - 1
+                obj_id = int(object_id) if object_id >= 0 else 0
+                nrml = normals[i, j]
                 
-                _vsub(light, coord, buf)
-                _normalize(buf, buf)
-
-                L_N = _dotprod(buf, normals[i, j])
-
-                _vsub(camera, coord, E)
-                _normalize(E, E)
-
-                buf[0] = 0.5 * (E[0] + buf[0])
-                buf[1] = 0.5 * (E[1] + buf[1])
-                buf[2] = 0.5 * (E[2] + buf[2])
-                _normalize(buf, buf)
+                # Check which texture algorithms are enabled
+                if use_grf:
+                    # GRF texture
+                    individual_obj_texture3d = obj_texture[obj_id, :, :, :, :]
+                    shade = _phong_shade_dv_cpu(
+                        buf, coord, nrml, light, camera, ambient,
+                        diffuse, specular, specular_exp
+                    )
+                    _texture3d_dv_cpu(buf, coord, individual_obj_texture3d, shade, c_min, c_max)
+                    
+                if use_worley:
+                    # Worley texture
+                    worley_scale = worley_params
+                    _worley_texture3d(buf, coord, worley_scale, worley_params, 1.0)
+                    _phong_shade_alt(buf, coord, nrml, light, camera, ambient, diffuse, specular, specular_exp)
                 
-                dif = max(L_N, 0.0) * diffuse
-                spec = pow(max(_dotprod(buf, normals[i, j]), 0.0), specular_exp) * specular
-                shade = ambient + dif + spec
-                
-                buf[0] = (coord[0] - c_min) * c_scale[0]
-                buf[1] = (coord[1] - c_min) * c_scale[1]
-                buf[2] = (coord[2] - c_min) * c_scale[2]
-                _texture3d_interp(buf, obj_texture, buf)
+                # If no texture flags are set, use default behavior
+                if not use_grf and not use_worley:
+                    # Fallback to original behavior
+                    c_scale = (np.array(obj_texture.shape[:3], dtype=np.float32) - 1) / (c_max - c_min)
+                    
+                    _vsub(light, coord, buf)
+                    _normalize(buf, buf)
 
-                shaded[i, j, 0] = pow(min(max(0, shade * buf[0]), 1), 1.0 / 2.2)
-                shaded[i, j, 1] = pow(min(max(0, shade * buf[1]), 1), 1.0 / 2.2)
-                shaded[i, j, 2] = pow(min(max(0, shade * buf[2]), 1), 1.0 / 2.2)
-            elif background.shape[0] == geo.shape[0] and background.shape[1] == geo.shape[1]:
-                shaded[i, j] = background[i, j]
-            elif background.shape[0] == 1 or background.shape[1] == 1:
-                shaded[i, j] = background[0, 0]
+                    L_N = _dotprod(buf, normals[i, j])
+
+                    E = np.empty(3, dtype=np.float32)
+                    _vsub(camera, coord, E)
+                    _normalize(E, E)
+
+                    buf[0] = 0.5 * (E[0] + buf[0])
+                    buf[1] = 0.5 * (E[1] + buf[1])
+                    buf[2] = 0.5 * (E[2] + buf[2])
+                    _normalize(buf, buf)
+                    
+                    dif = max(L_N, 0.0) * diffuse
+                    spec = pow(max(_dotprod(buf, normals[i, j]), 0.0), specular_exp) * specular
+                    shade = ambient + dif + spec
+                    
+                    buf[0] = (coord[0] - c_min) * c_scale[0]
+                    buf[1] = (coord[1] - c_min) * c_scale[1]
+                    buf[2] = (coord[2] - c_min) * c_scale[2]
+                    _texture3d_interp(buf, obj_texture[obj_id], buf)
+
+                    buf[0] = pow(min(max(0, shade * buf[0]), 1), 1.0 / 2.2)
+                    buf[1] = pow(min(max(0, shade * buf[1]), 1), 1.0 / 2.2)
+                    buf[2] = pow(min(max(0, shade * buf[2]), 1), 1.0 / 2.2)
             else:
-                x = j * ((background.shape[1] - 1) / (geo.shape[1] - 1))
-                y = i * ((background.shape[0] - 1) / (geo.shape[0] - 1))
-                _texture2d_interp(shaded[i, j], background, x, y)
+                # Background
+                buf[0] = background_col[0]
+                buf[1] = background_col[1]
+                buf[2] = background_col[2]
+            
+            # Apply distance-based background blending
+            blend_to_background_with_distance(buf, background_col, dist)
+            
+            shaded[i, j, 0] = buf[0]
+            shaded[i, j, 1] = buf[1]
+            shaded[i, j, 2] = buf[2]
             
     return shaded
 
