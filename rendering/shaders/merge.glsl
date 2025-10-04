@@ -27,7 +27,7 @@ uniform sampler2D fbo2_depth;
 uniform isampler2D fbo2_object_id;
 uniform sampler2D fbo2_distance_field;
 uniform sampler2D fbo2_uv;
-ivec2 res = ivec2(320, 320);
+ivec2 res = ivec2(640, 640);
 
 void main() {
     // Sample data from FBO 1

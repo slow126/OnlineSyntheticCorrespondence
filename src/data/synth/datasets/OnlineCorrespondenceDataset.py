@@ -10,7 +10,7 @@ import os
 
 
 class OnlineCorrespondenceDataset():
-    def __init__(self, geometry_config_path, processor_config_path):
+    def __init__(self, geometry_config_path, processor_config_path, split='train'):
         super().__init__()
         with open(geometry_config_path, 'r') as f:
             geometry_config = yaml.load(f, Loader=yaml.FullLoader)
@@ -18,7 +18,7 @@ class OnlineCorrespondenceDataset():
             processor_config = yaml.load(f, Loader=yaml.FullLoader)
 
         self._device = torch.device('cpu')   
-
+        self.split = split
         self.dataset = OnlineGeometryDataset(**geometry_config)
         self.processor = SyntheticCorrespondenceProcessor(**processor_config)
         self.geometry_visualizer = GeometryVisualizer()
@@ -108,7 +108,7 @@ if __name__ == "__main__":
         print(f"GPU sample device: {sample_gpu0[0]['geometry'].device}")
         batch = [sample_gpu0, sample_gpu1, sample_gpu2]
         batch = dataset.collate_fn(batch)
-        print(f"GPU batch device: {batch['src'].device}")
+        print(f"GPU batch device: {batch['src_img'].device}")
         
         print("\n=== Specific GPU Usage ===")
         dataset.to('cuda:0')

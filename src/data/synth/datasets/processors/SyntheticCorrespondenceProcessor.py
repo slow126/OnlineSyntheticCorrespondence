@@ -23,7 +23,9 @@ class SyntheticCorrespondenceProcessor:
                  subsample_flow=None,
                  subsample_during_train=True,
                  subsample_during_val=False,
-                 subsample_without_trainer=False
+                 subsample_without_trainer=False,
+                 downsample_for_cats=False,
+                 cats_feat_size=32,
                  ):
         super().__init__()
 
@@ -38,6 +40,8 @@ class SyntheticCorrespondenceProcessor:
         self.subsample_during_train = subsample_during_train
         self.subsample_during_val = subsample_during_val
         self.subsample_without_trainer = subsample_without_trainer
+        self.downsample_for_cats = downsample_for_cats
+        self.cats_feat_size = cats_feat_size
 
         self.use_worley_sampler = use_worley_sampler
         self.use_grf_sampler = use_grf_sampler
@@ -238,7 +242,7 @@ class SyntheticCorrespondenceProcessor:
 
 
         post_batch = {}
-        for i, k in enumerate(('src', 'trg')):
+        for i, k in enumerate(('src_img', 'trg_img')):
             img = self.render(**batch[i], foreground=foreground[i], background=background[i], worley_params=worley_params[i], bg_solid_color=bg_solid_color[i])
 
             # normalize images
@@ -257,7 +261,7 @@ class SyntheticCorrespondenceProcessor:
             stage = 'Non-Trainer'
         
         do_subsample = (self.subsample_during_train and stage == 'train') or (self.subsample_during_val and stage == 'val') or (self.subsample_without_trainer and stage == 'Non-Trainer')
-        if self.subsample_flow is not None and do_subsample:
+        if self.subsample_flow is not None and do_subsample and not self.downsample_for_cats:
             # randomly keep an approximate percentage of flow
             # also ensure there are at least a few points preserved for each pair
             valid = flow.isfinite().all(1)
@@ -272,9 +276,67 @@ class SyntheticCorrespondenceProcessor:
             mask = mask.bool().unsqueeze(1).expand_as(flow)
             flow[mask] = torch.inf
 
+        # Apply CATS downsampling if enabled
+        if self.downsample_for_cats:
+            flow = self.downsample_flow(flow, self.cats_feat_size)
+
         post_batch['flow'] = flow
 
         return post_batch
+
+    def downsample_flow(self, flow, feat_size):
+        """
+        Downsample flow to be compatible with CATS model.
+        Converts flow from (B, 2, H, W) to (B, 2, feat_size, feat_size) format expected by CATS.
+        Automatically calculates the appropriate downsampling factor for any input size.
+        
+        Args:
+            flow: Input flow tensor of shape (B, 2, H, W)
+            feat_size: Target feature size (e.g., 32 for 32x32 output)
+        """
+        if flow is None:
+            return flow
+            
+        # Get flow dimensions
+        B, C, H, W = flow.shape
+        
+        # Calculate the scale factor for both dimensions
+        scale_factor_h = H / feat_size
+        scale_factor_w = W / feat_size
+        
+        # Downsample the flow using average pooling
+        # We need to handle the case where flow might contain inf values
+        flow_clean = flow.clone()
+        
+        # Create a mask for valid flow values
+        valid_mask = torch.isfinite(flow).all(dim=1, keepdim=True)  # (B, 1, H, W)
+        
+        # Set invalid values to 0 for pooling
+        flow_clean[~valid_mask.expand_as(flow_clean)] = 0
+        
+        # Apply adaptive average pooling to downsample
+        flow_downsampled = torch.nn.functional.adaptive_avg_pool2d(
+            flow_clean, (feat_size, feat_size)
+        )
+        
+        # Scale the flow values by the average scale factor to maintain proper magnitude
+        # Use the average of both scale factors for consistent scaling
+        avg_scale_factor = (scale_factor_h + scale_factor_w) / 2
+        flow_downsampled = flow_downsampled / avg_scale_factor
+        
+        # Restore invalid values as inf where appropriate
+        # Create downsampled mask for invalid regions
+        valid_mask_downsampled = torch.nn.functional.adaptive_avg_pool2d(
+            valid_mask.float(), (feat_size, feat_size)
+        ) > 0.5  # Keep as valid if majority of pixels in the region are valid
+        
+        # Set invalid regions back to [0, 0]
+        flow_downsampled[~valid_mask_downsampled.expand_as(flow_downsampled)] = 0
+        # # Set invalid regions back to inf
+        # flow_downsampled[~valid_mask_downsampled.expand_as(flow_downsampled)] = float('inf')
+        
+        
+        return flow_downsampled
 
     @staticmethod
     def get_bg_sampler(opts):

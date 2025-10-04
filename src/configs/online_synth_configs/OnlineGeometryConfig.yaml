@@ -4,11 +4,11 @@
 # Shader configurations
 shaders:
   # program0: "/home/spencer/Deployments/synthetic-correspondence/rendering/shaders/terrain_sdf.glsl"
-  program0: "/home/spencer/Deployments/synthetic-correspondence/rendering/shaders/quatJulia.c"
-  program1: "/home/spencer/Deployments/synthetic-correspondence/rendering/shaders/quatJulia.c"
-  program2: "/home/spencer/Deployments/synthetic-correspondence/rendering/shaders/mandelbulb.glsl"
-  program3: "/home/spencer/Deployments/synthetic-correspondence/rendering/shaders/deformed_sphere.glsl"
-  merge: "/home/spencer/Deployments/synthetic-correspondence/rendering/shaders/merge.glsl"
+  program0: "/home/spencer/Projects/OnlineSyntheticCorrespondence/rendering/shaders/mandelbulb.glsl"
+  program1: "/home/spencer/Projects/OnlineSyntheticCorrespondence/rendering/shaders/quatJulia.c"
+  program2: "/home/spencer/Projects/OnlineSyntheticCorrespondence/rendering/shaders/quatJulia.c"
+  program3: "/home/spencer/Projects/OnlineSyntheticCorrespondence/rendering/shaders/deformed_sphere.glsl"
+  merge: "/home/spencer/Projects/OnlineSyntheticCorrespondence/rendering/shaders/merge.glsl"
 
 
 
@@ -54,12 +54,11 @@ val_split: 0.1      # Fraction of data for validation
 test_split: 0.1     # Fraction of data for testing
 
 # Image configuration
-size: 256  # [height, width]
-
-
+size: 512  # [height, width]
+crop: "center"
 
 # Random seed
-seed: 987654321  # Will be set to random value if null
+seed: 987654321 
 
 single_process: true
 

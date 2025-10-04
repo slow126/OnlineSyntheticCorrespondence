@@ -15,12 +15,12 @@ worley_sampler_dict:
       scale: 80.0
   mixing_param0:
     alpha:
-      offset: 0.0
-      scale: 0.0
+      offset: 0.5
+      scale: 1.0
   mixing_param1:
     alpha:
-      offset: 0.0
-      scale: 0.0
+      offset: 0.5
+      scale: 1.0
   terrain_texture_scale0:
     alpha:
       offset: 0.0
@@ -52,7 +52,9 @@ bg_color_sampler_dict:
 use_worley_sampler: true
 use_grf_sampler: false
 
-subsample_flow: 0.1
-subsample_during_train: true
+subsample_flow: None #0.1
+subsample_during_train: false
 subsample_during_val: false
 subsample_without_trainer: false
+downsample_for_cats: true
+cats_feat_size: 32

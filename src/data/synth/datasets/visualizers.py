@@ -18,7 +18,7 @@ class GeometryVisualizer:
     - Batch data where [0] is src and [1] is trg
     """
     
-    def __init__(self, figsize: tuple = (15, 10), dpi: int = 100):
+    def __init__(self, figsize: tuple = (20, 15), dpi: int = 150):
         """
         Initialize the visualizer.
         
@@ -136,7 +136,7 @@ class CorrespondenceVisualizer:
     - Flow visualization with arrows showing correspondence
     """
     
-    def __init__(self, figsize: tuple = (15, 10), dpi: int = 100, arrow_scale: float = 1.0, arrow_density: int = 20):
+    def __init__(self, figsize: tuple = (20, 15), dpi: int = 150, arrow_scale: float = 1.0, arrow_density: int = 30):
         """
         Initialize the visualizer.
         
@@ -157,17 +157,17 @@ class CorrespondenceVisualizer:
         Visualize a batch of rendered correspondence data.
         
         Args:
-            batch_dict: Dictionary with keys 'src', 'trg', 'flow'
+            batch_dict: Dictionary with keys 'src_img', 'trg_img', 'flow'
                        Each value is a tensor of shape [batch_size, channels, height, width]
             save_path: Path to save the visualization
             max_samples: Maximum number of samples to display
             visualization_mode: 'side_by_side' or 'overlay'
         """
-        if not batch_dict or 'src' not in batch_dict or 'trg' not in batch_dict or 'flow' not in batch_dict:
-            raise ValueError("batch_dict must contain 'src', 'trg', and 'flow' keys")
+        if not batch_dict or 'src_img' not in batch_dict or 'trg_img' not in batch_dict or 'flow' not in batch_dict:
+            raise ValueError("batch_dict must contain 'src_img', 'trg_img', and 'flow' keys")
         
-        src_batch = batch_dict['src']
-        trg_batch = batch_dict['trg']
+        src_batch = batch_dict['src_img']
+        trg_batch = batch_dict['trg_img']
         flow_batch = batch_dict['flow']
         
         batch_size = min(src_batch.shape[0], max_samples)
@@ -291,8 +291,10 @@ class CorrespondenceVisualizer:
         flow_h, flow_w = flow.shape[:2]
         
         # Create exact pixel coordinate grids (no interpolation)
-        step_y = max(1, flow_h // self.arrow_density)
-        step_x = max(1, flow_w // self.arrow_density)
+        # Adaptive arrow density based on image size
+        adaptive_density = max(self.arrow_density, min(flow_h, flow_w) // 20)
+        step_y = max(1, flow_h // adaptive_density)
+        step_x = max(1, flow_w // adaptive_density)
         
         # Get exact pixel coordinates
         y_indices = np.arange(0, flow_h, step_y)
@@ -346,8 +348,10 @@ class CorrespondenceVisualizer:
         flow_h, flow_w = flow.shape[:2]
         
         # Create exact pixel coordinate grids (no interpolation)
-        step_y = max(1, flow_h // self.arrow_density)
-        step_x = max(1, flow_w // self.arrow_density)
+        # Adaptive arrow density based on image size
+        adaptive_density = max(self.arrow_density, min(flow_h, flow_w) // 20)
+        step_y = max(1, flow_h // adaptive_density)
+        step_x = max(1, flow_w // adaptive_density)
         
         # Get exact pixel coordinates
         y_indices = np.arange(0, flow_h, step_y)

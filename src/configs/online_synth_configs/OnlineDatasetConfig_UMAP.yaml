@@ -1,0 +1,16 @@
+dataset_configs:
+  name: OnlineGeometryDataset
+  train_dataset_config:
+    init_args:
+      geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
+      processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig_UMAP.yaml
+      split: train
+      class_path: src.data.synth.datamodule.OnlineComponentsDatamodule
+
+  val_dataset_config:
+    name: OnlineGeometryDataset
+    init_args:
+      geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
+      processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig_UMAP.yaml
+      split: val
+      class_path: src.data.synth.datamodule.OnlineComponentsDatamodule

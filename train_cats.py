@@ -22,13 +22,15 @@ from torch.utils.data import DataLoader
 # Import CATs++ model and utilities
 import sys
 sys.path.append('models/CATs-PlusPlus')
+sys.path.append('models/CATs-PlusPlus/data')
 from models.cats_improved import CATsImproved
 import utils_training.optimize as optimize
 from utils_training.evaluation import Evaluator
 from utils_training.utils import parse_list, load_checkpoint, save_checkpoint, boolean_string
+from src.data.synth.datasets.OnlineCorrespondenceDataset import OnlineCorrespondenceDataset
+import download
 
 # Import our synthetic dataset wrapper
-from src.data.synth.online_synth_datamodule import create_datamodule_from_config
 import torchvision
 from pathlib import Path
 
@@ -49,7 +51,7 @@ def main():
                         help='start epoch')
     parser.add_argument('--epochs', type=int, default=100,
                         help='number of training epochs')
-    parser.add_argument('--batch-size', type=int, default=32,
+    parser.add_argument('--batch-size', type=int, default=8,
                         help='training batch size')
     parser.add_argument('--n_threads', type=int, default=0,
                         help='number of parallel threads for dataloaders (0 recommended for OpenGL compatibility)')
@@ -58,9 +60,7 @@ def main():
     parser.add_argument('--backbone', type=str, default='resnet101')
     
     # Synthetic dataset parameters
-    parser.add_argument('--train_config', type=str, default='src/configs/online_synth_configs/train_config.yaml', 
-                        help='Path to YAML config file')
-    parser.add_argument('--val_config', type=str, default='src/configs/online_synth_configs/val_config.yaml', 
+    parser.add_argument('--config', type=str, default='src/configs/online_synth_configs/OnlineDatasetConfig.yaml',
                         help='Path to YAML config file')
     # Training parameters
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
@@ -75,13 +75,21 @@ def main():
     parser.add_argument('--step', type=str, default='[70, 80, 90]')
     parser.add_argument('--step_gamma', type=float, default=0.5)
     
-    parser.add_argument('--freeze', type=boolean_string, nargs='?', const=True, default=False)
+    parser.add_argument('--freeze', type=boolean_string, nargs='?', const=True, default=True)
     parser.add_argument('--augmentation', type=boolean_string, nargs='?', const=True, default=True)
     
     # Evaluation parameters
-    parser.add_argument('--benchmark', type=str, default='synthetic', choices=['synthetic'])
+    parser.add_argument('--benchmark', type=str, default='spair', choices=['synthetic', 'spair', 'pfpascal', 'pfwillow', 'caltech'])
     parser.add_argument('--thres', type=str, default='img', choices=['auto', 'img', 'bbox', 'bbox-kp'])
     parser.add_argument('--alpha', type=float, default=0.1)
+    parser.add_argument('--datapath', type=str, default='../Datasets_CATs')
+
+    parser.add_argument('--feature_size', type=int, default=32,
+                        help='feature size for downsampled flow. [default: 32]')
+    parser.add_argument('--val_batch_size', type=int, default=8,
+                        help='batch size for validation. [default: 8]')
+    parser.add_argument('--val_num_workers', type=int, default=16,
+                        help='number of workers for validation. [default: 16]')
     
     args = parser.parse_args()
     
@@ -108,15 +116,35 @@ def main():
     
     # Create synthetic dataset
     print("Creating synthetic dataset...")
-    train_dataset = create_datamodule_from_config(args.train_config)
-    val_dataset = create_datamodule_from_config(args.val_config)
+    # TODO: Image size is [3, 512, 512] is what i should be using. fix this. 
+    train_dataset = OnlineCorrespondenceDataset(
+        geometry_config_path='src/configs/online_synth_configs/OnlineGeometryConfig.yaml',
+        processor_config_path='src/configs/online_synth_configs/OnlineProcessorConfig.yaml',
+        split='train'
+    )
+    train_dataset.cuda()
+    # val_dataset = OnlineCorrespondenceDataset(
+    #     geometry_config_path='src/configs/online_synth_configs/OnlineGeometryConfig_Val.yaml',
+    #     processor_config_path='src/configs/online_synth_configs/OnlineProcessorConfig.yaml',
+    #     split='val'
+    # )
+    # val_dataset.cuda()
+
+    val_dataset = download.load_dataset(args.benchmark, args.datapath, args.thres, device, 'val', False, args.feature_size)
+
     
     
     # Create dataloaders
     # Note: Using num_workers=0 to avoid OpenGL context issues with multiprocessing
-    train_dataloader = train_dataset.train_dataloader()
-    val_dataloader = val_dataset.train_dataloader()
-    
+    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True, collate_fn=train_dataset.collate_fn)
+    # val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=False, collate_fn=val_dataset.collate_fn)
+    val_dataloader = DataLoader(val_dataset,
+        batch_size=args.val_batch_size,
+        num_workers=args.val_num_workers,
+        persistent_workers=True,
+        prefetch_factor=8,
+        shuffle=False)
+
     print(f"Train dataset size: {len(train_dataloader)}")
     print(f"Val dataset size: {len(val_dataloader)}")
     
@@ -227,11 +255,11 @@ def main():
             # Save flow as numpy for inspection
             np.save(debug_dir / "sample_flow.npy", flow_tensor.numpy())
 
-            # Optionally save keypoints for inspection
-            src_kps = batch['src_kps'][0].cpu().numpy()
-            trg_kps = batch['trg_kps'][0].cpu().numpy()
-            np.save(debug_dir / "sample_src_kps.npy", src_kps)
-            np.save(debug_dir / "sample_trg_kps.npy", trg_kps)
+            # # Optionally save keypoints for inspection
+            # src_kps = batch['src_kps'][0].cpu().numpy()
+            # trg_kps = batch['trg_kps'][0].cpu().numpy()
+            # np.save(debug_dir / "sample_src_kps.npy", src_kps)
+            # np.save(debug_dir / "sample_trg_kps.npy", trg_kps)
 
             print(f"Saved a sample batch to {debug_dir}")
         except Exception as e:

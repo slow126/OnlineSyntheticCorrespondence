@@ -22,6 +22,12 @@ sys.path.append(str(project_root))
 from src.data.synth.online_synth_datamodule import create_datamodule_from_config
 from src.data.real.real_datamodule import create_real_datamodule_from_config
 from models.DinoV3.DinoV3 import DinoV3
+from src.data.synth.datasets.OnlineCorrespondenceDataset import OnlineCorrespondenceDataset
+from torch.utils.data import DataLoader
+import yaml
+
+sys.path.append('models/CATs-PlusPlus/data')
+import download
 
 
 
@@ -81,8 +87,8 @@ def main():
     parser = argparse.ArgumentParser(description='Extract DinoV3 features from synthetic dataset')
     parser.add_argument('--dataset', type=str, default='synthetic',
                        help='Dataset to process')
-    parser.add_argument('--config', type=str, 
-                       default='src/configs/online_synth_configs/config.yaml',
+    parser.add_argument('--correspondence_config', type=str, 
+                       default='src/configs/online_synth_configs/OnlineDatasetConfig_UMAP.yaml',
                        help='Path to YAML config file')
     parser.add_argument('--output_dir', type=str, default='extracted_features',
                        help='Directory to save extracted features')
@@ -95,11 +101,19 @@ def main():
     parser.add_argument('--model_name', type=str, 
                        default='facebook/dinov3-vit7b16-pretrain-lvd1689m',
                        help='DinoV3 model name')
+    parser.add_argument('--benchmark', type=str, default='spair', choices=['pfpascal', 'spair'])
+    parser.add_argument('--datapath', type=str, default='../Datasets_CATs',
+                       help='Path to dataset')
+    parser.add_argument('--thres', type=str, default='auto', choices=['auto', 'img', 'bbox', 'bbox-kp'])
+    parser.add_argument('--feature_size', type=int, default=32,
+                       help='Feature size for the model')
+    parser.add_argument('--n_threads', type=int, default=4,
+                       help='Number of threads to use')
     
     args = parser.parse_args()
     
     print("=== DinoV3 Feature Extraction ===")
-    print(f"Config: {args.config}")
+    print(f"Config: {args.correspondence_config}")
     print(f"Output directory: {args.output_dir}")
     print(f"Number of batches: {args.num_batches}")
     print(f"Device: {args.device}")
@@ -114,24 +128,34 @@ def main():
     dino_model = DinoV3(pretrained_model_name=args.model_name)
     print("DinoV3 model loaded successfully!")
 
-    # Create datamodule from config
-    print("\nCreating datamodule from config...")
-    override_kwargs = {}
-    
-    if args.batch_size is not None:
-        override_kwargs['batch_size'] = args.batch_size
+    with open(args.correspondence_config, 'r') as f:
+        correspondence_config = yaml.load(f, Loader=yaml.FullLoader)
+
     
     if args.dataset == 'synthetic':
-        dm = create_datamodule_from_config(args.config, **override_kwargs)
+        # Create datamodule from config
+        print(f"Creating Synthetic Correspondence Dataset")
+        if args.batch_size is None:
+            args.batch_size = correspondence_config['dataset_configs']['train_dataset_config']['init_args']['batch_size']
 
-        # Create dataloader
-        train_loader = dm.train_dataloader()
-        
+
+        dataset = OnlineCorrespondenceDataset(
+            geometry_config_path=correspondence_config['dataset_configs']['train_dataset_config']['init_args']['geometry_config_path'],
+            processor_config_path=correspondence_config['dataset_configs']['train_dataset_config']['init_args']['processor_config_path']
+        )
+        dataset.cuda()
+        train_loader = DataLoader(dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True, collate_fn=dataset.collate_fn)
         print(f"Number of batches in dataloader: {len(train_loader)}")
     
     elif args.dataset == 'spair':
-        dm = create_real_datamodule_from_config(args.config, **override_kwargs)
-        train_loader = dm.train_dataloader()
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        dataset = download.load_dataset(args.benchmark, args.datapath, args.thres, device, 'train', False, args.feature_size)
+        train_loader = DataLoader(dataset,
+                                      batch_size=args.batch_size,
+                                      num_workers=args.n_threads,
+                                      persistent_workers=True,
+                                      prefetch_factor=8,
+                                      shuffle=False)
         print(f"Number of batches in dataloader: {len(train_loader)}")
     
     # Process batches
@@ -141,20 +165,17 @@ def main():
     batch_metadata = []
     
     for batch_idx, batch in enumerate(tqdm(train_loader, desc="Extracting features")):
-        batch = [{k: v.to(args.device) for k, v in x.items()} for x in batch]
-        processed_batch = dm.on_after_batch_transfer(batch, batch_idx)
-        if batch_idx >= args.num_batches:
-            break
+        
         
         try:
             # Extract features from the batch
-            features = extract_features_from_batch(dino_model, processed_batch, args.device)
+            features = extract_features_from_batch(dino_model, batch, args.device)
             
             # Create metadata for this batch
             metadata = {
                 'batch_idx': batch_idx,
-                'batch_size': batch['src'].shape[0] if 'src' in batch else 0,
-                'image_shape': batch['src'].shape[1:] if 'src' in batch else None,
+                'batch_size': batch['src_img'].shape[0] if 'src_img' in batch else 0,
+                'image_shape': batch['src_img'].shape[1:] if 'src_img' in batch else None,
                 'feature_shapes': {k: v.shape for k, v in features.items()},
                 'device': args.device,
                 'model_name': args.model_name
@@ -170,10 +191,10 @@ def main():
             batch_metadata.append(metadata)
             
             # Print progress info
-            if 'src' in features:
-                print(f"Batch {batch_idx}: src features shape {features['src'].shape}")
-            if 'trg' in features:
-                print(f"Batch {batch_idx}: trg features shape {features['trg'].shape}")
+            if 'src_img' in features:
+                print(f"Batch {batch_idx}: src features shape {features['src_img'].shape}")
+            if 'trg_img' in features:
+                print(f"Batch {batch_idx}: trg features shape {features['trg_img'].shape}")
                 
         except Exception as e:
             print(f"Error processing batch {batch_idx}: {e}")
@@ -190,7 +211,7 @@ def main():
     
     # Calculate feature statistics
     if all_features:
-        for key in ['src', 'trg']:
+        for key in ['src_img', 'trg_img']:
             if key in all_features[0]:
                 all_key_features = [f[key] for f in all_features]
                 stacked_features = torch.cat(all_key_features, dim=0)
