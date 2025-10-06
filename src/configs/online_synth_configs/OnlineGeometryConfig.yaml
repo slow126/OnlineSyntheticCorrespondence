@@ -3,12 +3,12 @@
 
 # Shader configurations
 shaders:
-  # program0: "/home/spencer/Deployments/synthetic-correspondence/rendering/shaders/terrain_sdf.glsl"
-  program0: "/home/spencer/Projects/OnlineSyntheticCorrespondence/rendering/shaders/mandelbulb.glsl"
-  program1: "/home/spencer/Projects/OnlineSyntheticCorrespondence/rendering/shaders/quatJulia.c"
-  program2: "/home/spencer/Projects/OnlineSyntheticCorrespondence/rendering/shaders/quatJulia.c"
-  program3: "/home/spencer/Projects/OnlineSyntheticCorrespondence/rendering/shaders/deformed_sphere.glsl"
-  merge: "/home/spencer/Projects/OnlineSyntheticCorrespondence/rendering/shaders/merge.glsl"
+  # program0: "./rendering/shaders/terrain_sdf.glsl"
+  program0: "./rendering/shaders/mandelbulb.glsl"
+  program1: "./rendering/shaders/quatJulia.c"
+  program2: "./rendering/shaders/quatJulia.c"
+  program3: "./rendering/shaders/deformed_sphere.glsl"
+  merge: "./rendering/shaders/merge.glsl"
 
 
 
