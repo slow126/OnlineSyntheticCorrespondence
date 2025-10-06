@@ -11,10 +11,10 @@ try:
     from . import spair
 except ImportError:
     # Fallback imports
-    import pfpascal
-    import pfwillow
-    import caltech
-    import spair
+    import models.CATs_PlusPlus.data.pfpascal as pfpascal
+    import models.CATs_PlusPlus.data.pfwillow as pfwillow
+    import models.CATs_PlusPlus.data.caltech as caltech
+    import models.CATs_PlusPlus.data.spair as spair
 
 
 def load_dataset(benchmark, datapath, thres, device, split='test', augmentation=False, feature_size=16):

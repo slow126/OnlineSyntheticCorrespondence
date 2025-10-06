@@ -25,7 +25,7 @@ from models.CATs_PlusPlus.models.cats_improved import CATsImproved
 import models.CATs_PlusPlus.utils_training.optimize as optimize
 from models.CATs_PlusPlus.utils_training.evaluation import Evaluator
 from models.CATs_PlusPlus.utils_training.utils import parse_list, load_checkpoint, save_checkpoint, boolean_string
-from src.data.synth.datasets.OnlineCorrespondenceDataset import OnlineCorrespondenceDataset
+# from src.data.synth.datasets.OnlineCorrespondenceDataset import OnlineCorrespondenceDataset
 import models.CATs_PlusPlus.data.download as download
 
 # Import our synthetic dataset wrapper

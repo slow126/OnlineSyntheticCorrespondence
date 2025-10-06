@@ -9,7 +9,7 @@ import torch
 try:
     from .dataset import CorrespondenceDataset, random_crop
 except ImportError:
-    from dataset import CorrespondenceDataset, random_crop
+    from models.CATs_PlusPlus.data.dataset import CorrespondenceDataset, random_crop
 
 
 class PFPascalDataset(CorrespondenceDataset):

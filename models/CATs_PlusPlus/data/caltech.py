@@ -8,7 +8,7 @@ import torch
 try:
     from .dataset import CorrespondenceDataset
 except ImportError:
-    from dataset import CorrespondenceDataset
+    from models.CATs_PlusPlus.data.dataset import CorrespondenceDataset
 
 
 class CaltechDataset(CorrespondenceDataset):
