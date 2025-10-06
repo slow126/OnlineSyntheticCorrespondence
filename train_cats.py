@@ -49,7 +49,7 @@ def main():
                        help='path to pre-trained model')
     parser.add_argument('--start_epoch', type=int, default=-1,
                         help='start epoch')
-    parser.add_argument('--epochs', type=int, default=100,
+    parser.add_argument('--epochs', type=int, default=50,
                         help='number of training epochs')
     parser.add_argument('--batch-size', type=int, default=8,
                         help='training batch size')
@@ -82,7 +82,7 @@ def main():
     parser.add_argument('--benchmark', type=str, default='spair', choices=['synthetic', 'spair', 'pfpascal', 'pfwillow', 'caltech'])
     parser.add_argument('--thres', type=str, default='img', choices=['auto', 'img', 'bbox', 'bbox-kp'])
     parser.add_argument('--alpha', type=float, default=0.1)
-    parser.add_argument('--datapath', type=str, default='../Datasets_CATs')
+    parser.add_argument('--datapath', type=str, default='./models/Datasets_CATs')
 
     parser.add_argument('--feature_size', type=int, default=32,
                         help='feature size for downsampled flow. [default: 32]')
