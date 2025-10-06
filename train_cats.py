@@ -25,7 +25,7 @@ from models.CATs_PlusPlus.models.cats_improved import CATsImproved
 import models.CATs_PlusPlus.utils_training.optimize as optimize
 from models.CATs_PlusPlus.utils_training.evaluation import Evaluator
 from models.CATs_PlusPlus.utils_training.utils import parse_list, load_checkpoint, save_checkpoint, boolean_string
-from src.data.synth.datasets.OnlineCorrespondenceDataset import OnlineCorrespondenceDataset
+# from src.data.synth.datasets.OnlineCorrespondenceDataset import OnlineCorrespondenceDataset
 import models.CATs_PlusPlus.data.download as download
 
 # Import our synthetic dataset wrapper
@@ -128,7 +128,7 @@ def main():
         train_dataset.cuda()
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True, collate_fn=train_dataset.collate_fn)
     else:
-        train_dataset = download.load_dataset(args.benchmark, args.datapath, args.thres, device, 'train', False, args.feature_size)
+        train_dataset = download.load_dataset(args.benchmark, args.datapath, args.thres, device, 'trn', False, args.feature_size)
         train_dataloader = DataLoader(train_dataset,
         batch_size=args.val_batch_size,
         num_workers=args.val_num_workers,
