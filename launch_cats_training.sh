@@ -1,1 +1,1 @@
-python train_cats.py --epochs 50 --benchmark pfpascal --freeze False --split_to_use_for_validation test
+python train_cats.py --train_dataset pfpascal--epochs 50 --benchmark pfpascal --freeze False --split_to_use_for_validation test
