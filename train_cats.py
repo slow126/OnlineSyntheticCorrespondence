@@ -112,7 +112,8 @@ def main():
     except:
         print("Warning: Could not initialize Evaluator for synthetic data")
     
-
+    # Check if the dataset is already downloaded
+    download.download_dataset(args.datapath, args.benchmark)
     val_dataset = download.load_dataset(args.benchmark, args.datapath, args.thres, device, 'val', False, args.feature_size)
 
     # Create synthetic dataset

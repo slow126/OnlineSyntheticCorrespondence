@@ -143,3 +143,5 @@ def download_dataset(datapath, benchmark):
 
     if not os.path.isdir(abs_filepath):
         download_from_google(file_id, abs_filepath)
+    else:
+        print(f"Dataset {filename} already exists in {datapath}")
