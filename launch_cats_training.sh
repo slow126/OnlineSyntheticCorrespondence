@@ -2,7 +2,7 @@
 
 # Download datasets and weights first
 echo "📦 Downloading datasets and weights..."
-python download_cats.py --download_all --download_weights
+python download_cats.py --download_weights
 
 # Run training
 echo "🚀 Starting training..."
