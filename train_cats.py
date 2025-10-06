@@ -21,14 +21,12 @@ from torch.utils.data import DataLoader
 
 # Import CATs++ model and utilities
 import sys
-sys.path.append('models/CATs-PlusPlus')
-sys.path.append('models/CATs-PlusPlus/data')
-from models.cats_improved import CATsImproved
-import utils_training.optimize as optimize
-from utils_training.evaluation import Evaluator
-from utils_training.utils import parse_list, load_checkpoint, save_checkpoint, boolean_string
+from models.CATs_PlusPlus.models.cats_improved import CATsImproved
+import models.CATs_PlusPlus.utils_training.optimize as optimize
+from models.CATs_PlusPlus.utils_training.evaluation import Evaluator
+from models.CATs_PlusPlus.utils_training.utils import parse_list, load_checkpoint, save_checkpoint, boolean_string
 from src.data.synth.datasets.OnlineCorrespondenceDataset import OnlineCorrespondenceDataset
-import download
+import models.CATs_PlusPlus.data.download as download
 
 # Import our synthetic dataset wrapper
 import torchvision
