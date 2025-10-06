@@ -112,6 +112,9 @@ def main():
     except:
         print("Warning: Could not initialize Evaluator for synthetic data")
     
+
+    val_dataset = download.load_dataset(args.benchmark, args.datapath, args.thres, device, 'val', False, args.feature_size)
+
     # Create synthetic dataset
     print("Creating synthetic dataset...")
     # TODO: Image size is [3, 512, 512] is what i should be using. fix this. 
@@ -128,9 +131,6 @@ def main():
     # )
     # val_dataset.cuda()
 
-    val_dataset = download.load_dataset(args.benchmark, args.datapath, args.thres, device, 'val', False, args.feature_size)
-
-    
     
     # Create dataloaders
     # Note: Using num_workers=0 to avoid OpenGL context issues with multiprocessing
