@@ -83,7 +83,7 @@ def main():
     parser.add_argument('--thres', type=str, default='img', choices=['auto', 'img', 'bbox', 'bbox-kp'])
     parser.add_argument('--alpha', type=float, default=0.1)
     parser.add_argument('--datapath', type=str, default='./models/Datasets_CATs')
-
+    parser.add_argument('--split_to_use_for_validation', type=str, default='val', choices=['val', 'test'])
     parser.add_argument('--feature_size', type=int, default=32,
                         help='feature size for downsampled flow. [default: 32]')
     parser.add_argument('--val_batch_size', type=int, default=8,
