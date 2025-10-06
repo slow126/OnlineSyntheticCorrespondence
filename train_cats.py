@@ -58,6 +58,7 @@ def main():
     parser.add_argument('--backbone', type=str, default='resnet101')
     
     # Synthetic dataset parameters
+    parser.add_argument('--train_dataset', type=str, default='synthetic', choices=['synthetic', 'spair', 'pfpascal', 'pfwillow', 'caltech'])
     parser.add_argument('--config', type=str, default='src/configs/online_synth_configs/OnlineDatasetConfig.yaml',
                         help='Path to YAML config file')
     # Training parameters
@@ -117,14 +118,23 @@ def main():
     val_dataset = download.load_dataset(args.benchmark, args.datapath, args.thres, device, 'val', False, args.feature_size)
 
     # Create synthetic dataset
-    print("Creating synthetic dataset...")
-    # TODO: Image size is [3, 512, 512] is what i should be using. fix this. 
-    train_dataset = OnlineCorrespondenceDataset(
-        geometry_config_path='src/configs/online_synth_configs/OnlineGeometryConfig.yaml',
-        processor_config_path='src/configs/online_synth_configs/OnlineProcessorConfig.yaml',
-        split='train'
-    )
-    train_dataset.cuda()
+    if args.train_dataset == 'synthetic':
+        print("Creating synthetic dataset...")
+        train_dataset = OnlineCorrespondenceDataset(
+            geometry_config_path='src/configs/online_synth_configs/OnlineGeometryConfig.yaml',
+            processor_config_path='src/configs/online_synth_configs/OnlineProcessorConfig.yaml',
+            split='train'
+        )
+        train_dataset.cuda()
+        train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True, collate_fn=train_dataset.collate_fn)
+    else:
+        train_dataset = download.load_dataset(args.benchmark, args.datapath, args.thres, device, 'train', False, args.feature_size)
+        train_dataloader = DataLoader(train_dataset,
+        batch_size=args.val_batch_size,
+        num_workers=args.val_num_workers,
+        persistent_workers=True,
+        prefetch_factor=8,
+        shuffle=True)
     # val_dataset = OnlineCorrespondenceDataset(
     #     geometry_config_path='src/configs/online_synth_configs/OnlineGeometryConfig_Val.yaml',
     #     processor_config_path='src/configs/online_synth_configs/OnlineProcessorConfig.yaml',
@@ -135,7 +145,6 @@ def main():
     
     # Create dataloaders
     # Note: Using num_workers=0 to avoid OpenGL context issues with multiprocessing
-    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True, collate_fn=train_dataset.collate_fn)
     # val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=False, collate_fn=val_dataset.collate_fn)
     val_dataloader = DataLoader(val_dataset,
         batch_size=args.val_batch_size,
