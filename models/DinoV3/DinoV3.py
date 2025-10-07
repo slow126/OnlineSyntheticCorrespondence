@@ -184,7 +184,7 @@ class DinoV3:
         Create grid visualizations from already processed spatial features and save as images.
         
         Args:
-            features_dict: Dictionary with 'src' and 'trg' keys containing spatial features
+            features_dict: Dictionary with 'src_img' and 'trg_img' keys containing spatial features
                           Shape: (batch_size, num_patches, dim)
             save_path: Path to save the grid image (or directory for multiple files)
         """
@@ -270,9 +270,9 @@ class DinoV3:
                 print(f"Saved {key} features grid to {grid_path}")
         
         # Create comparison grid (src vs trg side by side)
-        if 'src' in features_dict and 'trg' in features_dict:
-            src_features = features_dict['src']
-            trg_features = features_dict['trg']
+        if 'src_img' in features_dict and 'trg_img' in features_dict:
+            src_features = features_dict['src_img']
+            trg_features = features_dict['trg_img']
             
             if src_features is not None and trg_features is not None:
                 comparison_visualizations = []
@@ -307,7 +307,7 @@ class DinoV3:
                     
                     if save_path.endswith('/') or '.' not in os.path.basename(save_path):
                         # Directory path
-                        comparison_path = os.path.join(base_path, 'src_trg_comparison.png')
+                        comparison_path = os.path.join(base_path, 'src_img_trg_img_comparison.png')
                     else:
                         # Single file path
                         name, ext = os.path.splitext(save_path)
