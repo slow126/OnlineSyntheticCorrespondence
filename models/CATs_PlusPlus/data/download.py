@@ -35,6 +35,8 @@ def load_dataset(benchmark, datapath, thres, device, split='test', augmentation=
 
 def download_from_google(token_id, filename):
     r"""Downloads desired filename from Google drive"""
+    import shutil  # Import shutil at the beginning of the function
+    
     print('Downloading %s ...' % os.path.basename(filename))
 
     url = 'https://docs.google.com/uc?export=download'
@@ -136,40 +138,53 @@ def download_from_google(token_id, filename):
     def find_dataset_root(extract_dir, target_name):
         """Recursively find the dataset root directory"""
         items = os.listdir(extract_dir)
+        print(f"Searching in {extract_dir} for {target_name}")
+        print(f"Found items: {items}")
         
         # Look for a directory that matches our target name
         for item in items:
             item_path = os.path.join(extract_dir, item)
             if os.path.isdir(item_path):
                 if item == target_name:
+                    print(f"Found exact match: {item_path}")
                     return item_path
                 # Check if there's a nested directory with the same name
                 nested_path = os.path.join(item_path, target_name)
                 if os.path.isdir(nested_path):
+                    print(f"Found nested match: {nested_path}")
                     return nested_path
                 # Recursively check subdirectories
                 nested_result = find_dataset_root(item_path, target_name)
                 if nested_result:
                     return nested_result
+        print(f"No match found in {extract_dir}")
         return None
     
     # Find the actual dataset directory
     actual_dataset_dir = find_dataset_root(temp_extract_dir, os.path.basename(filename))
     
+    print(f"Looking for dataset directory: {os.path.basename(filename)}")
+    print(f"Found dataset directory: {actual_dataset_dir}")
+    
     if actual_dataset_dir:
         # Move the found dataset directory to the final location
         if actual_dataset_dir != filename:
             if os.path.exists(filename):
-                import shutil
+                print(f"Removing existing directory: {filename}")
                 shutil.rmtree(filename)
+            print(f"Moving {actual_dataset_dir} to {filename}")
             shutil.move(actual_dataset_dir, filename)
         # Clean up the temporary extraction directory
+        print(f"Cleaning up temporary directory: {temp_extract_dir}")
         shutil.rmtree(temp_extract_dir)
     else:
         # Fallback: if we can't find the expected structure, just rename the temp directory
+        print(f"Dataset directory not found, using fallback method")
+        print(f"Contents of temp directory: {os.listdir(temp_extract_dir)}")
         if os.path.exists(filename):
-            import shutil
+            print(f"Removing existing directory: {filename}")
             shutil.rmtree(filename)
+        print(f"Renaming {temp_extract_dir} to {filename}")
         os.rename(temp_extract_dir, filename)
     
     print("Dataset downloaded and extracted successfully")
@@ -196,8 +211,18 @@ def save_response_content(response, destination):
 
 def download_dataset(datapath, benchmark):
     r"""Downloads semantic correspondence benchmark dataset from Google drive"""
+    import shutil
+    
     if not os.path.isdir(datapath):
         os.mkdir(datapath)
+    
+    # Clean up any leftover "_extracting" directories from previous failed downloads
+    for item in os.listdir(datapath):
+        if item.endswith('_extracting'):
+            extracting_path = os.path.join(datapath, item)
+            if os.path.isdir(extracting_path):
+                print(f"Cleaning up leftover extraction directory: {extracting_path}")
+                shutil.rmtree(extracting_path)
 
     file_data = {
         'pfwillow': ('1tDP0y8RO5s45L-vqnortRaieiWENQco_', 'PF-WILLOW'),
