@@ -32,7 +32,7 @@ import models.CATs_PlusPlus.data.download as download
 import torchvision
 from pathlib import Path
 
-
+# TODO: Evaluate on multiple datasets at the same time. Will need to modify the validate_epoch function to support this.
 
 def main():
     # Argument parsing
@@ -115,10 +115,10 @@ def main():
     
     # Check if the dataset is already downloaded
     download.download_dataset(args.datapath, args.benchmark)
-    val_dataset = download.load_dataset(args.benchmark, args.datapath, args.thres, device, 'val', False, args.feature_size)
-
     # Create synthetic dataset
     if args.train_dataset == 'synthetic':
+        # Create dataloaders
+        # Note: Using num_workers=0 to avoid OpenGL context issues with multiprocessing
         print("Creating synthetic dataset...")
         train_dataset = OnlineCorrespondenceDataset(
             geometry_config_path='src/configs/online_synth_configs/OnlineGeometryConfig.yaml',
@@ -135,23 +135,24 @@ def main():
         persistent_workers=True,
         prefetch_factor=8,
         shuffle=True)
-    # val_dataset = OnlineCorrespondenceDataset(
-    #     geometry_config_path='src/configs/online_synth_configs/OnlineGeometryConfig_Val.yaml',
-    #     processor_config_path='src/configs/online_synth_configs/OnlineProcessorConfig.yaml',
-    #     split='val'
-    # )
-    # val_dataset.cuda()
 
-    
-    # Create dataloaders
-    # Note: Using num_workers=0 to avoid OpenGL context issues with multiprocessing
-    # val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=False, collate_fn=val_dataset.collate_fn)
-    val_dataloader = DataLoader(val_dataset,
+    if args.benchmark == 'synthetic':
+        val_dataset = OnlineCorrespondenceDataset(
+            geometry_config_path='src/configs/online_synth_configs/OnlineGeometryConfig_Val.yaml',
+            processor_config_path='src/configs/online_synth_configs/OnlineProcessorConfig.yaml',
+            split='val'
+        )
+        val_dataset.cuda()
+        val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=False, collate_fn=val_dataset.collate_fn)
+    else:
+        val_dataset = download.load_dataset(args.benchmark, args.datapath, args.thres, device, 'val', False, args.feature_size)
+        val_dataloader = DataLoader(val_dataset,
         batch_size=args.val_batch_size,
         num_workers=args.val_num_workers,
         persistent_workers=True,
         prefetch_factor=8,
         shuffle=False)
+    
 
     print(f"Train dataset size: {len(train_dataloader)}")
     print(f"Val dataset size: {len(val_dataloader)}")
@@ -191,29 +192,57 @@ def main():
     
     # Load pretrained model if specified
     if args.pretrained:
-        print(f"Loading pretrained model from {args.pretrained}")
+        # If pointing to a directory, automatically use model_best.pth
+        if os.path.isdir(args.pretrained):
+            pretrained_path = os.path.join(args.pretrained, 'model_best.pth')
+            if not os.path.exists(pretrained_path):
+                raise FileNotFoundError(f"model_best.pth not found in directory: {args.pretrained}")
+            print(f"Loading pretrained model from directory: {args.pretrained}")
+            print(f"Using checkpoint: {pretrained_path}")
+        else:
+            pretrained_path = args.pretrained
+            print(f"Loading pretrained model from: {pretrained_path}")
+        
         model, optimizer, scheduler, start_epoch, best_val = load_checkpoint(
-            model, optimizer, scheduler, filename=args.pretrained
+            model, optimizer, scheduler, filename=pretrained_path
         )
         # Transfer optimizer states to device
         for state in optimizer.state.values():
             for k, v in state.items():
                 if isinstance(v, torch.Tensor):
                     state[k] = v.to(device)
-        cur_snapshot = os.path.basename(os.path.dirname(args.pretrained))
+        
+        # For finetuning, create a new snapshot directory to avoid overwriting
+        pretrained_name = os.path.basename(os.path.dirname(args.pretrained))
+        cur_snapshot = f"{pretrained_name}_finetune_{args.name_exp}"
+        print(f"Finetuning: Creating new snapshot directory: {cur_snapshot}")
     else:
-        # Create snapshot directory
-        if not os.path.isdir(args.snapshots):
-            os.mkdir(args.snapshots)
-        
+        # Create snapshot directory for training from scratch
         cur_snapshot = args.name_exp
-        if not osp.isdir(osp.join(args.snapshots, cur_snapshot)):
-            os.makedirs(osp.join(args.snapshots, cur_snapshot))
-        
-        # Save arguments
+        print(f"Training from scratch: Using snapshot directory: {cur_snapshot}")
+    
+    # Create snapshot directory
+    if not os.path.isdir(args.snapshots):
+        os.mkdir(args.snapshots)
+    
+    if not osp.isdir(osp.join(args.snapshots, cur_snapshot)):
+        os.makedirs(osp.join(args.snapshots, cur_snapshot))
+    
+    # Save arguments (only if not loading from checkpoint)
+    if not args.pretrained:
         with open(osp.join(args.snapshots, cur_snapshot, 'args.pkl'), 'wb') as f:
             pickle.dump(args, f)
-        
+    else:
+        # For finetuning, save the finetuning arguments
+        with open(osp.join(args.snapshots, cur_snapshot, 'finetune_args.pkl'), 'wb') as f:
+            pickle.dump(args, f)
+        # Also save reference to original pretrained model
+        with open(osp.join(args.snapshots, cur_snapshot, 'pretrained_source.txt'), 'w') as f:
+            f.write(f"Finetuned from: {args.pretrained}\n")
+            f.write(f"Original model: {pretrained_name}\n")
+    
+    # Initialize best_val and start_epoch if not loading from checkpoint
+    if not args.pretrained:
         best_val = 0
         start_epoch = 0
     

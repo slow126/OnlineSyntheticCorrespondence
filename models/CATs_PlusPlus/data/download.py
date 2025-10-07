@@ -95,16 +95,84 @@ def download_from_google(token_id, filename):
             raise Exception("gdown library not available. Please install it with: pip install gdown")
         except Exception as gdown_error:
             raise Exception(f"Both download methods failed. Original error: {e}, gdown error: {gdown_error}")
-    file = tarfile.open(destination, 'r:gz')
-
     print("Extracting %s ..." % destination)
-    file.extractall(filename)
-    file.close()
+    # Extract to a temporary directory first
+    temp_extract_dir = filename + '_extracting'
+    
+    # Create the extraction directory
+    os.makedirs(temp_extract_dir, exist_ok=True)
+    
+    # Try using system tar command first (much faster than Python tarfile)
+    import subprocess
+    try:
+        print("Using system tar for faster extraction...")
+        result = subprocess.run(['tar', '-xzf', destination, '-C', temp_extract_dir], 
+                              capture_output=True, text=True, check=True)
+        print("Extraction complete using system tar")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print("System tar not available, falling back to Python tarfile...")
+        # Fallback to Python tarfile with optimized settings
+        with tarfile.open(destination, 'r:gz', bufsize=1024*1024) as file:  # 1MB buffer
+            members = file.getmembers()
+            print(f"Extracting {len(members)} files...")
+            
+            # Extract files in batches for better performance
+            batch_size = 100
+            for i in range(0, len(members), batch_size):
+                batch = members[i:i+batch_size]
+                for member in batch:
+                    file.extract(member, temp_extract_dir)
+                
+                if i % 1000 == 0:  # Progress every 1000 files
+                    print(f"Extracted {min(i+batch_size, len(members))}/{len(members)} files...")
+            
+            print(f"Extraction complete: {len(members)} files extracted")
 
+    # Remove the downloaded tar.gz file
     os.remove(destination)
-    os.rename(filename, filename + '_tmp')
-    os.rename(os.path.join(filename + '_tmp', os.path.basename(filename)), filename)
-    os.rmdir(filename+'_tmp')
+    
+    # Find the actual dataset directory inside the extracted content
+    # Handle nested directory structures like SPair-71k/SPair-71k/
+    def find_dataset_root(extract_dir, target_name):
+        """Recursively find the dataset root directory"""
+        items = os.listdir(extract_dir)
+        
+        # Look for a directory that matches our target name
+        for item in items:
+            item_path = os.path.join(extract_dir, item)
+            if os.path.isdir(item_path):
+                if item == target_name:
+                    return item_path
+                # Check if there's a nested directory with the same name
+                nested_path = os.path.join(item_path, target_name)
+                if os.path.isdir(nested_path):
+                    return nested_path
+                # Recursively check subdirectories
+                nested_result = find_dataset_root(item_path, target_name)
+                if nested_result:
+                    return nested_result
+        return None
+    
+    # Find the actual dataset directory
+    actual_dataset_dir = find_dataset_root(temp_extract_dir, os.path.basename(filename))
+    
+    if actual_dataset_dir:
+        # Move the found dataset directory to the final location
+        if actual_dataset_dir != filename:
+            if os.path.exists(filename):
+                import shutil
+                shutil.rmtree(filename)
+            shutil.move(actual_dataset_dir, filename)
+        # Clean up the temporary extraction directory
+        shutil.rmtree(temp_extract_dir)
+    else:
+        # Fallback: if we can't find the expected structure, just rename the temp directory
+        if os.path.exists(filename):
+            import shutil
+            shutil.rmtree(filename)
+        os.rename(temp_extract_dir, filename)
+    
+    print("Dataset downloaded and extracted successfully")
 
 
 def get_confirm_token(response):
