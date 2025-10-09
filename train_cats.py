@@ -356,6 +356,7 @@ def main():
             
             f.write("\nTRAINING CONFIGURATION:\n")
             f.write("-" * 30 + "\n")
+            f.write(f"Train dataset: {args.train_dataset}\n")
             f.write(f"Learning rate: {args.lr}\n")
             f.write(f"Batch size: {args.batch_size}\n")
             f.write(f"Feature size: {args.feature_size}\n")

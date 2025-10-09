@@ -1,0 +1,70 @@
+seed: 987654321
+normalize: 'imagenet'
+# normalize: False
+
+# Worley sampler configuration
+worley_sampler_dict:
+  matching_prob: 0.50
+  terrain_matching_prob: 0.50
+  texture_scale0:
+    alpha:
+      offset: 0.5
+      scale: 7.5
+  texture_scale1:
+    alpha:
+      offset: 20.0
+      scale: 80.0
+  mixing_param0:
+    alpha:
+      offset: 0.5
+      scale: 1.0
+  mixing_param1:
+    alpha:
+      offset: 0.5
+      scale: 1.0
+  terrain_texture_scale0:
+    alpha:
+      offset: 0.0
+      scale: 0.5
+  terrain_texture_scale1:
+    alpha:
+      offset: 10.0
+      scale: 40.0
+  terrain_mixing_param0:
+    alpha:
+      offset: 0.0
+      scale: 0.0
+  terrain_mixing_param1:
+    alpha:
+      offset: 0.0
+      scale: 0.0
+
+# Background color sampler configuration
+bg_color_sampler_dict:
+  matching_prob: 0.5
+  hue_offset: 0.0
+  hue_scale: 1.0
+  saturation_offset: 0.0
+  saturation_scale: 0.5
+  value_offset: 0.25
+  value_scale: 0.75
+
+# PBR sampler configuration
+pbr_sampler_dict:
+  texture_dir: "pbr_textures/polyhaven"
+  cache_size: 10
+  refresh_frequency: 100
+  texture_resolution: 256
+  device: "cpu"
+
+# Sampler configuration
+use_worley_sampler: false
+use_grf_sampler: false
+use_pbr_sampler: true
+
+subsample_flow: None #0.1
+subsample_during_train: false
+subsample_during_val: false
+subsample_without_trainer: false
+downsample_for_cats: false
+cats_feat_size: 32

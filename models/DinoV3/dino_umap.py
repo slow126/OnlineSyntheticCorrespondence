@@ -418,10 +418,14 @@ def visualize_umap_results(embeddings, categories, category_counts, params, outp
             colors = plt.cm.tab20(np.linspace(0, 1, len(unique_categories)))
             category_to_color = dict(zip(unique_categories, colors))
         
-        for category in unique_categories:
+        # Plot all categories except 'synthetic' first, then 'synthetic' last (if present)
+        categories_to_plot = [cat for cat in unique_categories if cat != 'synthetic']
+        if 'synthetic' in unique_categories:
+            categories_to_plot.append('synthetic')
+        for category in categories_to_plot:
             mask = valid_categories == category
             ax1.scatter(valid_embeddings[mask, 0], valid_embeddings[mask, 1], 
-                       c=[category_to_color[category]], label=category, alpha=0.6, s=1)
+                        c=[category_to_color[category]], label=category, alpha=0.6, s=1)
         
         ax1.set_title('Features Colored by Category')
         ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)

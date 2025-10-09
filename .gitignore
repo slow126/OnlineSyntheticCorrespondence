@@ -69,6 +69,10 @@ snapshots/
 
 # Dino Outputs
 models/DinoV3/extracted_features/
+*extracted_features/
 
 *.npy
 *.pkl
+
+# Textures
+pbr_textures/

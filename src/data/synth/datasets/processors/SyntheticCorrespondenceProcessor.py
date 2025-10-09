@@ -9,6 +9,8 @@ from src.data.synth.texture import worley_sampler
 import copy
 from src.data.synth.texture import bg_color_sampler
 import random
+from src.data.synth.texture import pbr_sampler
+from src.data.synth.texture import uv_texturing
 
 
 class SyntheticCorrespondenceProcessor:
@@ -16,10 +18,12 @@ class SyntheticCorrespondenceProcessor:
                  seed=987654321, 
                  normalize='imagenet', 
                  use_worley_sampler=True, 
-                 use_grf_sampler=False,  
+                 use_grf_sampler=False, 
+                 use_pbr_sampler=False,
                  worley_sampler_dict=None,
                  bg_color_sampler_dict=None,
                  grf_sampler=None,
+                 pbr_sampler_dict=None,
                  subsample_flow=None,
                  subsample_during_train=True,
                  subsample_during_val=False,
@@ -45,11 +49,15 @@ class SyntheticCorrespondenceProcessor:
 
         self.use_worley_sampler = use_worley_sampler
         self.use_grf_sampler = use_grf_sampler
+        self.use_pbr_sampler = use_pbr_sampler
         self.bg_color_sampler_dict = bg_color_sampler_dict
         self.worley_sampler_dict = worley_sampler_dict
+        self.pbr_sampler_dict = pbr_sampler_dict
         self.bg_color_sampler_dict = bg_color_sampler_dict
 
-        self.use_worley_sampler = use_worley_sampler
+        if self.use_pbr_sampler:
+            self.pbr_sampler = pbr_sampler.PBRSampler(**pbr_sampler_dict)
+
         if use_worley_sampler:
             self.worley_sampler = worley_sampler.WorleyParamSampler(**worley_sampler_dict)
         
@@ -66,6 +74,8 @@ class SyntheticCorrespondenceProcessor:
             normalize = imagenet_stats
         elif normalize == True:
             normalize = ((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+        elif normalize == False:
+            normalize = None
         self.normalize = normalize
 
         # Device management - defaults to CPU for flexibility
@@ -196,59 +206,79 @@ class SyntheticCorrespondenceProcessor:
         max_num_objects = batch[0]['max_num_objects'][0]
 
         self.setup_for_gpu_once(device)
-
-        # PAPAYA: This is where texturing happens.
-        # Sample first object texture
-
-        # post_batch = {}
-        # post_batch['src'] = torch.zeros(batch_size, 3, size[0], size[1]).to(device)
-        # post_batch['trg'] = torch.zeros(batch_size, 3, size[0], size[1]).to(device)
-        # post_batch['flow'] = torch.zeros(batch_size, 2, size[0], size[1]).to(device)
-        # return post_batch
-
-
-        # worley_texture = self.worley_sampler.sample((batch_size, max_num_objects)) * 100 + 1
-        # worley_scale = self.worley_scale_sampler.sample((batch_size, max_num_objects)) * 100 + 1
-        # worley_texture = worley_texture.to(device)
-        # worley_scale = worley_scale.to(device)
-
-        # worley_params = torch.cat([worley_texture.unsqueeze(-1), worley_scale.unsqueeze(-1)], dim=-1)
+        if self.use_pbr_sampler:
+            # Sample textures with matching probability
+            src_textures, trg_textures = self.pbr_sampler.sample_textures(
+                num_objects=max_num_objects,
+                matching_prob=0.7,  # 70% matching
+                target_device=device
+            )
+            
+            # Apply UV texturing to both src and trg
+            post_batch = {}
+            for i, k in enumerate(('src_img', 'trg_img')):
+                if i == 0:
+                    texture_dict = src_textures
+                else:
+                    texture_dict = trg_textures
+                
+                camera = batch[i]['camera']  # (B, 3)
+                light = camera.add(torch.normal(0, 0.20, camera.shape, device=device, generator=self.rng)).mul_(2)
+                # Apply UV texturing
+                img = uv_texturing.apply_uv_texture_batched(
+                    batch[i]['geometry'],      # (B, H, W, 3)
+                    batch[i]['normals'],       # (B, H, W, 3) 
+                    batch[i]['object_id'],    # (B, H, W)
+                    texture_dict,              # Dict mapping object_id to texture
+                    camera,        # (B, 3)
+                    light,         # (B, 3)
+                    projection='rounded_cube'
+                )
+                
+                # Convert from (B, H, W, 3) to (B, 3, H, W) for consistency
+                img = img.permute(0, 3, 1, 2)
+                
+                # Normalize images
+                if self.normalize is not None:
+                    img = normalize(img, *self.normalize)
+                
+                post_batch[k] = img
         
-        # # Copy worley textures for src and tgt
-        # worley_params_tuple = (worley_params, worley_params.clone())
-        worley_params = self.worley_sampler.sample(batch_size, max_num_objects, self.rng)
+        else:     
+            worley_params = self.worley_sampler.sample(batch_size, max_num_objects, self.rng)
 
-        if self.use_grf_sampler:
-            sampler_idx = torch.randint(0, len(self.object_texture_samplers), (1,)).item()
-            foreground = self.object_texture_samplers[sampler_idx].sample(batch_size, (self.texture_resolution, self.texture_resolution, self.texture_resolution), self.rng)
-            foreground = (foreground[0].unsqueeze(1), foreground[1].unsqueeze(1))
-
-            # Sample remaining object textures
-            for object_itr in range(batch[0]['max_num_objects'][0]):
+            if self.use_grf_sampler:
                 sampler_idx = torch.randint(0, len(self.object_texture_samplers), (1,)).item()
-                foreground_tmp = self.object_texture_samplers[sampler_idx].sample(batch_size, (self.texture_resolution, self.texture_resolution, self.texture_resolution), self.rng)
-                foreground_tmp = (foreground_tmp[0].unsqueeze(1), foreground_tmp[1].unsqueeze(1))
-                foreground = (torch.cat([foreground[0], foreground_tmp[0]], dim=1), torch.cat([foreground[1], foreground_tmp[1]], dim=1))
-        else:
-            # Don't waste memmory generating grf we don't use.
-            foreground = (torch.zeros(batch_size, 1, 1, 1, 1, 1).to(device), torch.zeros(batch_size, 1, 1, 1, 1, 1).to(device))
+                foreground = self.object_texture_samplers[sampler_idx].sample(batch_size, (self.texture_resolution, self.texture_resolution, self.texture_resolution), self.rng)
+                foreground = (foreground[0].unsqueeze(1), foreground[1].unsqueeze(1))
+
+                # Sample remaining object textures
+                for object_itr in range(batch[0]['max_num_objects'][0]):
+                    sampler_idx = torch.randint(0, len(self.object_texture_samplers), (1,)).item()
+                    foreground_tmp = self.object_texture_samplers[sampler_idx].sample(batch_size, (self.texture_resolution, self.texture_resolution, self.texture_resolution), self.rng)
+                    foreground_tmp = (foreground_tmp[0].unsqueeze(1), foreground_tmp[1].unsqueeze(1))
+                    foreground = (torch.cat([foreground[0], foreground_tmp[0]], dim=1), torch.cat([foreground[1], foreground_tmp[1]], dim=1))
+            else:
+                # Don't waste memmory generating grf we don't use.
+                foreground = (torch.zeros(batch_size, 1, 1, 1, 1, 1).to(device), torch.zeros(batch_size, 1, 1, 1, 1, 1).to(device))
 
 
-        background = self.dummy_background_sampler.sample(batch_size, size, self.rng)
-        if self.bg_color_sampler is not None:
-            bg_solid_color = self.bg_color_sampler.sample(batch_size, self.rng)
-        else:
-            bg_solid_color = (torch.zeros(batch_size, 3).to(device), torch.ones(batch_size, 3).to(device))
+            background = self.dummy_background_sampler.sample(batch_size, size, self.rng)
+            if self.bg_color_sampler is not None:
+                bg_solid_color = self.bg_color_sampler.sample(batch_size, self.rng)
+            else:
+                bg_solid_color = (torch.zeros(batch_size, 3).to(device), torch.ones(batch_size, 3).to(device))
 
 
-        post_batch = {}
-        for i, k in enumerate(('src_img', 'trg_img')):
-            img = self.render(**batch[i], foreground=foreground[i], background=background[i], worley_params=worley_params[i], bg_solid_color=bg_solid_color[i])
+            post_batch = {}
+            for i, k in enumerate(('src_img', 'trg_img')):
+                img = self.render(**batch[i], foreground=foreground[i], background=background[i], worley_params=worley_params[i], bg_solid_color=bg_solid_color[i])
 
-            # normalize images
-            img = normalize(img, *self.normalize)
+                # normalize images
+                if self.normalize is not None:
+                    img = normalize(img, *self.normalize)
 
-            post_batch[k] = img
+                post_batch[k] = img
 
         # calculate ground-truth flow from geometry
         flow = flow_by_coordinate_matching(batch[0]['geometry'], batch[1]['geometry'], self.index)
