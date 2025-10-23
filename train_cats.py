@@ -29,6 +29,7 @@ from src.data.synth.datasets.OnlineCorrespondenceDataset import OnlineCorrespond
 import models.CATs_PlusPlus.data.download as download
 from models.CATs_PlusPlus.utils_training.eval_instance import MultiBenchmarkEvaluator
 from models.CATs_PlusPlus.utils_training.optimize_multi import validate_epoch_multi_benchmark
+from src.data.synth.datasets.FlyingThingsDataset import FlyingThingsDataset
 
 # Import our synthetic dataset wrapper
 import torchvision
@@ -60,9 +61,18 @@ def main():
     parser.add_argument('--backbone', type=str, default='resnet101')
     
     # Synthetic dataset parameters
-    parser.add_argument('--train_dataset', type=str, default='synthetic', choices=['synthetic', 'spair', 'pfpascal', 'pfwillow', 'caltech'])
+    parser.add_argument('--train_dataset', type=str, default='synthetic', choices=['synthetic', 'spair', 'pfpascal', 'pfwillow', 'caltech', 'flyingthings'])
     parser.add_argument('--config', type=str, default='src/configs/online_synth_configs/OnlineDatasetConfig.yaml',
                         help='Path to YAML config file')
+                    
+    # FlyingThings dataset parameters
+    parser.add_argument('--flyingthings_root', type=str, default='/home/spencer/Data/FlyingThings3D_tiny/',
+                        help='root directory of the FlyingThings3D dataset')
+    parser.add_argument('--size', type=int, default=512,
+                        help='size of the images and flow vectors')
+    parser.add_argument('--downsample_flow', type=int, default=32,
+                        help='downsample the flow vectors to the specified size')
+
     # Training parameters
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
                         help='SGD momentum (default: 0.9)')
@@ -151,6 +161,10 @@ def main():
         )
         train_dataset.cuda()
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True, collate_fn=train_dataset.collate_fn)
+    elif args.train_dataset == 'flyingthings':
+        train_dataset = FlyingThingsDataset(root=args.flyingthings_root, split="train", transforms=None, size=(args.size, args.size), downsample_flow=args.downsample_flow)
+        train_dataset.cuda()
+        train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True)
     else:
         train_dataset = download.load_dataset(args.benchmark, args.datapath, args.thres, device, 'trn', False, args.feature_size)
         train_dataloader = DataLoader(train_dataset,
