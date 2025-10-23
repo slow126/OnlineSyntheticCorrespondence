@@ -76,3 +76,6 @@ models/DinoV3/extracted_features/
 
 # Textures
 pbr_textures/
+
+# RC launch Script
+launch_cats_rc.sh
