@@ -22,6 +22,7 @@ sys.path.append(str(project_root))
 from models.DinoV3.DinoV3 import DinoV3
 from src.data.synth.datasets.OnlineCorrespondenceDataset import OnlineCorrespondenceDataset
 from torch.utils.data import DataLoader
+from src.data.synth.datasets.FlyingThingsDataset import FlyingThingsDataset
 import yaml
 
 import models.CATs_PlusPlus.data.download as download
@@ -90,7 +91,7 @@ def main():
     
     # Dataset selection - single parameter for clarity
     parser.add_argument('--dataset', type=str, default='synthetic', 
-                       choices=['synthetic', 'spair', 'pfpascal', 'pfwillow', 'caltech'],
+                       choices=['synthetic', 'spair', 'pfpascal', 'pfwillow', 'caltech', 'flyingthings'],
                        help='Dataset to process (one complete pass)')
     parser.add_argument('--split', type=str, default='train', choices=['train', 'val', 'test'],
                        help='Dataset split to process')
@@ -102,6 +103,14 @@ def main():
     parser.add_argument('--processor_config', type=str, 
                        default='src/configs/online_synth_configs/OnlineProcessorConfig.yaml',
                        help='Path to processor config file for synthetic dataset')
+    
+    # FlyingThings dataset config
+    parser.add_argument('--flyingthings_root', type=str, default='/home/spencer/Data/FlyingThings3D_tiny/',
+                       help='root directory of the FlyingThings3D dataset')
+    parser.add_argument('--size', type=int, default=512,
+                       help='size of the images')
+    parser.add_argument('--downsample_flow', type=int, default=32,
+                       help='downsample factor for the flow')
     
     # Real dataset config
     parser.add_argument('--datapath', type=str, default='./models/Datasets_CATs',
@@ -175,6 +184,12 @@ def main():
             collate_fn=dataset.collate_fn
         )
         print(f"Dataset size: {len(dataloader)} batches")
+    elif args.dataset == 'flyingthings':
+        print("Creating FlyingThings dataset...")
+        dataset = FlyingThingsDataset(root=args.flyingthings_root, split=args.split, transforms=None, size=(args.size, args.size), downsample_flow=args.downsample_flow)
+        dataset.cuda()
+        dataloader = DataLoader(dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True)
+        print(f"Dataset size: {len(dataloader)} batches")
     else:
         # For real datasets, download if needed
         download.download_dataset(args.datapath, args.dataset)
@@ -244,7 +259,8 @@ def main():
                 if args.dataset != 'synthetic':
                     metadata['category'] = None
                     if batch_idx == 0:  # Only print this once
-                        print(f"Batch {batch_idx}: No category information found")
+                        print(f"Batch {batch_idx}: No category information found. Setting category to Dataset Name")
+                    metadata['category'] = [args.dataset] * batch['src_img'].shape[0]
                 else:
                     # Set category as a list with 'synthetic' for each sample in the batch
                     batch_size = batch['src_img'].shape[0]

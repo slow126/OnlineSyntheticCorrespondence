@@ -79,3 +79,6 @@ pbr_textures/
 
 # RC launch Script
 launch_cats_rc.sh
+
+# Debug images
+debug/
