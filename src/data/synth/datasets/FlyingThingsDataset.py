@@ -128,24 +128,17 @@ class FlowSubsampler:
             if self.random_seed is not None:
                 torch.manual_seed(self.random_seed)
             
-            # Get valid positions
-            valid_positions = torch.stack(torch.meshgrid(
-                torch.arange(H, device=flow.device),
-                torch.arange(W, device=flow.device),
-                indexing='ij'
-            ), dim=-1).reshape(-1, 2)  # (H*W, 2)
-            
-            # Filter to only valid positions
+            # Get valid indices directly (much faster)
             valid_indices = torch.nonzero(candidate_mask.flatten(), as_tuple=False).squeeze(-1)
-            valid_positions = valid_positions[valid_indices]
             
-            # Randomly select from valid positions
-            random_indices = torch.randperm(len(valid_positions))[:num_keep]
-            selected_positions = valid_positions[random_indices]
+            # Randomly select from valid indices
+            random_indices = torch.randperm(len(valid_indices))[:num_keep]
+            selected_indices = valid_indices[random_indices]
             
-            # Set selected positions to True
-            for pos in selected_positions:
-                subsample_mask[pos[0], pos[1]] = True
+            # Convert flat indices to 2D coordinates and set mask
+            selected_y = selected_indices // W
+            selected_x = selected_indices % W
+            subsample_mask[selected_y, selected_x] = True
         
         # Expand mask to match flow dimensions
         subsample_mask = subsample_mask.unsqueeze(0).unsqueeze(0)  # (1, 1, H, W)
@@ -176,30 +169,30 @@ class FlowSubsampler:
         
         # Filter out flow vectors that point outside frame boundaries
         if self.filter_out_of_bounds:
-            # Create coordinate grids for source positions
-            y_coords, x_coords = torch.meshgrid(
-                torch.arange(H, device=flow.device, dtype=flow.dtype),
-                torch.arange(W, device=flow.device, dtype=flow.dtype),
-                indexing='ij'
-            )
-            
-            # Expand grids to match batch dimension
-            x_coords = x_coords.unsqueeze(0).expand(B, -1, -1)  # (B, H, W)
-            y_coords = y_coords.unsqueeze(0).expand(B, -1, -1)  # (B, H, W)
-            
-            # Calculate target positions (where flow vectors point to)
-            target_x = x_coords + flow_subsampled[:, 0]  # (B, H, W)
-            target_y = y_coords + flow_subsampled[:, 1]  # (B, H, W)
-            
-            # Create mask for in-bounds flow vectors
-            in_bounds_mask = (
-                (target_x >= 0) & (target_x < W) & 
-                (target_y >= 0) & (target_y < H) &
-                torch.isfinite(flow_subsampled).all(dim=1, keepdim=True)
-            )
-            
-            # Update subsample mask to also filter out-of-bounds vectors
-            subsample_mask = subsample_mask & in_bounds_mask
+            # Only check selected positions (much faster)
+            selected_mask = subsample_mask[0, 0]  # (H, W)
+            if selected_mask.any():
+                # Create coordinate grids only for selected positions
+                y_coords, x_coords = torch.meshgrid(
+                    torch.arange(H, device=flow.device, dtype=flow.dtype),
+                    torch.arange(W, device=flow.device, dtype=flow.dtype),
+                    indexing='ij'
+                )
+                
+                # Calculate target positions only for selected flow vectors
+                target_x = x_coords + flow_subsampled[0, 0]  # (H, W)
+                target_y = y_coords + flow_subsampled[0, 1]  # (H, W)
+                
+                # Create mask for in-bounds flow vectors
+                in_bounds_mask = (
+                    (target_x >= 0) & (target_x < W) & 
+                    (target_y >= 0) & (target_y < H) &
+                    torch.isfinite(flow_subsampled[0]).all(dim=0)
+                )
+                
+                # Update subsample mask to also filter out-of-bounds vectors
+                subsample_mask[0, 0] = selected_mask & in_bounds_mask
+                subsample_mask = subsample_mask.expand(B, C, H, W)
         
         # Set non-selected flow vectors to invalid values (inf)
         flow_subsampled[~subsample_mask] = float('inf')
@@ -320,6 +313,9 @@ class FlyingThingsDataset(Dataset, nn.Module):
         self.downsample_flow = downsample_flow
         self.subsample_flow = subsample_flow
         
+        # Cache device detection for faster tensor operations
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        
         # Create resize transform if size is specified
         if size is not None:
             self.resize_transform = FlowAwareResize(size)
@@ -344,22 +340,16 @@ class FlyingThingsDataset(Dataset, nn.Module):
 
     def __getitem__(self, idx):
         item = self.dataset[idx]
-        src_img = torch.tensor(np.array(item[0])).permute(2, 0, 1).float() / 255.0
-        trg_img = torch.tensor(np.array(item[1])).permute(2, 0, 1).float() / 255.0
-        flow = torch.tensor(np.array(item[2])).float()
+        
+        # Convert PIL Images to tensors directly on target device (faster than np.array + torch.tensor + .to())
+        src_img = torch.from_numpy(np.array(item[0])).permute(2, 0, 1).float().to(self.device) / 255.0
+        trg_img = torch.from_numpy(np.array(item[1])).permute(2, 0, 1).float().to(self.device) / 255.0
+        flow = torch.from_numpy(np.array(item[2])).float().to(self.device)
         
         # Check if valid flow mask is available (4-tuple vs 3-tuple)
         valid_flow_mask = None
         if len(item) == 4:
-            valid_flow_mask = torch.tensor(np.array(item[3])).bool()
-
-        # Move tensors to the same device as the module
-        device = next(self.parameters()).device if list(self.parameters()) else torch.device('cpu')
-        src_img = src_img.to(device)
-        trg_img = trg_img.to(device)
-        flow = flow.to(device)
-        if valid_flow_mask is not None:
-            valid_flow_mask = valid_flow_mask.to(device)
+            valid_flow_mask = torch.from_numpy(np.array(item[3])).bool().to(self.device)
 
         # Create sample dict
         sample = {
