@@ -134,9 +134,20 @@ class CorrespondenceVisualizer:
     A visualizer for rendered correspondence data that displays:
     - Source and target images stacked vertically
     - Flow visualization with arrows showing correspondence
+    
+    Example usage:
+        # For regular grid sampling (default)
+        visualizer = CorrespondenceVisualizer(sampling_mode='regular')
+        
+        # For sparse flow data (like PointOdyssey) - plots all valid flow vectors
+        visualizer = CorrespondenceVisualizer(sampling_mode='all_valid')
+        
+        # Visualize with side-by-side layout
+        visualizer.visualize_rendered_batch(batch_dict, visualization_mode='side_by_side')
     """
     
-    def __init__(self, figsize: tuple = (20, 15), dpi: int = 150, arrow_scale: float = 1.0, arrow_density: int = 30):
+    def __init__(self, figsize: tuple = (20, 15), dpi: int = 150, arrow_scale: float = 1.0, arrow_density: int = 30, 
+                 sampling_mode: str = 'regular'):
         """
         Initialize the visualizer.
         
@@ -145,14 +156,27 @@ class CorrespondenceVisualizer:
             dpi: Dots per inch for saved images
             arrow_scale: Scale factor for flow arrows (larger = longer arrows)
             arrow_density: Number of arrows per dimension (higher = more arrows)
+            sampling_mode: 'regular' for regular grid sampling, 'all_valid' for all valid flow vectors
         """
         self.figsize = figsize
         self.dpi = dpi
         self.arrow_scale = arrow_scale
         self.arrow_density = arrow_density
+        self.sampling_mode = sampling_mode
+    
+    def set_sampling_mode(self, mode: str) -> None:
+        """
+        Set the sampling mode for flow visualization.
+        
+        Args:
+            mode: 'regular' for regular grid sampling, 'all_valid' for all valid flow vectors
+        """
+        if mode not in ['regular', 'all_valid']:
+            raise ValueError("sampling_mode must be 'regular' or 'all_valid'")
+        self.sampling_mode = mode
         
     def visualize_rendered_batch(self, batch_dict: dict, save_path: Optional[str] = None, max_samples: int = 4, 
-                                visualization_mode: str = 'overlay') -> None:
+                                visualization_mode: str = 'overlay', sampling_mode: str = 'regular') -> None:
         """
         Visualize a batch of rendered correspondence data.
         
@@ -162,6 +186,7 @@ class CorrespondenceVisualizer:
             save_path: Path to save the visualization
             max_samples: Maximum number of samples to display
             visualization_mode: 'side_by_side' or 'overlay'
+            sampling_mode: 'regular' for regular grid sampling, 'all_valid' for all valid flow vectors
         """
         if not batch_dict or 'src_img' not in batch_dict or 'trg_img' not in batch_dict or 'flow' not in batch_dict:
             raise ValueError("batch_dict must contain 'src_img', 'trg_img', and 'flow' keys")
@@ -171,6 +196,8 @@ class CorrespondenceVisualizer:
         flow_batch = batch_dict['flow']
         
         batch_size = min(src_batch.shape[0], max_samples)
+        
+        self.sampling_mode = sampling_mode
         
         if visualization_mode == 'side_by_side':
             self._visualize_side_by_side(src_batch, trg_batch, flow_batch, batch_size, save_path)
@@ -290,23 +317,12 @@ class CorrespondenceVisualizer:
         """Plot correspondence arrows between side-by-side images using exact pixel correspondences."""
         flow_h, flow_w = flow.shape[:2]
         
-        # Create exact pixel coordinate grids (no interpolation)
-        # Adaptive arrow density based on image size
-        adaptive_density = max(self.arrow_density, min(flow_h, flow_w) // 20)
-        step_y = max(1, flow_h // adaptive_density)
-        step_x = max(1, flow_w // adaptive_density)
-        
-        # Get exact pixel coordinates
-        y_indices = np.arange(0, flow_h, step_y)
-        x_indices = np.arange(0, flow_w, step_x)
-        
-        # Create coordinate grids using exact indices
-        y_coords, x_coords = np.meshgrid(y_indices, x_indices, indexing='ij')
-        
-        # Sample flow at these exact coordinates
-        # Note: flow[0] = dx (x-offset), flow[1] = dy (y-offset) based on flow_by_coordinate_matching
-        flow_x = flow[y_coords, x_coords, 0]  # dx values
-        flow_y = flow[y_coords, x_coords, 1]  # dy values
+        if self.sampling_mode == 'all_valid':
+            # Plot all valid flow vectors (useful for sparse flow data)
+            x_coords, y_coords, flow_x, flow_y = self._get_all_valid_flow_vectors(flow)
+        else:
+            # Regular grid sampling (original behavior)
+            x_coords, y_coords, flow_x, flow_y = self._get_regular_sampled_flow_vectors(flow)
         
         # Filter out invalid flow (infinite or NaN values)
         valid_mask = np.isfinite(flow_x) & np.isfinite(flow_y)
@@ -342,12 +358,10 @@ class CorrespondenceVisualizer:
         ax.set_xlim(0, w * 2)
         ax.set_ylim(h, 0)  # Flip y-axis to match image coordinates
     
-    def _plot_flow_on_image(self, ax, flow: np.ndarray, img_shape: tuple) -> None:
-        """Plot flow arrows on top of an image using exact pixel correspondences."""
-        h, w = img_shape
+    def _get_regular_sampled_flow_vectors(self, flow: np.ndarray) -> tuple:
+        """Get flow vectors sampled on a regular grid (original behavior)."""
         flow_h, flow_w = flow.shape[:2]
         
-        # Create exact pixel coordinate grids (no interpolation)
         # Adaptive arrow density based on image size
         adaptive_density = max(self.arrow_density, min(flow_h, flow_w) // 20)
         step_y = max(1, flow_h // adaptive_density)
@@ -364,6 +378,39 @@ class CorrespondenceVisualizer:
         # Note: flow[0] = dx (x-offset), flow[1] = dy (y-offset) based on flow_by_coordinate_matching
         flow_x = flow[y_coords, x_coords, 0]  # dx values
         flow_y = flow[y_coords, x_coords, 1]  # dy values
+        
+        return x_coords, y_coords, flow_x, flow_y
+    
+    def _get_all_valid_flow_vectors(self, flow: np.ndarray) -> tuple:
+        """Get all valid flow vectors from sparse flow data."""
+        flow_h, flow_w = flow.shape[:2]
+        
+        # Extract flow components
+        flow_x = flow[:, :, 0]  # dx values
+        flow_y = flow[:, :, 1]  # dy values
+        
+        # Create coordinate grids for all pixels
+        y_coords, x_coords = np.meshgrid(np.arange(flow_h), np.arange(flow_w), indexing='ij')
+        
+        # Flatten all coordinates and flow values
+        x_coords_flat = x_coords.flatten()
+        y_coords_flat = y_coords.flatten()
+        flow_x_flat = flow_x.flatten()
+        flow_y_flat = flow_y.flatten()
+        
+        return x_coords_flat, y_coords_flat, flow_x_flat, flow_y_flat
+    
+    def _plot_flow_on_image(self, ax, flow: np.ndarray, img_shape: tuple) -> None:
+        """Plot flow arrows on top of an image using exact pixel correspondences."""
+        h, w = img_shape
+        flow_h, flow_w = flow.shape[:2]
+        
+        if self.sampling_mode == 'all_valid':
+            # Plot all valid flow vectors (useful for sparse flow data)
+            x_coords, y_coords, flow_x, flow_y = self._get_all_valid_flow_vectors(flow)
+        else:
+            # Regular grid sampling (original behavior)
+            x_coords, y_coords, flow_x, flow_y = self._get_regular_sampled_flow_vectors(flow)
         
         # Filter out invalid flow (infinite or NaN values)
         valid_mask = np.isfinite(flow_x) & np.isfinite(flow_y)

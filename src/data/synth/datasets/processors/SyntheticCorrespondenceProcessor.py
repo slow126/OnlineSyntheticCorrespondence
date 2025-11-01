@@ -334,31 +334,40 @@ class SyntheticCorrespondenceProcessor:
         scale_factor_h = H / feat_size
         scale_factor_w = W / feat_size
         
-        # Downsample the flow using average pooling
+        # Downsample the flow using masked average pooling
         # We need to handle the case where flow might contain inf values
-        flow_clean = flow.clone()
+        # Only average over valid pixels to avoid skewing the result
         
         # Create a mask for valid flow values
         valid_mask = torch.isfinite(flow).all(dim=1, keepdim=True)  # (B, 1, H, W)
         
-        # Set invalid values to 0 for pooling
+        # Set invalid values to 0 for pooling (temporary, won't affect masked average)
+        flow_clean = flow.clone()
         flow_clean[~valid_mask.expand_as(flow_clean)] = 0
         
-        # Apply adaptive average pooling to downsample
-        flow_downsampled = torch.nn.functional.adaptive_avg_pool2d(
+        # Sum of valid flow values in each pooling region
+        flow_sum = torch.nn.functional.adaptive_avg_pool2d(
             flow_clean, (feat_size, feat_size)
-        )
+        ) * (scale_factor_h * scale_factor_w)  # Multiply back to get sum
+        
+        # Count of valid pixels in each pooling region
+        valid_count = torch.nn.functional.adaptive_avg_pool2d(
+            valid_mask.float(), (feat_size, feat_size)
+        ) * (scale_factor_h * scale_factor_w)  # Multiply back to get count
+        
+        # Compute masked average: divide sum by count of valid pixels (not total pixels)
+        # Avoid division by zero for regions with no valid pixels
+        valid_count_safe = torch.clamp(valid_count, min=1e-8)
+        flow_downsampled = flow_sum / valid_count_safe
         
         # Scale the flow values by the average scale factor to maintain proper magnitude
         # Use the average of both scale factors for consistent scaling
         avg_scale_factor = (scale_factor_h + scale_factor_w) / 2
         flow_downsampled = flow_downsampled / avg_scale_factor
         
-        # Restore invalid values as inf where appropriate
+        # Mark regions with no valid pixels as invalid (set to 0 or inf)
         # Create downsampled mask for invalid regions
-        valid_mask_downsampled = torch.nn.functional.adaptive_avg_pool2d(
-            valid_mask.float(), (feat_size, feat_size)
-        ) > 0.5  # Keep as valid if majority of pixels in the region are valid
+        valid_mask_downsampled = valid_count > 0.5  # At least 0.5 valid pixels
         
         # Set invalid regions back to [0, 0]
         flow_downsampled[~valid_mask_downsampled.expand_as(flow_downsampled)] = 0

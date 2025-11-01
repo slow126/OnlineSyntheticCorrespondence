@@ -53,8 +53,7 @@ class FlowSubsampler:
     Keeps only a percentage of flow vectors and sets the rest to None.
     """
     
-    def __init__(self, subsample_ratio: float = 0.1, random_seed: Optional[int] = None, 
-                 reverse_flow: bool = False, swap_xy: bool = False, flip_x: bool = False, flip_y: bool = False,
+    def __init__(self, subsample_ratio: float = 0.1, random_seed: Optional[int] = None,
                  filter_out_of_bounds: bool = True, use_valid_mask: bool = True):
         """
         Initialize flow subsampler.
@@ -62,19 +61,11 @@ class FlowSubsampler:
         Args:
             subsample_ratio: Fraction of flow vectors to keep (e.g., 0.1 for 10%)
             random_seed: Random seed for reproducible subsampling
-            reverse_flow: If True, reverse the flow direction (multiply by -1)
-            swap_xy: If True, swap x and y components of flow
-            flip_x: If True, flip the sign of x component
-            flip_y: If True, flip the sign of y component
             filter_out_of_bounds: If True, filter out flow vectors that point outside frame boundaries
             use_valid_mask: If True, use valid_flow_mask to filter out occluded pixels
         """
         self.subsample_ratio = subsample_ratio
         self.random_seed = random_seed
-        self.reverse_flow = reverse_flow
-        self.swap_xy = swap_xy
-        self.flip_x = flip_x
-        self.flip_y = flip_y
         self.filter_out_of_bounds = filter_out_of_bounds
         self.use_valid_mask = use_valid_mask
         if random_seed is not None:
@@ -147,25 +138,8 @@ class FlowSubsampler:
         # Create subsampled flow
         flow_subsampled = flow.clone()
         
-        # Apply flow transformations
-        if self.reverse_flow:
-            flow_subsampled = -flow_subsampled
-        
-        if self.swap_xy:
-            # Swap x and y components: [x, y] -> [y, x]
-            flow_subsampled = flow_subsampled.flip(1)  # Flip along channel dimension
-        
-        if self.flip_x:
-            if is_batched:
-                flow_subsampled[:, 0] = -flow_subsampled[:, 0]  # Flip x component
-            else:
-                flow_subsampled[0, 0] = -flow_subsampled[0, 0]  # Flip x component
-        
-        if self.flip_y:
-            if is_batched:
-                flow_subsampled[:, 1] = -flow_subsampled[:, 1]  # Flip y component
-            else:
-                flow_subsampled[0, 1] = -flow_subsampled[0, 1]  # Flip y component
+        # Note: Flow transformations (reverse_flow, swap_xy, flip_x, flip_y) are NOT applied here
+        # They are applied once at the end in FlyingThingsDataset.__getitem__ to ensure consistency
         
         # Filter out flow vectors that point outside frame boundaries
         if self.filter_out_of_bounds:
@@ -210,22 +184,26 @@ class FlowDownsampler:
     Converts flow from (B, 2, H, W) to (B, 2, feat_size, feat_size) format expected by CATS.
     """
     
-    def __init__(self, feat_size: int, reverse_flow: bool = False, swap_xy: bool = False, flip_x: bool = False, flip_y: bool = False):
+    def __init__(self, feat_size: int):
+        """
+        Initialize flow downsampler.
+        
+        Args:
+            feat_size: Target feature size (e.g., 32 for 32x32 downsampled flow)
+        """
         self.feat_size = feat_size
-        self.reverse_flow = reverse_flow
-        self.swap_xy = swap_xy
-        self.flip_x = flip_x
-        self.flip_y = flip_y
     
     def __call__(self, flow: torch.Tensor) -> torch.Tensor:
         """
         Downsample flow to be compatible with CATS model.
+        Flow is normalized to feature grid units to match CATS convention.
         
         Args:
-            flow: Input flow tensor of shape (B, 2, H, W) or (2, H, W)
+            flow: Input flow tensor of shape (B, 2, H, W) or (2, H, W) in pixel space
             
         Returns:
             Downsampled flow tensor of shape (B, 2, feat_size, feat_size) or (2, feat_size, feat_size)
+            in feature grid units (normalized by downsampling factor)
         """
         if flow is None:
             return flow
@@ -242,54 +220,47 @@ class FlowDownsampler:
         scale_factor_h = H / self.feat_size
         scale_factor_w = W / self.feat_size
         
-        # Downsample the flow using average pooling
+        # Downsample the flow using masked average pooling
         # We need to handle the case where flow might contain inf values
-        flow_clean = flow.clone()
+        # Only average over valid pixels to avoid skewing the result
         
         # Create a mask for valid flow values
         valid_mask = torch.isfinite(flow).all(dim=1, keepdim=True)  # (B, 1, H, W)
         
-        # Set invalid values to 0 for pooling
+        # Set invalid values to 0 for pooling (temporary, won't affect masked average)
+        flow_clean = flow.clone()
         flow_clean[~valid_mask.expand_as(flow_clean)] = 0
         
-        # Apply adaptive average pooling to downsample
-        flow_downsampled = torch.nn.functional.adaptive_avg_pool2d(
+        # Sum of valid flow values in each pooling region
+        flow_sum = torch.nn.functional.adaptive_avg_pool2d(
             flow_clean, (self.feat_size, self.feat_size)
-        )
+        ) * (scale_factor_h * scale_factor_w)  # Multiply back to get sum
         
-        # Scale the flow values by the average scale factor to maintain proper magnitude
-        # Use the average of both scale factors for consistent scaling
-        avg_scale_factor = (scale_factor_h + scale_factor_w) / 2
-        flow_downsampled = flow_downsampled / avg_scale_factor
-        
-        # Restore invalid values as inf where appropriate
-        # Create downsampled mask for invalid regions
-        valid_mask_downsampled = torch.nn.functional.adaptive_avg_pool2d(
+        # Count of valid pixels in each pooling region
+        valid_count = torch.nn.functional.adaptive_avg_pool2d(
             valid_mask.float(), (self.feat_size, self.feat_size)
-        ) > 0.5  # Keep as valid if majority of pixels in the region are valid
+        ) * (scale_factor_h * scale_factor_w)  # Multiply back to get count
         
+        # Compute masked average: divide sum by count of valid pixels (not total pixels)
+        # Avoid division by zero for regions with no valid pixels
+        valid_count_safe = torch.clamp(valid_count, min=1e-8)
+        flow_downsampled = flow_sum / valid_count_safe
+
+        # Normalize flow to feature grid units to match CATS convention
+        # CATS expects flow in feature grid units, not pixel space
+        # A flow of 1.0 = one feature grid cell = (H // feat_size) pixels
+        downsampling_factor = H // self.feat_size
+        flow_downsampled = flow_downsampled / downsampling_factor
+
+        # Mark regions with no valid pixels as invalid (set to 0 or inf)
+        # Create downsampled mask for invalid regions
+        valid_mask_downsampled = valid_count > 0.5  # At least 0.5 valid pixels
+
         # Set invalid regions back to [0, 0]
         flow_downsampled[~valid_mask_downsampled.expand_as(flow_downsampled)] = 0
         
-        # Apply flow transformations
-        if self.reverse_flow:
-            flow_downsampled = -flow_downsampled
-        
-        if self.swap_xy:
-            # Swap x and y components: [x, y] -> [y, x]
-            flow_downsampled = flow_downsampled.flip(1)  # Flip along channel dimension
-        
-        if self.flip_x:
-            if is_batched:
-                flow_downsampled[:, 0] = -flow_downsampled[:, 0]  # Flip x component
-            else:
-                flow_downsampled[0, 0] = -flow_downsampled[0, 0]  # Flip x component
-        
-        if self.flip_y:
-            if is_batched:
-                flow_downsampled[:, 1] = -flow_downsampled[:, 1]  # Flip y component
-            else:
-                flow_downsampled[0, 1] = -flow_downsampled[0, 1]  # Flip y component
+        # Note: Flow transformations (reverse_flow, swap_xy, flip_x, flip_y) are NOT applied here
+        # They are applied once at the end in FlyingThingsDataset.__getitem__ to ensure consistency
         
         # Remove batch dimension if input was single flow
         if not is_batched:
@@ -313,6 +284,12 @@ class FlyingThingsDataset(Dataset, nn.Module):
         self.downsample_flow = downsample_flow
         self.subsample_flow = subsample_flow
         
+        # Store flow transformation parameters (applied once at the end, not in processors)
+        self.reverse_flow = reverse_flow
+        self.swap_xy = swap_xy
+        self.flip_x = flip_x
+        self.flip_y = flip_y
+        
         # Cache device detection for faster tensor operations
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
@@ -323,14 +300,16 @@ class FlyingThingsDataset(Dataset, nn.Module):
             self.resize_transform = None
         
         # Create flow subsampler if subsample_flow is specified
+        # Note: flow transformations are NOT applied here, they're applied at the end in __getitem__
         if subsample_flow is not None:
-            self.flow_subsampler = FlowSubsampler(subsample_flow, subsample_flow_seed, reverse_flow, swap_xy, flip_x, flip_y, filter_out_of_bounds, use_valid_mask)
+            self.flow_subsampler = FlowSubsampler(subsample_flow, subsample_flow_seed, filter_out_of_bounds, use_valid_mask)
         else:
-            self.flow_subsampler = None
+            self.flow_subsampler = FlowSubsampler(1.0, subsample_flow_seed, filter_out_of_bounds, use_valid_mask)
         
         # Create flow downsampler if downsample_flow is specified
+        # Note: flow transformations are NOT applied here, they're applied at the end in __getitem__
         if downsample_flow is not None:
-            self.flow_downsampler = FlowDownsampler(downsample_flow, reverse_flow, swap_xy, flip_x, flip_y)
+            self.flow_downsampler = FlowDownsampler(downsample_flow)
         else:
             self.flow_downsampler = None
         
@@ -375,6 +354,32 @@ class FlyingThingsDataset(Dataset, nn.Module):
         if self.flow_downsampler is not None:
             sample['flow'] = self.flow_downsampler(sample['flow'])
         
+        # Apply flow transformations once at the end (after all processing)
+        # This ensures consistent flow direction regardless of which processors are used
+        flow = sample['flow']
+        is_batched = flow.dim() == 4
+        
+        if self.reverse_flow:
+            flow = -flow
+        
+        if self.swap_xy:
+            # Swap x and y components: [x, y] -> [y, x]
+            flow = flow.flip(1)  # Flip along channel dimension
+        
+        if self.flip_x:
+            if is_batched:
+                flow[:, 0] = -flow[:, 0]  # Flip x component
+            else:
+                flow[0] = -flow[0]  # Flip x component
+        
+        if self.flip_y:
+            if is_batched:
+                flow[:, 1] = -flow[:, 1]  # Flip y component
+            else:
+                flow[1] = -flow[1]  # Flip y component
+        
+        sample['flow'] = flow
+        
         return sample
     
     
@@ -387,11 +392,12 @@ if __name__ == "__main__":
         root="/home/spencer/Data/FlyingThings3D_tiny/", 
         split="train", 
         transforms=None, 
-        subsample_flow=0.02, 
+        subsample_flow=0.1, 
         downsample_flow=None, 
         reverse_flow=True, 
         filter_out_of_bounds=True,
-        use_valid_mask=True
+        use_valid_mask=True,
+        size=(512, 512)
     )
     sample_reversed = dataset_reversed[0]
     print(f"Reversed flow sample values: {sample_reversed['flow'][:, 16, 16]}")
@@ -407,3 +413,110 @@ if __name__ == "__main__":
     visualizer.visualize_rendered_batch(batch, save_path="debug/flyingthings_dataset_reversed_overlay.png", visualization_mode="overlay")
     visualizer.visualize_rendered_batch(batch, save_path="debug/flyingthings_dataset_reversed_side_by_side.png", visualization_mode="side_by_side")
     print("Saved reversed flow visualizations to debug/flyingthings_dataset_reversed_overlay.png and debug/flyingthings_dataset_reversed_side_by_side.png")
+    
+    # Test with downsampled flow for CATS
+    print("\n" + "="*60)
+    print("Testing with downsampled flow for CATS:")
+    print("="*60)
+    
+    # Create dataset with full-resolution flow (no downsampling)
+    dataset_full = FlyingThingsDataset(
+        root="/home/spencer/Data/FlyingThings3D_tiny/", 
+        split="train", 
+        transforms=None, 
+        subsample_flow=0.1, 
+        downsample_flow=None,  # Keep full resolution
+        reverse_flow=True, 
+        filter_out_of_bounds=True,
+        use_valid_mask=True,
+        size=(512, 512)
+    )
+    
+    # Create dataset with downsampled flow
+    dataset_downsampled = FlyingThingsDataset(
+        root="/home/spencer/Data/FlyingThings3D_tiny/", 
+        split="train", 
+        transforms=None, 
+        subsample_flow=1.0, 
+        downsample_flow=32,  # feat_size=32
+        reverse_flow=True, 
+        filter_out_of_bounds=True,
+        use_valid_mask=True,
+        size=(512, 512)
+    )
+    
+    sample_downsampled = dataset_downsampled[0]
+    print(f"Downsampled flow shape: {sample_downsampled['flow'].shape}")
+    print(f"Downsampled flow sample values: {sample_downsampled['flow'][:, 10, 10]}")
+    print(f"Flow value ranges - X: [{sample_downsampled['flow'][0].min():.2f}, {sample_downsampled['flow'][0].max():.2f}]")
+    print(f"Flow value ranges - Y: [{sample_downsampled['flow'][1].min():.2f}, {sample_downsampled['flow'][1].max():.2f}]")
+    
+    # Test with DataLoaders for comparison (shuffle=False to get same samples)
+    print("\nTesting DataLoader with downsampled flow (shuffle=False for comparison):")
+    try:
+        from src.data.synth.datasets.cats_flow_visualizers import CATSFlowVisualizer
+        
+        cats_visualizer = CATSFlowVisualizer(
+            feat_size=32,
+            figsize=(20, 15),
+            dpi=150,
+            show_patch_boundaries=True
+        )
+        
+        # Use shuffle=False to ensure same samples for comparison
+        dataloader_full = DataLoader(dataset_full, batch_size=4, shuffle=False)
+        dataloader_downsampled = DataLoader(dataset_downsampled, batch_size=4, shuffle=False)
+        
+        batch_full = next(iter(dataloader_full))
+        batch_downsampled = next(iter(dataloader_downsampled))
+        
+        print(f"Full-res batch shapes: src={batch_full['src_img'].shape}, trg={batch_full['trg_img'].shape}, flow={batch_full['flow'].shape}")
+        print(f"Downsampled batch shapes: src={batch_downsampled['src_img'].shape}, trg={batch_downsampled['trg_img'].shape}, flow={batch_downsampled['flow'].shape}")
+        
+        # Prepare batch dict for downsampled-only visualization
+        batch_dict_downsampled = {
+            'src_img': batch_downsampled['src_img'],
+            'trg_img': batch_downsampled['trg_img'],
+            'flow_downsampled': batch_downsampled['flow']
+        }
+        
+        # Visualize downsampled flow (side-by-side)
+        print("\nCreating downsampled flow visualization (side-by-side)...")
+        cats_visualizer.visualize_downsampled_flow_batch(
+            batch_dict_downsampled,
+            save_path="debug/flyingthings_dataset_downsampled_flow.png",
+            max_samples=4,
+            visualization_mode='side_by_side'
+        )
+        print("Saved downsampled flow visualization to debug/flyingthings_dataset_downsampled_flow.png")
+        
+        # Visualize downsampled flow (overlay)
+        print("\nCreating downsampled flow visualization (overlay)...")
+        cats_visualizer.visualize_downsampled_flow_batch(
+            batch_dict_downsampled,
+            save_path="debug/flyingthings_dataset_downsampled_flow_overlay.png",
+            max_samples=4,
+            visualization_mode='overlay'
+        )
+        print("Saved downsampled flow overlay visualization to debug/flyingthings_dataset_downsampled_flow_overlay.png")
+        
+        # Prepare batch dict for comparison (both full-res and downsampled)
+        batch_dict_comparison = {
+            'src_img': batch_full['src_img'],  # Use same images from full-res dataset
+            'trg_img': batch_full['trg_img'],
+            'flow_full': batch_full['flow'],
+            'flow_downsampled': batch_downsampled['flow']
+        }
+        
+        # Visualize comparison (full-res vs downsampled)
+        print("\nCreating comparison visualization (full-res vs downsampled)...")
+        cats_visualizer.visualize_comparison_batch(
+            batch_dict_comparison,
+            save_path="debug/flyingthings_dataset_flow_comparison.png",
+            max_samples=4
+        )
+        print("Saved comparison visualization to debug/flyingthings_dataset_flow_comparison.png")
+        
+    except ImportError as e:
+        print(f"Could not import CATSFlowVisualizer: {e}")
+        print("Skipping downsampled flow visualization")

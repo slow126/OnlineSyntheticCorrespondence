@@ -32,13 +32,14 @@ def train_epoch(net,
                 train_loader,
                 device,
                 epoch,
-                train_writer):
+                train_writer,
+                steps_per_epoch = None):
     n_iter = epoch*len(train_loader)
     
     net.train()
     running_total_loss = 0
 
-    pbar = tqdm(enumerate(train_loader), total=len(train_loader))
+    pbar = tqdm(enumerate(train_loader), total=steps_per_epoch if steps_per_epoch is not None else len(train_loader))
     for i, mini_batch in pbar:
         optimizer.zero_grad()
         flow_gt = mini_batch['flow'].to(device)

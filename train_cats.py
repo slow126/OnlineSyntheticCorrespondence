@@ -30,6 +30,7 @@ import models.CATs_PlusPlus.data.download as download
 from models.CATs_PlusPlus.utils_training.eval_instance import MultiBenchmarkEvaluator
 from models.CATs_PlusPlus.utils_training.optimize_multi import validate_epoch_multi_benchmark
 from src.data.synth.datasets.FlyingThingsDataset import FlyingThingsDataset
+from src.data.synth.datasets.PointOdysseyCorrespondence import PointOdysseyFlowDataset
 
 # Import our synthetic dataset wrapper
 import torchvision
@@ -61,7 +62,7 @@ def main():
     parser.add_argument('--backbone', type=str, default='resnet101')
     
     # Synthetic dataset parameters
-    parser.add_argument('--train_dataset', type=str, default='synthetic', choices=['synthetic', 'spair', 'pfpascal', 'pfwillow', 'caltech', 'flyingthings'])
+    parser.add_argument('--train_dataset', type=str, default='synthetic', choices=['synthetic', 'spair', 'pfpascal', 'pfwillow', 'caltech', 'flyingthings', 'pointodyssey'])
     parser.add_argument('--config', type=str, default='src/configs/online_synth_configs/OnlineDatasetConfig.yaml',
                         help='Path to YAML config file')
                     
@@ -72,6 +73,14 @@ def main():
                         help='size of the images and flow vectors')
     parser.add_argument('--downsample_flow', type=int, default=32,
                         help='downsample the flow vectors to the specified size')
+
+    # PointOdyssey dataset parameters
+    parser.add_argument('--pointodyssey_root', type=str, default='/home/spencer/Data/sample',
+                        help='root directory of the PointOdyssey dataset')
+    parser.add_argument('--verbose_pointodyssey', type=boolean_string, nargs='?', const=True, default=False,
+                        help='verbose mode')
+    parser.add_argument('--all_points_pointodyssey', type=boolean_string, nargs='?', const=True, default=False,
+                        help='use all points in the PointOdyssey dataset')
 
     # Training parameters
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
@@ -85,9 +94,10 @@ def main():
     parser.add_argument('--scheduler', type=str, default='step', choices=['step', 'cosine'])
     parser.add_argument('--step', type=str, default='[70, 80, 90]')
     parser.add_argument('--step_gamma', type=float, default=0.5)
-    
     parser.add_argument('--freeze', type=boolean_string, nargs='?', const=True, default=True)
     parser.add_argument('--augmentation', type=boolean_string, nargs='?', const=True, default=True)
+    parser.add_argument('--steps_per_epoch', type=int, default=None,
+                        help='number of steps per epoch')
     
     # Evaluation parameters
     parser.add_argument('--benchmark', type=str, default='spair', choices=['synthetic', 'spair', 'pfpascal', 'pfwillow', 'caltech'],
@@ -163,7 +173,11 @@ def main():
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True, collate_fn=train_dataset.collate_fn)
     elif args.train_dataset == 'flyingthings':
         train_dataset = FlyingThingsDataset(root=args.flyingthings_root, split="train", transforms=None, size=(args.size, args.size), downsample_flow=args.downsample_flow, 
-                                            subsample_flow=0.9, use_valid_mask=True, reverse_flow=True, filter_out_of_bounds=True)
+                                            subsample_flow=0.5, use_valid_mask=True, reverse_flow=True, filter_out_of_bounds=True)
+        train_dataset.cuda()
+        train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True)
+    elif args.train_dataset == 'pointodyssey':
+        train_dataset = PointOdysseyFlowDataset(dataset_location=args.pointodyssey_root, dset='train', use_augs=False, S=8, N=512, quick=False, verbose=True, resize_size=(args.size+64, args.size+64), crop_size=(args.size, args.size), filter_instances=True, downsample_for_cats=True, cats_feat_size=args.feature_size, all_points=True)
         train_dataset.cuda()
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True)
     else:
@@ -205,9 +219,6 @@ def main():
         print(f"Val dataset size: {len(val_dataloader)}")
     
 
-    
-    
-    
     # Initialize model
     print("Initializing CATs++ model...")
     if args.freeze:
@@ -444,39 +455,80 @@ def main():
 
         debug_dir = Path("debug")
         debug_dir.mkdir(exist_ok=True, parents=True)
+        
+        # Create dataset-specific subdirectory
+        dataset_debug_dir = debug_dir / args.train_dataset
+        dataset_debug_dir.mkdir(exist_ok=True, parents=True)
+        
         try:
             sample_batch = next(iter(train_dataloader))
             # The new batch format is a dict with keys like 'src_img', 'trg_img', 'flow', etc.
             batch = sample_batch
 
             # Take the first sample in the batch for visualization
-            src_img_tensor = batch['src_img'][0].cpu()
-            trg_img_tensor = batch['trg_img'][0].cpu()
             flow_tensor = batch['flow'][0].cpu()
 
-            # Normalize images for visualization ([0,1])
-            src_img_vis = (src_img_tensor - src_img_tensor.min()) / (src_img_tensor.max() - src_img_tensor.min() + 1e-8)
-            trg_img_vis = (trg_img_tensor - trg_img_tensor.min()) / (trg_img_tensor.max() - trg_img_tensor.min() + 1e-8)
+            # Visualize downsampled flow using CATSFlowVisualizer (raw batch, no normalization)
+            try:
+                from src.data.synth.datasets.cats_flow_visualizers import CATSFlowVisualizer
+                
+                # Check if flow is downsampled (feat_size x feat_size) or full resolution
+                flow_shape = flow_tensor.shape
+                if len(flow_shape) == 3 and flow_shape[1] == flow_shape[2] and flow_shape[1] == args.feature_size:
+                    # Flow is downsampled
+                    print(f"\nFlow is downsampled: shape={flow_shape}, feat_size={args.feature_size}")
+                    
+                    # Create batch dict with raw images (not normalized - visualizer will handle display)
+                    batch_dict_raw = {
+                        'src_img': batch['src_img'].cpu(),  # First sample only, keep on CPU
+                        'trg_img': batch['trg_img'].cpu(),
+                        'flow_downsampled': batch['flow'].cpu()
+                    }
+                    
+                    # Create visualizer with normalization disabled to see actual batch values
+                    cats_visualizer = CATSFlowVisualizer(
+                        feat_size=args.feature_size,
+                        figsize=(20, 15),
+                        dpi=150,
+                        show_patch_boundaries=True,
+                        normalize_images=False  # Don't normalize to see actual batch values
+                    )
+                    
+                    # Visualize side-by-side
+                    cats_visualizer.visualize_downsampled_flow_batch(
+                        batch_dict_raw,
+                        save_path=str(dataset_debug_dir / "batch_downsampled_flow_side_by_side.png"),
+                        max_samples=4,
+                        visualization_mode='side_by_side'
+                    )
+                    
+                    # Visualize overlay
+                    cats_visualizer.visualize_downsampled_flow_batch(
+                        batch_dict_raw,
+                        save_path=str(dataset_debug_dir / "batch_downsampled_flow_overlay.png"),
+                        max_samples=4,
+                        visualization_mode='overlay'
+                    )
+                    
+                    print(f"Saved CATS flow visualizations to {dataset_debug_dir} (raw batch, no normalization)")
+                else:
+                    print(f"\nFlow is full resolution: shape={flow_shape}, skipping downsampled flow visualization")
+                    
+            except ImportError as e:
+                print(f"Could not import CATSFlowVisualizer: {e}")
+            except Exception as e:
+                print(f"Error creating CATS flow visualization: {e}")
+                import traceback
+                traceback.print_exc()
 
-            # Save source and target images
-            torchvision.utils.save_image(src_img_vis, debug_dir / "sample_src.png")
-            torchvision.utils.save_image(trg_img_vis, debug_dir / "sample_trg.png")
-            # Save flow as numpy for inspection
-            np.save(debug_dir / "sample_flow.npy", flow_tensor.numpy())
-
-            # # Optionally save keypoints for inspection
-            # src_kps = batch['src_kps'][0].cpu().numpy()
-            # trg_kps = batch['trg_kps'][0].cpu().numpy()
-            # np.save(debug_dir / "sample_src_kps.npy", src_kps)
-            # np.save(debug_dir / "sample_trg_kps.npy", trg_kps)
-
-            print(f"Saved a sample batch to {debug_dir}")
+            print(f"Saved sample batch visualizations to {dataset_debug_dir}")
         except Exception as e:
             print(f"Could not save sample batch for debug: {e}")
 
         # Training
         train_loss = optimize.train_epoch(
-            model, optimizer, train_dataloader, device, epoch, train_writer
+            model, optimizer, train_dataloader, device, epoch, train_writer, 
+            steps_per_epoch=args.steps_per_epoch
         )
         train_writer.add_scalar('train loss', train_loss, epoch)
         train_writer.add_scalar('learning_rate', scheduler.get_lr()[0], epoch)
