@@ -75,7 +75,7 @@ def main():
                         help='downsample the flow vectors to the specified size')
 
     # PointOdyssey dataset parameters
-    parser.add_argument('--pointodyssey_root', type=str, default='/home/spencer/Data/sample',
+    parser.add_argument('--pointodyssey_root', type=str, default='/home/spencer/Data/PointOdyssey',
                         help='root directory of the PointOdyssey dataset')
     parser.add_argument('--verbose_pointodyssey', type=boolean_string, nargs='?', const=True, default=False,
                         help='verbose mode')
@@ -177,7 +177,7 @@ def main():
         train_dataset.cuda()
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True)
     elif args.train_dataset == 'pointodyssey':
-        train_dataset = PointOdysseyFlowDataset(dataset_location=args.pointodyssey_root, dset='train', use_augs=False, S=8, N=512, quick=False, verbose=True, resize_size=(args.size+64, args.size+64), crop_size=(args.size, args.size), filter_instances=True, downsample_for_cats=True, cats_feat_size=args.feature_size, all_points=True)
+        train_dataset = PointOdysseyFlowDataset(dataset_location=args.pointodyssey_root, dset='train', use_augs=False, S=16, N=512, quick=False, verbose=True, resize_size=(args.size+64, args.size+64), crop_size=(args.size, args.size), filter_instances=True, downsample_for_cats=True, cats_feat_size=args.feature_size, all_points=True)
         train_dataset.cuda()
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True)
     else:
@@ -474,10 +474,20 @@ def main():
                 
                 # Check if flow is downsampled (feat_size x feat_size) or full resolution
                 flow_shape = flow_tensor.shape
+                
                 if len(flow_shape) == 3 and flow_shape[1] == flow_shape[2] and flow_shape[1] == args.feature_size:
                     # Flow is downsampled
                     print(f"\nFlow is downsampled: shape={flow_shape}, feat_size={args.feature_size}")
-                    
+                    non_zero_count = ((flow_tensor[0] != 0) | (flow_tensor[1] != 0)).sum()
+                    print(f"Non-zero flow count: {non_zero_count} for dataset {args.train_dataset}")
+                    flow_norms = flow_tensor.norm(dim=0)
+                    non_zero_mask = flow_norms > 0
+                    if non_zero_mask.any():
+                        avg_length = flow_norms[non_zero_mask].mean().item()
+                    else:
+                        avg_length = 0.0
+                    print(f"Average flow length: {avg_length} for dataset {args.train_dataset}")
+
                     # Create batch dict with raw images (not normalized - visualizer will handle display)
                     batch_dict_raw = {
                         'src_img': batch['src_img'].cpu(),  # First sample only, keep on CPU

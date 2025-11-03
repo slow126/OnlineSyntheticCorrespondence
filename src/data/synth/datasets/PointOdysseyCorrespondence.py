@@ -47,6 +47,7 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                  quick: bool = False,
                  verbose: bool = False,
                  filter_instances: bool = False,
+                 reverse_flow: bool = False,
                  downsample_for_cats: bool = False,
                  cats_feat_size: int = 32,
                  all_points: bool = False):
@@ -103,7 +104,7 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
         self.downsample_for_cats = downsample_for_cats
         self.cats_feat_size = cats_feat_size
         self.verbose = verbose
-
+        self.reverse_flow = reverse_flow
         # Device management - defaults to CPU
         self._device = torch.device('cpu')
         
@@ -145,7 +146,7 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
         # Sample two non-repeating frames (order doesn't matter)
         
         # i, j = _random.sample(range(self.S), 2)
-        i, j = 0, -1
+        i, j = 0, self.S - 1
 
         src_img = rgbs[i]
         trg_img = rgbs[j]
@@ -557,7 +558,7 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
         print(f"Class 0 (background) is colored bright red")
 
 
-def test_dataset_with_visualization(dataset_path: str = None, size: Optional[int] = None):
+def test_dataset_with_visualization(dataset_path: str = None, size: Optional[int] = None, downsample_for_cats: bool = False):
     """Test the dataset wrapper with visualization."""
     print("Testing PointOdyssey Flow Dataset with Visualization...")
     
@@ -591,15 +592,15 @@ def test_dataset_with_visualization(dataset_path: str = None, size: Optional[int
         dataset_location=dataset_path,
         dset='train',
         use_augs=False,
-        S=8,
-        N=512,
+        S=4,
+        N=64,
         quick=False,  # Use quick mode for testing
         verbose=True,
         filter_instances=True,
         resize_size=(size+64, size+64),
         crop_size=(size, size),
-        all_points=True,
-        downsample_for_cats=False,
+        all_points=downsample_for_cats,
+        downsample_for_cats=downsample_for_cats,
         cats_feat_size=32,
     )
     
@@ -746,11 +747,12 @@ def test_dataset_with_visualization(dataset_path: str = None, size: Optional[int
             'flow_downsampled': batch_dict['flow']
         }
         
-        # cats_visualizer.visualize_downsampled_flow_batch(
-        #     batch_dict_downsampled,
-        #     save_path="./debug/pointodyssey_flow_downsampled.png",
-        #     max_samples=len(batch_data)
-        # )
+        if downsample_for_cats:
+            cats_visualizer.visualize_downsampled_flow_batch(
+                batch_dict_downsampled,
+                save_path="./debug/pointodyssey_flow_downsampled.png",
+                max_samples=len(batch_data)
+            )
         
         # Visualize with overlay layout
         print("Creating overlay visualization...")

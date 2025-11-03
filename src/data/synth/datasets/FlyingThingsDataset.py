@@ -274,8 +274,7 @@ class FlyingThingsDataset(Dataset, nn.Module):
                  downsample_flow: Optional[int] = None,
                  subsample_flow: Optional[float] = None,
                  subsample_flow_seed: Optional[int] = None,
-                 reverse_flow: bool = False, swap_xy: bool = False, 
-                 flip_x: bool = False, flip_y: bool = False,
+                 reverse_flow: bool = False,
                  filter_out_of_bounds: bool = True, use_valid_mask: bool = True):
         Dataset.__init__(self)
         nn.Module.__init__(self)
@@ -286,9 +285,6 @@ class FlyingThingsDataset(Dataset, nn.Module):
         
         # Store flow transformation parameters (applied once at the end, not in processors)
         self.reverse_flow = reverse_flow
-        self.swap_xy = swap_xy
-        self.flip_x = flip_x
-        self.flip_y = flip_y
         
         # Cache device detection for faster tensor operations
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -313,17 +309,23 @@ class FlyingThingsDataset(Dataset, nn.Module):
         else:
             self.flow_downsampler = None
         
-        
     def __len__(self):
         return len(self.dataset)
 
     def __getitem__(self, idx):
         item = self.dataset[idx]
+        if self.reverse_flow:
+            src_index = 1
+            trg_index = 0
+        else:
+            src_index = 0
+            trg_index = 1
         
         # Convert PIL Images to tensors directly on target device (faster than np.array + torch.tensor + .to())
-        src_img = torch.from_numpy(np.array(item[0])).permute(2, 0, 1).float().to(self.device) / 255.0
-        trg_img = torch.from_numpy(np.array(item[1])).permute(2, 0, 1).float().to(self.device) / 255.0
+        src_img = torch.from_numpy(np.array(item[src_index])).permute(2, 0, 1).float().to(self.device) / 255.0
+        trg_img = torch.from_numpy(np.array(item[trg_index])).permute(2, 0, 1).float().to(self.device) / 255.0
         flow = torch.from_numpy(np.array(item[2])).float().to(self.device)
+    
         
         # Check if valid flow mask is available (4-tuple vs 3-tuple)
         valid_flow_mask = None
@@ -345,6 +347,12 @@ class FlyingThingsDataset(Dataset, nn.Module):
         if self.resize_transform is not None:
             sample = self.resize_transform(sample)
         
+        # Apply flow remapping BEFORE subsampling/downsampling (if reverse_flow is enabled)
+        # This ensures remapping uses pixel coordinates and pixel-scale flow values
+        # Downsampling normalizes flow to feature grid units, which would break remapping
+        flow = sample['flow']
+        
+        
         # Apply flow subsampling if specified (before downsampling)
         if self.flow_subsampler is not None:
             valid_mask = sample.get('valid_flow_mask', None)
@@ -354,34 +362,7 @@ class FlyingThingsDataset(Dataset, nn.Module):
         if self.flow_downsampler is not None:
             sample['flow'] = self.flow_downsampler(sample['flow'])
         
-        # Apply flow transformations once at the end (after all processing)
-        # This ensures consistent flow direction regardless of which processors are used
-        flow = sample['flow']
-        is_batched = flow.dim() == 4
-        
-        if self.reverse_flow:
-            flow = -flow
-        
-        if self.swap_xy:
-            # Swap x and y components: [x, y] -> [y, x]
-            flow = flow.flip(1)  # Flip along channel dimension
-        
-        if self.flip_x:
-            if is_batched:
-                flow[:, 0] = -flow[:, 0]  # Flip x component
-            else:
-                flow[0] = -flow[0]  # Flip x component
-        
-        if self.flip_y:
-            if is_batched:
-                flow[:, 1] = -flow[:, 1]  # Flip y component
-            else:
-                flow[1] = -flow[1]  # Flip y component
-        
-        sample['flow'] = flow
-        
         return sample
-    
     
     
 
@@ -399,13 +380,26 @@ if __name__ == "__main__":
         use_valid_mask=True,
         size=(512, 512)
     )
+
+    dataset_forward = FlyingThingsDataset(
+        root="/home/spencer/Data/FlyingThings3D_tiny/", 
+        split="train", 
+        transforms=None, 
+        subsample_flow=0.1, 
+        downsample_flow=None,  # Keep full resolution
+        reverse_flow=False, 
+        filter_out_of_bounds=True,
+        use_valid_mask=True,
+        size=(512, 512)
+    )
+
     sample_reversed = dataset_reversed[0]
     print(f"Reversed flow sample values: {sample_reversed['flow'][:, 16, 16]}")
     
     # Test with DataLoader
     print("\nTesting DataLoader with reversed flow:")
     visualizer = CorrespondenceVisualizer()
-    dataloader = DataLoader(dataset_reversed, batch_size=4, shuffle=True)
+    dataloader = DataLoader(dataset_reversed, batch_size=4, shuffle=False)
     batch = next(iter(dataloader))
     print(f"Batch shapes: src={batch['src_img'].shape}, trg={batch['trg_img'].shape}, flow={batch['flow'].shape}")
 
@@ -414,6 +408,19 @@ if __name__ == "__main__":
     visualizer.visualize_rendered_batch(batch, save_path="debug/flyingthings_dataset_reversed_side_by_side.png", visualization_mode="side_by_side")
     print("Saved reversed flow visualizations to debug/flyingthings_dataset_reversed_overlay.png and debug/flyingthings_dataset_reversed_side_by_side.png")
     
+    print("Testing with forward flow:")
+    sample_forward = dataset_forward[0]
+    print(f"Forward flow sample values: {sample_forward['flow'][:, 16, 16]}")
+    print("\nTesting DataLoader with forward flow:")
+    dataloader_forward = DataLoader(dataset_forward, batch_size=4, shuffle=False)
+    batch_forward = next(iter(dataloader_forward))
+    print(f"Forward batch shapes: src={batch_forward['src_img'].shape}, trg={batch_forward['trg_img'].shape}, flow={batch_forward['flow'].shape}")
+
+    visualizer.visualize_rendered_batch(batch_forward, save_path="debug/flyingthings_dataset_forward_overlay.png", visualization_mode="overlay")
+    visualizer.visualize_rendered_batch(batch_forward, save_path="debug/flyingthings_dataset_forward_side_by_side.png", visualization_mode="side_by_side")
+    print("Saved forward flow visualizations to debug/flyingthings_dataset_forward_overlay.png and debug/flyingthings_dataset_forward_side_by_side.png")
+
+
     # Test with downsampled flow for CATS
     print("\n" + "="*60)
     print("Testing with downsampled flow for CATS:")
@@ -431,6 +438,8 @@ if __name__ == "__main__":
         use_valid_mask=True,
         size=(512, 512)
     )
+
+
     
     # Create dataset with downsampled flow
     dataset_downsampled = FlyingThingsDataset(

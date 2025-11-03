@@ -426,11 +426,15 @@ class CorrespondenceVisualizer:
         valid_flow_x = flow_x[valid_mask]  # Exact dx values
         valid_flow_y = flow_y[valid_mask]  # Exact dy values
         
+        # Flow definition: trg + flow = src (flow points from target to source)
+        # For overlay: Red = src, Green = trg
+        # We want arrows from Green (target) to Red (source)
+        # Start at target pixel positions (valid_x, valid_y) and point with flow direction
         # Generate random rainbow colors for each arrow
         num_arrows = len(valid_x)
         colors = self._generate_rainbow_colors(num_arrows)
         
-        # Plot arrows with individual colors using exact flow values
+        # Plot arrows from target pixels (green) pointing to source pixels (red)
         for i in range(num_arrows):
             ax.quiver(valid_x[i], valid_y[i], valid_flow_x[i], valid_flow_y[i],
                      angles='xy', scale_units='xy', scale=1,
