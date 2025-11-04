@@ -71,8 +71,8 @@ def main():
                         help='root directory of the FlyingThings3D dataset')
     parser.add_argument('--size', type=int, default=512,
                         help='size of the images and flow vectors')
-    parser.add_argument('--downsample_flow', type=int, default=32,
-                        help='downsample the flow vectors to the specified size')
+    parser.add_argument('--downsample_flow', type=lambda x: None if str(x).lower() == 'none' else int(x), default=32,
+                        help='downsample the flow vectors to the specified size (use None to disable)')
 
     # PointOdyssey dataset parameters
     parser.add_argument('--pointodyssey_root', type=str, default='/home/spencer/Data/PointOdyssey',
@@ -173,7 +173,7 @@ def main():
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True, collate_fn=train_dataset.collate_fn)
     elif args.train_dataset == 'flyingthings':
         train_dataset = FlyingThingsDataset(root=args.flyingthings_root, split="train", transforms=None, size=(args.size, args.size), downsample_flow=args.downsample_flow, 
-                                            subsample_flow=0.5, use_valid_mask=True, reverse_flow=True, filter_out_of_bounds=True)
+                                            subsample_flow=0.6, use_valid_mask=True, reverse_flow=True, filter_out_of_bounds=True)
         train_dataset.cuda()
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True)
     elif args.train_dataset == 'pointodyssey':
@@ -521,8 +521,16 @@ def main():
                     )
                     
                     print(f"Saved CATS flow visualizations to {dataset_debug_dir} (raw batch, no normalization)")
+
+                    
                 else:
                     print(f"\nFlow is full resolution: shape={flow_shape}, skipping downsampled flow visualization")
+                    # Visualize full resolution flow
+                    from src.data.synth.datasets.visualizers import CorrespondenceVisualizer
+                    visualizer = CorrespondenceVisualizer()
+                    visualizer.visualize_rendered_batch(batch, save_path=str(dataset_debug_dir / "batch_full_resolution_flow_overlay.png"), visualization_mode="overlay")
+                    visualizer.visualize_rendered_batch(batch, save_path=str(dataset_debug_dir / "batch_full_resolution_flow_side_by_side.png"), visualization_mode="side_by_side")
+                    print(f"Saved full resolution flow visualizations to {dataset_debug_dir}")
                     
             except ImportError as e:
                 print(f"Could not import CATSFlowVisualizer: {e}")
