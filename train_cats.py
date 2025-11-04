@@ -177,7 +177,7 @@ def main():
         train_dataset.cuda()
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True)
     elif args.train_dataset == 'pointodyssey':
-        train_dataset = PointOdysseyFlowDataset(dataset_location=args.pointodyssey_root, dset='train', use_augs=False, S=16, N=512, quick=False, verbose=True, resize_size=(args.size+64, args.size+64), crop_size=(args.size, args.size), filter_instances=True, downsample_for_cats=True, cats_feat_size=args.feature_size, all_points=True)
+        train_dataset = PointOdysseyFlowDataset(dataset_location=args.pointodyssey_root, dset='train', use_augs=False, S=4, N=512, quick=False, verbose=True, resize_size=(args.size+64, args.size+64), crop_size=(args.size, args.size), filter_instances=True, downsample_for_cats=True, cats_feat_size=args.feature_size, all_points=True)
         train_dataset.cuda()
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True)
     else:

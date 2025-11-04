@@ -347,10 +347,7 @@ class FlyingThingsDataset(Dataset, nn.Module):
         if self.resize_transform is not None:
             sample = self.resize_transform(sample)
         
-        # Apply flow remapping BEFORE subsampling/downsampling (if reverse_flow is enabled)
-        # This ensures remapping uses pixel coordinates and pixel-scale flow values
-        # Downsampling normalizes flow to feature grid units, which would break remapping
-        flow = sample['flow']
+
         
         
         # Apply flow subsampling if specified (before downsampling)

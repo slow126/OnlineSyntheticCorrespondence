@@ -47,7 +47,7 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                  quick: bool = False,
                  verbose: bool = False,
                  filter_instances: bool = False,
-                 reverse_flow: bool = False,
+                 reverse_flow: bool = True,
                  downsample_for_cats: bool = False,
                  cats_feat_size: int = 32,
                  all_points: bool = False):
@@ -175,11 +175,6 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
         # Optionally downsample flow for CATS compatibility
         if self.downsample_for_cats:
             flow = self._downsample_flow_for_cats(flow, self.cats_feat_size)
-        else:
-            # If not downsampling, convert invalid (inf) pixels to 0 to avoid passing infs to model
-            # This matches the behavior of the downsampler which also sets invalid regions to 0
-            invalid_mask = ~torch.isfinite(flow).all(dim=0, keepdim=False)  # (H, W)
-            flow[:, invalid_mask] = 0.0
         
         out = {
             'src_img': src_img,
@@ -187,6 +182,7 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
             'flow': flow,
             'masks': masks
         }
+        
 
         # Move to configured device
         if self._device is not None:
@@ -559,6 +555,7 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
 
 
 def test_dataset_with_visualization(dataset_path: str = None, size: Optional[int] = None, downsample_for_cats: bool = False):
+    from torch.utils.data import DataLoader
     """Test the dataset wrapper with visualization."""
     print("Testing PointOdyssey Flow Dataset with Visualization...")
     
@@ -619,7 +616,6 @@ def test_dataset_with_visualization(dataset_path: str = None, size: Optional[int
         try:
             sample = dataset[i]
             
-            # Images are already float32 in [0, 1] range from dataset
             src_img = sample['src_img']
             trg_img = sample['trg_img']
             
@@ -665,40 +661,27 @@ def test_dataset_with_visualization(dataset_path: str = None, size: Optional[int
         print("No valid samples loaded")
         return
     
-    # Combine all samples into a single batch
-    src_batch = torch.cat([item['src_img'] for item in batch_data], dim=0)
-    trg_batch = torch.cat([item['trg_img'] for item in batch_data], dim=0)
-    flow_batch = torch.cat([item['flow'] for item in batch_data], dim=0)
-    masks_batch = torch.cat(batch_masks, dim=0)
+
+    dataloader = DataLoader[Any](dataset, batch_size=4, shuffle=False)
+    batch = next(iter(dataloader))
     
-    batch_dict = {
-        'src_img': src_batch,
-        'trg_img': trg_batch,
-        'flow': flow_batch
-    }
+    # # Visualize masks
+    # print("\nVisualizing instance masks...")
+    # dataset_instance = PointOdysseyFlowDataset(
+    #     dataset_location=dataset_path,
+    #     dset='train',
+    #     use_augs=False,
+    #     S=8,
+    #     N=32,
+    #     quick=False,
+    #     verbose=False,
+    #     resize_size=(size+64, size+64),
+    #     crop_size=(size, size),
+    #     all_points=False,
+    # )
+    # dataset_instance.visualize_masks_batch(masks_batch, "./debug/class_masks_batch_visualization.png")
     
-    # Visualize masks
-    print("\nVisualizing instance masks...")
-    dataset_instance = PointOdysseyFlowDataset(
-        dataset_location=dataset_path,
-        dset='train',
-        use_augs=False,
-        S=8,
-        N=32,
-        quick=False,
-        verbose=False,
-        resize_size=(size+64, size+64),
-        crop_size=(size, size),
-        all_points=False,
-    )
-    dataset_instance.visualize_masks_batch(masks_batch, "./debug/class_masks_batch_visualization.png")
     
-    print(f"\nBatch shapes:")
-    print(f"  src_img: {src_batch.shape}")
-    print(f"  trg_img: {trg_batch.shape}")
-    print(f"  flow: {flow_batch.shape}")
-    
-    # Import visualizer
     try:
         from src.data.synth.datasets.visualizers import CorrespondenceVisualizer
         from src.data.synth.datasets.cats_flow_visualizers import CATSFlowVisualizer
@@ -718,51 +701,38 @@ def test_dataset_with_visualization(dataset_path: str = None, size: Optional[int
             show_patch_boundaries=True
         )
 
-        # Replace (0,0) flow vectors with (inf, inf) for visualization
-        # The visualizer looks for infs to identify invalid values
-        # but we need zeros for the model during training
-        flow_for_viz = batch_dict['flow'].clone()  # (B, 2, H, W)
-        # Check if both components are exactly 0: (B, 2, H, W) -> (B, 1, H, W)
-        zero_mask = (flow_for_viz.abs().sum(dim=1, keepdim=True) == 0)  # True where flow is exactly (0,0)
-        flow_for_viz[zero_mask.expand_as(flow_for_viz)] = torch.inf  # Replace with inf for visualization
-        batch_dict_viz = {
-            'src_img': batch_dict['src_img'],
-            'trg_img': batch_dict['trg_img'],
-            'flow': flow_for_viz
-        }
         
         # Visualize with side-by-side layout
         print("\nCreating side-by-side visualization...")
         visualizer.visualize_rendered_batch(
-            batch_dict_viz,
+            batch,
             save_path="./debug/pointodyssey_flow_side_by_side.png",
             max_samples=len(batch_data),
             visualization_mode='side_by_side',
             sampling_mode='all_valid'
         )
 
-        batch_dict_downsampled = {
-            'src_img': batch_dict['src_img'],
-            'trg_img': batch_dict['trg_img'],
-            'flow_downsampled': batch_dict['flow']
-        }
-        
-        if downsample_for_cats:
-            cats_visualizer.visualize_downsampled_flow_batch(
-                batch_dict_downsampled,
-                save_path="./debug/pointodyssey_flow_downsampled.png",
-                max_samples=len(batch_data)
-            )
-        
         # Visualize with overlay layout
         print("Creating overlay visualization...")
         visualizer.visualize_rendered_batch(
-            batch_dict_viz,
+            batch,
             save_path="./debug/pointodyssey_flow_overlay.png",
             max_samples=len(batch_data),
             visualization_mode='overlay',
             sampling_mode='all_valid'
         )
+
+        if downsample_for_cats:
+            batch_dict_downsampled = {
+                'src_img': batch_dict['src_img'],
+                'trg_img': batch_dict['trg_img'],
+                'flow_downsampled': batch_dict['flow']
+            }
+            cats_visualizer.visualize_downsampled_flow_batch(
+                batch_dict_downsampled,
+                save_path="./debug/pointodyssey_flow_downsampled.png",
+                max_samples=len(batch_data)
+            )
         
         print("Visualization complete! Check the generated PNG files.")
         
@@ -770,7 +740,7 @@ def test_dataset_with_visualization(dataset_path: str = None, size: Optional[int
         print(f"Could not import visualizer: {e}")
         print("Skipping visualization, but dataset test completed successfully.")
     
-    return batch_dict
+    return batch
 
 
 def test_dataset():
