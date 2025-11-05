@@ -181,11 +181,12 @@ class CorrespondenceVisualizer:
         Visualize a batch of rendered correspondence data.
         
         Args:
-            batch_dict: Dictionary with keys 'src_img', 'trg_img', 'flow'
+            batch_dict: Dictionary with keys 'src_img', 'trg_img', 'flow', optionally 'masks'
                        Each value is a tensor of shape [batch_size, channels, height, width]
+                       Masks should be shape [batch_size, S, 1, H, W] where S is sequence length
             save_path: Path to save the visualization
             max_samples: Maximum number of samples to display
-            visualization_mode: 'side_by_side' or 'overlay'
+            visualization_mode: 'side_by_side', 'overlay', or 'overlay_background_aware'
             sampling_mode: 'regular' for regular grid sampling, 'all_valid' for all valid flow vectors
         """
         if not batch_dict or 'src_img' not in batch_dict or 'trg_img' not in batch_dict or 'flow' not in batch_dict:
@@ -194,6 +195,7 @@ class CorrespondenceVisualizer:
         src_batch = batch_dict['src_img']
         trg_batch = batch_dict['trg_img']
         flow_batch = batch_dict['flow']
+        masks_batch = batch_dict.get('masks', None)  # Optional: (batch_size, S, 1, H, W)
         
         batch_size = min(src_batch.shape[0], max_samples)
         
@@ -203,8 +205,12 @@ class CorrespondenceVisualizer:
             self._visualize_side_by_side(src_batch, trg_batch, flow_batch, batch_size, save_path)
         elif visualization_mode == 'overlay':
             self._visualize_overlay(src_batch, trg_batch, flow_batch, batch_size, save_path)
+        elif visualization_mode == 'overlay_background_aware':
+            if masks_batch is None:
+                raise ValueError("masks_batch is required for 'overlay_background_aware' mode")
+            self._visualize_overlay_background_aware(src_batch, trg_batch, flow_batch, masks_batch, batch_size, save_path)
         else:
-            raise ValueError("visualization_mode must be 'side_by_side' or 'overlay'")
+            raise ValueError("visualization_mode must be 'side_by_side', 'overlay', or 'overlay_background_aware'")
     
     def _visualize_side_by_side(self, src_batch, trg_batch, flow_batch, batch_size, save_path):
         """Visualize src and trg side by side with correspondence arrows between them."""
@@ -257,14 +263,90 @@ class CorrespondenceVisualizer:
             axes[i, 0].set_title(f'Sample {i+1}: Source Image')
             axes[i, 0].axis('off')
             
-            # Create overlay: src (red channel) + trg (green channel) + flow arrows
+            # Create overlay: direct channel assignment with stronger tinting
             overlay = np.zeros_like(src_img)
-            overlay[:, :, 0] = src_img[:, :, 0]  # Red channel = src
-            overlay[:, :, 1] = trg_img[:, :, 1]  # Green channel = trg
-            overlay[:, :, 2] = (src_img[:, :, 2] + trg_img[:, :, 2]) / 2  # Blue channel = average
+
+            # Convert to grayscale for each image
+            src_gray = np.mean(src_img, axis=2)  # Shape: (H, W)
+            trg_gray = np.mean(trg_img, axis=2)  # Shape: (H, W)
+
+            # Use max of both for base to preserve brightness
+            base_gray = np.maximum(src_gray, trg_gray)  # Shape: (H, W)
+
+            # Strong tinting: directly use src/trg grayscale values in respective channels
+            # This makes dark objects appear as dark red/green, not hidden
+            overlay[:, :, 0] = src_gray  # Red channel = src (dark objects will be dark red)
+            overlay[:, :, 1] = trg_gray  # Green channel = trg (white areas will be bright green)
+            overlay[:, :, 2] = base_gray  # Blue = max to preserve brightness
             
             axes[i, 1].imshow(overlay)
             axes[i, 1].set_title(f'Sample {i+1}: Overlay (Red=Src, Green=Trg) + Flow')
+            axes[i, 1].axis('off')
+            
+            # Plot flow arrows on the overlay
+            self._plot_flow_on_image(axes[i, 1], flow, src_img.shape[:2])
+        
+        plt.tight_layout()
+        
+        if save_path:
+            self._save_figure(fig, save_path)
+        else:
+            plt.show()
+        
+        plt.close(fig)
+    
+    def _visualize_overlay_background_aware(self, src_batch, trg_batch, flow_batch, masks_batch, batch_size, save_path):
+        """Visualize src and trg overlaid with flow arrows, using masks to handle background areas specially."""
+        # Create figure with 2 columns: src, overlay
+        fig, axes = plt.subplots(batch_size, 2, figsize=self.figsize, dpi=self.dpi)
+        if batch_size == 1:
+            axes = axes.reshape(1, -1)
+        
+        for i in range(batch_size):
+            src_img = self._prepare_image(src_batch[i])
+            trg_img = self._prepare_image(trg_batch[i])
+            flow = self._prepare_flow(flow_batch[i])
+            
+            # Extract masks for this sample: (S, 1, H, W) -> get first and last frame masks
+            masks = masks_batch[i]  # (S, 1, H, W)
+            if torch.is_tensor(masks):
+                masks = masks.cpu().numpy()
+            
+            # Get src mask (first frame, index 0) and trg mask (last frame, index S-1)
+            S = masks.shape[0]
+            src_mask = masks[0, 0, :, :]  # (H, W) - first frame mask
+            trg_mask = masks[S-1, 0, :, :]  # (H, W) - last frame mask
+            
+            # Identify background pixels: mask[-1] = landscape/background, mask[0] = sky/horizon
+            # Background is where mask value is 0 (sky) or max (landscape/background)
+            max_mask_value = np.max(masks)
+            src_background = (src_mask == 0) | (src_mask == max_mask_value)  # Sky or landscape
+            trg_background = (trg_mask == 0) | (trg_mask == max_mask_value)  # Sky or landscape
+            background_mask = src_background | trg_background  # Union of both backgrounds
+            
+            # Show source image
+            axes[i, 0].imshow(src_img)
+            axes[i, 0].set_title(f'Sample {i+1}: Source Image')
+            axes[i, 0].axis('off')
+            
+            # Create overlay: visualize masks directly - src mask as red, trg mask as green
+            overlay = np.zeros_like(src_img)
+            
+            # Create binary object masks: pixels that are NOT background (sky or landscape)
+            src_object_mask = ~src_background  # (H, W) - True where src has objects
+            trg_object_mask = ~trg_background  # (H, W) - True where trg has objects
+            
+            # Red channel: src mask objects (1.0 where objects, 0.0 where background)
+            overlay[:, :, 0] = src_object_mask.astype(np.float32)
+            
+            # Green channel: trg mask objects (1.0 where objects, 0.0 where background)
+            overlay[:, :, 1] = trg_object_mask.astype(np.float32)
+            
+            # Blue channel: 0 (keep it black)
+            overlay[:, :, 2] = 0.0
+            
+            axes[i, 1].imshow(overlay)
+            axes[i, 1].set_title(f'Sample {i+1}: Background-Aware Overlay (Red=Src, Green=Trg) + Flow')
             axes[i, 1].axis('off')
             
             # Plot flow arrows on the overlay

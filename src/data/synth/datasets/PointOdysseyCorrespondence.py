@@ -664,6 +664,8 @@ def test_dataset_with_visualization(dataset_path: str = None, size: Optional[int
 
     dataloader = DataLoader[Any](dataset, batch_size=4, shuffle=False)
     batch = next(iter(dataloader))
+    batch['trg_img'] = batch['trg_img'] * 0.0
+    # batch['src_img'] = batch['src_img'] * 0.0
     
     # # Visualize masks
     # print("\nVisualizing instance masks...")
@@ -712,13 +714,13 @@ def test_dataset_with_visualization(dataset_path: str = None, size: Optional[int
             sampling_mode='all_valid'
         )
 
-        # Visualize with overlay layout
-        print("Creating overlay visualization...")
+        # Visualize with overlay_background_aware layout
+        print("Creating overlay_background_aware visualization...")
         visualizer.visualize_rendered_batch(
             batch,
-            save_path="./debug/pointodyssey_flow_overlay.png",
+            save_path="./debug/pointodyssey_flow_overlay_background_aware.png",
             max_samples=len(batch_data),
-            visualization_mode='overlay',
+            visualization_mode='overlay_background_aware',
             sampling_mode='all_valid'
         )
 

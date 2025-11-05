@@ -60,6 +60,10 @@ def main():
     parser.add_argument('--seed', type=int, default=2021,
                         help='Pseudo-RNG seed')
     parser.add_argument('--backbone', type=str, default='resnet101')
+    parser.add_argument('--feature_size', type=lambda x: None if str(x).lower() == 'none' else int(x), default=32,
+                        help='feature size for downsampled flow. Size of patches that are averaged together for flow vectors. [default: 32]')
+    parser.add_argument('--size', type=int, default=512,
+                        help='size of the images. [default: 512]')
     
     # Synthetic dataset parameters
     parser.add_argument('--train_dataset', type=str, default='synthetic', choices=['synthetic', 'spair', 'pfpascal', 'pfwillow', 'caltech', 'flyingthings', 'pointodyssey'])
@@ -69,10 +73,7 @@ def main():
     # FlyingThings dataset parameters
     parser.add_argument('--flyingthings_root', type=str, default='/home/spencer/Data/FlyingThings3D_tiny/',
                         help='root directory of the FlyingThings3D dataset')
-    parser.add_argument('--size', type=int, default=512,
-                        help='size of the images and flow vectors')
-    parser.add_argument('--downsample_flow', type=lambda x: None if str(x).lower() == 'none' else int(x), default=32,
-                        help='downsample the flow vectors to the specified size (use None to disable)')
+
 
     # PointOdyssey dataset parameters
     parser.add_argument('--pointodyssey_root', type=str, default='/home/spencer/Data/PointOdyssey',
@@ -112,8 +113,6 @@ def main():
                         help='alpha for single benchmark mode (legacy support)')
     parser.add_argument('--datapath', type=str, default='./models/Datasets_CATs')
     parser.add_argument('--split_to_use_for_validation', type=str, default='val', choices=['val', 'test'])
-    parser.add_argument('--feature_size', type=int, default=32,
-                        help='feature size for downsampled flow. [default: 32]')
     parser.add_argument('--val_batch_size', type=int, default=8,
                         help='batch size for validation. [default: 8]')
     parser.add_argument('--val_num_workers', type=int, default=16,
@@ -172,7 +171,7 @@ def main():
         train_dataset.cuda()
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True, collate_fn=train_dataset.collate_fn)
     elif args.train_dataset == 'flyingthings':
-        train_dataset = FlyingThingsDataset(root=args.flyingthings_root, split="train", transforms=None, size=(args.size, args.size), downsample_flow=args.downsample_flow, 
+        train_dataset = FlyingThingsDataset(root=args.flyingthings_root, split="train", transforms=None, size=(args.size, args.size), downsample_flow=args.feature_size, 
                                             subsample_flow=0.6, use_valid_mask=True, reverse_flow=True, filter_out_of_bounds=True)
         train_dataset.cuda()
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True)
