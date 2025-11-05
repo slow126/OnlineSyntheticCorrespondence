@@ -82,6 +82,8 @@ def main():
                         help='verbose mode')
     parser.add_argument('--all_points_pointodyssey', type=boolean_string, nargs='?', const=True, default=False,
                         help='use all points in the PointOdyssey dataset')
+    parser.add_argument('--num_pts_to_track_pointodyssey', type=int, default=32,
+                        help='number of points to track in the PointOdyssey dataset')
 
     # Training parameters
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
@@ -177,7 +179,7 @@ def main():
         # Note: Dataset returns CPU tensors - DataLoader handles GPU transfer
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True, prefetch_factor=args.batch_size, pin_memory=True)
     elif args.train_dataset == 'pointodyssey':
-        train_dataset = PointOdysseyFlowDataset(dataset_location=args.pointodyssey_root, dset='train', use_augs=False, S=4, N=512, quick=False, verbose=True, resize_size=(args.size+64, args.size+64), crop_size=(args.size, args.size), filter_instances=True, downsample_for_cats=True, cats_feat_size=args.feature_size, all_points=True)
+        train_dataset = PointOdysseyFlowDataset(dataset_location=args.pointodyssey_root, dset='train', use_augs=False, S=4, N=args.num_pts_to_track_pointodyssey, quick=False, verbose=True, resize_size=(args.size+64, args.size+64), crop_size=(args.size, args.size), filter_instances=True, downsample_for_cats=True, cats_feat_size=args.feature_size, all_points=True)
         # Note: Dataset returns CPU tensors - DataLoader handles GPU transfer
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True, prefetch_factor=args.batch_size, pin_memory=True)
     else:
