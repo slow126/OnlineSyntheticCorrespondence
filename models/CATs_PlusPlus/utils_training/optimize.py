@@ -39,7 +39,7 @@ def train_epoch(net,
     net.train()
     running_total_loss = 0
 
-    pbar = tqdm(enumerate(train_loader), total=steps_per_epoch if steps_per_epoch is not None else len(train_loader))
+    pbar = tqdm(enumerate(train_loader), total=steps_per_epoch if steps_per_epoch is not None else len(train_loader), position=0, leave=True)
     for i, mini_batch in pbar:
         optimizer.zero_grad()
         flow_gt = mini_batch['flow'].to(device)
@@ -68,7 +68,7 @@ def validate_epoch(net,
     running_total_loss = 0
 
     with torch.no_grad():
-        pbar = tqdm(enumerate(val_loader), total=len(val_loader))
+        pbar = tqdm(enumerate(val_loader), total=len(val_loader), position=0, leave=True)
         pck_array = []
         for i, mini_batch in pbar:
             flow_gt = mini_batch['flow'].to(device)

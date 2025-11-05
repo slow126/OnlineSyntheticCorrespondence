@@ -97,8 +97,8 @@ def main():
     parser.add_argument('--step_gamma', type=float, default=0.5)
     parser.add_argument('--freeze', type=boolean_string, nargs='?', const=True, default=True)
     parser.add_argument('--augmentation', type=boolean_string, nargs='?', const=True, default=True)
-    parser.add_argument('--steps_per_epoch', type=int, default=None,
-                        help='number of steps per epoch')
+    parser.add_argument('--steps_per_epoch', type=lambda x: None if str(x).lower() == 'none' else int(x), default=None,
+                        help='number of steps per epoch. [default: None, meaning all steps in the dataset]')
     
     # Evaluation parameters
     parser.add_argument('--benchmark', type=str, default='spair', choices=['synthetic', 'spair', 'pfpascal', 'pfwillow', 'caltech'],
@@ -117,6 +117,7 @@ def main():
                         help='batch size for validation. [default: 8]')
     parser.add_argument('--val_num_workers', type=int, default=16,
                         help='number of workers for validation. [default: 16]')
+
     
     args = parser.parse_args()
     
