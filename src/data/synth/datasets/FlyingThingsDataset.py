@@ -321,16 +321,16 @@ class FlyingThingsDataset(Dataset, nn.Module):
             src_index = 0
             trg_index = 1
         
-        # Convert PIL Images to tensors directly on target device (faster than np.array + torch.tensor + .to())
-        src_img = torch.from_numpy(np.array(item[src_index])).permute(2, 0, 1).float().to(self.device) / 255.0
-        trg_img = torch.from_numpy(np.array(item[trg_index])).permute(2, 0, 1).float().to(self.device) / 255.0
-        flow = torch.from_numpy(np.array(item[2])).float().to(self.device)
+        # Convert PIL Images to tensors (keep on CPU - DataLoader will handle GPU transfer)
+        src_img = torch.from_numpy(np.array(item[src_index])).permute(2, 0, 1).float() / 255.0
+        trg_img = torch.from_numpy(np.array(item[trg_index])).permute(2, 0, 1).float() / 255.0
+        flow = torch.from_numpy(np.array(item[2])).float()
     
         
         # Check if valid flow mask is available (4-tuple vs 3-tuple)
         valid_flow_mask = None
         if len(item) == 4:
-            valid_flow_mask = torch.from_numpy(np.array(item[3])).bool().to(self.device)
+            valid_flow_mask = torch.from_numpy(np.array(item[3])).bool()
 
         # Create sample dict
         sample = {

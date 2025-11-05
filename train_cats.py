@@ -168,17 +168,17 @@ def main():
             processor_config_path='src/configs/online_synth_configs/OnlineProcessorConfig.yaml',
             split='train'
         )
-        train_dataset.cuda()
+        train_dataset.cuda() # Synthetic dataset requires GPU for processor that is in the collate_fn. CPU texturing kernel is not supported yet. 
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True, collate_fn=train_dataset.collate_fn)
     elif args.train_dataset == 'flyingthings':
         train_dataset = FlyingThingsDataset(root=args.flyingthings_root, split="train", transforms=None, size=(args.size, args.size), downsample_flow=args.feature_size, 
                                             subsample_flow=0.6, use_valid_mask=True, reverse_flow=True, filter_out_of_bounds=True)
-        train_dataset.cuda()
-        train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True)
+        # Note: Dataset returns CPU tensors - DataLoader handles GPU transfer
+        train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True, prefetch_factor=args.batch_size, pin_memory=True)
     elif args.train_dataset == 'pointodyssey':
         train_dataset = PointOdysseyFlowDataset(dataset_location=args.pointodyssey_root, dset='train', use_augs=False, S=4, N=512, quick=False, verbose=True, resize_size=(args.size+64, args.size+64), crop_size=(args.size, args.size), filter_instances=True, downsample_for_cats=True, cats_feat_size=args.feature_size, all_points=True)
-        train_dataset.cuda()
-        train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True, prefetch_factor=args.batch_size)
+        # Note: Dataset returns CPU tensors - DataLoader handles GPU transfer
+        train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True, prefetch_factor=args.batch_size, pin_memory=True)
     else:
         train_dataset = download.load_dataset(args.benchmark, args.datapath, args.thres, device, 'trn', False, args.feature_size)
         train_dataloader = DataLoader(train_dataset,

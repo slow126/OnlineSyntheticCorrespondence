@@ -135,24 +135,21 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                 print(f"Resampling because index {index} failed to get valid samples. New index: {new_index}")
             sample, gotit = self.base_dataset[new_index]
         
-        # Move all base dataset tensors to GPU immediately
-        # Extract the data we need and move to device
-        rgbs = sample['rgbs'].to(self._device, non_blocking=True)  # (S, C, H, W)
-        trajs = sample['trajs'].to(self._device, non_blocking=True)  # (S, N, 2)
-        visibs = sample['visibs'].to(self._device, non_blocking=True)  # (S, N)
-        valids = sample['valids'].to(self._device, non_blocking=True)  # (S, N)
-        masks = sample['masks'].to(self._device, non_blocking=True)   # (S, 1, H, W) instance ids
+        # Keep everything on CPU - DataLoader will handle GPU transfer
+        # Extract the data we need (keep on CPU)
+        rgbs = sample['rgbs']  # (S, C, H, W) - keep on CPU
+        trajs = sample['trajs']  # (S, N, 2) - keep on CPU
+        visibs = sample['visibs']  # (S, N) - keep on CPU
+        valids = sample['valids']  # (S, N) - keep on CPU
+        masks = sample['masks']  # (S, 1, H, W) - keep on CPU
 
         # Sample two non-repeating frames (order doesn't matter)
-        
-        # i, j = _random.sample(range(self.S), 2)
         i, j = 0, self.S - 1
 
         src_img = rgbs[i]
         trg_img = rgbs[j]
         
-        # Convert images to float32 in [0, 1] range using PyTorch operations on GPU
-        # Using .to(torch.float32) and division - all operations stay on GPU
+        # Convert images to float32 in [0, 1] range (on CPU)
         src_img = src_img.to(torch.float32) / 255.0
         trg_img = trg_img.to(torch.float32) / 255.0
 
@@ -166,10 +163,10 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
         src_mask = masks[i]
         trg_mask = masks[j]
 
-        # Create sparse flow field from trg->src
+        # Create sparse flow field from trg->src (on CPU)
         flow = self._create_flow_field(
             src_trajs, trg_trajs, src_vis, trg_vis, src_valid, trg_valid,
-            src_img.shape, src_mask, trg_mask, self.filter_instances, self._device
+            src_img.shape, src_mask, trg_mask, self.filter_instances, torch.device('cpu')
         )
 
         # Optionally downsample flow for CATS compatibility
@@ -182,14 +179,8 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
             'flow': flow,
             'masks': masks
         }
-        
 
-        # Move to configured device
-        if self._device is not None:
-            for k, v in out.items():
-                if isinstance(v, torch.Tensor) and v.device != self._device:
-                    out[k] = v.to(self._device, non_blocking=True)
-
+        # All tensors are already on CPU, no need to move them
         return out
     
     def _create_flow_field(self, 
