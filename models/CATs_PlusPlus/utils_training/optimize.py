@@ -1,5 +1,6 @@
 import time
 import numpy as np
+from itertools import islice
 from tqdm import tqdm
 import torch
 import torch.nn.functional as F
@@ -38,8 +39,13 @@ def train_epoch(net,
     
     net.train()
     running_total_loss = 0
-
-    pbar = tqdm(enumerate(train_loader), total=steps_per_epoch if steps_per_epoch is not None else len(train_loader), position=0, leave=True)
+    
+    if steps_per_epoch is not None and steps_per_epoch < len(train_loader):
+        train_steps = steps_per_epoch
+    else:
+        train_steps = len(train_loader)
+    
+    pbar = tqdm(islice(enumerate(train_loader), train_steps), total=train_steps, position=0, leave=True)
     for i, mini_batch in pbar:
         optimizer.zero_grad()
         flow_gt = mini_batch['flow'].to(device)
@@ -56,7 +62,8 @@ def train_epoch(net,
         n_iter += 1
         pbar.set_description(
                 'training: R_total_loss: %.3f/%.3f' % (running_total_loss / (i + 1), Loss.item()))
-    running_total_loss /= len(train_loader)
+
+    running_total_loss /= train_steps
     return running_total_loss
 
 
