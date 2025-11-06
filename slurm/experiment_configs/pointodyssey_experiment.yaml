@@ -37,14 +37,14 @@ grids:
         - [2]
         - [4]
         - [8]
-      sequence_legnth_pointodyssey:
-        - [4]
-        - [8]
-        - [16]
+      sequence_length_pointodyssey:
+        - 4
+        - 8
+        - 16
       freeze:
         - True
         - False
-    name_template: "{train_dataset}_stride{_join(strides_pointodyssey,'_')}_sequence_length{_join(sequence_legnth_pointodyssey,'_')}_freeze{freeze}_eval{_join(eval_benchmarks,'_')}"
+    name_template: "{train_dataset}_stride{_join(strides_pointodyssey,'_')}_sequence_length{sequence_length_pointodyssey}_freeze{freeze}_eval{_join(eval_benchmarks,'_')}"
 
 # Dataset-specific defaults (applied based on train_dataset)
 dataset_defaults:
