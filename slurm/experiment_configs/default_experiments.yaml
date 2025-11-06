@@ -4,9 +4,9 @@
 # Base parameters applied to all experiments (unless overridden)
 base:
   epochs: 50
-  batch_size: 8
+  batch-size: 8
   lr: 3e-4
-  lr_backbone: 3e-6
+  lr-backbone: 3e-6
   freeze: true
   augmentation: true
   feature_size: 32
@@ -15,7 +15,7 @@ base:
   scheduler: "step"
   step: "[70, 80, 90]"
   step_gamma: 0.5
-  weight_decay: 0.05
+  weight-decay: 0.05
   momentum: 0.9
   thres: "img"
   val_batch_size: 8
@@ -54,7 +54,7 @@ experiments:
     eval_benchmarks: ["spair", "pfpascal", "tss"]
     eval_alphas: [0.1, 0.1, 0.1]
     epochs: 100
-    batch_size: 4
+    batch-size: 4
 
   # Individual experiment 2
   - name: "pointodyssey_high_res"

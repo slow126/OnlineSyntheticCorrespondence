@@ -201,6 +201,7 @@ def build_train_command(exp_config: Dict[str, Any], machine_config: Dict[str, An
     datasets = machine_config.get('datasets', {})
     
     # Add all arguments from config
+    # Config keys should match train_cats.py argument names exactly
     for key, value in exp_config.items():
         # Skip internal keys
         if key in ['name_exp', 'name']:
@@ -208,29 +209,32 @@ def build_train_command(exp_config: Dict[str, Any], machine_config: Dict[str, An
             
         if value is None:
             continue
-        elif isinstance(value, bool):
+        
+        # Use config key directly as argument name (configs should match train_cats.py)
+        if isinstance(value, bool):
             if value:
-                cmd_parts.append(f'--{key.replace("_", "-")}')
+                cmd_parts.append(f'--{key}')
         elif isinstance(value, list):
             # Handle list arguments like eval_benchmarks
-            cmd_parts.append(f'--{key.replace("_", "-")}')
+            cmd_parts.append(f'--{key}')
             cmd_parts.extend([str(v) for v in value])
         else:
-            cmd_parts.append(f'--{key.replace("_", "-")}')
+            cmd_parts.append(f'--{key}')
             cmd_parts.append(str(value))
     
     # Add dataset paths if not already in exp_config
+    # Note: These use underscores in train_cats.py, not hyphens
     train_dataset = exp_config.get('train_dataset', '')
     if train_dataset == 'flyingthings' and 'flyingthings_root' not in exp_config:
         if datasets.get('flyingthings_root'):
-            cmd_parts.extend(['--flyingthings-root', datasets.get('flyingthings_root', '')])
+            cmd_parts.extend(['--flyingthings_root', datasets.get('flyingthings_root', '')])
     elif train_dataset == 'pointodyssey' and 'pointodyssey_root' not in exp_config:
         if datasets.get('pointodyssey_root'):
-            cmd_parts.extend(['--pointodyssey-root', datasets.get('pointodyssey_root', '')])
+            cmd_parts.extend(['--pointodyssey_root', datasets.get('pointodyssey_root', '')])
     
     if 'tss' in str(exp_config.get('eval_benchmarks', [])) and 'tss_root' not in exp_config:
         if datasets.get('tss_root'):
-            cmd_parts.extend(['--tss-root', datasets.get('tss_root', '')])
+            cmd_parts.extend(['--tss_root', datasets.get('tss_root', '')])
     
     if 'datapath' not in exp_config:
         if datasets.get('datapath'):
@@ -258,14 +262,17 @@ def generate_slurm_script(
     job_filename = f"job_{exp_name}.sh"
     job_path = job_dir / job_filename
     
+    # Convert job_dir to absolute path for SLURM output paths
+    job_dir_abs = job_dir.resolve()
+    
     # Build training command
     train_cmd = build_train_command(exp_config, machine_config)
     
     # Generate SLURM script content
     script_content = f"""#!/bin/bash
 #SBATCH --job-name={exp_name}
-#SBATCH --output={job_dir}/logs/{exp_name}_%j.out
-#SBATCH --error={job_dir}/logs/{exp_name}_%j.err
+#SBATCH --output={job_dir_abs}/logs/{exp_name}_%j.out
+#SBATCH --error={job_dir_abs}/logs/{exp_name}_%j.err
 #SBATCH --time={slurm_config.get('time', '23:59:00')}
 #SBATCH --nodes={slurm_config.get('nodes', 1)}
 #SBATCH --ntasks={slurm_config.get('ntasks', 1)}
