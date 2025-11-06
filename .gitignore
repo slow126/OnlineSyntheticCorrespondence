@@ -83,3 +83,4 @@ launch_cats_rc.sh
 # Debug images
 debug/
 *.png
+*.zip

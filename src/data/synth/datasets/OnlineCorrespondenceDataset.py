@@ -10,7 +10,13 @@ import os
 
 
 class OnlineCorrespondenceDataset():
-    def __init__(self, geometry_config_path, processor_config_path, split='train'):
+    def __init__(
+        self, 
+        geometry_config_path, 
+        processor_config_path, 
+        split='train',
+        opengl_device_index=None
+    ):
         super().__init__()
         with open(geometry_config_path, 'r') as f:
             geometry_config = yaml.load(f, Loader=yaml.FullLoader)
@@ -19,6 +25,11 @@ class OnlineCorrespondenceDataset():
 
         self._device = torch.device('cpu')   
         self.split = split
+        
+        # Pass GPU index to geometry dataset (for multi-GPU support)
+        # None = auto-detect from torch.cuda.current_device() (works with Lightning DDP)
+        geometry_config['opengl_device_index'] = opengl_device_index
+        
         self.dataset = OnlineGeometryDataset(**geometry_config)
         self.processor = SyntheticCorrespondenceProcessor(**processor_config)
         self.geometry_visualizer = GeometryVisualizer()

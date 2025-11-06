@@ -31,9 +31,14 @@ class EvaluatorInstance:
         for idx, (pk, tk) in enumerate(zip(prd_kps, batch['src_kps'])):
             thres = batch['pckthres'][idx]
             npt = batch['n_pts'][idx]
-            _, correct_ids, _ = self.classify_prd(pk[:, :npt], tk[:, :npt], thres)
-
-            pck.append((len(correct_ids) / npt.item()) * 100)
+            npt_val = npt.item()
+            
+            if npt_val > 0:
+                _, correct_ids, _ = self.classify_prd(pk[:, :npt], tk[:, :npt], thres)
+                pck.append((len(correct_ids) / npt_val) * 100)
+            else:
+                # No valid points - PCK is undefined, set to 0
+                pck.append(0.0)
 
         eval_result = {'pck': pck}
 
@@ -50,10 +55,16 @@ class EvaluatorInstance:
         for idx, (pk, tk) in enumerate(zip(prd_kps, batch['src_kps'])):
             thres = batch['pckthres'][idx]
             npt = batch['n_pts'][idx]
-            _, correct_ids, _ = self.classify_prd(pk[:, :npt], tk[:, :npt], thres)
-            correct_id_list.append(correct_ids)
-
-            pck.append((len(correct_ids) / npt.item()) * 100)
+            npt_val = npt.item()
+            
+            if npt_val > 0:
+                _, correct_ids, _ = self.classify_prd(pk[:, :npt], tk[:, :npt], thres)
+                correct_id_list.append(correct_ids)
+                pck.append((len(correct_ids) / npt_val) * 100)
+            else:
+                # No valid points - PCK is undefined, set to 0
+                correct_id_list.append([])
+                pck.append(0.0)
 
         eval_result = {'pck': pck}
 
@@ -135,6 +146,85 @@ class EvaluatorInstance:
         mask = torch.tensor(mask_np.astype(np.float32)).unsqueeze(0).unsqueeze(0).float()
 
         return mask
+
+    ############# Motion Aware Section ########
+    def eval_kps_transfer_with_motion_prior(self, prd_kps, batch, min_motion_pixels=5.0):
+        r"""Compute PCK but only on keypoints with motion >= min_motion_pixels"""
+        pck = []
+        motion_stats = {'total_moving': 0, 'total_static': 0}
+        
+        for idx, (pk, tk, trk) in enumerate(zip(prd_kps, batch['src_kps'], batch['trg_kps'])):
+            thres = batch['pckthres'][idx]
+            npt = batch['n_pts'][idx]
+            
+            # Compute motion magnitude for each keypoint
+            motion = trk[:, :npt] - tk[:, :npt]
+            motion_magnitude = torch.norm(motion, dim=0)
+            
+            # Only evaluate keypoints with significant motion
+            motion_mask = motion_magnitude >= min_motion_pixels
+            
+            motion_stats['total_moving'] += motion_mask.sum().item()
+            motion_stats['total_static'] += (~motion_mask).sum().item()
+            
+            if motion_mask.sum() > 0:
+                # Only evaluate on moving keypoints
+                pk_moving = pk[:, :npt][:, motion_mask]
+                tk_moving = tk[:, :npt][:, motion_mask]
+                _, correct_ids, _ = self.classify_prd(pk_moving, tk_moving, thres)
+                
+                pck.append((len(correct_ids) / motion_mask.sum().item()) * 100)
+            else:
+                # No motion in this sample
+                pck.append(0.0)
+        
+        eval_result = {'pck': pck, 'motion_stats': motion_stats}
+        return eval_result
+    
+    def eval_kps_transfer_motion_binned(self, prd_kps, batch):
+        r"""Compute PCK for different motion ranges (standard in optical flow evaluation)"""
+        # Motion bins: small (< 5px), medium (5-20px), large (> 20px)
+        motion_bins = {
+            'small': (0, 5),
+            'medium': (5, 20),
+            'large': (20, float('inf'))
+        }
+        
+        results = {bin_name: {'pck': [], 'count': 0} for bin_name in motion_bins.keys()}
+        
+        for idx, (pk, tk, trk) in enumerate(zip(prd_kps, batch['src_kps'], batch['trg_kps'])):
+            thres = batch['pckthres'][idx]
+            npt = batch['n_pts'][idx]
+            
+            # Compute motion magnitude for each keypoint
+            motion = trk[:, :npt] - tk[:, :npt]
+            motion_magnitude = torch.norm(motion, dim=0)
+            
+            # Classify each keypoint into motion bins
+            for bin_name, (min_motion, max_motion) in motion_bins.items():
+                bin_mask = (motion_magnitude >= min_motion) & (motion_magnitude < max_motion)
+                
+                if bin_mask.sum() > 0:
+                    pk_bin = pk[:, :npt][:, bin_mask]
+                    tk_bin = tk[:, :npt][:, bin_mask]
+                    _, correct_ids, _ = self.classify_prd(pk_bin, tk_bin, thres)
+                    
+                    results[bin_name]['pck'].append((len(correct_ids) / bin_mask.sum().item()) * 100)
+                    results[bin_name]['count'] += bin_mask.sum().item()
+        
+        # Compute average PCK for each bin
+        eval_result = {
+            'pck_by_motion': {
+                bin_name: {
+                    'mean_pck': sum(pcks) / len(pcks) if pcks else 0.0,
+                    'count': results[bin_name]['count']
+                }
+                for bin_name, pcks in [(k, v['pck']) for k, v in results.items()]
+            }
+        }
+        
+        return eval_result
+    ############# End Motion Aware Section ########
 
 
 class MultiBenchmarkEvaluator:

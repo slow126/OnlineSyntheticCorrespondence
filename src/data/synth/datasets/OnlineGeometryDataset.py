@@ -36,8 +36,8 @@ class OnlineGeometryDataset(ComponentsBase):
             `rel_components` parameters of the constructor.
         size (int): size in pixels of the images (image will be square).
         crop (str): cropping method, one of "center", "none" or "random".
-        single_process (bool): whether the dataset will be running in a single process or multiprocess
-            (i.e. dataloader workers) environment. This is needed for properly setting up OpenGL.
+        opengl_device_index (int): GPU device index for OpenGL rendering. None = auto-detect from
+            torch.cuda.current_device() (works with PyTorch Lightning DDP for multi-GPU).
         seed (int): seed for random number generator.
     '''
     def __init__(
@@ -52,12 +52,9 @@ class OnlineGeometryDataset(ComponentsBase):
         mandelbulb_sampler: Dict = None,
         size: int = 256,
         crop: Literal['center', 'none', 'random'] = 'none',
-        single_process: bool = True,
         seed: int = 987654321,
         shaders: Dict = None,
-        train_split: float = 0.8,
-        val_split: float = 0.1,
-        test_split: float = 0.1,
+        opengl_device_index: int = None,
     ):
         super().__init__(size, crop, seed)
         self.size = size
@@ -101,19 +98,26 @@ class OnlineGeometryDataset(ComponentsBase):
             output_uint8=True,
         )
 
-        # Device management - defaults to CPU for flexibility
-        self._device = torch.device('cpu')
-
+        # Auto-detect GPU if not specified (for Lightning multi-GPU support)
+        # Each DDP process will have its own GPU assigned via torch.cuda.current_device()
+        if opengl_device_index is None:
+            if torch.cuda.is_available():
+                opengl_device_index = torch.cuda.current_device()
+            else:
+                opengl_device_index = 0
+        
+        self.opengl_device_index = opengl_device_index
+        
         program_count = sum(1 for key in self.shaders if key.startswith('program'))
-        if single_process:
-            self.setup()
+        # Always initialize OpenGL contexts upfront (single process per DataLoader)
+        self.setup()
 
     def setup(self):
         self.mgl_state = setup_moderngl_multi(
             shader_paths=self.shaders, 
-            resolution=self.res
+            resolution=self.res,
+            device_index=self.opengl_device_index
         )
-
 
     def __len__(self):
         return self.num_samples
@@ -592,11 +596,23 @@ def bind_anti_alias(fbo, anti_alias_prog):
     
     return
 
-def setup_moderngl_multi(shader_paths, resolution):
+def setup_moderngl_multi(shader_paths, resolution, device_index=0):
+    """Setup OpenGL contexts for rendering.
+    
+    Args:
+        shader_paths: Dictionary of shader paths
+        resolution: Resolution tuple (H, W)
+        device_index: GPU device index for OpenGL rendering (default: 0)
+            For multi-GPU support, each Lightning DDP process will use its assigned GPU.
+    """
     import moderngl
     
-    # Create single context to be shared
-    ctx = moderngl.create_standalone_context(backend='egl', require=430, device_index=0)
+    # Create single context to be shared - OpenGL rendering on specified GPU
+    ctx = moderngl.create_standalone_context(
+        backend='egl', 
+        require=430, 
+        device_index=device_index
+    )
 
     # Common vertex shader code...
     vertex_shader = (

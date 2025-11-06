@@ -33,9 +33,9 @@ class SyntheticCorrespondenceProcessor:
                  ):
         super().__init__()
 
+        # Import faiss locally to avoid storing module reference (unpickleable)
         import faiss
         import faiss.contrib.torch_utils
-        self.faiss = faiss
         self.index = faiss.IndexIVFFlat(faiss.IndexFlatL2(3), 3, 32)
 
         self.transferred = False
@@ -71,15 +71,16 @@ class SyntheticCorrespondenceProcessor:
 
         if normalize == 'imagenet':
             from src import imagenet_stats
-            normalize = imagenet_stats
+            # Store the tuple values, not the module reference
+            normalize = imagenet_stats  # This is a tuple, not a module
         elif normalize == True:
             normalize = ((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
         elif normalize == False:
             normalize = None
         self.normalize = normalize
 
-        # Device management - defaults to CPU for flexibility
-        self._device = torch.device('cpu')
+        # Device management - defaults to GPU for compatibility with texturing kernel
+        self._device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
         self.dummy_background_sampler = texture_sampler.TextureSampler(**self.get_bg_sampler(None))
 
@@ -126,6 +127,8 @@ class SyntheticCorrespondenceProcessor:
     def setup_for_gpu_once(self, device):
         if self.device.type == 'cuda':
             if not self.transferred:
+                # Import faiss locally to avoid storing module reference (unpickleable)
+                import faiss
                 # setup GPU-specific things: faiss index, random generator
                 # Handle case where device.index might not exist (e.g., torch.device('cuda'))
                 if hasattr(device, 'index') and device.index is not None:
@@ -133,7 +136,7 @@ class SyntheticCorrespondenceProcessor:
                 else:
                     # Use current CUDA device if no index specified
                     idx = torch.cuda.current_device()
-                self.index = self.faiss.index_cpu_to_gpu(self.faiss.StandardGpuResources(), idx, self.index)
+                self.index = faiss.index_cpu_to_gpu(faiss.StandardGpuResources(), idx, self.index)
                 seed = torch.empty(1, dtype=torch.int64).random_(generator=self.rng).item()
                 self.rng = torch.Generator(device=device).manual_seed(seed)
                 self.transferred = True
@@ -195,7 +198,20 @@ class SyntheticCorrespondenceProcessor:
         )
     
     def batch_to_device(self, batch, device):
-        batch = [{k: v.to(device) for k, v in x.items()} for x in batch]
+        """Move batch to device, with multi-GPU support for PyTorch Lightning.
+        
+        Uses torch.cuda.current_device() to ensure compatibility with Lightning's
+        DDP strategy where each process is assigned to a specific GPU.
+        """
+        # Use the device that Lightning assigns (via torch.cuda.current_device())
+        # This ensures it works with multi-GPU DDP
+        if device.type == 'cuda' and torch.cuda.is_available():
+            # Ensure we're using the GPU that Lightning assigned to this process
+            actual_device = torch.device(f'cuda:{torch.cuda.current_device()}')
+        else:
+            actual_device = device
+        
+        batch = [{k: v.to(actual_device) for k, v in x.items()} for x in batch]
         return batch
 
     def process_scene(self, batch):

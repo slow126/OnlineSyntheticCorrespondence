@@ -40,7 +40,9 @@ def train_epoch(net,
     net.train()
     running_total_loss = 0
     
-    if steps_per_epoch is not None and steps_per_epoch < len(train_loader):
+    if steps_per_epoch == 0:
+        return 0
+    elif steps_per_epoch is not None and steps_per_epoch < len(train_loader):
         train_steps = steps_per_epoch
     else:
         train_steps = len(train_loader)

@@ -15,6 +15,10 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import random as _random
 
+# Add the project root to sys.path so models.CATs_PlusPlus can be imported
+project_root = Path(__file__).parent.parent.parent.parent.parent
+sys.path.insert(0, str(project_root))
+
 # Add the pips2 path to sys.path so the utils can be found
 pips2_path = Path(__file__).parent / "pips2"
 sys.path.insert(0, str(pips2_path))
@@ -39,7 +43,7 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                  use_augs: bool = False,
                  S: int = 8,
                  N: int = 32,
-                 strides: list = [1, 2, 4],
+                 strides: list = [1, 2, 4,],
                  clip_step: int = 2,
                  resize_size: tuple = (368+64, 496+64),
                  crop_size: tuple = (368, 496),
@@ -50,7 +54,11 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                  reverse_flow: bool = True,
                  downsample_for_cats: bool = False,
                  cats_feat_size: int = 32,
-                 all_points: bool = False):
+                 all_points: bool = False,
+                 max_pts: int = 40,
+                 thres: str = 'img',
+                 normalize_images: bool = False,
+                 normalize: bool = True):
         """
         Initialize the PointOdyssey flow dataset.
         
@@ -67,7 +75,15 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
             req_full: Whether to require full sequences
             quick: Whether to use quick mode (fewer samples)
             verbose: Whether to print verbose information
-            target_size: Optional target size for resizing (H, W)
+            filter_instances: Whether to filter instances
+            reverse_flow: Whether to reverse flow direction
+            downsample_for_cats: Whether to downsample flow for CATs (training mode)
+            cats_feat_size: Feature size for downsampled flow
+            all_points: Whether to use all points
+            max_pts: Maximum number of keypoints for validation (default: 40)
+            thres: PCK threshold type ('img' or 'bbox')
+            normalize_images: If True, enables validation mode and returns keypoints-based format for evaluation
+            normalize: If True, applies ImageNet normalization to images (default: True, model expects normalized images)
         """
         # Check if the dataset has the expected structure (with train/val/test subdirs)
         expected_dset_path = os.path.join(dataset_location, dset)
@@ -105,8 +121,29 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
         self.cats_feat_size = cats_feat_size
         self.verbose = verbose
         self.reverse_flow = reverse_flow
+        self.max_pts = max_pts
+        self.thres = thres
+        self.normalize_images = normalize_images
+        self.normalize = normalize
         # Device management - defaults to CPU
         self._device = torch.device('cpu')
+        
+        # Initialize KeypointToFlow converter only when downsample_for_cats is True
+        # This replaces manual flow calculation for consistency with other datasets
+        self.kps_to_flow = None
+        if downsample_for_cats:
+            try:
+                from models.CATs_PlusPlus.data.keypoint_to_flow import KeypointToFlow
+                # Get image size from crop_size (final size after processing)
+                img_size = crop_size[0] if isinstance(crop_size, tuple) else crop_size
+                self.kps_to_flow = KeypointToFlow(
+                    receptive_field_size=35,
+                    jsz=img_size // cats_feat_size,
+                    feat_size=cats_feat_size,
+                    img_size=img_size
+                )
+            except ImportError:
+                self.kps_to_flow = None
         
     def __len__(self) -> int:
         """Return the number of samples in the dataset."""
@@ -152,10 +189,14 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
         # Convert images to float32 in [0, 1] range (on CPU)
         src_img = src_img.to(torch.float32) / 255.0
         trg_img = trg_img.to(torch.float32) / 255.0
+        
+        # Clamp to ensure valid [0, 1] range before normalization
+        src_img = torch.clamp(src_img, 0.0, 1.0)
+        trg_img = torch.clamp(trg_img, 0.0, 1.0)
 
         # Trajectories and flags for those two frames
-        src_trajs = trajs[i]
-        trg_trajs = trajs[j]
+        src_trajs = trajs[i]  # (N, 2)
+        trg_trajs = trajs[j]  # (N, 2)
         src_vis = visibs[i]
         trg_vis = visibs[j]
         src_valid = valids[i]
@@ -163,22 +204,115 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
         src_mask = masks[i]
         trg_mask = masks[j]
 
-        # Create sparse flow field from trg->src (on CPU)
-        flow = self._create_flow_field(
-            src_trajs, trg_trajs, src_vis, trg_vis, src_valid, trg_valid,
-            src_img.shape, src_mask, trg_mask, self.filter_instances, torch.device('cpu')
-        )
+        # Normalize images if requested (model expects ImageNet normalization)
+        # ImageNet normalization: (img - mean) / std produces "dark and crunchy" appearance
+        if self.normalize:
+            from torchvision.transforms.functional import normalize
+            src_img = normalize(src_img, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            trg_img = normalize(trg_img, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
-        # Optionally downsample flow for CATS compatibility
-        if self.downsample_for_cats:
-            flow = self._downsample_flow_for_cats(flow, self.cats_feat_size)
+        # Extract valid keypoints from trajectories
+        valid_points = (src_vis > 0) & (trg_vis > 0) & (src_valid > 0) & (trg_valid > 0)
         
-        out = {
-            'src_img': src_img,
-            'trg_img': trg_img,
-            'flow': flow,
-            'masks': masks
-        }
+        if valid_points.any():
+            valid_src_trajs = src_trajs[valid_points]  # (M, 2)
+            valid_trg_trajs = trg_trajs[valid_points]  # (M, 2)
+            n_valid = valid_src_trajs.shape[0]
+            
+            # Convert to [2, M] format (x, y coordinates)
+            src_kps = valid_src_trajs.t()  # [2, M]
+            trg_kps = valid_trg_trajs.t()  # [2, M]
+        else:
+            # No valid points - use dummy keypoints
+            n_valid = 0
+            src_kps = torch.zeros((2, 0), dtype=torch.float32)
+            trg_kps = torch.zeros((2, 0), dtype=torch.float32)
+
+        # Pad keypoints to max_pts
+        if n_valid < self.max_pts:
+            pad_size = self.max_pts - n_valid
+            src_kps = torch.cat([src_kps, torch.ones(2, pad_size) * -1], dim=1)
+            trg_kps = torch.cat([trg_kps, torch.ones(2, pad_size) * -1], dim=1)
+        elif n_valid > self.max_pts:
+            # Truncate to max_pts
+            src_kps = src_kps[:, :self.max_pts]
+            trg_kps = trg_kps[:, :self.max_pts]
+            n_valid = self.max_pts
+
+        # Calculate flow based on downsample_for_cats flag
+        if not self.downsample_for_cats:
+            # Use full resolution flow (manual calculation only)
+            flow_full = self._create_flow_field(
+                src_trajs, trg_trajs, src_vis, trg_vis, src_valid, trg_valid,
+                src_img.shape, src_mask, trg_mask, self.filter_instances, torch.device('cpu')
+            )
+            flow_downsampled = flow_full
+        else:
+            # downsample_for_cats is True: try kps_to_flow first, fallback to manual downsampling
+            if self.kps_to_flow is not None and n_valid > 0:
+                try:
+                    # Use KeypointToFlow for downsampled flow (matches other datasets like SPair, PFPascal)
+                    batch_for_flow = {
+                        'src_kps': src_kps,  # [2, max_pts]
+                        'trg_kps': trg_kps,  # [2, max_pts]
+                        'n_pts': torch.tensor(n_valid)
+                    }
+                    flow_downsampled = self.kps_to_flow(batch_for_flow)  # [2, feature_size, feature_size]
+                except Exception as e:
+                    # If kps_to_flow fails, fall back to manual downsampling
+                    if self.verbose:
+                        print(f"Warning: kps_to_flow failed ({e}), falling back to manual downsampling")
+                    flow_full = self._create_flow_field(
+                        src_trajs, trg_trajs, src_vis, trg_vis, src_valid, trg_valid,
+                        src_img.shape, src_mask, trg_mask, self.filter_instances, torch.device('cpu')
+                    )
+                    flow_downsampled = self._downsample_flow_for_cats(flow_full, self.cats_feat_size)
+            else:
+                # Fallback: create full flow and downsample (when kps_to_flow is not available or no valid points)
+                flow_full = self._create_flow_field(
+                    src_trajs, trg_trajs, src_vis, trg_vis, src_valid, trg_valid,
+                    src_img.shape, src_mask, trg_mask, self.filter_instances, torch.device('cpu')
+                )
+                flow_downsampled = self._downsample_flow_for_cats(flow_full, self.cats_feat_size)
+
+        # Get image size (images are in CHW format)
+        if src_img.ndim == 3:
+            C, H, W = src_img.shape
+            img_size_tuple = (H, W)
+        else:
+            H, W = src_img.shape[-2:]
+            img_size_tuple = (H, W)
+
+        # Get PCK threshold
+        if self.thres == 'img':
+            pckthres = torch.tensor(max(H, W), dtype=torch.float32)
+        else:
+            # Default to image size
+            pckthres = torch.tensor(max(H, W), dtype=torch.float32)
+
+        # Build output dictionary
+        if self.normalize_images:
+            # Validation format (matching TSSDataset and other evaluation datasets)
+            out = {
+                'src_img': src_img,
+                'trg_img': trg_img,
+                'flow': flow_downsampled,  # Downsampled flow [2, feature_size, feature_size]
+                'src_kps': src_kps,  # [2, max_pts]
+                'trg_kps': trg_kps,  # [2, max_pts]
+                'n_pts': torch.tensor(n_valid),
+                'pckthres': pckthres,
+                'src_imsize': img_size_tuple,
+                'trg_imsize': img_size_tuple,
+                'datalen': len(self),
+            }
+        else:
+            # Training format (original)
+            out = {
+                'src_img': src_img,
+                'trg_img': trg_img,
+                'flow': flow_downsampled,
+                'masks': masks
+            }
 
         # All tensors are already on CPU, no need to move them
         return out
@@ -655,8 +789,7 @@ def test_dataset_with_visualization(dataset_path: str = None, size: Optional[int
 
     dataloader = DataLoader[Any](dataset, batch_size=4, shuffle=False)
     batch = next(iter(dataloader))
-    batch['trg_img'] = batch['trg_img'] * 0.0
-    # batch['src_img'] = batch['src_img'] * 0.0
+
     
     # # Visualize masks
     # print("\nVisualizing instance masks...")
@@ -694,38 +827,105 @@ def test_dataset_with_visualization(dataset_path: str = None, size: Optional[int
             show_patch_boundaries=True
         )
 
-        
-        # Visualize with side-by-side layout
-        print("\nCreating side-by-side visualization...")
-        visualizer.visualize_rendered_batch(
-            batch,
-            save_path="./debug/pointodyssey_flow_side_by_side.png",
-            max_samples=len(batch_data),
-            visualization_mode='side_by_side',
-            sampling_mode='all_valid'
-        )
-
-        # Visualize with overlay_background_aware layout
-        print("Creating overlay_background_aware visualization...")
-        visualizer.visualize_rendered_batch(
-            batch,
-            save_path="./debug/pointodyssey_flow_overlay_background_aware.png",
-            max_samples=len(batch_data),
-            visualization_mode='overlay_background_aware',
-            sampling_mode='all_valid'
-        )
-
         if downsample_for_cats:
-            batch_dict_downsampled = {
-                'src_img': batch_dict['src_img'],
-                'trg_img': batch_dict['trg_img'],
-                'flow_downsampled': batch_dict['flow']
+            batch_downsampled = {
+                'src_img': batch['src_img'],
+                'trg_img': batch['trg_img'],
+                'flow_downsampled': batch['flow']
             }
             cats_visualizer.visualize_downsampled_flow_batch(
-                batch_dict_downsampled,
-                save_path="./debug/pointodyssey_flow_downsampled.png",
-                max_samples=len(batch_data)
+                batch_downsampled,
+                save_path="./debug/pointodyssey_flow_downsampled_side_by_side.png",
+                max_samples=len(batch_data),
+                visualization_mode='side_by_side'
             )
+            cats_visualizer.visualize_downsampled_flow_batch(
+                batch_downsampled,
+                save_path="./debug/pointodyssey_flow_downsampled_overlay.png",
+                max_samples=len(batch_data),
+                visualization_mode='overlay'
+            )
+            
+            # Create mask-based visualization: src_img and trg_img from masks
+            if 'masks' in batch:
+                masks_batch = batch['masks']  # (batch_size, S, 1, H, W)
+                batch_size = masks_batch.shape[0]
+                num_instances = masks_batch.shape[1]
+                H, W = masks_batch.shape[3], masks_batch.shape[4]
+                
+                # Convert to numpy if needed
+                if torch.is_tensor(masks_batch):
+                    masks_np = masks_batch.cpu().numpy()
+                else:
+                    masks_np = masks_batch
+                
+                # Create mask-based images
+                src_mask_imgs = []
+                trg_mask_imgs = []
+                
+                for i in range(batch_size):
+                    # Get src mask (first frame) and trg mask (last frame)
+                    src_mask = masks_np[i, 0, 0, :, :]  # (H, W)
+                    trg_mask = masks_np[i, num_instances-1, 0, :, :]  # (H, W)
+                    
+                    # Identify background: mask value 0 (sky) or max (landscape/background)
+                    max_mask_value = np.max(masks_np[i])
+                    src_background = (src_mask == 0) | (src_mask == max_mask_value)
+                    trg_background = (trg_mask == 0) | (trg_mask == max_mask_value)
+                    
+                    # Create object masks: NOT background
+                    src_object_mask = ~src_background  # (H, W) - True where objects
+                    trg_object_mask = ~trg_background  # (H, W) - True where objects
+                    
+                    # Create RGB images: src as red, trg as green (matching overlay_background_aware pattern)
+                    src_mask_img = np.zeros((3, H, W), dtype=np.float32)
+                    src_mask_img[0] = src_object_mask.astype(np.float32)  # Red channel = src objects
+                    
+                    trg_mask_img = np.zeros((3, H, W), dtype=np.float32)
+                    trg_mask_img[1] = trg_object_mask.astype(np.float32)  # Green channel = trg objects
+                    
+                    src_mask_imgs.append(torch.from_numpy(src_mask_img))
+                    trg_mask_imgs.append(torch.from_numpy(trg_mask_img))
+                
+                # Stack into batch tensors
+                src_mask_batch = torch.stack(src_mask_imgs, dim=0)  # (batch_size, 3, H, W)
+                trg_mask_batch = torch.stack(trg_mask_imgs, dim=0)  # (batch_size, 3, H, W)
+                
+                batch_mask_overlay = {
+                    'src_img': src_mask_batch,
+                    'trg_img': trg_mask_batch,
+                    'flow_downsampled': batch['flow']
+                }
+                
+                cats_visualizer.visualize_downsampled_flow_batch(
+                    batch_mask_overlay,
+                    save_path="./debug/pointodyssey_flow_downsampled_overlay_mask.png",
+                    max_samples=len(batch_data),
+                    visualization_mode='overlay'
+                )
+            
+        else:
+            # Visualize with side-by-side layout
+            print("\nCreating side-by-side visualization...")
+            visualizer.visualize_rendered_batch(
+                batch,
+                save_path="./debug/pointodyssey_flow_side_by_side.png",
+                max_samples=len(batch_data),
+                visualization_mode='side_by_side',
+                sampling_mode='all_valid'
+            )
+
+            # Visualize with overlay_background_aware layout
+            print("Creating overlay_background_aware visualization...")
+            visualizer.visualize_rendered_batch(
+                batch,
+                save_path="./debug/pointodyssey_flow_overlay_background_aware.png",
+                max_samples=len(batch_data),
+                visualization_mode='overlay_background_aware',
+                sampling_mode='all_valid'
+            )
+
+
         
         print("Visualization complete! Check the generated PNG files.")
         
@@ -828,6 +1028,8 @@ if __name__ == "__main__":
                         help='Run with visualization')
     parser.add_argument('--masks', action='store_true',
                         help='Test mask visualization only')
+    parser.add_argument('--downsample_for_cats', type=bool, default=False,
+                        help='Downsample flow for CATs')
     
     args = parser.parse_args()
     
@@ -839,7 +1041,7 @@ if __name__ == "__main__":
         sample = test_mask_visualization()
     elif args.visualize:
         # Test with visualization
-        batch_dict = test_dataset_with_visualization(args.dataset_path, size)
+        batch_dict = test_dataset_with_visualization(args.dataset_path, size, args.downsample_for_cats)
     else:
         # Test without visualization
         sample = test_dataset()

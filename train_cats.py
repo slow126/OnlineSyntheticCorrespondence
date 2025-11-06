@@ -4,6 +4,7 @@ This script initializes the CATs++ model and sets up training with the online sy
 """
 
 import argparse
+import csv
 import os
 import pickle
 import random
@@ -23,7 +24,6 @@ from torch.utils.data import DataLoader
 import sys
 from models.CATs_PlusPlus.models.cats_improved import CATsImproved
 import models.CATs_PlusPlus.utils_training.optimize as optimize
-from models.CATs_PlusPlus.utils_training.evaluation import Evaluator
 from models.CATs_PlusPlus.utils_training.utils import parse_list, load_checkpoint, save_checkpoint, boolean_string
 from src.data.synth.datasets.OnlineCorrespondenceDataset import OnlineCorrespondenceDataset
 import models.CATs_PlusPlus.data.download as download
@@ -36,7 +36,179 @@ from src.data.synth.datasets.PointOdysseyCorrespondence import PointOdysseyFlowD
 import torchvision
 from pathlib import Path
 
-# TODO: Evaluate on multiple datasets at the same time. Will need to modify the validate_epoch function to support this.
+
+def visualize_batch_flow(model, batch, device, train_dataset_name, val_dataset_name, split_name, flow_source='gt', 
+                         feature_size=32, epoch=None):
+    """
+    Visualize batch flow (ground truth or predicted) for debugging.
+    
+    Args:
+        model: Model instance (can be None if flow_source='gt' or if 'pred_flow' already in batch)
+        batch: Batch dictionary containing images and flow
+        device: Device to run model on
+        train_dataset_name: Name of training dataset (for grouping experiments)
+        val_dataset_name: Name of validation dataset (only used when split_name='val')
+        split_name: 'train' or 'val' (for directory naming)
+        flow_source: 'gt' (ground truth from dataset) or 'pred' (model prediction)
+        feature_size: Feature size for downsampled flow visualization
+        epoch: Optional epoch number (for directory naming)
+    """
+    debug_dir = Path("debug")
+    debug_dir.mkdir(exist_ok=True, parents=True)
+    
+    # Create train dataset-specific subdirectory (groups all experiments by training dataset)
+    train_dataset_debug_dir = debug_dir / train_dataset_name
+    train_dataset_debug_dir.mkdir(exist_ok=True, parents=True)
+    
+    # Create split-specific subdirectory
+    if split_name == 'train':
+        # For training: debug/{train_dataset_name}/train/
+        split_debug_dir = train_dataset_debug_dir / 'train'
+    elif split_name == 'val':
+        # For validation: debug/{train_dataset_name}/val/{val_dataset_name}/
+        if val_dataset_name is None:
+            raise ValueError("val_dataset_name must be provided when split_name='val'")
+        val_dir = train_dataset_debug_dir / 'val'
+        val_dir.mkdir(exist_ok=True, parents=True)
+        split_debug_dir = val_dir / val_dataset_name
+    else:
+        raise ValueError(f"split_name must be 'train' or 'val', got '{split_name}'")
+    
+    split_debug_dir.mkdir(exist_ok=True, parents=True)
+    
+    # Add epoch suffix if provided
+    # For pre-training (epoch=-1), use "_pretrain", otherwise use epoch number
+    if epoch is not None:
+        if epoch == -1:
+            epoch_suffix = "_pretrain"
+        else:
+            epoch_suffix = f"_epoch_{epoch + 1}"
+    else:
+        epoch_suffix = ""
+    
+    try:
+        # Get flow - either from dataset or model prediction
+        if flow_source == 'pred':
+            # Check if pred_flow already exists in batch
+            if 'pred_flow' in batch:
+                print(f"Using existing 'pred_flow' from batch")
+                pred_flow = batch['pred_flow']
+                flow_tensor = pred_flow[0].cpu() if isinstance(pred_flow, torch.Tensor) else pred_flow[0].cpu()
+            else:
+                # Need to run forward pass
+                if model is None:
+                    print(f"Warning: model is None and 'pred_flow' not in batch. Skipping visualization.")
+                    return
+                print(f"Running model forward pass to get predictions...")
+                model.eval()
+                with torch.no_grad():
+                    pred_flow = model(
+                        batch['trg_img'].to(device),
+                        batch['src_img'].to(device)
+                    )
+                flow_tensor = pred_flow[0].cpu()
+            flow_key = 'pred_flow'
+        else:  # flow_source == 'gt'
+            flow_tensor = batch['flow'][0].cpu()
+            flow_key = 'gt_flow'
+        
+        # Visualize downsampled flow using CATSFlowVisualizer (raw batch, no normalization)
+        try:
+            from src.data.synth.datasets.cats_flow_visualizers import CATSFlowVisualizer
+            
+            # Check if flow is downsampled (feat_size x feat_size) or full resolution
+            flow_shape = flow_tensor.shape
+            
+            if len(flow_shape) == 3 and flow_shape[1] == flow_shape[2] and flow_shape[1] == feature_size:
+                # Flow is downsampled
+                dataset_display_name = train_dataset_name if split_name == 'train' else val_dataset_name
+                print(f"\nFlow is downsampled: shape={flow_shape}, feat_size={feature_size}, source={flow_source}")
+                non_zero_count = ((flow_tensor[0] != 0) | (flow_tensor[1] != 0)).sum()
+                print(f"Non-zero flow count: {non_zero_count} for dataset {dataset_display_name} ({split_name}, {flow_source})")
+                flow_norms = flow_tensor.norm(dim=0)
+                non_zero_mask = flow_norms > 0
+                if non_zero_mask.any():
+                    avg_length = flow_norms[non_zero_mask].mean().item()
+                else:
+                    avg_length = 0.0
+                print(f"Average flow length: {avg_length} for dataset {dataset_display_name} ({split_name}, {flow_source})")
+
+                # Create batch dict with raw images (not normalized - visualizer will handle display)
+                # Use pred_flow if available, otherwise use batch['flow']
+                if flow_source == 'pred':
+                    flow_to_visualize = pred_flow
+                else:
+                    flow_to_visualize = batch['flow']
+                    
+                batch_dict_raw = {
+                    'src_img': batch['src_img'].cpu(),
+                    'trg_img': batch['trg_img'].cpu(),
+                    'flow_downsampled': flow_to_visualize.cpu() if isinstance(flow_to_visualize, torch.Tensor) else flow_to_visualize
+                }
+                
+                # Create visualizer with normalization disabled to see actual batch values
+                cats_visualizer = CATSFlowVisualizer(
+                    feat_size=feature_size,
+                    figsize=(20, 15),
+                    dpi=150,
+                    show_patch_boundaries=True,
+                    normalize_images=False  # Don't normalize to see actual batch values
+                )
+                
+                # Visualize side-by-side
+                cats_visualizer.visualize_downsampled_flow_batch(
+                    batch_dict_raw,
+                    save_path=str(split_debug_dir / f"batch_downsampled_flow_{flow_key}{epoch_suffix}_side_by_side.png"),
+                    max_samples=4,
+                    visualization_mode='side_by_side'
+                )
+                
+                # Visualize overlay
+                cats_visualizer.visualize_downsampled_flow_batch(
+                    batch_dict_raw,
+                    save_path=str(split_debug_dir / f"batch_downsampled_flow_{flow_key}{epoch_suffix}_overlay.png"),
+                    max_samples=4,
+                    visualization_mode='overlay'
+                )
+                
+                print(f"Saved CATS flow visualizations to {split_debug_dir} (raw batch, no normalization, {flow_source})")
+
+            else:
+                print(f"\nFlow is full resolution: shape={flow_shape}, skipping downsampled flow visualization")
+                # Visualize full resolution flow
+                from src.data.synth.datasets.visualizers import CorrespondenceVisualizer
+                visualizer = CorrespondenceVisualizer()
+                
+                # Create batch dict with appropriate flow
+                if flow_source == 'pred':
+                    batch_vis = batch.copy()
+                    batch_vis['flow'] = pred_flow.cpu()
+                else:
+                    batch_vis = batch
+                
+                visualizer.visualize_rendered_batch(
+                    batch_vis, 
+                    save_path=str(split_debug_dir / f"batch_full_resolution_flow_{flow_key}{epoch_suffix}_overlay.png"), 
+                    visualization_mode="overlay"
+                )
+                visualizer.visualize_rendered_batch(
+                    batch_vis, 
+                    save_path=str(split_debug_dir / f"batch_full_resolution_flow_{flow_key}{epoch_suffix}_side_by_side.png"), 
+                    visualization_mode="side_by_side"
+                )
+                print(f"Saved full resolution flow visualizations to {split_debug_dir} ({flow_source})")
+                
+        except ImportError as e:
+            print(f"Could not import CATSFlowVisualizer: {e}")
+        except Exception as e:
+            print(f"Error creating CATS flow visualization: {e}")
+            import traceback
+            traceback.print_exc()
+
+        print(f"Saved sample batch visualizations to {split_debug_dir} ({flow_source})")
+    except Exception as e:
+        print(f"Could not save sample batch for debug ({flow_source}): {e}")
+
 
 def main():
     # Argument parsing
@@ -99,38 +271,41 @@ def main():
     parser.add_argument('--step_gamma', type=float, default=0.5)
     parser.add_argument('--freeze', type=boolean_string, nargs='?', const=True, default=True)
     parser.add_argument('--augmentation', type=boolean_string, nargs='?', const=True, default=True)
-    parser.add_argument('--steps_per_epoch', type=lambda x: None if str(x).lower() == 'none' else int(x), default=None,
-                        help='number of steps per epoch. [default: None, meaning all steps in the dataset]')
+    parser.add_argument('--steps_per_epoch', type=lambda x: None if str(x).lower() == 'none' else ('logarithmic' if str(x).lower() == 'logarithmic' else int(x)), default=None,
+                        help='number of steps per epoch. Can be an integer, "none" (all steps), or "logarithmic" (base 2 progression: 1, 2, 4, 8, ..., 1024). [default: None, meaning all steps in the dataset]')
+    parser.add_argument('--enable_debug', type=boolean_string, nargs='?', const=True, default=False,
+                        help='Enable debug visualizations and PointOdyssey verbose mode. [default: False]')
     
     # Evaluation parameters
-    parser.add_argument('--benchmark', type=str, default='spair', choices=['synthetic', 'spair', 'pfpascal', 'pfwillow', 'caltech'],
-                        help='single benchmark for training (legacy support)')
     parser.add_argument('--eval_benchmarks', type=str, nargs='+', default=['spair'],
-                        choices=['synthetic', 'spair', 'pfpascal', 'pfwillow', 'caltech'],
+                        choices=['synthetic', 'spair', 'pfpascal', 'pfwillow', 'caltech', 'tss', 'pointodyssey'],
                         help='list of benchmarks for evaluation during training')
     parser.add_argument('--eval_alphas', type=float, nargs='+', default=[0.1],
                         help='list of alpha values for each evaluation benchmark (must match eval_benchmarks length)')
     parser.add_argument('--thres', type=str, default='img', choices=['auto', 'img', 'bbox', 'bbox-kp'])
-    parser.add_argument('--alpha', type=float, default=0.1,
-                        help='alpha for single benchmark mode (legacy support)')
     parser.add_argument('--datapath', type=str, default='./models/Datasets_CATs')
     parser.add_argument('--split_to_use_for_validation', type=str, default='val', choices=['val', 'test'])
     parser.add_argument('--val_batch_size', type=int, default=8,
                         help='batch size for validation. [default: 8]')
     parser.add_argument('--val_num_workers', type=int, default=16,
                         help='number of workers for validation. [default: 16]')
+    parser.add_argument('--tss_root', type=str, default='/home/spencer/Data/correspondence/TSS_CVPR2016',
+                        help='root directory of the TSS dataset')
+
+
 
     
     args = parser.parse_args()
     
     # Validate multi-benchmark arguments
+    if len(args.eval_benchmarks) == 0:
+        raise ValueError("At least one evaluation benchmark must be specified via --eval_benchmarks")
     if len(args.eval_benchmarks) != len(args.eval_alphas):
         raise ValueError(f"Number of eval_benchmarks ({len(args.eval_benchmarks)}) must match number of eval_alphas ({len(args.eval_alphas)})")
     
     # Create benchmark-alpha mapping
-    if len(args.eval_benchmarks) > 0:
-        eval_benchmarks_config = dict(zip(args.eval_benchmarks, args.eval_alphas))
-        print(f"Multi-benchmark evaluation config: {eval_benchmarks_config}")
+    eval_benchmarks_config = dict(zip(args.eval_benchmarks, args.eval_alphas))
+    print(f"Multi-benchmark evaluation config: {eval_benchmarks_config}")
     
     # Set random seeds
     random.seed(args.seed)
@@ -141,68 +316,71 @@ def main():
     
     print(f"Using device: {device}")
     
-    # Warning about OpenGL multiprocessing
-    if args.n_threads > 0:
-        print("⚠️  WARNING: Using multiple workers with OpenGL rendering may cause segmentation faults.")
-        print("   Consider using --n_threads 0 for stable training.")
+    # Initialize multi-benchmark evaluator
+    multi_evaluator = MultiBenchmarkEvaluator(eval_benchmarks_config)
+    print(f"Initialized evaluator for benchmarks: {multi_evaluator.get_available_benchmarks()}")
     
-    # Initialize Evaluator (for synthetic data, we'll use a simple version)
-    # Note: You may need to modify the Evaluator class to work with synthetic data
-    if len(args.eval_benchmarks) > 0:
-        eval_benchmarks_config = dict(zip(args.eval_benchmarks, args.eval_alphas))
-        print(f"Multi-benchmark evaluation config: {eval_benchmarks_config}")
-        multi_evaluator = MultiBenchmarkEvaluator(eval_benchmarks_config)
-        print(f"Initialized evaluator for benchmarks: {multi_evaluator.get_available_benchmarks()}")
-    else:
-        try:
-            Evaluator.initialize(args.benchmark, args.alpha)
-        except:
-            print("Warning: Could not initialize Evaluator for synthetic data")
+    # Download evaluation datasets (only for standard benchmarks that need downloading)
+    standard_benchmarks = ['spair', 'pfpascal', 'pfwillow', 'caltech']
+    for benchmark in args.eval_benchmarks:
+        if benchmark in standard_benchmarks:
+            download.download_dataset(args.datapath, benchmark)
     
-    # Check if the dataset is already downloaded
-    download.download_dataset(args.datapath, args.benchmark)
-    # Create synthetic dataset
+    # Download training dataset if it's a standard benchmark dataset
+    if args.train_dataset in ['spair', 'pfpascal', 'pfwillow', 'caltech']:
+        download.download_dataset(args.datapath, args.train_dataset)
+    
+    # Create training dataset
     if args.train_dataset == 'synthetic':
-        # Create dataloaders
-        # Note: Using num_workers=0 to avoid OpenGL context issues with multiprocessing
         print("Creating synthetic dataset...")
         train_dataset = OnlineCorrespondenceDataset(
             geometry_config_path='src/configs/online_synth_configs/OnlineGeometryConfig.yaml',
             processor_config_path='src/configs/online_synth_configs/OnlineProcessorConfig.yaml',
-            split='train'
+            split='train',
+            opengl_device_index=None  # Auto-detect from torch.cuda.current_device() (works with Lightning DDP)
         )
-        train_dataset.cuda() # Synthetic dataset requires GPU for processor that is in the collate_fn. CPU texturing kernel is not supported yet. 
-        train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True, collate_fn=train_dataset.collate_fn)
+        
+        # Use num_workers=0 for synthetic dataset (GPU-bound rendering, multiprocessing adds overhead)
+        train_dataloader = DataLoader(
+            train_dataset, 
+            batch_size=args.batch_size, 
+            num_workers=0,  # Single process per DataLoader (multi-GPU handled by Lightning DDP)
+            shuffle=True, 
+            collate_fn=train_dataset.collate_fn
+        )
     elif args.train_dataset == 'flyingthings':
         train_dataset = FlyingThingsDataset(root=args.flyingthings_root, split="train", transforms=None, size=(args.size, args.size), downsample_flow=args.feature_size, 
                                             subsample_flow=0.6, use_valid_mask=True, reverse_flow=True, filter_out_of_bounds=True)
         # Note: Dataset returns CPU tensors - DataLoader handles GPU transfer
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True, prefetch_factor=args.batch_size if args.n_threads > 0 else None, pin_memory=True)
     elif args.train_dataset == 'pointodyssey':
-        train_dataset = PointOdysseyFlowDataset(dataset_location=args.pointodyssey_root, dset='train', use_augs=False, S=4, N=args.num_pts_to_track_pointodyssey, quick=False, verbose=True, resize_size=(args.size+64, args.size+64), crop_size=(args.size, args.size), filter_instances=True, downsample_for_cats=True, cats_feat_size=args.feature_size, all_points=True)
+        train_dataset = PointOdysseyFlowDataset(dataset_location=args.pointodyssey_root, dset='train', use_augs=False, S=4, N=args.num_pts_to_track_pointodyssey, strides=[4], quick=False, verbose=args.enable_debug, resize_size=(
+            args.size+64, args.size+64), crop_size=(args.size, args.size), filter_instances=True, downsample_for_cats=True, cats_feat_size=args.feature_size, all_points=True)
         # Note: Dataset returns CPU tensors - DataLoader handles GPU transfer
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True, prefetch_factor=args.batch_size if args.n_threads > 0 else None, pin_memory=True)
+    elif args.train_dataset in ['spair', 'pfpascal', 'pfwillow', 'caltech']:
+        # Load standard benchmark dataset for training
+        train_dataset = download.load_dataset(args.train_dataset, args.datapath, args.thres, device, 'trn', args.augmentation, args.feature_size)
+        train_dataloader = DataLoader(
+            train_dataset,
+            batch_size=args.batch_size,
+            num_workers=args.n_threads,
+            persistent_workers=True,
+            prefetch_factor=8,
+            shuffle=True,
+            pin_memory=True
+        )
     else:
-        train_dataset = download.load_dataset(args.benchmark, args.datapath, args.thres, device, 'trn', False, args.feature_size)
-        train_dataloader = DataLoader(train_dataset,
-        batch_size=args.val_batch_size,
-        num_workers=args.val_num_workers,
-        persistent_workers=True,
-        prefetch_factor=8,
-        shuffle=True,
-        pin_memory=True)
+        raise ValueError(f"Unknown train_dataset: {args.train_dataset}. Must be one of: synthetic, flyingthings, pointodyssey, spair, pfpascal, pfwillow, caltech")
 
     print(f"Train dataset size: {len(train_dataloader)}")
 
-
-    if len(args.eval_benchmarks) > 0:
-        val_loaders = {benchmark: download.load_dataset(benchmark, args.datapath, args.thres, device, 'val', False, args.feature_size) for benchmark in args.eval_benchmarks}
-        val_dataloaders = {benchmark: DataLoader(val_dataset, batch_size=args.val_batch_size, num_workers=args.val_num_workers, persistent_workers=True, prefetch_factor=8, shuffle=False) for benchmark, val_dataset in val_loaders.items()}
-        # Loop through the validation dataloaders and print their name and size
-        for benchmark, dataloader in val_dataloaders.items():
-            print(f"Val dataloader for benchmark '{benchmark}' size: {len(dataloader)}")
-    else:
-        if args.benchmark == 'synthetic':
+    # Setup validation dataloaders for all benchmarks
+    val_loaders = {}
+    val_dataloaders = {}
+    
+    for benchmark in args.eval_benchmarks:
+        if benchmark == 'synthetic':
             val_dataset = OnlineCorrespondenceDataset(
                 geometry_config_path='src/configs/online_synth_configs/OnlineGeometryConfig_Val.yaml',
                 processor_config_path='src/configs/online_synth_configs/OnlineProcessorConfig.yaml',
@@ -210,16 +388,49 @@ def main():
             )
             val_dataset.cuda()
             val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=False, collate_fn=val_dataset.collate_fn)
+        elif benchmark == 'tss':
+            from src.data.synth.datasets.TSSDataset import TSSDataset
+            val_dataset = TSSDataset(
+                root=args.tss_root, 
+                device=device,
+                size=args.size,
+                feature_size=args.feature_size,
+                thres=args.thres
+            )
+            val_dataloader = DataLoader(val_dataset, batch_size=args.val_batch_size, num_workers=args.val_num_workers, persistent_workers=True, prefetch_factor=8, shuffle=False)
+        elif benchmark == 'pointodyssey':
+            val_dataset = PointOdysseyFlowDataset(
+                dataset_location=args.pointodyssey_root,
+                dset='val',
+                use_augs=False,
+                S=4,
+                N=args.num_pts_to_track_pointodyssey,
+                quick=True,
+                verbose=args.enable_debug,
+                resize_size=(args.size+64, args.size+64),
+                crop_size=(args.size, args.size),
+                filter_instances=True,
+                downsample_for_cats=True,  
+                cats_feat_size=args.feature_size,
+                all_points=False,
+                max_pts=40,
+                thres=args.thres,
+                normalize_images=True, 
+            )
+            val_dataloader = DataLoader(val_dataset, batch_size=args.val_batch_size, num_workers=args.val_num_workers, persistent_workers=True, prefetch_factor=8, shuffle=False, pin_memory=True)
         else:
-            val_dataset = download.load_dataset(args.benchmark, args.datapath, args.thres, device, 'val', False, args.feature_size)
+            val_dataset = download.load_dataset(benchmark, args.datapath, args.thres, device, args.split_to_use_for_validation, False, args.feature_size)
             val_dataloader = DataLoader(val_dataset,
-            batch_size=args.val_batch_size,
-            num_workers=args.val_num_workers,
-            persistent_workers=True,
-            prefetch_factor=8,
-            shuffle=False)
+                batch_size=args.val_batch_size,
+                num_workers=args.val_num_workers,
+                persistent_workers=True,
+                prefetch_factor=8,
+                shuffle=False,
+                pin_memory=True)
         
-        print(f"Val dataset size: {len(val_dataloader)}")
+        val_loaders[benchmark] = val_dataset
+        val_dataloaders[benchmark] = val_dataloader
+        print(f"Val dataloader for benchmark '{benchmark}' size: {len(val_dataloader)}")
     
 
     # Initialize model
@@ -281,9 +492,8 @@ def main():
             else:
                 # Initialize if not found in checkpoint
                 best_val_per_benchmark = {}
-                if len(args.eval_benchmarks) > 0:
-                    for benchmark in args.eval_benchmarks:
-                        best_val_per_benchmark[benchmark] = 0.0
+                for benchmark in args.eval_benchmarks:
+                    best_val_per_benchmark[benchmark] = 0.0
             
             if 'best_epoch_per_benchmark' in checkpoint:
                 best_epoch_per_benchmark = checkpoint['best_epoch_per_benchmark']
@@ -291,9 +501,8 @@ def main():
             else:
                 # Initialize if not found in checkpoint
                 best_epoch_per_benchmark = {}
-                if len(args.eval_benchmarks) > 0:
-                    for benchmark in args.eval_benchmarks:
-                        best_epoch_per_benchmark[benchmark] = 0
+                for benchmark in args.eval_benchmarks:
+                    best_epoch_per_benchmark[benchmark] = 0
             
             if 'best_avg_pck' in checkpoint:
                 best_avg_pck = checkpoint['best_avg_pck']
@@ -349,11 +558,10 @@ def main():
         best_epoch_per_benchmark = {}
         best_avg_pck = 0.0  # Track best average PCK across all benchmarks
         best_avg_epoch = 0  # Track epoch with best average PCK
-        if len(args.eval_benchmarks) > 0:
-            for benchmark in args.eval_benchmarks:
-                best_val_per_benchmark[benchmark] = 0.0
-                best_epoch_per_benchmark[benchmark] = 0
-            print(f"Initialized best performance tracking for benchmarks: {list(best_val_per_benchmark.keys())}")
+        for benchmark in args.eval_benchmarks:
+            best_val_per_benchmark[benchmark] = 0.0
+            best_epoch_per_benchmark[benchmark] = 0
+        print(f"Initialized best performance tracking for benchmarks: {list(best_val_per_benchmark.keys())}")
     
     # Setup logging
     save_path = osp.join(args.snapshots, cur_snapshot)
@@ -362,9 +570,6 @@ def main():
     
     def write_training_summary(epoch, is_final=False):
         """Write training summary to text file"""
-        if len(args.eval_benchmarks) == 0:
-            return
-            
         summary_file = os.path.join(save_path, 'training_summary.txt')
         with open(summary_file, 'w') as f:
             f.write("TRAINING SUMMARY\n")
@@ -382,6 +587,15 @@ def main():
                 best_epoch = best_epoch_per_benchmark.get(benchmark, 0)
                 checkpoint_file = f"epoch_{best_epoch}.pth" if best_epoch > 0 else "N/A"
                 f.write(f"{benchmark:12}: {best_pck:.2f}% PCK (epoch {best_epoch}, {checkpoint_file})\n")
+            
+            ############# Motion Aware Section ########
+            f.write("\nMOTION-AWARE METRICS (from latest epoch):\n")
+            f.write("-" * 50 + "\n")
+            # Get latest validation results (would need to be passed in or stored)
+            # For now, just note that motion-aware metrics are available
+            f.write("Motion-aware PCK and static bias metrics are logged in validation_results.csv\n")
+            f.write("Metrics include: PCK (motion-aware), PCK by motion bins, zero-flow precision/recall/F1, static bias ratio\n")
+            ############# End Motion Aware Section ########
             
             f.write("\nTRAINING CONFIGURATION:\n")
             f.write("-" * 30 + "\n")
@@ -437,8 +651,7 @@ def main():
         torch.save(checkpoint_data, os.path.join(save_path, filename))
         print(f"Saved overall best model: {filename} (Avg PCK: {avg_pck:.2f}%)")
     
-    # Move model to device and wrap with DataParallel
-    model = nn.DataParallel(model)
+    
     model = model.to(device)
     
     print("Model initialized successfully!")
@@ -448,230 +661,372 @@ def main():
     print(f"Learning rate: {args.lr}")
     print(f"Backbone learning rate: {args.lr_backbone}")
     
+    # Pre-training visualizations (if enabled)
+    reference_train_batch = None
+    reference_val_batches = {}
+    if args.enable_debug:
+        print("\n" + "="*60)
+        print("PRE-TRAINING VISUALIZATIONS")
+        print("="*60)
+        
+        # Sample and save reference train batch
+        print("Sampling reference train batch...")
+        reference_train_batch = next(iter(train_dataloader))
+        # Move to CPU to ensure persistence across epochs
+        if isinstance(reference_train_batch, dict):
+            reference_train_batch = {k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in reference_train_batch.items()}
+        
+        # Visualize training data with ground truth flow
+        print("\nVisualizing train GT flow...")
+        visualize_batch_flow(
+            model=None,  # No model needed for GT
+            batch=reference_train_batch,
+            device=device,
+            train_dataset_name=args.train_dataset,
+            val_dataset_name=None,
+            split_name='train',
+            flow_source='gt',
+            feature_size=args.feature_size,
+            epoch=-1  # -1 indicates pre-training
+        )
+        
+        # Visualize training data with predicted flow (untrained model)
+        print("\nVisualizing train pred flow (untrained model)...")
+        visualize_batch_flow(
+            model=model,
+            batch=reference_train_batch,
+            device=device,
+            train_dataset_name=args.train_dataset,
+            val_dataset_name=None,
+            split_name='train',
+            flow_source='pred',
+            feature_size=args.feature_size,
+            epoch=-1  # -1 indicates pre-training
+        )
+        
+        # Sample and save reference val batches for each benchmark
+        print("\nSampling reference val batches for all benchmarks...")
+        for benchmark, val_dataloader in val_dataloaders.items():
+            print(f"  Sampling batch for {benchmark}...")
+            val_batch = next(iter(val_dataloader))
+            # Move to CPU to ensure persistence across epochs
+            if isinstance(val_batch, dict):
+                val_batch = {k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in val_batch.items()}
+            reference_val_batches[benchmark] = val_batch
+            
+            # Visualize validation data with ground truth flow
+            print(f"\nVisualizing {benchmark} val GT flow...")
+            visualize_batch_flow(
+                model=None,
+                batch=reference_val_batches[benchmark],
+                device=device,
+                train_dataset_name=args.train_dataset,
+                val_dataset_name=benchmark,
+                split_name='val',
+                flow_source='gt',
+                feature_size=args.feature_size,
+                epoch=-1  # -1 indicates pre-training
+            )
+            
+            # Visualize validation data with predicted flow (untrained model)
+            print(f"\nVisualizing {benchmark} val pred flow (untrained model)...")
+            visualize_batch_flow(
+                model=model,
+                batch=reference_val_batches[benchmark],
+                device=device,
+                train_dataset_name=args.train_dataset,
+                val_dataset_name=benchmark,
+                split_name='val',
+                flow_source='pred',
+                feature_size=args.feature_size,
+                epoch=-1  # -1 indicates pre-training
+            )
+        
+        print("="*60 + "\n")
+    
+    # Initialize cumulative training steps counter
+    cumulative_training_steps = 0
+    
+    def get_steps_per_epoch(epoch):
+        """Calculate steps per epoch based on args.steps_per_epoch setting"""
+        if args.steps_per_epoch is None:
+            return len(train_dataloader)
+        elif args.steps_per_epoch == 'logarithmic':
+            # Logarithmic progression: 2^epoch, capped at 1024
+            steps = min(2 ** epoch, 1024)
+            return steps
+        else:
+            # Integer value
+            return args.steps_per_epoch
+    
+    # Create CSV file for logging validation results vs training steps
+    validation_log_file = os.path.join(save_path, 'validation_results.csv')
+    validation_log_initialized = False
+    print(f"Validation results will be logged to: {validation_log_file}")
+    
+    def log_validation_results(epoch, cumulative_steps, val_results):
+        """Log validation results to CSV file with immediate flushing"""
+        nonlocal validation_log_initialized
+        
+        # Write header if first time
+        if not validation_log_initialized:
+            with open(validation_log_file, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(['epoch', 'training_steps', 'benchmark', 'pck', 'loss',
+                                'pck_motion_aware', 'pck_motion_small', 'pck_motion_medium', 'pck_motion_large',
+                                'zero_flow_precision', 'zero_flow_recall', 'zero_flow_f1', 'static_bias_ratio'])
+                f.flush()  # Ensure header is written immediately
+                os.fsync(f.fileno())  # Force OS to write to disk
+            validation_log_initialized = True
+            print(f"Created validation results CSV: {validation_log_file}")
+        
+        # Append results for each benchmark with immediate flushing
+        with open(validation_log_file, 'a', newline='') as f:
+            writer = csv.writer(f)
+            for benchmark, results in val_results.items():
+                ############# Motion Aware Section ########
+                pck_motion_aware = results.get('pck_motion_aware', '')
+                motion_binned = results.get('motion_binned', {})
+                pck_motion_small = motion_binned.get('small', {}).get('mean_pck', '') if motion_binned else ''
+                pck_motion_medium = motion_binned.get('medium', {}).get('mean_pck', '') if motion_binned else ''
+                pck_motion_large = motion_binned.get('large', {}).get('mean_pck', '') if motion_binned else ''
+                
+                zero_flow_metrics = results.get('zero_flow_metrics', {})
+                zero_precision = zero_flow_metrics.get('zero_precision', '') if zero_flow_metrics else ''
+                zero_recall = zero_flow_metrics.get('zero_recall', '') if zero_flow_metrics else ''
+                zero_f1 = zero_flow_metrics.get('zero_f1', '') if zero_flow_metrics else ''
+                static_bias = zero_flow_metrics.get('static_bias_ratio', '') if zero_flow_metrics else ''
+                
+                writer.writerow([
+                    epoch + 1,
+                    cumulative_steps,
+                    benchmark,
+                    f"{results['pck']:.4f}",
+                    f"{results['loss']:.6f}",
+                    f"{pck_motion_aware:.4f}" if isinstance(pck_motion_aware, (int, float)) else '',
+                    f"{pck_motion_small:.4f}" if isinstance(pck_motion_small, (int, float)) else '',
+                    f"{pck_motion_medium:.4f}" if isinstance(pck_motion_medium, (int, float)) else '',
+                    f"{pck_motion_large:.4f}" if isinstance(pck_motion_large, (int, float)) else '',
+                    f"{zero_precision:.4f}" if isinstance(zero_precision, (int, float)) else '',
+                    f"{zero_recall:.4f}" if isinstance(zero_recall, (int, float)) else '',
+                    f"{zero_f1:.4f}" if isinstance(zero_f1, (int, float)) else '',
+                    f"{static_bias:.4f}" if isinstance(static_bias, (int, float)) else ''
+                ])
+                ############# End Motion Aware Section ########
+            f.flush()  # Ensure data is written to buffer immediately
+            os.fsync(f.fileno())  # Force OS to write to disk
+    
     # Training loop
     train_started = time.time()
     
     for epoch in range(start_epoch, args.epochs):
         scheduler.step(epoch)
         
-        # Grab a sample batch from the training dataloader and save it to the debug folder
-
-        debug_dir = Path("debug")
-        debug_dir.mkdir(exist_ok=True, parents=True)
-        
-        # Create dataset-specific subdirectory
-        dataset_debug_dir = debug_dir / args.train_dataset
-        dataset_debug_dir.mkdir(exist_ok=True, parents=True)
-        
-        try:
-            sample_batch = next(iter(train_dataloader))
-            # The new batch format is a dict with keys like 'src_img', 'trg_img', 'flow', etc.
-            batch = sample_batch
-
-            # Take the first sample in the batch for visualization
-            flow_tensor = batch['flow'][0].cpu()
-
-            # Visualize downsampled flow using CATSFlowVisualizer (raw batch, no normalization)
-            try:
-                from src.data.synth.datasets.cats_flow_visualizers import CATSFlowVisualizer
-                
-                # Check if flow is downsampled (feat_size x feat_size) or full resolution
-                flow_shape = flow_tensor.shape
-                
-                if len(flow_shape) == 3 and flow_shape[1] == flow_shape[2] and flow_shape[1] == args.feature_size:
-                    # Flow is downsampled
-                    print(f"\nFlow is downsampled: shape={flow_shape}, feat_size={args.feature_size}")
-                    non_zero_count = ((flow_tensor[0] != 0) | (flow_tensor[1] != 0)).sum()
-                    print(f"Non-zero flow count: {non_zero_count} for dataset {args.train_dataset}")
-                    flow_norms = flow_tensor.norm(dim=0)
-                    non_zero_mask = flow_norms > 0
-                    if non_zero_mask.any():
-                        avg_length = flow_norms[non_zero_mask].mean().item()
-                    else:
-                        avg_length = 0.0
-                    print(f"Average flow length: {avg_length} for dataset {args.train_dataset}")
-
-                    # Create batch dict with raw images (not normalized - visualizer will handle display)
-                    batch_dict_raw = {
-                        'src_img': batch['src_img'].cpu(),  # First sample only, keep on CPU
-                        'trg_img': batch['trg_img'].cpu(),
-                        'flow_downsampled': batch['flow'].cpu()
-                    }
-                    
-                    # Create visualizer with normalization disabled to see actual batch values
-                    cats_visualizer = CATSFlowVisualizer(
-                        feat_size=args.feature_size,
-                        figsize=(20, 15),
-                        dpi=150,
-                        show_patch_boundaries=True,
-                        normalize_images=False  # Don't normalize to see actual batch values
-                    )
-                    
-                    # Visualize side-by-side
-                    cats_visualizer.visualize_downsampled_flow_batch(
-                        batch_dict_raw,
-                        save_path=str(dataset_debug_dir / "batch_downsampled_flow_side_by_side.png"),
-                        max_samples=4,
-                        visualization_mode='side_by_side'
-                    )
-                    
-                    # Visualize overlay
-                    cats_visualizer.visualize_downsampled_flow_batch(
-                        batch_dict_raw,
-                        save_path=str(dataset_debug_dir / "batch_downsampled_flow_overlay.png"),
-                        max_samples=4,
-                        visualization_mode='overlay'
-                    )
-                    
-                    print(f"Saved CATS flow visualizations to {dataset_debug_dir} (raw batch, no normalization)")
-
-                    
-                else:
-                    print(f"\nFlow is full resolution: shape={flow_shape}, skipping downsampled flow visualization")
-                    # Visualize full resolution flow
-                    from src.data.synth.datasets.visualizers import CorrespondenceVisualizer
-                    visualizer = CorrespondenceVisualizer()
-                    visualizer.visualize_rendered_batch(batch, save_path=str(dataset_debug_dir / "batch_full_resolution_flow_overlay.png"), visualization_mode="overlay")
-                    visualizer.visualize_rendered_batch(batch, save_path=str(dataset_debug_dir / "batch_full_resolution_flow_side_by_side.png"), visualization_mode="side_by_side")
-                    print(f"Saved full resolution flow visualizations to {dataset_debug_dir}")
-                    
-            except ImportError as e:
-                print(f"Could not import CATSFlowVisualizer: {e}")
-            except Exception as e:
-                print(f"Error creating CATS flow visualization: {e}")
-                import traceback
-                traceback.print_exc()
-
-            print(f"Saved sample batch visualizations to {dataset_debug_dir}")
-        except Exception as e:
-            print(f"Could not save sample batch for debug: {e}")
-
         # Training
+        # Calculate steps per epoch for this epoch (may vary if using logarithmic mode)
+        steps_per_epoch = get_steps_per_epoch(epoch)
+        if args.steps_per_epoch == 'logarithmic':
+            print(f"Epoch {epoch + 1}: Using {steps_per_epoch} steps (logarithmic mode)")
+        
         train_loss = optimize.train_epoch(
             model, optimizer, train_dataloader, device, epoch, train_writer, 
-            steps_per_epoch=args.steps_per_epoch
+            steps_per_epoch=steps_per_epoch
         )
+        
+        # Update cumulative training steps
+        cumulative_training_steps += steps_per_epoch
+        
         train_writer.add_scalar('train loss', train_loss, epoch)
         train_writer.add_scalar('learning_rate', scheduler.get_lr()[0], epoch)
         train_writer.add_scalar('learning_rate_backbone', scheduler.get_lr()[1], epoch)
+        train_writer.add_scalar('cumulative_training_steps', cumulative_training_steps, epoch)
         print(colored('==> ', 'green') + 'Train average loss:', train_loss)
+        print(f"  Cumulative training steps: {cumulative_training_steps}")
         
         # Validation
-        if len(args.eval_benchmarks) > 0:
-            val_results = validate_epoch_multi_benchmark(
-                model, val_dataloaders, device, epoch, multi_evaluator,
-                primary_benchmark=args.eval_benchmarks[0]
+        val_results = validate_epoch_multi_benchmark(
+            model, val_dataloaders, device, epoch, multi_evaluator,
+            primary_benchmark=args.eval_benchmarks[0]
+        )
+        
+        # Log results for each benchmark
+        print(colored('==> ', 'blue') + 'epoch :', epoch + 1)
+        pck_scores = []
+        for benchmark, results in val_results.items():
+            print(f"{benchmark} - Val Loss: {results['loss']:.4f}, PCK: {results['pck']:.2f}%")
+            test_writer.add_scalar(f'val/{benchmark}/PCK', results['pck'], epoch)
+            test_writer.add_scalar(f'val/{benchmark}/loss', results['loss'], epoch)
+            
+            ############# Motion Aware Section ########
+            # Log motion-aware metrics
+            if 'pck_motion_aware' in results:
+                test_writer.add_scalar(f'val/{benchmark}/PCK_motion_aware', results['pck_motion_aware'], epoch)
+            
+            if 'motion_binned' in results:
+                for bin_name, bin_data in results['motion_binned'].items():
+                    if bin_data.get('count', 0) > 0:
+                        test_writer.add_scalar(f'val/{benchmark}/PCK_motion_{bin_name}', bin_data['mean_pck'], epoch)
+                        test_writer.add_scalar(f'val/{benchmark}/motion_{bin_name}_count', bin_data['count'], epoch)
+            
+            if 'zero_flow_metrics' in results:
+                zfm = results['zero_flow_metrics']
+                test_writer.add_scalar(f'val/{benchmark}/zero_flow_precision', zfm.get('zero_precision', 0), epoch)
+                test_writer.add_scalar(f'val/{benchmark}/zero_flow_recall', zfm.get('zero_recall', 0), epoch)
+                test_writer.add_scalar(f'val/{benchmark}/zero_flow_f1', zfm.get('zero_f1', 0), epoch)
+                test_writer.add_scalar(f'val/{benchmark}/static_bias_ratio', zfm.get('static_bias_ratio', 0), epoch)
+            ############# End Motion Aware Section ########
+            
+            # Log per-category results for TSS
+            if benchmark == 'tss' and 'pck_by_category' in results:
+                for cat, pck in results['pck_by_category'].items():
+                    print(f"  {cat}: {pck:.2f}%")
+                    test_writer.add_scalar(f'val/{benchmark}/{cat}/PCK', pck, epoch)
+            
+            pck_scores.append(results['pck'])
+            
+            # Track best performance for each benchmark and save individual models
+            if results['pck'] > best_val_per_benchmark[benchmark]:
+                best_val_per_benchmark[benchmark] = results['pck']
+                best_epoch_per_benchmark[benchmark] = epoch + 1
+                print(f"New best {benchmark} PCK: {results['pck']:.2f}% (epoch {epoch + 1})")
+                
+                # Save individual benchmark best model
+                save_benchmark_model(
+                    benchmark, epoch, results['pck'], 
+                    model.module.state_dict() if hasattr(model, 'module') else model.state_dict(), 
+                    optimizer.state_dict(), 
+                    scheduler.state_dict(), val_results
+                )
+        
+        # Calculate average PCK across all benchmarks
+        avg_pck = sum(pck_scores) / len(pck_scores)
+        test_writer.add_scalar('val/average/PCK', avg_pck, epoch)
+        print(f"Average PCK across benchmarks: {avg_pck:.2f}%")
+        
+        # Log validation results to CSV (vs training steps)
+        log_validation_results(epoch, cumulative_training_steps, val_results)
+        
+        # In-training visualizations (if enabled)
+        if args.enable_debug and reference_train_batch is not None:
+            print("\nGenerating epoch visualizations...")
+            
+            # Visualize train GT flow (same batch as pre-training)
+            visualize_batch_flow(
+                model=None,
+                batch=reference_train_batch,
+                device=device,
+                train_dataset_name=args.train_dataset,
+                val_dataset_name=None,
+                split_name='train',
+                flow_source='gt',
+                feature_size=args.feature_size,
+                epoch=epoch
             )
             
-            # Log results for each benchmark
-            print(colored('==> ', 'blue') + 'epoch :', epoch + 1)
-            pck_scores = []
-            for benchmark, results in val_results.items():
-                print(f"{benchmark} - Val Loss: {results['loss']:.4f}, PCK: {results['pck']:.2f}%")
-                test_writer.add_scalar(f'val/{benchmark}/PCK', results['pck'], epoch)
-                test_writer.add_scalar(f'val/{benchmark}/loss', results['loss'], epoch)
-                pck_scores.append(results['pck'])
-                
-                # Track best performance for each benchmark and save individual models
-                if results['pck'] > best_val_per_benchmark[benchmark]:
-                    best_val_per_benchmark[benchmark] = results['pck']
-                    best_epoch_per_benchmark[benchmark] = epoch + 1
-                    print(f"New best {benchmark} PCK: {results['pck']:.2f}% (epoch {epoch + 1})")
-                    
-                    # Save individual benchmark best model
-                    save_benchmark_model(
-                        benchmark, epoch, results['pck'], 
-                        model.module.state_dict(), optimizer.state_dict(), 
-                        scheduler.state_dict(), val_results
-                    )
+            # Visualize train pred flow (same batch as pre-training)
+            visualize_batch_flow(
+                model=model,
+                batch=reference_train_batch,
+                device=device,
+                train_dataset_name=args.train_dataset,
+                val_dataset_name=None,
+                split_name='train',
+                flow_source='pred',
+                feature_size=args.feature_size,
+                epoch=epoch
+            )
             
-            # Calculate average PCK across all benchmarks
-            avg_pck = sum(pck_scores) / len(pck_scores)
-            test_writer.add_scalar('val/average/PCK', avg_pck, epoch)
-            print(f"Average PCK across benchmarks: {avg_pck:.2f}%")
-            
-            # Track best average performance and save overall best model
-            if avg_pck > best_avg_pck:
-                best_avg_pck = avg_pck
-                best_avg_epoch = epoch + 1
-                print(f"New best average PCK: {avg_pck:.2f}% (epoch {epoch + 1})")
+            # Visualize val GT and pred flow for each benchmark (same batches as pre-training)
+            for benchmark, val_batch in reference_val_batches.items():
+                # Visualize val GT flow
+                visualize_batch_flow(
+                    model=None,
+                    batch=val_batch,
+                    device=device,
+                    train_dataset_name=args.train_dataset,
+                    val_dataset_name=benchmark,
+                    split_name='val',
+                    flow_source='gt',
+                    feature_size=args.feature_size,
+                    epoch=epoch
+                )
                 
-                # Save overall best model
-                save_overall_best_model(
-                    epoch, avg_pck, model.module.state_dict(), 
-                    optimizer.state_dict(), scheduler.state_dict(), val_results
+                # Visualize val pred flow
+                visualize_batch_flow(
+                    model=model,
+                    batch=val_batch,
+                    device=device,
+                    train_dataset_name=args.train_dataset,
+                    val_dataset_name=benchmark,
+                    split_name='val',
+                    flow_source='pred',
+                    feature_size=args.feature_size,
+                    epoch=epoch
                 )
             
-            # Use primary benchmark for legacy best_val tracking
-            primary_benchmark = args.eval_benchmarks[0]
-            primary_results = val_results[primary_benchmark]
-            is_best = primary_results['pck'] > best_val
-            best_val = max(primary_results['pck'], best_val)
+            print("Epoch visualizations complete.\n")
+        
+        # Track best average performance and save overall best model
+        if avg_pck > best_avg_pck:
+            best_avg_pck = avg_pck
+            best_avg_epoch = epoch + 1
+            print(f"New best average PCK: {avg_pck:.2f}% (epoch {epoch + 1})")
             
-            # Save regular epoch checkpoint
-            save_checkpoint({
-                'epoch': epoch + 1,
-                'state_dict': model.module.state_dict(),
-                'optimizer': optimizer.state_dict(),
-                'scheduler': scheduler.state_dict(),
-                'best_loss': best_val,
-                'val_results': val_results,
-                'best_val_per_benchmark': best_val_per_benchmark,
-                'best_epoch_per_benchmark': best_epoch_per_benchmark,
-                'best_avg_pck': best_avg_pck,
-                'best_avg_epoch': best_avg_epoch,
-            }, is_best, save_path, 'epoch_{}.pth'.format(epoch + 1))
-            
-            if is_best:
-                print(f"New best primary benchmark ({primary_benchmark}) PCK: {best_val:.2f}%")
-            
-            # Write updated summary after each epoch
-            write_training_summary(epoch, is_final=False)
-        else:
-            val_loss_grid, val_mean_pck = optimize.validate_epoch(
-                model, val_dataloader, device, epoch=epoch
+            # Save overall best model
+            save_overall_best_model(
+                epoch, avg_pck, model.module.state_dict() if hasattr(model, 'module') else model.state_dict(), 
+                optimizer.state_dict(), scheduler.state_dict(), val_results
             )
-            print(colored('==> ', 'blue') + 'Val average grid loss:', val_loss_grid)
-            print('mean PCK is {}'.format(val_mean_pck))
-            print(colored('==> ', 'blue') + 'epoch :', epoch + 1)
-            test_writer.add_scalar('mean PCK', val_mean_pck, epoch)
-            test_writer.add_scalar('val loss', val_loss_grid, epoch)
-            
-            # Save checkpoint
-            is_best = val_mean_pck > best_val
-            best_val = max(val_mean_pck, best_val)
-            save_checkpoint({
-                'epoch': epoch + 1,
-                'state_dict': model.module.state_dict(),
-                'optimizer': optimizer.state_dict(),
-                'scheduler': scheduler.state_dict(),
-                'best_loss': best_val,
-            }, is_best, save_path, 'epoch_{}.pth'.format(epoch + 1))
+        
+        # Use primary benchmark for best_val tracking
+        primary_benchmark = args.eval_benchmarks[0]
+        primary_results = val_results[primary_benchmark]
+        is_best = primary_results['pck'] > best_val
+        best_val = max(primary_results['pck'], best_val)
+        
+        # Save regular epoch checkpoint
+        save_checkpoint({
+            'epoch': epoch + 1,
+            'state_dict': model.module.state_dict() if hasattr(model, 'module') else model.state_dict(),
+            'optimizer': optimizer.state_dict(),
+            'scheduler': scheduler.state_dict(),
+            'best_loss': best_val,
+            'val_results': val_results,
+            'best_val_per_benchmark': best_val_per_benchmark,
+            'best_epoch_per_benchmark': best_epoch_per_benchmark,
+            'best_avg_pck': best_avg_pck,
+            'best_avg_epoch': best_avg_epoch,
+        }, is_best, save_path, 'epoch_{}.pth'.format(epoch + 1))
+        
+        if is_best:
+            print(f"New best primary benchmark ({primary_benchmark}) PCK: {best_val:.2f}%")
+        
+        # Write updated summary after each epoch
+        write_training_summary(epoch, is_final=False)
     
     print(f'Training took: {time.time() - train_started:.2f} seconds')
     print(f'Best validation PCK: {best_val:.4f}')
     
     # Print and log best performance for each benchmark
-    if len(args.eval_benchmarks) > 0:
-        print("\n" + "="*60)
-        print("BEST PERFORMANCE PER BENCHMARK:")
-        print("="*60)
-        
-        # Log final best performances to TensorBoard
-        for benchmark, best_pck in best_val_per_benchmark.items():
-            best_epoch = best_epoch_per_benchmark.get(benchmark, 0)
-            print(f"{benchmark:12}: {best_pck:.2f}% PCK (epoch {best_epoch})")
-            test_writer.add_scalar(f'final_best/{benchmark}/PCK', best_pck, 0)
-            test_writer.add_scalar(f'final_best/{benchmark}/epoch', best_epoch, 0)
-        
-        print("-" * 60)
-        print(f"{'AVERAGE':12}: {best_avg_pck:.2f}% PCK (epoch {best_avg_epoch})")
-        test_writer.add_scalar('final_best/average/PCK', best_avg_pck, 0)
-        test_writer.add_scalar('final_best/average/epoch', best_avg_epoch, 0)
-        print("="*60)
-        
-        # Write final summary
-        write_training_summary(args.epochs - 1, is_final=True)
+    print("\n" + "="*60)
+    print("BEST PERFORMANCE PER BENCHMARK:")
+    print("="*60)
+    
+    # Log final best performances to TensorBoard
+    for benchmark, best_pck in best_val_per_benchmark.items():
+        best_epoch = best_epoch_per_benchmark.get(benchmark, 0)
+        print(f"{benchmark:12}: {best_pck:.2f}% PCK (epoch {best_epoch})")
+        test_writer.add_scalar(f'final_best/{benchmark}/PCK', best_pck, 0)
+        test_writer.add_scalar(f'final_best/{benchmark}/epoch', best_epoch, 0)
+    
+    print("-" * 60)
+    print(f"{'AVERAGE':12}: {best_avg_pck:.2f}% PCK (epoch {best_avg_epoch})")
+    test_writer.add_scalar('final_best/average/PCK', best_avg_pck, 0)
+    test_writer.add_scalar('final_best/average/epoch', best_avg_epoch, 0)
+    print("="*60)
+    
+    # Write final summary
+    write_training_summary(args.epochs - 1, is_final=True)
     
     # Close TensorBoard writers
     train_writer.close()
