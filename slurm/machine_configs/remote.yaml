@@ -3,15 +3,15 @@
 
 machine:
   name: "remote"
-  project_root: "/path/to/OnlineSyntheticCorrespondence"  # UPDATE THIS
+  project_root: "/home/slow1/Projects/OnlineSyntheticCorrespondence"  # UPDATE THIS
   conda_env: "cuda"  # Or your environment name, or null to skip
   python_path: "python3"
 
 # Dataset root paths (UPDATE FOR REMOTE MACHINE)
 datasets:
-  flyingthings_root: "/remote/path/to/FlyingThings3D_tiny/"  # UPDATE THIS
-  pointodyssey_root: "/remote/path/to/PointOdyssey"  # UPDATE THIS
-  tss_root: "/remote/path/to/TSS_CVPR2016"  # UPDATE THIS
+  flyingthings_root: "/home/slow1/Data/FlyingThings3D_Pytorch"  # UPDATE THIS
+  pointodyssey_root: "/home/slow1/Data/PointOdyssey"  # UPDATE THIS
+  tss_root: "/home/slow1/Data/correspondence/TSS_CVPR2016"  # UPDATE THIS
   datapath: "./models/Datasets_CATs"
 
 # SLURM resource defaults
