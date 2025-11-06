@@ -1,0 +1,27 @@
+# Machine-specific configuration for SLURM job generation
+# Remote cluster configuration - UPDATE PATHS FOR YOUR REMOTE MACHINE
+
+machine:
+  name: "remote"
+  project_root: "/path/to/OnlineSyntheticCorrespondence"  # UPDATE THIS
+  conda_env: "cuda"  # Or your environment name, or null to skip
+  python_path: "python3"
+
+# Dataset root paths (UPDATE FOR REMOTE MACHINE)
+datasets:
+  flyingthings_root: "/remote/path/to/FlyingThings3D_tiny/"  # UPDATE THIS
+  pointodyssey_root: "/remote/path/to/PointOdyssey"  # UPDATE THIS
+  tss_root: "/remote/path/to/TSS_CVPR2016"  # UPDATE THIS
+  datapath: "./models/Datasets_CATs"
+
+# SLURM resource defaults
+slurm:
+  time: "23:59:00"
+  nodes: 1
+  ntasks: 1
+  cpus_per_task: 32
+  gpus: 1
+  qos: "cs"
+  mem_default: "64g"
+  mem_large: "128g"
+

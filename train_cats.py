@@ -256,6 +256,10 @@ def main():
                         help='use all points in the PointOdyssey dataset')
     parser.add_argument('--num_pts_to_track_pointodyssey', type=int, default=32,
                         help='number of points to track in the PointOdyssey dataset')
+    parser.add_argument('--strides_pointodyssey', type=int, nargs='+', default=[4],
+                        help='strides for the PointOdyssey dataset')
+    parser.add_argument('--sequence_length_pointodyssey', type=int, default=4,
+                        help='sequence length for the PointOdyssey dataset')
 
     # Training parameters
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
@@ -354,7 +358,7 @@ def main():
         # Note: Dataset returns CPU tensors - DataLoader handles GPU transfer
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True, prefetch_factor=args.batch_size if args.n_threads > 0 else None, pin_memory=True)
     elif args.train_dataset == 'pointodyssey':
-        train_dataset = PointOdysseyFlowDataset(dataset_location=args.pointodyssey_root, dset='train', use_augs=False, S=4, N=args.num_pts_to_track_pointodyssey, strides=[4], quick=False, verbose=args.enable_debug, resize_size=(
+        train_dataset = PointOdysseyFlowDataset(dataset_location=args.pointodyssey_root, dset='train', use_augs=False, S=args.sequence_length_pointodyssey, N=args.num_pts_to_track_pointodyssey, strides=args.strides_pointodyssey, quick=False, verbose=args.enable_debug and args.verbose_pointodyssey, resize_size=(
             args.size+64, args.size+64), crop_size=(args.size, args.size), filter_instances=True, downsample_for_cats=True, cats_feat_size=args.feature_size, all_points=True)
         # Note: Dataset returns CPU tensors - DataLoader handles GPU transfer
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True, prefetch_factor=args.batch_size if args.n_threads > 0 else None, pin_memory=True)
@@ -403,10 +407,10 @@ def main():
                 dataset_location=args.pointodyssey_root,
                 dset='val',
                 use_augs=False,
-                S=4,
+                S=args.sequence_length_pointodyssey,
                 N=args.num_pts_to_track_pointodyssey,
-                quick=True,
-                verbose=args.enable_debug,
+                quick=False,
+                verbose=args.enable_debug and args.verbose_pointodyssey,
                 resize_size=(args.size+64, args.size+64),
                 crop_size=(args.size, args.size),
                 filter_instances=True,

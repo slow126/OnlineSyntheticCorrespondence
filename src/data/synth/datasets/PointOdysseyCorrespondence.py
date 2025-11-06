@@ -228,16 +228,16 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
             src_kps = torch.zeros((2, 0), dtype=torch.float32)
             trg_kps = torch.zeros((2, 0), dtype=torch.float32)
 
-        # Pad keypoints to max_pts
-        if n_valid < self.max_pts:
-            pad_size = self.max_pts - n_valid
-            src_kps = torch.cat([src_kps, torch.ones(2, pad_size) * -1], dim=1)
-            trg_kps = torch.cat([trg_kps, torch.ones(2, pad_size) * -1], dim=1)
-        elif n_valid > self.max_pts:
-            # Truncate to max_pts
-            src_kps = src_kps[:, :self.max_pts]
-            trg_kps = trg_kps[:, :self.max_pts]
-            n_valid = self.max_pts
+        # # Pad keypoints to max_pts
+        # if n_valid < self.max_pts:
+        #     pad_size = self.max_pts - n_valid
+        #     src_kps = torch.cat([src_kps, torch.ones(2, pad_size) * -1], dim=1)
+        #     trg_kps = torch.cat([trg_kps, torch.ones(2, pad_size) * -1], dim=1)
+        # elif n_valid > self.max_pts:
+        #     # Truncate to max_pts
+        #     src_kps = src_kps[:, :self.max_pts]
+        #     trg_kps = trg_kps[:, :self.max_pts]
+        #     n_valid = self.max_pts
 
         # Calculate flow based on downsample_for_cats flag
         if not self.downsample_for_cats:

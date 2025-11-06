@@ -1,0 +1,92 @@
+# Experiment Configuration File
+# Define experiments using parameter grids or individual experiments
+
+# Base parameters applied to all experiments (unless overridden)
+base:
+  epochs: 50
+  batch_size: 8
+  lr: 3e-4
+  lr_backbone: 3e-6
+  freeze: true
+  augmentation: true
+  feature_size: 32
+  size: 512
+  split_to_use_for_validation: "val"
+  scheduler: "step"
+  step: "[70, 80, 90]"
+  step_gamma: 0.5
+  weight_decay: 0.05
+  momentum: 0.9
+  thres: "img"
+  val_batch_size: 8
+  val_num_workers: 16
+  enable_debug: false
+
+# Parameter grids - generates all combinations
+grids:
+  # Example grid: train_dataset x eval_config x learning_rate
+  - name: "dataset_eval_lr_sweep"
+    parameters:
+      train_dataset: ["flyingthings", "pointodyssey", "synthetic"]
+      eval_benchmarks: 
+        - ["spair", "pfpascal", "tss"]
+        - ["spair", "pfpascal"]
+      eval_alphas:
+        - [0.1, 0.1, 0.1]
+        - [0.1, 0.1]
+      lr: [3e-4, 1e-4]
+    name_template: "{train_dataset}_lr{lr}_eval{_join(eval_benchmarks,'_')}"
+
+  # Another grid example
+  - name: "feature_size_sweep"
+    parameters:
+      train_dataset: ["flyingthings"]
+      feature_size: [16, 32, 64]
+      eval_benchmarks: [["spair", "tss"]]
+      eval_alphas: [[0.1, 0.1]]
+    name_template: "{train_dataset}_feat{feature_size}"
+
+# Individual experiments (specific configurations)
+experiments:
+  # Individual experiment 1
+  - name: "flyingthings_baseline"
+    train_dataset: "flyingthings"
+    eval_benchmarks: ["spair", "pfpascal", "tss"]
+    eval_alphas: [0.1, 0.1, 0.1]
+    epochs: 100
+    batch_size: 4
+
+  # Individual experiment 2
+  - name: "pointodyssey_high_res"
+    train_dataset: "pointodyssey"
+    eval_benchmarks: ["spair", "tss"]
+    eval_alphas: [0.1, 0.1]
+    size: 768
+    feature_size: 48
+    num_pts_to_track_pointodyssey: 64
+
+  # Individual experiment 3 - with pretrained model
+  - name: "flyingthings_finetune"
+    train_dataset: "flyingthings"
+    pretrained: "snapshots/2025_01_01_12_00"  # Path to pretrained model
+    eval_benchmarks: ["spair", "pfpascal"]
+    eval_alphas: [0.1, 0.1]
+    epochs: 50
+    lr: 1e-4  # Lower LR for finetuning
+
+# Dataset-specific defaults (applied based on train_dataset)
+dataset_defaults:
+  flyingthings:
+    # These will be added automatically from machine config, but you can override here
+    # flyingthings_root: "/path/to/flyingthings"  # Usually from machine config
+  
+  pointodyssey:
+    num_pts_to_track_pointodyssey: 32
+    strides_pointodyssey: [4]
+    all_points_pointodyssey: false
+    verbose_pointodyssey: false
+    # pointodyssey_root: "/path/to/pointodyssey"  # Usually from machine config
+
+  synthetic:
+    # No additional defaults needed
+

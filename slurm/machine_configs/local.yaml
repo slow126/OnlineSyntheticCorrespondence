@@ -1,0 +1,28 @@
+# Machine-specific configuration for SLURM job generation
+# Local machine configuration
+
+machine:
+  name: "local"
+  project_root: "/home/spencer/Projects/OnlineSyntheticCorrespondence"
+  conda_env: null  # Set to environment name if using conda, or null to skip
+  python_path: "python3"
+
+# Dataset root paths
+datasets:
+  flyingthings_root: "/home/spencer/Data/FlyingThings3D_tiny/"
+  pointodyssey_root: "/home/spencer/Data/PointOdyssey"
+  tss_root: "/home/spencer/Data/correspondence/TSS_CVPR2016"
+  datapath: "./models/Datasets_CATs"
+
+# SLURM resource defaults (can be overridden per experiment)
+slurm:
+  time: "23:59:00"
+  nodes: 1
+  ntasks: 1
+  cpus_per_task: 32
+  gpus: 1
+  qos: "cs"
+  mem_default: "64g"
+  mem_large: "128g"  # For FlyingThings and PointOdyssey
+
+

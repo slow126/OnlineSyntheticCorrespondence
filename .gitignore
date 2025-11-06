@@ -84,3 +84,6 @@ launch_cats_rc.sh
 debug/
 *.png
 *.zip
+
+# SLURM
+slurm/slurm_jobs/*
