@@ -46,6 +46,7 @@ class PointOdysseyDataset(torch.utils.data.Dataset):
                  crop_size=(368, 496),
                  req_full=False,
                  quick=False,
+                 max_sequences=None,
                  verbose=False,
                  all_points=False,
     ):
@@ -77,13 +78,28 @@ class PointOdysseyDataset(torch.utils.data.Dataset):
                     self.sequences.append(seq)
 
         self.sequences = sorted(self.sequences)
+        total_sequences = len(self.sequences)
         if self.verbose:
             print(self.sequences)
-        print('found %d unique videos in %s (dset=%s)' % (len(self.sequences), dataset_location, dset))
+        print('found %d unique videos in %s (dset=%s)' % (total_sequences, dataset_location, dset))
         
         print('loading trajectories...')
-        if quick:
+        
+        # Deterministic sequence sampling
+        if max_sequences is not None and max_sequences > 0:
+            # Sample sequences evenly spaced for better coverage
+            if max_sequences >= total_sequences:
+                # Use all sequences if max_sequences >= total
+                print(f'Using all {total_sequences} sequences')
+            else:
+                # Sample evenly spaced sequences (deterministic)
+                indices = np.linspace(0, total_sequences - 1, max_sequences, dtype=int)
+                self.sequences = [self.sequences[i] for i in indices]
+                print(f'Using {len(self.sequences)} sequences (sampled from {total_sequences} total)')
+        elif quick:
+            # Backward compatibility: quick mode uses first sequence
             self.sequences = self.sequences[:1]
+            print('Quick mode: using first sequence only')
 
         for seq in self.sequences:
             

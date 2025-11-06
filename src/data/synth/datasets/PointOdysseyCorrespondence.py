@@ -55,6 +55,7 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                  downsample_for_cats: bool = False,
                  cats_feat_size: int = 32,
                  all_points: bool = False,
+                 max_sequences: Optional[int] = None,
                  max_pts: int = 40,
                  thres: str = 'img',
                  normalize_images: bool = False,
@@ -80,7 +81,8 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
             downsample_for_cats: Whether to downsample flow for CATs (training mode)
             cats_feat_size: Feature size for downsampled flow
             all_points: Whether to use all points
-            max_pts: Maximum number of keypoints for validation (default: 40)
+            max_sequences: Maximum number of sequences to use (None = all, deterministic sampling)
+            max_pts: Maximum number of keypoints (default: 40). Padded keypoints use (0, 0) so flow is (0, 0) and doesn't affect metrics.
             thres: PCK threshold type ('img' or 'bbox')
             normalize_images: If True, enables validation mode and returns keypoints-based format for evaluation
             normalize: If True, applies ImageNet normalization to images (default: True, model expects normalized images)
@@ -110,6 +112,7 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
             crop_size=crop_size,
             req_full=req_full,
             quick=quick,
+            max_sequences=max_sequences,
             verbose=verbose,
             all_points=all_points
         )
@@ -228,16 +231,18 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
             src_kps = torch.zeros((2, 0), dtype=torch.float32)
             trg_kps = torch.zeros((2, 0), dtype=torch.float32)
 
-        # # Pad keypoints to max_pts
-        # if n_valid < self.max_pts:
-        #     pad_size = self.max_pts - n_valid
-        #     src_kps = torch.cat([src_kps, torch.ones(2, pad_size) * -1], dim=1)
-        #     trg_kps = torch.cat([trg_kps, torch.ones(2, pad_size) * -1], dim=1)
-        # elif n_valid > self.max_pts:
-        #     # Truncate to max_pts
-        #     src_kps = src_kps[:, :self.max_pts]
-        #     trg_kps = trg_kps[:, :self.max_pts]
-        #     n_valid = self.max_pts
+        # Pad/truncate keypoints to max_pts
+        # Use (0, 0) for padding so flow is (0, 0) and doesn't affect loss/metrics
+        if n_valid < self.max_pts:
+            pad_size = self.max_pts - n_valid
+            # Pad with (0, 0) so flow will be (0, 0) for padded points
+            src_kps = torch.cat([src_kps, torch.zeros(2, pad_size, dtype=torch.float32)], dim=1)
+            trg_kps = torch.cat([trg_kps, torch.zeros(2, pad_size, dtype=torch.float32)], dim=1)
+        elif n_valid > self.max_pts:
+            # Truncate to max_pts (use first max_pts keypoints)
+            src_kps = src_kps[:, :self.max_pts]
+            trg_kps = trg_kps[:, :self.max_pts]
+            n_valid = self.max_pts
 
         # Calculate flow based on downsample_for_cats flag
         if not self.downsample_for_cats:

@@ -260,6 +260,10 @@ def main():
                         help='strides for the PointOdyssey dataset')
     parser.add_argument('--sequence_length_pointodyssey', type=int, default=4,
                         help='sequence length for the PointOdyssey dataset')
+    parser.add_argument('--pointodyssey_val_max_sequences', type=int, default=None,
+                        help='Maximum number of sequences to use for PointOdyssey validation (None = all, deterministic sampling)')
+    parser.add_argument('--pointodyssey_max_pts', type=int, default=200,
+                        help='Maximum number of keypoints for PointOdyssey training (default: 200, use as many as possible)')
 
     # Training parameters
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
@@ -358,8 +362,23 @@ def main():
         # Note: Dataset returns CPU tensors - DataLoader handles GPU transfer
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True, prefetch_factor=args.batch_size if args.n_threads > 0 else None, pin_memory=True)
     elif args.train_dataset == 'pointodyssey':
-        train_dataset = PointOdysseyFlowDataset(dataset_location=args.pointodyssey_root, dset='train', use_augs=False, S=args.sequence_length_pointodyssey, N=args.num_pts_to_track_pointodyssey, strides=args.strides_pointodyssey, quick=False, verbose=args.enable_debug and args.verbose_pointodyssey, resize_size=(
-            args.size+64, args.size+64), crop_size=(args.size, args.size), filter_instances=True, downsample_for_cats=True, cats_feat_size=args.feature_size, all_points=True)
+        train_dataset = PointOdysseyFlowDataset(
+            dataset_location=args.pointodyssey_root, 
+            dset='train', 
+            use_augs=False, 
+            S=args.sequence_length_pointodyssey, 
+            N=args.num_pts_to_track_pointodyssey, 
+            strides=args.strides_pointodyssey, 
+            quick=False, 
+            verbose=args.enable_debug and args.verbose_pointodyssey, 
+            resize_size=(args.size+64, args.size+64), 
+            crop_size=(args.size, args.size), 
+            filter_instances=True, 
+            downsample_for_cats=True, 
+            cats_feat_size=args.feature_size, 
+            all_points=True,
+            max_pts=args.pointodyssey_max_pts  # Use more keypoints for training
+        )
         # Note: Dataset returns CPU tensors - DataLoader handles GPU transfer
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True, prefetch_factor=args.batch_size if args.n_threads > 0 else None, pin_memory=True)
     elif args.train_dataset in ['spair', 'pfpascal', 'pfwillow', 'caltech']:
@@ -410,6 +429,7 @@ def main():
                 S=args.sequence_length_pointodyssey,
                 N=args.num_pts_to_track_pointodyssey,
                 quick=False,
+                max_sequences=args.pointodyssey_val_max_sequences,
                 verbose=args.enable_debug and args.verbose_pointodyssey,
                 resize_size=(args.size+64, args.size+64),
                 crop_size=(args.size, args.size),
@@ -421,7 +441,15 @@ def main():
                 thres=args.thres,
                 normalize_images=True, 
             )
-            val_dataloader = DataLoader(val_dataset, batch_size=args.val_batch_size, num_workers=args.val_num_workers, persistent_workers=True, prefetch_factor=8, shuffle=False, pin_memory=True)
+            val_dataloader = DataLoader(
+                val_dataset, 
+                batch_size=args.val_batch_size, 
+                num_workers=args.val_num_workers, 
+                persistent_workers=True, 
+                prefetch_factor=8, 
+                shuffle=False, 
+                pin_memory=True
+            )
         else:
             val_dataset = download.load_dataset(benchmark, args.datapath, args.thres, device, args.split_to_use_for_validation, False, args.feature_size)
             val_dataloader = DataLoader(val_dataset,
