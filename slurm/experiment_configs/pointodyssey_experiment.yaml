@@ -13,7 +13,6 @@ base:
   size: 512
   split_to_use_for_validation: "val"
   scheduler: "step"
-  step: "[70, 80, 90]"
   step_gamma: 0.5
   weight-decay: 0.05
   momentum: 0.9
@@ -21,6 +20,7 @@ base:
   val_batch_size: 8
   enable_debug: false
   steps_per_epoch: logarithmic
+  pointodyssey_val_max_sequences: 5
 
 # Parameter grids - generates all combinations
 grids:

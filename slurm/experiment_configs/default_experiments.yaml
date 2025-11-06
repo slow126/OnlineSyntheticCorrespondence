@@ -13,7 +13,6 @@ base:
   size: 512
   split_to_use_for_validation: "val"
   scheduler: "step"
-  step: "[70, 80, 90]"
   step_gamma: 0.5
   weight-decay: 0.05
   momentum: 0.9
