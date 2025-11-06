@@ -291,19 +291,29 @@ cd {project_root}
     
     if conda_env:
         script_content += f"""# Activate conda environment
-if [ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]; then
-    source "$HOME/miniconda3/etc/profile.d/conda.sh"
-elif [ -f "$HOME/anaconda3/etc/profile.d/conda.sh" ]; then
-    source "$HOME/anaconda3/etc/profile.d/conda.sh"
-fi
+# Source .bashrc to initialize conda
+source "$HOME/.bashrc"
+
 conda activate {conda_env}
 echo "Activated conda environment: {conda_env}"
 """
     
+    # Extract just the arguments (remove python/python3 from command)
+    # train_cmd is like "python3 /path/to/train_cats.py --arg1 val1 ..."
+    cmd_parts = train_cmd.split()
+    if len(cmd_parts) > 0 and cmd_parts[0] in ['python', 'python3']:
+        # Remove python/python3, keep the rest
+        cmd_args = ' '.join(cmd_parts[1:])
+    else:
+        # Already just arguments, or different format
+        cmd_args = train_cmd
+    
     script_content += f"""
-# Run training
+# Run training with srun (allows sattach and real-time output)
+# --ntasks=1 ensures only one instance runs (not multiple per CPU)
+# -u flag disables Python buffering for real-time log output
 echo "Starting training..."
-{train_cmd}
+srun --ntasks=1 python3 -u {cmd_args}
 
 echo "Training completed at: $(date)"
 """
