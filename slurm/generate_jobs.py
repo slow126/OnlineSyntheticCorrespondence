@@ -337,15 +337,15 @@ echo "Training completed at: $(date)"
 
 def main():
     parser = argparse.ArgumentParser(description='Generate SLURM job scripts for training experiments')
-    parser.add_argument('--machine_config', type=str, default='slurm/machine_configs/local.yaml',
+    parser.add_argument('-M', '--machine_config', type=str, default='slurm/machine_configs/local.yaml',
                         help='Path to machine-specific config file')
-    parser.add_argument('--experiment_config', type=str, default='slurm/experiment_configs/default_experiments.yaml',
+    parser.add_argument('-E', '--experiment_config', type=str, default='slurm/experiment_configs/default_experiments.yaml',
                         help='Path to experiment configuration file')
-    parser.add_argument('--output_dir', type=str, default='./slurm_jobs',
+    parser.add_argument('-O', '--output_dir', type=str, default='./slurm_jobs',
                         help='Directory to save generated job scripts')
-    parser.add_argument('--submit', action='store_true',
+    parser.add_argument('-S', '--submit', action='store_true',
                         help='Automatically submit all generated jobs')
-    parser.add_argument('--dry_run', action='store_true',
+    parser.add_argument('-D', '--dry_run', action='store_true',
                         help='Print job commands without creating files')
     
     args = parser.parse_args()
