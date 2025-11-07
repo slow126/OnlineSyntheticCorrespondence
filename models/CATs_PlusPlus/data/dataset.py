@@ -114,7 +114,7 @@ class CorrespondenceDataset(Dataset):
                 A.ToGray(p=0.2),
                 A.Posterize(p=0.2),
                 A.Equalize(p=0.2),
-                A.augmentations.transforms.Sharpen(p=0.2),
+                A.Sharpen(p=0.2),
                 A.RandomBrightnessContrast(p=0.2),
                 A.Solarize(p=0.2),
                 A.ColorJitter(p=0.2),

@@ -388,8 +388,8 @@ def main():
             train_dataset,
             batch_size=args.batch_size,
             num_workers=args.n_threads,
-            persistent_workers=True,
-            prefetch_factor=8,
+            persistent_workers=args.n_threads > 0,
+            prefetch_factor=args.batch_size if args.n_threads > 0 else None,
             shuffle=True,
             pin_memory=True
         )
