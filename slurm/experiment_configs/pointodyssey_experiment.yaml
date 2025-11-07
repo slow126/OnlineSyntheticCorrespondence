@@ -11,7 +11,7 @@ base:
   augmentation: true
   feature_size: 32
   size: 512
-  split_to_use_for_validation: "val"
+  split_to_use_for_validation: "test"
   scheduler: "step"
   step_gamma: 0.5
   weight-decay: 0.05
