@@ -16,7 +16,7 @@ datasets:
 
 # SLURM resource defaults
 slurm:
-  time: "23:59:00"
+  time: "11:59:00"
   nodes: 1
   ntasks: 1
   cpus_per_task: 32

@@ -204,7 +204,7 @@ def build_train_command(exp_config: Dict[str, Any], machine_config: Dict[str, An
     # Config keys should match train_cats.py argument names exactly
     for key, value in exp_config.items():
         # Skip internal keys and arguments that should use defaults
-        if key in ['name_exp', 'name', 'step']:
+        if key in ['name', 'step']:
             continue
             
         if value is None:

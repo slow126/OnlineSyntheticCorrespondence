@@ -36,7 +36,6 @@ grids:
         - [1]
         - [2]
         - [4]
-        - [8]
       sequence_length_pointodyssey:
         - 4
         - 8
