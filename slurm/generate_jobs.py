@@ -409,10 +409,13 @@ def main():
     submit_script = job_dir / 'submit_all.sh'
     with open(submit_script, 'w') as f:
         f.write("#!/bin/bash\n")
-        f.write("# Submit all generated SLURM jobs\n\n")
+        f.write("# Submit all generated SLURM jobs\n")
+        f.write("# Get the directory where this script is located (works from any location)\n")
+        f.write("SCRIPT_DIR=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd)\"\n")
+        f.write("cd \"$SCRIPT_DIR\"\n\n")
         for job_file in job_files:
             f.write(f"echo 'Submitting {job_file.name}...'\n")
-            f.write(f"sbatch {job_file}\n")
+            f.write(f"sbatch \"$SCRIPT_DIR/{job_file.name}\"\n")
             f.write("sleep 1  # Small delay between submissions\n\n")
         f.write("echo 'All jobs submitted!'\n")
     
