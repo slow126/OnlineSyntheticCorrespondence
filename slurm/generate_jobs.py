@@ -212,8 +212,10 @@ def build_train_command(exp_config: Dict[str, Any], machine_config: Dict[str, An
         
         # Use config key directly as argument name (configs should match train_cats.py)
         if isinstance(value, bool):
-            if value:
-                cmd_parts.append(f'--{key}')
+            # For boolean arguments, pass the value explicitly (True/False as string)
+            # This works with boolean_string type that expects 'True' or 'False'
+            cmd_parts.append(f'--{key}')
+            cmd_parts.append(str(value))
         elif isinstance(value, list):
             # Handle list arguments like eval_benchmarks
             cmd_parts.append(f'--{key}')
