@@ -22,6 +22,6 @@ slurm:
   cpus_per_task: 32
   gpus: 1
   qos: "cs"
-  mem_default: "64g"
+  mem_default: "128g"
   mem_large: "128g"
 
