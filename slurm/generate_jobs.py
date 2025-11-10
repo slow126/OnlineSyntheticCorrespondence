@@ -234,6 +234,11 @@ def build_train_command(exp_config: Dict[str, Any], machine_config: Dict[str, An
         if datasets.get('pointodyssey_root'):
             cmd_parts.extend(['--pointodyssey_root', datasets.get('pointodyssey_root', '')])
     
+    # Add pointodyssey_root if pointodyssey is in eval_benchmarks (for validation)
+    if 'pointodyssey' in str(exp_config.get('eval_benchmarks', [])) and 'pointodyssey_root' not in exp_config:
+        if datasets.get('pointodyssey_root'):
+            cmd_parts.extend(['--pointodyssey_root', datasets.get('pointodyssey_root', '')])
+    
     if 'tss' in str(exp_config.get('eval_benchmarks', [])) and 'tss_root' not in exp_config:
         if datasets.get('tss_root'):
             cmd_parts.extend(['--tss_root', datasets.get('tss_root', '')])

@@ -28,7 +28,7 @@ grids:
   - name: "flyingthings freeze sweep"
     parameters:
       eval_benchmarks: 
-        - ["tss", "pfpascal", "pfwillow", "spair", "pointodyssey"]
+        - ["pointodyssey", "tss", "pfpascal", "pfwillow", "spair"]
       eval_alphas:
         - [0.1, 0.1, 0.1, 0.1, 0.1]
       train_dataset: ["flyingthings"]
