@@ -7,6 +7,7 @@ Creates one plot per metric comparing different training datasets/benchmarks.
 import argparse
 import csv
 import os
+import sys
 from pathlib import Path
 from collections import defaultdict
 import matplotlib.pyplot as plt
@@ -360,24 +361,123 @@ def create_individual_benchmark_plots(metric_data, output_path, metrics_to_plot,
             plt.close()
 
 
+def collect_snapshot_directories(args):
+    """
+    Collect snapshot directories from various sources:
+    1. --snapshots argument (explicit list)
+    2. --snapshots_dir argument (directory containing snapshots)
+    3. stdin (piped from ls or similar)
+    
+    Returns:
+        List of snapshot directory paths
+    """
+    snapshot_dirs = []
+    
+    # Method 1: Explicit list via --snapshots
+    if args.snapshots:
+        snapshot_dirs.extend(args.snapshots)
+    
+    # Method 2: Directory containing snapshots
+    if args.snapshots_dir:
+        snapshots_dir_path = Path(args.snapshots_dir).expanduser()  # Expand ~ to home directory
+        if not snapshots_dir_path.exists():
+            print(f"Warning: Snapshots directory does not exist: {args.snapshots_dir}")
+        else:
+            print(f"Scanning directory: {snapshots_dir_path}")
+            found_count = 0
+            # Find all subdirectories that look like snapshots
+            # (contain validation_results.csv or training_summary.txt)
+            for subdir in sorted(snapshots_dir_path.iterdir()):
+                if subdir.is_dir():
+                    has_csv = (subdir / 'validation_results.csv').exists()
+                    has_summary = (subdir / 'training_summary.txt').exists()
+                    
+                    # Check if it looks like a snapshot directory
+                    if has_csv or has_summary:
+                        snapshot_dirs.append(str(subdir))
+                        found_count += 1
+                        print(f"  Found snapshot: {subdir.name} (has_csv={has_csv}, has_summary={has_summary})")
+                    # Also check for zero_train_step
+                    elif subdir.name == 'zero_train_step' and not args.zero_train_step:
+                        # Auto-detect zero_train_step if not specified
+                        if (subdir / 'validation_results.csv').exists():
+                            snapshot_dirs.append(str(subdir))
+                            found_count += 1
+                            print(f"  Found zero_train_step: {subdir.name}")
+                    else:
+                        # Debug: show what we're skipping
+                        print(f"  Skipping: {subdir.name} (no validation_results.csv or training_summary.txt)")
+            
+            if found_count == 0:
+                print(f"  No snapshot directories found in {snapshots_dir_path}")
+                print(f"  Looking for subdirectories containing 'validation_results.csv' or 'training_summary.txt'")
+    
+    # Method 3: Read from stdin (for piping)
+    if not sys.stdin.isatty():  # Check if stdin is not a terminal (i.e., piped)
+        for line in sys.stdin:
+            line = line.strip()
+            if line:
+                path = Path(line)
+                if path.exists() and path.is_dir():
+                    snapshot_dirs.append(line)
+                else:
+                    # Try as relative path from current directory
+                    rel_path = Path(line)
+                    if rel_path.exists() and rel_path.is_dir():
+                        snapshot_dirs.append(line)
+                    else:
+                        print(f"Warning: Skipping invalid path from stdin: {line}")
+    
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_dirs = []
+    for dir_path in snapshot_dirs:
+        if dir_path not in seen:
+            seen.add(dir_path)
+            unique_dirs.append(dir_path)
+    
+    return unique_dirs
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Visualize all metrics vs training steps for multiple training datasets',
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Explicit list of snapshots
+  python plot_metrics.py --snapshots snapshots/exp1 snapshots/exp2
+  
+  # Directory containing snapshots
+  python plot_metrics.py --snapshots_dir snapshots/
+  
+  # Pipe from ls
+  ls -d snapshots/*/ | python plot_metrics.py
+  
+  # Combine methods
+  python plot_metrics.py --snapshots_dir snapshots/ --snapshots snapshots/special_exp
+        """
     )
     
     parser.add_argument(
         '--snapshots',
         nargs='+',
-        required=True,
-        help='List of snapshot directory paths'
+        default=None,
+        help='List of snapshot directory paths (can be combined with --snapshots_dir or stdin)'
+    )
+    
+    parser.add_argument(
+        '--snapshots_dir',
+        type=str,
+        default=None,
+        help='Directory containing snapshot subdirectories (auto-detects all snapshots)'
     )
     
     parser.add_argument(
         '--zero_train_step',
         type=str,
         default=None,
-        help='Path to zero_train_step directory (for untrained baseline)'
+        help='Path to zero_train_step directory (for untrained baseline). If not specified and found in snapshots_dir, will auto-detect.'
     )
     
     parser.add_argument(
@@ -403,11 +503,35 @@ def main():
     
     args = parser.parse_args()
     
+    # Collect snapshot directories from all sources
+    snapshot_dirs = collect_snapshot_directories(args)
+    
+    if not snapshot_dirs:
+        print("Error: No snapshot directories found!")
+        print("Please provide snapshots via:")
+        print("  --snapshots <dir1> <dir2> ...")
+        print("  --snapshots_dir <parent_dir>")
+        print("  Or pipe directory paths via stdin")
+        sys.exit(1)
+    
+    # Separate zero_train_step if it's in the list
+    zero_train_step_dir = args.zero_train_step
+    if not zero_train_step_dir:
+        # Check if zero_train_step is in the collected directories
+        for dir_path in snapshot_dirs:
+            if Path(dir_path).name == 'zero_train_step':
+                zero_train_step_dir = dir_path
+                snapshot_dirs.remove(dir_path)
+                print(f"Auto-detected zero_train_step: {zero_train_step_dir}")
+                break
+    
+    print(f"Found {len(snapshot_dirs)} snapshot directory(ies)")
+    
     # Parse all snapshot directories
     print("Parsing snapshot directories...")
     snapshots_data = []
     all_metrics = set()
-    for snapshot_dir in args.snapshots:
+    for snapshot_dir in snapshot_dirs:
         print(f"  Parsing: {snapshot_dir}")
         training_dataset, validation_data, metrics = parse_snapshot_directory(snapshot_dir)
         if validation_data:
@@ -420,9 +544,9 @@ def main():
     
     # Parse zero_train_step if provided
     zero_train_step_data = None
-    if args.zero_train_step:
-        print(f"\nParsing zero_train_step directory: {args.zero_train_step}")
-        _, zero_data, zero_metrics = parse_snapshot_directory(args.zero_train_step)
+    if zero_train_step_dir:
+        print(f"\nParsing zero_train_step directory: {zero_train_step_dir}")
+        _, zero_data, zero_metrics = parse_snapshot_directory(zero_train_step_dir)
         if zero_data:
             zero_train_step_data = (zero_data, zero_metrics)
             all_metrics.update(zero_metrics)

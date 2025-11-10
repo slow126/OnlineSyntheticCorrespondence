@@ -27,6 +27,8 @@ grids:
   # Example grid: train_dataset x eval_config x learning_rate
   - name: "spair freeze sweep"
     parameters:
+      eval_benchmarks: 
+        - ["tss", "pfpascal", "pfwillow", "spair", "pointodyssey"]
       train_dataset: ["spair"]
       freeze:
         - True
