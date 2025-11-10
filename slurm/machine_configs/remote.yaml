@@ -23,5 +23,5 @@ slurm:
   gpus: 1
   qos: "cs"
   mem_default: "64g"
-  mem_large: "64g"
+  mem_large: "128g"
 
