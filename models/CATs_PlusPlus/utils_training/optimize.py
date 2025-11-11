@@ -7,6 +7,16 @@ import torch.nn.functional as F
 from models.CATs_PlusPlus.utils_training.utils import flow2kps
 from models.CATs_PlusPlus.utils_training.evaluation import Evaluator
 
+# Import flow filter
+try:
+    from src.data.synth.datasets.flow_filter import FlowLengthFilter
+except ImportError:
+    # Fallback for different import paths
+    import sys
+    import os
+    sys.path.append(os.path.join(os.path.dirname(__file__), '../../../../'))
+    from src.data.synth.datasets.flow_filter import FlowLengthFilter
+
 r'''
     loss function implementation from GLU-Net
     https://github.com/PruneTruong/GLU-Net
@@ -34,7 +44,15 @@ def train_epoch(net,
                 device,
                 epoch,
                 train_writer,
-                steps_per_epoch = None):
+                steps_per_epoch = None,
+                flow_filter = None):
+    """
+    Training epoch with optional flow filtering.
+    
+    Args:
+        flow_filter: FlowLengthFilter instance to filter flow vectors during training.
+            If None, no filtering is applied. Only used during training, not validation.
+    """
     n_iter = epoch*len(train_loader)
     
     net.train()
@@ -50,6 +68,11 @@ def train_epoch(net,
     pbar = tqdm(islice(enumerate(train_loader), train_steps), total=train_steps, position=0, leave=True)
     for i, mini_batch in pbar:
         optimizer.zero_grad()
+        
+        # Apply flow filtering if specified (only during training)
+        if flow_filter is not None and 'flow' in mini_batch:
+            mini_batch['flow'] = flow_filter.filter_batch_flow(mini_batch['flow'])
+        
         flow_gt = mini_batch['flow'].to(device)
 
         pred_flow = net(mini_batch['trg_img'].to(device),

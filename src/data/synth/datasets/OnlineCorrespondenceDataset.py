@@ -1,5 +1,6 @@
 from platform import processor
 import torch
+import copy
 from src.data.synth.datasets.OnlineGeometryDataset import OnlineGeometryDataset
 from src.data.synth.datasets.processors.SyntheticCorrespondenceProcessor import SyntheticCorrespondenceProcessor
 from src.data.synth.datasets.base import ComponentsBase
@@ -9,19 +10,35 @@ from torch.utils.data.dataloader import default_collate
 import os
 
 
+def deep_merge(base_dict, override_dict):
+    """Recursively merge override_dict into base_dict."""
+    result = copy.deepcopy(base_dict)
+    for key, value in override_dict.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
 class OnlineCorrespondenceDataset():
     def __init__(
         self, 
         geometry_config_path, 
         processor_config_path, 
         split='train',
-        opengl_device_index=None
+        opengl_device_index=None,
+        geometry_config_overrides=None
     ):
         super().__init__()
         with open(geometry_config_path, 'r') as f:
             geometry_config = yaml.load(f, Loader=yaml.FullLoader)
         with open(processor_config_path, 'r') as f:
             processor_config = yaml.load(f, Loader=yaml.FullLoader)
+
+        # Apply overrides if provided
+        if geometry_config_overrides:
+            geometry_config = deep_merge(geometry_config, geometry_config_overrides)
 
         self._device = torch.device('cpu')   
         self.split = split

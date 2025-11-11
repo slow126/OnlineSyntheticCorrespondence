@@ -1,0 +1,83 @@
+# Experiment Configuration File for SPair with Flow Filtering
+# Define experiments using parameter grids or individual experiments
+#
+# NOTE: Flow length values are in FEATURE GRID UNITS (not pixels).
+# For feature_size=32 and img_size=512: downsampling factor = 16
+# So: 1.0 feature unit = 16 pixels, 2.0 = 32 pixels, 5.0 = 80 pixels, etc.
+# Adjust thresholds accordingly based on your desired pixel ranges.
+
+# Base parameters applied to all experiments (unless overridden)
+base:
+  epochs: 20
+  batch-size: 8
+  lr: 3e-4
+  lr-backbone: 3e-6
+  freeze: true
+  augmentation: true
+  feature_size: 32
+  size: 512
+  split_to_use_for_validation: "test"
+  scheduler: "step"
+  step_gamma: 0.5
+  weight-decay: 0.05
+  momentum: 0.9
+  thres: "img"
+  val_batch_size: 8
+  enable_debug: false
+  steps_per_epoch: logarithmic
+
+
+# Parameter grids - generates all combinations
+grids:
+  # SPair flow length filtering - min flow length sweep
+  - name: "spair flow filtering min"
+    parameters:
+      eval_benchmarks: 
+        - ["kitti2012", "kitti2015", "pointodyssey","tss", "pfpascal", "pfwillow", "spair"]
+      eval_alphas:
+        - [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+      train_dataset: ["spair"]
+      freeze: [True]
+      min_flow_length: [None, 0.1, 0.5, 1.0, 2.0, 5.0]
+      max_flow_length: [None]
+    name_template: "{train_dataset}_freeze{freeze}_minflow{min_flow_length}"
+
+  # SPair flow length filtering - max flow length sweep
+  - name: "spair flow filtering max"
+    parameters:
+      eval_benchmarks: 
+        - ["kitti2012", "kitti2015", "pointodyssey","tss", "pfpascal", "pfwillow", "spair"]
+      eval_alphas:
+        - [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+      train_dataset: ["spair"]
+      freeze: [True]
+      min_flow_length: [None]
+      max_flow_length: [None, 1.0, 2.0, 5.0, 10.0]
+    name_template: "{train_dataset}_freeze{freeze}_maxflow{max_flow_length}"
+
+  # SPair flow length filtering - combined min and max range
+  - name: "spair flow filtering range"
+    parameters:
+      eval_benchmarks: 
+        - ["kitti2012", "kitti2015", "pointodyssey","tss", "pfpascal", "pfwillow", "spair"]
+      eval_alphas:
+        - [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+      train_dataset: ["spair"]
+      freeze: [True]
+      min_flow_length: [0.5, 1.0, 2.0]
+      max_flow_length: [2.0, 5.0, 10.0]
+    name_template: "{train_dataset}_freeze{freeze}_minflow{min_flow_length}_maxflow{max_flow_length}"
+
+  # SPair flow length filtering - baseline (no filtering) for comparison
+  - name: "spair flow filtering baseline"
+    parameters:
+      eval_benchmarks: 
+        - ["kitti2012", "kitti2015", "pointodyssey","tss", "pfpascal", "pfwillow", "spair"]
+      eval_alphas:
+        - [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+      train_dataset: ["spair"]
+      freeze: [True]
+      min_flow_length: [None]
+      max_flow_length: [None]
+    name_template: "{train_dataset}_freeze{freeze}_nofilter"
+

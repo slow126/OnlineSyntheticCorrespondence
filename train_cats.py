@@ -241,6 +241,39 @@ def main():
     parser.add_argument('--train_dataset', type=str, default='synthetic', choices=['synthetic', 'spair', 'pfpascal', 'pfwillow', 'caltech', 'flyingthings', 'pointodyssey', 'kitti2012', 'kitti2015'])
     parser.add_argument('--config', type=str, default='src/configs/online_synth_configs/OnlineDatasetConfig.yaml',
                         help='Path to YAML config file')
+    parser.add_argument('--geometry_config_path', type=str, 
+                        default='src/configs/online_synth_configs/OnlineGeometryConfig.yaml',
+                        help='Path to geometry config YAML file')
+    parser.add_argument('--processor_config_path', type=str,
+                        default='src/configs/online_synth_configs/OnlineProcessorConfig.yaml',
+                        help='Path to processor config YAML file')
+    
+    # Sampler override arguments (optional - override config values)
+    parser.add_argument('--angle_sampler_x_loc', type=float, default=None,
+                        help='Override angle_sampler.x_components.loc')
+    parser.add_argument('--angle_sampler_x_scale', type=float, default=None,
+                        help='Override angle_sampler.x_components.scale')
+    parser.add_argument('--angle_sampler_x_distribution', type=str, default=None,
+                        help='Override angle_sampler.x_components.distribution')
+    parser.add_argument('--angle_sampler_y_loc', type=float, default=None,
+                        help='Override angle_sampler.y_components.loc')
+    parser.add_argument('--angle_sampler_y_scale', type=float, default=None,
+                        help='Override angle_sampler.y_components.scale')
+    parser.add_argument('--angle_sampler_y_distribution', type=str, default=None,
+                        help='Override angle_sampler.y_components.distribution')
+    
+    parser.add_argument('--scale_sampler_abs_loc', type=float, default=None,
+                        help='Override scale_sampler.abs_components.loc')
+    parser.add_argument('--scale_sampler_abs_scale', type=float, default=None,
+                        help='Override scale_sampler.abs_components.scale')
+    parser.add_argument('--scale_sampler_abs_distribution', type=str, default=None,
+                        help='Override scale_sampler.abs_components.distribution')
+    parser.add_argument('--scale_sampler_rel_loc', type=float, default=None,
+                        help='Override scale_sampler.rel_components.loc')
+    parser.add_argument('--scale_sampler_rel_scale', type=float, default=None,
+                        help='Override scale_sampler.rel_components.scale')
+    parser.add_argument('--scale_sampler_rel_distribution', type=str, default=None,
+                        help='Override scale_sampler.rel_components.distribution')
                     
     # FlyingThings dataset parameters
     parser.add_argument('--flyingthings_root', type=str, default='/home/spencer/Data/FlyingThings3D_tiny/',
@@ -272,6 +305,12 @@ def main():
                         help='Maximum number of sequences to use for PointOdyssey validation (None = all, deterministic sampling)')
     parser.add_argument('--pointodyssey_max_pts', type=int, default=200,
                         help='Maximum number of keypoints for PointOdyssey training (default: 200, use as many as possible)')
+
+    # Flow filtering parameters (applied during training only)
+    parser.add_argument('--min_flow_length', type=lambda x: None if str(x).lower() == 'none' else float(x), default=None,
+                        help='Minimum flow vector length for flow filtering during training. Set to "none" to disable.')
+    parser.add_argument('--max_flow_length', type=lambda x: None if str(x).lower() == 'none' else float(x), default=None,
+                        help='Maximum flow vector length for flow filtering during training. Set to "none" to disable.')
 
     # Training parameters
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
@@ -346,14 +385,60 @@ def main():
     if args.train_dataset in ['spair', 'pfpascal', 'pfwillow', 'caltech']:
         download.download_dataset(args.datapath, args.train_dataset)
     
+    # Build geometry config overrides from command-line args (for synthetic dataset)
+    geometry_config_overrides = {}
+    if args.train_dataset == 'synthetic':
+        # Angle sampler overrides
+        if args.angle_sampler_x_loc is not None or args.angle_sampler_x_scale is not None or args.angle_sampler_x_distribution is not None:
+            geometry_config_overrides.setdefault('angle_sampler', {}).setdefault('x_components', {})
+            if args.angle_sampler_x_loc is not None:
+                geometry_config_overrides['angle_sampler']['x_components']['loc'] = args.angle_sampler_x_loc
+            if args.angle_sampler_x_scale is not None:
+                geometry_config_overrides['angle_sampler']['x_components']['scale'] = args.angle_sampler_x_scale
+            if args.angle_sampler_x_distribution is not None:
+                geometry_config_overrides['angle_sampler']['x_components']['distribution'] = args.angle_sampler_x_distribution
+        
+        if args.angle_sampler_y_loc is not None or args.angle_sampler_y_scale is not None or args.angle_sampler_y_distribution is not None:
+            geometry_config_overrides.setdefault('angle_sampler', {}).setdefault('y_components', {})
+            if args.angle_sampler_y_loc is not None:
+                geometry_config_overrides['angle_sampler']['y_components']['loc'] = args.angle_sampler_y_loc
+            if args.angle_sampler_y_scale is not None:
+                geometry_config_overrides['angle_sampler']['y_components']['scale'] = args.angle_sampler_y_scale
+            if args.angle_sampler_y_distribution is not None:
+                geometry_config_overrides['angle_sampler']['y_components']['distribution'] = args.angle_sampler_y_distribution
+        
+        # Scale sampler overrides
+        if args.scale_sampler_abs_loc is not None or args.scale_sampler_abs_scale is not None or args.scale_sampler_abs_distribution is not None:
+            geometry_config_overrides.setdefault('scale_sampler', {}).setdefault('abs_components', {})
+            if args.scale_sampler_abs_loc is not None:
+                geometry_config_overrides['scale_sampler']['abs_components']['loc'] = args.scale_sampler_abs_loc
+            if args.scale_sampler_abs_scale is not None:
+                geometry_config_overrides['scale_sampler']['abs_components']['scale'] = args.scale_sampler_abs_scale
+            if args.scale_sampler_abs_distribution is not None:
+                geometry_config_overrides['scale_sampler']['abs_components']['distribution'] = args.scale_sampler_abs_distribution
+        
+        if args.scale_sampler_rel_loc is not None or args.scale_sampler_rel_scale is not None or args.scale_sampler_rel_distribution is not None:
+            geometry_config_overrides.setdefault('scale_sampler', {}).setdefault('rel_components', {})
+            if args.scale_sampler_rel_loc is not None:
+                geometry_config_overrides['scale_sampler']['rel_components']['loc'] = args.scale_sampler_rel_loc
+            if args.scale_sampler_rel_scale is not None:
+                geometry_config_overrides['scale_sampler']['rel_components']['scale'] = args.scale_sampler_rel_scale
+            if args.scale_sampler_rel_distribution is not None:
+                geometry_config_overrides['scale_sampler']['rel_components']['distribution'] = args.scale_sampler_rel_distribution
+        
+        # Use None if no overrides provided
+        if not geometry_config_overrides:
+            geometry_config_overrides = None
+    
     # Create training dataset
     if args.train_dataset == 'synthetic':
         print("Creating synthetic dataset...")
         train_dataset = OnlineCorrespondenceDataset(
-            geometry_config_path='src/configs/online_synth_configs/OnlineGeometryConfig.yaml',
-            processor_config_path='src/configs/online_synth_configs/OnlineProcessorConfig.yaml',
+            geometry_config_path=args.geometry_config_path,
+            processor_config_path=args.processor_config_path,
             split='train',
-            opengl_device_index=None  # Auto-detect from torch.cuda.current_device() (works with Lightning DDP)
+            opengl_device_index=None,  # Auto-detect from torch.cuda.current_device() (works with Lightning DDP)
+            geometry_config_overrides=geometry_config_overrides
         )
         
         # Use num_workers=0 for synthetic dataset (GPU-bound rendering, multiprocessing adds overhead)
@@ -433,10 +518,13 @@ def main():
     
     for benchmark in args.eval_benchmarks:
         if benchmark == 'synthetic':
+            # Use val geometry config for validation, but apply same overrides
+            val_geometry_config_path = 'src/configs/online_synth_configs/OnlineGeometryConfig_Val.yaml'
             val_dataset = OnlineCorrespondenceDataset(
-                geometry_config_path='src/configs/online_synth_configs/OnlineGeometryConfig_Val.yaml',
-                processor_config_path='src/configs/online_synth_configs/OnlineProcessorConfig.yaml',
-                split='val'
+                geometry_config_path=val_geometry_config_path,
+                processor_config_path=args.processor_config_path,
+                split='val',
+                geometry_config_overrides=geometry_config_overrides
             )
             val_dataset.cuda()
             val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=False, collate_fn=val_dataset.collate_fn)
@@ -913,9 +1001,18 @@ def main():
         if args.steps_per_epoch == 'logarithmic':
             print(f"Epoch {epoch + 1}: Using {steps_per_epoch} steps (logarithmic mode)")
         
+        # Create flow filter if parameters are provided (only for training)
+        flow_filter = None
+        if args.min_flow_length is not None or args.max_flow_length is not None:
+            from src.data.synth.datasets.flow_filter import FlowLengthFilter
+            flow_filter = FlowLengthFilter(min_flow_length=args.min_flow_length, max_flow_length=args.max_flow_length)
+            if epoch == start_epoch:  # Only print once at the start
+                print(f"Flow filtering enabled: min={args.min_flow_length}, max={args.max_flow_length}")
+        
         train_loss = optimize.train_epoch(
             model, optimizer, train_dataloader, device, epoch, train_writer, 
-            steps_per_epoch=steps_per_epoch
+            steps_per_epoch=steps_per_epoch,
+            flow_filter=flow_filter
         )
         
         # Update cumulative training steps

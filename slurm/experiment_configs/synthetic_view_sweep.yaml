@@ -1,0 +1,63 @@
+# Experiment Configuration File for Synthetic Dataset View Sweep
+# Define experiments using parameter grids for angle_sampler and scale_sampler
+
+# Base parameters applied to all experiments (unless overridden)
+base:
+  epochs: 20
+  batch-size: 8
+  lr: 3e-4
+  lr-backbone: 3e-6
+  freeze: true
+  augmentation: true
+  feature_size: 32
+  size: 512
+  split_to_use_for_validation: "test"
+  scheduler: "step"
+  step_gamma: 0.5
+  weight-decay: 0.05
+  momentum: 0.9
+  thres: "img"
+  val_batch_size: 8
+  enable_debug: false
+  steps_per_epoch: logarithmic
+  train_dataset: synthetic
+  geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
+  processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
+
+# Parameter grids - generates all combinations
+grids:
+  - name: "synthetic_view_sweep"
+    parameters:
+      eval_benchmarks: 
+        - ["kitti2012", "kitti2015", "pointodyssey", "tss", "pfpascal", "pfwillow", "spair"]
+      eval_alphas:
+        - [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+      # Example sweep parameters - adjust as needed
+      angle_sampler_x_loc:
+        - 0
+        - -0.16667
+      angle_sampler_x_scale: 
+        - 0.01
+        - 0.2
+        - 0.3
+      angle_sampler_y_loc:
+        - 0
+        - -0.16667
+      angle_sampler_y_scale:
+        - 0.01
+        - 0.2
+        - 0.3
+      scale_sampler_rel_scale:
+        - 0.01
+        - 0.1
+        - 0.5
+      scale_sampler_rel_loc:
+        - 0
+        - -0.25
+        - -0.35
+      scale_sampler_abs_scale:
+        - 0.1
+        - 0.25
+        - 0.5
+    name_template: "{train_dataset}_xloc{angle_sampler_x_loc}_xscale{angle_sampler_x_scale}_yloc{angle_sampler_y_loc}_yscale{angle_sampler_y_scale}_absscale{scale_sampler_abs_scale}_relloc{scale_sampler_rel_loc}_relscale{scale_sampler_rel_scale}"
+
