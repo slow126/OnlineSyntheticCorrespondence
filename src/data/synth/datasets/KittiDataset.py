@@ -127,17 +127,25 @@ class KittiDataset(Dataset):
             occ = (occ_type == 'occ')
             only_occ = (occ_type == 'only_occ')
             
-            train_list, val_list = make_dataset(str(training_dir), split=split_ratio, occ=occ, only_occ=only_occ)
-            
-            # Select appropriate split
-            if split == 'train':
-                self.file_list = train_list
+            # Special case: split='training' means use all data from training directory
+            if split == 'training':
+                # Use split=0.0 to get all samples in val_list (we'll use it for validation)
+                _, all_list = make_dataset(str(training_dir), split=0.0, occ=occ, only_occ=only_occ)
+                self.file_list = all_list
                 self.data_dir_name = 'training'
-            elif split == 'val':
-                self.file_list = val_list
-                self.data_dir_name = 'training'
+                print(f"Using full training set: {len(self.file_list)} samples")
             else:
-                raise ValueError(f"split must be 'train' or 'val', got '{split}'")
+                train_list, val_list = make_dataset(str(training_dir), split=split_ratio, occ=occ, only_occ=only_occ)
+                
+                # Select appropriate split
+                if split == 'train':
+                    self.file_list = train_list
+                    self.data_dir_name = 'training'
+                elif split == 'val':
+                    self.file_list = val_list
+                    self.data_dir_name = 'training'
+                else:
+                    raise ValueError(f"split must be 'train', 'val', or 'training', got '{split}'")
         else:
             raise ValueError(f"Neither 'train'/'val' directories nor 'training' directory found in {self.root}")
         

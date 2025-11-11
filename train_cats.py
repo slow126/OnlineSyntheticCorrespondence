@@ -284,8 +284,10 @@ def main():
                         help='random seed for flow subsampling (for reproducibility). Set to "none" for random. [default: None]')
     
     # KITTI dataset parameters
-    parser.add_argument('--kitti_root', type=str, default='/home/spencer/Data/correspondence/kitti-split',
+    parser.add_argument('--kitti_root', type=str, default='/home/spencer/Data/correspondence/kitti',
                         help='root directory containing kitti-2012 and kitti-2015 folders')
+    parser.add_argument('--kitti_val_use_full_training', type=boolean_string, nargs='?', const=True, default=False,
+                        help='Use full KITTI training set for validation (requires unsplit root with training directory). When True, uses split="training" instead of split="val"')
 
 
     # PointOdyssey dataset parameters
@@ -570,9 +572,11 @@ def main():
         elif benchmark in ['kitti2012', 'kitti2015']:
             from src.data.synth.datasets.KittiDataset import KittiDataset
             version = '2012' if '2012' in benchmark else '2015'
+            # Use 'training' split if kitti_val_use_full_training is True, otherwise use 'val'
+            kitti_split = 'training' if args.kitti_val_use_full_training else 'val'
             val_dataset = KittiDataset(
                 root=os.path.join(args.kitti_root, f'kitti-{version}'),
-                split='val',
+                split=kitti_split,
                 version=version,
                 occ_type='occ',
                 size=(args.size, args.size),
