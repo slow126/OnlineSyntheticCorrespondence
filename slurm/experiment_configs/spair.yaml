@@ -3,7 +3,7 @@
 
 # Base parameters applied to all experiments (unless overridden)
 base:
-  epochs: 50
+  epochs: 20
   batch-size: 8
   lr: 3e-4
   lr-backbone: 3e-6
