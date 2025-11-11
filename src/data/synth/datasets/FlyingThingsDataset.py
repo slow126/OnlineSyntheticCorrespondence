@@ -275,7 +275,8 @@ class FlyingThingsDataset(Dataset, nn.Module):
                  subsample_flow: Optional[float] = None,
                  subsample_flow_seed: Optional[int] = None,
                  reverse_flow: bool = False,
-                 filter_out_of_bounds: bool = True, use_valid_mask: bool = True):
+                 filter_out_of_bounds: bool = True, use_valid_mask: bool = True,
+                 normalize: bool = True):
         Dataset.__init__(self)
         nn.Module.__init__(self)
         self.dataset = datasets.FlyingThings3D(root=root, split=split, transforms=transforms)
@@ -285,6 +286,7 @@ class FlyingThingsDataset(Dataset, nn.Module):
         
         # Store flow transformation parameters (applied once at the end, not in processors)
         self.reverse_flow = reverse_flow
+        self.normalize = normalize
         
         # Cache device detection for faster tensor operations
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -325,7 +327,13 @@ class FlyingThingsDataset(Dataset, nn.Module):
         src_img = torch.from_numpy(np.array(item[src_index])).permute(2, 0, 1).float() / 255.0
         trg_img = torch.from_numpy(np.array(item[trg_index])).permute(2, 0, 1).float() / 255.0
         flow = torch.from_numpy(np.array(item[2])).float()
-    
+        
+        # Normalize images if requested (model expects ImageNet normalization)
+        # ImageNet normalization: (img - mean) / std produces "dark and crunchy" appearance
+        if self.normalize:
+            from torchvision.transforms.functional import normalize
+            src_img = normalize(src_img, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            trg_img = normalize(trg_img, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         
         # Check if valid flow mask is available (4-tuple vs 3-tuple)
         valid_flow_mask = None

@@ -28,9 +28,9 @@ grids:
   - name: "spair freeze sweep"
     parameters:
       eval_benchmarks: 
-        - ["pointodyssey","tss", "pfpascal", "pfwillow", "spair"]
+        - ["kitti2012", "kitti2015", "pointodyssey","tss", "pfpascal", "pfwillow", "spair"]
       eval_alphas:
-        - [0.1, 0.1, 0.1, 0.1, 0.1]
+        - [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
       train_dataset: ["spair"]
       freeze:
         - True

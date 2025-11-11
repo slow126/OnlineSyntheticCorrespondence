@@ -12,6 +12,7 @@ datasets:
   flyingthings_root: "/home/slow1/Data/FlyingThings3D_Pytorch"  # UPDATE THIS
   pointodyssey_root: "/home/slow1/Data/PointOdyssey"  # UPDATE THIS
   tss_root: "/home/slow1/Data/correspondence/TSS_CVPR2016"  # UPDATE THIS
+  kitti_root: "/home/slow1/Data/correspondence"  # UPDATE THIS
   datapath: "./models/Datasets_CATs"
 
 # SLURM resource defaults

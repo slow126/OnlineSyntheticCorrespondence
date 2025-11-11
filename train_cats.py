@@ -238,13 +238,21 @@ def main():
                         help='size of the images. [default: 512]')
     
     # Synthetic dataset parameters
-    parser.add_argument('--train_dataset', type=str, default='synthetic', choices=['synthetic', 'spair', 'pfpascal', 'pfwillow', 'caltech', 'flyingthings', 'pointodyssey'])
+    parser.add_argument('--train_dataset', type=str, default='synthetic', choices=['synthetic', 'spair', 'pfpascal', 'pfwillow', 'caltech', 'flyingthings', 'pointodyssey', 'kitti2012', 'kitti2015'])
     parser.add_argument('--config', type=str, default='src/configs/online_synth_configs/OnlineDatasetConfig.yaml',
                         help='Path to YAML config file')
                     
     # FlyingThings dataset parameters
     parser.add_argument('--flyingthings_root', type=str, default='/home/spencer/Data/FlyingThings3D_tiny/',
                         help='root directory of the FlyingThings3D dataset')
+    parser.add_argument('--subsample_flow', type=lambda x: None if str(x).lower() == 'none' else float(x), default=0.01,
+                        help='subsample ratio for flow vectors (fraction to keep, e.g., 0.1 for 10%%). Set to "none" to disable. [default: 0.01]')
+    parser.add_argument('--subsample_flow_seed', type=lambda x: None if str(x).lower() == 'none' else int(x), default=None,
+                        help='random seed for flow subsampling (for reproducibility). Set to "none" for random. [default: None]')
+    
+    # KITTI dataset parameters
+    parser.add_argument('--kitti_root', type=str, default='/home/spencer/Data/correspondence/',
+                        help='root directory containing kitti-2012 and kitti-2015 folders')
 
 
     # PointOdyssey dataset parameters
@@ -286,7 +294,7 @@ def main():
     
     # Evaluation parameters
     parser.add_argument('--eval_benchmarks', type=str, nargs='+', default=['spair'],
-                        choices=['synthetic', 'spair', 'pfpascal', 'pfwillow', 'caltech', 'tss', 'pointodyssey'],
+                        choices=['synthetic', 'spair', 'pfpascal', 'pfwillow', 'caltech', 'tss', 'pointodyssey', 'kitti2012', 'kitti2015'],
                         help='list of benchmarks for evaluation during training')
     parser.add_argument('--eval_alphas', type=float, nargs='+', default=[0.1],
                         help='list of alpha values for each evaluation benchmark (must match eval_benchmarks length)')
@@ -358,9 +366,30 @@ def main():
         )
     elif args.train_dataset == 'flyingthings':
         train_dataset = FlyingThingsDataset(root=args.flyingthings_root, split="train", transforms=None, size=(args.size, args.size), downsample_flow=args.feature_size, 
-                                            subsample_flow=0.6, use_valid_mask=True, reverse_flow=True, filter_out_of_bounds=True)
+                                            subsample_flow=args.subsample_flow, subsample_flow_seed=args.subsample_flow_seed, use_valid_mask=True, reverse_flow=True, filter_out_of_bounds=True)
         # Note: Dataset returns CPU tensors - DataLoader handles GPU transfer
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.n_threads, shuffle=True, prefetch_factor=args.batch_size if args.n_threads > 0 else None, pin_memory=True)
+    elif args.train_dataset in ['kitti2012', 'kitti2015']:
+        from src.data.synth.datasets.KittiDataset import KittiDataset
+        version = '2012' if '2012' in args.train_dataset else '2015'
+        train_dataset = KittiDataset(
+            root=os.path.join(args.kitti_root, f'kitti-{version}'),
+            split='train',
+            version=version,
+            occ_type='occ',
+            size=(args.size, args.size),
+            downsample_flow=args.feature_size,
+            normalize=True,
+            normalize_images=False
+        )
+        train_dataloader = DataLoader(
+            train_dataset,
+            batch_size=args.batch_size,
+            num_workers=args.n_threads,
+            shuffle=True,
+            prefetch_factor=args.batch_size if args.n_threads > 0 else None,
+            pin_memory=True
+        )
     elif args.train_dataset == 'pointodyssey':
         train_dataset = PointOdysseyFlowDataset(
             dataset_location=args.pointodyssey_root, 
@@ -394,7 +423,7 @@ def main():
             pin_memory=True
         )
     else:
-        raise ValueError(f"Unknown train_dataset: {args.train_dataset}. Must be one of: synthetic, flyingthings, pointodyssey, spair, pfpascal, pfwillow, caltech")
+        raise ValueError(f"Unknown train_dataset: {args.train_dataset}. Must be one of: synthetic, flyingthings, pointodyssey, spair, pfpascal, pfwillow, caltech, kitti2012, kitti2015")
 
     print(f"Train dataset size: {len(train_dataloader)}")
 
@@ -448,6 +477,30 @@ def main():
                 persistent_workers=True, 
                 prefetch_factor=8, 
                 shuffle=False, 
+                pin_memory=True
+            )
+        elif benchmark in ['kitti2012', 'kitti2015']:
+            from src.data.synth.datasets.KittiDataset import KittiDataset
+            version = '2012' if '2012' in benchmark else '2015'
+            val_dataset = KittiDataset(
+                root=os.path.join(args.kitti_root, f'kitti-{version}'),
+                split='val',
+                version=version,
+                occ_type='occ',
+                size=(args.size, args.size),
+                downsample_flow=args.feature_size,
+                normalize=True,
+                normalize_images=True,  # Enable keypoint format
+                thres=args.thres,
+                max_pts=200
+            )
+            val_dataloader = DataLoader(
+                val_dataset,
+                batch_size=args.val_batch_size,
+                num_workers=args.val_num_workers,
+                persistent_workers=True,
+                prefetch_factor=8,
+                shuffle=False,
                 pin_memory=True
             )
         else:

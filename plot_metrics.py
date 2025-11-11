@@ -16,29 +16,105 @@ import numpy as np
 
 def parse_training_summary(summary_path):
     """
-    Parse training_summary.txt to extract training dataset name.
+    Parse training_summary.txt to extract training dataset name and parameters.
     
     Args:
         summary_path: Path to training_summary.txt file
         
     Returns:
-        Training dataset name, or None if not found
+        Dictionary with 'dataset' and optional 'stride', 'sequence_length', 'freeze' keys
+        Returns None if parsing fails
     """
     if not os.path.exists(summary_path):
         return None
     
+    result = {}
+    
     try:
         with open(summary_path, 'r') as f:
             for line in f:
+                line = line.strip()
+                # Skip STATUS lines to avoid matching "S:" in "STATUS:"
+                if 'STATUS:' in line:
+                    continue
+                # Extract dataset name
                 if 'Train dataset:' in line:
-                    # Extract dataset name after colon
                     dataset = line.split('Train dataset:')[1].strip()
-                    return dataset
+                    result['dataset'] = dataset
+                # Extract stride (for PointOdyssey)
+                elif 'strides_pointodyssey:' in line or 'Strides:' in line:
+                    # Handle both formats
+                    if 'strides_pointodyssey:' in line:
+                        stride_str = line.split('strides_pointodyssey:')[1].strip()
+                    else:
+                        stride_str = line.split('Strides:')[1].strip()
+                    # Parse list format like "[1, 2, 4]" or single value
+                    try:
+                        # Remove brackets and split
+                        stride_str = stride_str.strip('[]')
+                        strides = [int(s.strip()) for s in stride_str.split(',') if s.strip()]
+                        if strides:
+                            # Use first stride or join if multiple
+                            result['stride'] = '_'.join(map(str, strides)) if len(strides) > 1 else str(strides[0])
+                    except:
+                        result['stride'] = stride_str
+                # Extract sequence length (S)
+                # Be careful not to match "STATUS:" - only match standalone "S:" or explicit sequence length
+                elif 'sequence_length_pointodyssey:' in line or 'Sequence length:' in line:
+                    if 'sequence_length_pointodyssey:' in line:
+                        seq_len = line.split('sequence_length_pointodyssey:')[1].strip()
+                    else:
+                        seq_len = line.split('Sequence length:')[1].strip()
+                    # Extract just the number (handle cases like "4" or "4, Training in progress")
+                    try:
+                        # Take first token (should be the number)
+                        seq_len = seq_len.split()[0].strip()
+                        # Remove any trailing commas or other punctuation
+                        seq_len = seq_len.rstrip(',')
+                        result['sequence_length'] = seq_len
+                    except:
+                        # If parsing fails, try to extract number with regex-like approach
+                        import re
+                        match = re.search(r'\d+', seq_len)
+                        if match:
+                            result['sequence_length'] = match.group()
+                        else:
+                            result['sequence_length'] = seq_len.strip()
+                # Match standalone "S:" (but not "STATUS:" - already filtered above)
+                elif line.startswith('S:') or ' S:' in line:
+                    # Extract value after "S:"
+                    if line.startswith('S:'):
+                        seq_len = line.split('S:', 1)[1].strip()
+                    else:
+                        seq_len = line.split(' S:', 1)[1].strip()
+                    # Extract just the number
+                    try:
+                        seq_len = seq_len.split()[0].strip().rstrip(',')
+                        result['sequence_length'] = seq_len
+                    except:
+                        import re
+                        match = re.search(r'\d+', seq_len)
+                        if match:
+                            result['sequence_length'] = match.group()
+                # Extract freeze
+                elif 'freeze:' in line or 'Freeze:' in line:
+                    if 'freeze:' in line:
+                        freeze_str = line.split('freeze:')[1].strip()
+                    else:
+                        freeze_str = line.split('Freeze:')[1].strip()
+                    # Normalize to True/False
+                    freeze_str = freeze_str.lower()
+                    if freeze_str in ['true', '1', 'yes']:
+                        result['freeze'] = 'T'
+                    elif freeze_str in ['false', '0', 'no']:
+                        result['freeze'] = 'F'
+                    else:
+                        result['freeze'] = freeze_str
     except Exception as e:
         print(f"Warning: Could not parse {summary_path}: {e}")
         return None
     
-    return None
+    return result if result else None
 
 
 def parse_validation_results(csv_path):
@@ -106,6 +182,88 @@ def parse_validation_results(csv_path):
     return result, sorted(list(metrics_set))
 
 
+def format_training_dataset_label(summary_info):
+    """
+    Format training dataset label with parameters.
+    
+    Args:
+        summary_info: Dictionary from parse_training_summary or string dataset name
+        
+    Returns:
+        Formatted label string
+    """
+    if summary_info is None:
+        return "Unknown"
+    
+    # Handle legacy case where summary_info is just a string
+    if isinstance(summary_info, str):
+        dataset = summary_info
+        summary_info = {'dataset': dataset}
+    
+    dataset = summary_info.get('dataset', 'Unknown')
+    
+    # Abbreviate PointOdyssey to PtOd
+    if 'pointodyssey' in dataset.lower():
+        dataset = dataset.replace('pointodyssey', 'PtOd').replace('PointOdyssey', 'PtOd')
+    
+    # Build label with parameters
+    parts = [dataset]
+    
+    # Add stride if present
+    if 'stride' in summary_info:
+        parts.append(f"stride{summary_info['stride']}")
+    
+    # Add sequence length (S) if present
+    if 'sequence_length' in summary_info:
+        parts.append(f"S{summary_info['sequence_length']}")
+    
+    # Add freeze if present
+    if 'freeze' in summary_info:
+        parts.append(f"freeze{summary_info['freeze']}")
+    
+    return '_'.join(parts)
+
+
+def parse_directory_name(directory_name):
+    """
+    Parse directory name to extract dataset and parameters.
+    
+    Directory names follow pattern like:
+    pointodyssey_stride1_sequence_length16_freezeFalse_eval...
+    
+    Args:
+        directory_name: Name of the directory
+        
+    Returns:
+        Dictionary with 'dataset' and optional 'stride', 'sequence_length', 'freeze' keys
+    """
+    import re
+    result = {}
+    
+    # Extract dataset name (first part before underscore)
+    parts = directory_name.split('_')
+    if parts:
+        result['dataset'] = parts[0]
+    
+    # Extract stride (stride{value})
+    stride_match = re.search(r'stride(\d+)', directory_name)
+    if stride_match:
+        result['stride'] = stride_match.group(1)
+    
+    # Extract sequence_length (sequence_length{value})
+    seq_match = re.search(r'sequence_length(\d+)', directory_name)
+    if seq_match:
+        result['sequence_length'] = seq_match.group(1)
+    
+    # Extract freeze (freezeTrue or freezeFalse)
+    freeze_match = re.search(r'freeze(True|False)', directory_name)
+    if freeze_match:
+        freeze_val = freeze_match.group(1)
+        result['freeze'] = 'T' if freeze_val == 'True' else 'F'
+    
+    return result if result else None
+
+
 def parse_snapshot_directory(snapshot_dir):
     """
     Parse a snapshot directory to extract training dataset and validation results.
@@ -114,19 +272,37 @@ def parse_snapshot_directory(snapshot_dir):
         snapshot_dir: Path to snapshot directory
         
     Returns:
-        Tuple of (training_dataset_name, validation_data_dict, metrics_list)
+        Tuple of (training_dataset_label, validation_data_dict, metrics_list)
         Returns (None, {}, []) if parsing fails
     """
     snapshot_path = Path(snapshot_dir)
     
-    # Get training dataset name from training_summary.txt
+    # Get training dataset info from training_summary.txt
     summary_path = snapshot_path / 'training_summary.txt'
-    training_dataset = parse_training_summary(summary_path)
+    summary_info = parse_training_summary(summary_path)
     
-    # Fallback to directory name if summary not found
-    if training_dataset is None:
-        training_dataset = snapshot_path.name
-        print(f"Warning: Could not find training dataset in {summary_path}, using directory name: {training_dataset}")
+    # If summary doesn't have parameters, try parsing from directory name
+    if summary_info:
+        # Check if we're missing parameters that might be in directory name
+        dir_info = parse_directory_name(snapshot_path.name)
+        if dir_info:
+            # Merge: use summary for dataset name, but fill in missing params from directory
+            if 'stride' not in summary_info and 'stride' in dir_info:
+                summary_info['stride'] = dir_info['stride']
+            if 'sequence_length' not in summary_info and 'sequence_length' in dir_info:
+                summary_info['sequence_length'] = dir_info['sequence_length']
+            if 'freeze' not in summary_info and 'freeze' in dir_info:
+                summary_info['freeze'] = dir_info['freeze']
+    else:
+        # No summary file, try parsing from directory name
+        summary_info = parse_directory_name(snapshot_path.name)
+        if not summary_info:
+            # Fallback to directory name if parsing fails
+            summary_info = {'dataset': snapshot_path.name}
+            print(f"Warning: Could not parse training dataset from {summary_path} or directory name, using: {snapshot_path.name}")
+    
+    # Format label
+    training_dataset = format_training_dataset_label(summary_info)
     
     # Parse validation results
     csv_path = snapshot_path / 'validation_results.csv'

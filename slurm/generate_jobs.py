@@ -122,6 +122,8 @@ def generate_grid_experiments(grid_config: Dict[str, Any], base_params: Dict[str
             exp_config['pointodyssey_root'] = datasets.get('pointodyssey_root', '')
             if 'num_pts_to_track_pointodyssey' not in exp_config:
                 exp_config['num_pts_to_track_pointodyssey'] = 32
+        elif train_dataset in ['kitti2012', 'kitti2015'] and 'kitti_root' not in exp_config:
+            exp_config['kitti_root'] = datasets.get('kitti_root', '')
         
         experiments.append(exp_config)
     
@@ -175,6 +177,8 @@ def load_experiments(experiment_config: Dict[str, Any], machine_config: Dict[str
             final_config['pointodyssey_root'] = datasets.get('pointodyssey_root', '')
             if 'num_pts_to_track_pointodyssey' not in final_config:
                 final_config['num_pts_to_track_pointodyssey'] = 32
+        elif train_dataset in ['kitti2012', 'kitti2015'] and 'kitti_root' not in final_config:
+            final_config['kitti_root'] = datasets.get('kitti_root', '')
         
         all_experiments.append(final_config)
     
@@ -233,11 +237,22 @@ def build_train_command(exp_config: Dict[str, Any], machine_config: Dict[str, An
     elif train_dataset == 'pointodyssey' and 'pointodyssey_root' not in exp_config:
         if datasets.get('pointodyssey_root'):
             cmd_parts.extend(['--pointodyssey_root', datasets.get('pointodyssey_root', '')])
+    elif train_dataset in ['kitti2012', 'kitti2015'] and 'kitti_root' not in exp_config:
+        if datasets.get('kitti_root'):
+            cmd_parts.extend(['--kitti_root', datasets.get('kitti_root', '')])
     
+    # Add dataset paths for validation benchmarks
     # Add pointodyssey_root if pointodyssey is in eval_benchmarks (for validation)
     if 'pointodyssey' in str(exp_config.get('eval_benchmarks', [])) and 'pointodyssey_root' not in exp_config:
         if datasets.get('pointodyssey_root'):
             cmd_parts.extend(['--pointodyssey_root', datasets.get('pointodyssey_root', '')])
+    
+    # Add kitti_root if kitti2012 or kitti2015 is in eval_benchmarks (for validation)
+    eval_benchmarks = exp_config.get('eval_benchmarks', [])
+    if isinstance(eval_benchmarks, list):
+        if any('kitti2012' in str(b) or 'kitti2015' in str(b) for b in eval_benchmarks) and 'kitti_root' not in exp_config:
+            if datasets.get('kitti_root'):
+                cmd_parts.extend(['--kitti_root', datasets.get('kitti_root', '')])
     
     if 'tss' in str(exp_config.get('eval_benchmarks', [])) and 'tss_root' not in exp_config:
         if datasets.get('tss_root'):

@@ -1,4 +1,4 @@
-# Experiment Configuration File
+# Experiment Configuration File for Synthetic Dataset
 # Define experiments using parameter grids or individual experiments
 
 # Base parameters applied to all experiments (unless overridden)
@@ -24,28 +24,16 @@ base:
 
 # Parameter grids - generates all combinations
 grids:
-  # Example grid: train_dataset x eval_config x learning_rate
-  - name: "flyingthings freeze sweep"
+  # Freeze sweep for synthetic dataset
+  - name: "synthetic freeze sweep"
     parameters:
       eval_benchmarks: 
         - ["kitti2012", "kitti2015", "pointodyssey", "tss", "pfpascal", "pfwillow", "spair"]
       eval_alphas:
         - [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
-      train_dataset: ["flyingthings"]
+      train_dataset: ["synthetic"]
       freeze:
         - True
         - False
-      subsample_flow:
-        - 0.01
-        - 0.1
-        - 0.5
-        - 1.0
-    name_template: "{train_dataset}_freeze{freeze}_subsample{subsample_flow}"
-  
-
-
-
-
-  
-
+    name_template: "{train_dataset}_freeze{freeze}"
 
