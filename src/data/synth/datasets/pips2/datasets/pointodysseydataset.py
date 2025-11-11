@@ -2,6 +2,7 @@ from numpy import random
 import torch
 import numpy as np
 import os
+from typing import Optional
 import torchvision.transforms as transforms
 import torch.nn.functional as F
 from PIL import Image
@@ -49,6 +50,7 @@ class PointOdysseyDataset(torch.utils.data.Dataset):
                  max_sequences=None,
                  verbose=False,
                  all_points=False,
+                 val_sequence_fraction: Optional[float] = None,
     ):
         print('loading pointodyssey dataset...')
 
@@ -101,8 +103,10 @@ class PointOdysseyDataset(torch.utils.data.Dataset):
             self.sequences = self.sequences[:1]
             print('Quick mode: using first sequence only')
 
-        # For validation, use only first 20% of frames in each sequence to speed up loading
-        val_sequence_fraction = 0.2 if self.dset in ['val', 'test'] else None
+        # For validation, use only first K% of frames in each sequence to speed up loading
+        # Default is 1.0 (full dataset) for val/test, None for train
+        if val_sequence_fraction is None:
+            val_sequence_fraction = 1.0 if self.dset in ['val', 'test'] else None
         
         for seq in self.sequences:
             

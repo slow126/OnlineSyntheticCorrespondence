@@ -90,3 +90,8 @@ slurm/slurm_jobs/*
 
 # Fingerprints
 fingerprints/
+
+# Plots
+plots/
+rc_plots/
+rc2_plots/

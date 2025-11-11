@@ -14,6 +14,10 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import random as _random
+import json
+import hashlib
+import threading
+import time
 
 # Add the project root to sys.path so models.CATs_PlusPlus can be imported
 project_root = Path(__file__).parent.parent.parent.parent.parent
@@ -59,7 +63,8 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                  max_pts: int = 40,
                  thres: str = 'img',
                  normalize_images: bool = False,
-                 normalize: bool = True):
+                 normalize: bool = True,
+                 val_sequence_fraction: Optional[float] = None):
         """
         Initialize the PointOdyssey flow dataset.
         
@@ -114,7 +119,8 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
             quick=quick,
             max_sequences=max_sequences,
             verbose=verbose,
-            all_points=all_points
+            all_points=all_points,
+            val_sequence_fraction=val_sequence_fraction
         )
         
         self.S = S
@@ -148,9 +154,210 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
             except ImportError:
                 self.kps_to_flow = None
         
+        # Cache management for valid/invalid indices
+        self.cache_dir = os.path.join(actual_dataset_location, '.cache')
+        os.makedirs(self.cache_dir, exist_ok=True)
+        
+        # Create a unique hash for this dataset configuration
+        config_str = json.dumps({
+            'dataset_location': actual_dataset_location,
+            'dset': actual_dset,
+            'S': S,
+            'N': N,
+            'strides': sorted(strides),
+            'clip_step': clip_step,
+            'resize_size': resize_size,
+            'crop_size': crop_size,
+            'req_full': req_full,
+            'all_points': all_points,
+            'max_sequences': max_sequences,
+            'val_sequence_fraction': val_sequence_fraction,
+        }, sort_keys=True)
+        config_hash = hashlib.md5(config_str.encode()).hexdigest()[:8]  # Use first 8 chars for brevity
+        
+        # Create a more readable filename with key parameters
+        strides_str = '_'.join(map(str, sorted(strides)))
+        cache_name = f'valid_indices_{actual_dset}_S{S}_N{N}_strides{strides_str}_{config_hash}.json'
+        self.cache_file = os.path.join(self.cache_dir, cache_name)
+        
+        # Thread-safe data structures
+        self._cache_lock = threading.Lock()
+        self._save_lock = threading.Lock()  # Separate lock for save operations to prevent concurrent saves
+        self._valid_indices = set()
+        self._invalid_indices = set()
+        self._cache_save_interval = 10
+        self._cache_updates_since_save = 0
+        
+        # Load existing cache
+        self._load_cache()
+        
     def __len__(self) -> int:
         """Return the number of samples in the dataset."""
         return len(self.base_dataset)
+    
+    def _load_cache(self):
+        """Load validation cache from disk (called before threading starts)."""
+        if os.path.exists(self.cache_file):
+            try:
+                with open(self.cache_file, 'r') as f:
+                    cache_data = json.load(f)
+                    self._valid_indices = set(cache_data.get('valid', []))
+                    self._invalid_indices = set(cache_data.get('invalid', []))
+                if self.verbose:
+                    print(f"Loaded cache from {self.cache_file}: {len(self._valid_indices)} valid, {len(self._invalid_indices)} invalid indices")
+            except Exception as e:
+                if self.verbose:
+                    print(f"Failed to load cache: {e}")
+                self._valid_indices = set()
+                self._invalid_indices = set()
+        else:
+            if self.verbose:
+                print(f"No existing cache found at {self.cache_file}, starting fresh")
+    
+    def _save_cache(self):
+        """Save validation cache to disk (thread-safe, prevents concurrent saves)."""
+        # Use blocking acquire so all threads get a chance to save
+        # The save operation is fast, so the wait is minimal
+        with self._save_lock:
+            # Load existing cache from disk and merge with current state
+            # This ensures we don't lose indices discovered by other threads
+            existing_valid = set()
+            existing_invalid = set()
+            if os.path.exists(self.cache_file):
+                try:
+                    with open(self.cache_file, 'r') as f:
+                        cache_data = json.load(f)
+                        existing_valid = set(cache_data.get('valid', []))
+                        existing_invalid = set(cache_data.get('invalid', []))
+                except Exception as e:
+                    if self.verbose:
+                        print(f"Failed to load existing cache for merge: {e}")
+            
+            # Get current in-memory state and merge with existing
+            with self._cache_lock:
+                # Merge: union of existing and current
+                merged_valid = existing_valid | self._valid_indices
+                merged_invalid = existing_invalid | self._invalid_indices
+                # Update in-memory state to include merged results
+                self._valid_indices = merged_valid
+                self._invalid_indices = merged_invalid
+                # Make copies for saving
+                valid_list = sorted(list(merged_valid))
+                invalid_list = sorted(list(merged_invalid))
+                timestamp = time.time()
+                total_samples = len(self.base_dataset)
+            
+            # File I/O outside the cache lock (but still holding save_lock)
+            try:
+                cache_data = {
+                    'valid': valid_list,
+                    'invalid': invalid_list,
+                    'timestamp': timestamp,
+                    'total_samples': total_samples
+                }
+                # Write to temp file first, then rename (atomic write)
+                temp_file = self.cache_file + '.tmp'
+                with open(temp_file, 'w') as f:
+                    json.dump(cache_data, f, indent=2)
+                os.replace(temp_file, self.cache_file)
+                if self.verbose:
+                    print(f"Saved cache to {self.cache_file}: {len(valid_list)} valid, {len(invalid_list)} invalid indices (merged)")
+            except Exception as e:
+                if self.verbose:
+                    print(f"Failed to save cache: {e}")
+    
+    def _is_index_valid(self, index):
+        """Thread-safe check if index is not in invalid set."""
+        with self._cache_lock:
+            return index not in self._invalid_indices
+    
+    def _is_index_known_valid(self, index):
+        """Thread-safe check if index is in valid set."""
+        with self._cache_lock:
+            return index in self._valid_indices
+    
+    def _add_valid_index(self, index):
+        """Thread-safe add index to valid set, increment counter."""
+        with self._cache_lock:
+            if index not in self._valid_indices:
+                self._valid_indices.add(index)
+                self._cache_updates_since_save += 1
+                return True
+            return False
+    
+    def _add_invalid_index(self, index):
+        """Thread-safe add index to invalid set, increment counter."""
+        with self._cache_lock:
+            if index not in self._invalid_indices:
+                self._invalid_indices.add(index)
+                self._cache_updates_since_save += 1
+                return True
+            return False
+    
+    def _get_random_valid_index(self):
+        """Thread-safe get random valid index."""
+        with self._cache_lock:
+            if self._valid_indices:
+                return _random.choice(list(self._valid_indices))
+            return None
+    
+    def _should_save_cache(self):
+        """Thread-safe check if cache should be saved, reset counter if needed."""
+        with self._cache_lock:
+            if self._cache_updates_since_save >= self._cache_save_interval:
+                self._cache_updates_since_save = 0
+                return True
+            return False
+    
+    def save_cache_final(self):
+        """Force save cache (call this at end of training/validation)."""
+        # Force save with save lock to prevent concurrent saves
+        with self._save_lock:
+            # Load existing cache from disk and merge with current state
+            existing_valid = set()
+            existing_invalid = set()
+            if os.path.exists(self.cache_file):
+                try:
+                    with open(self.cache_file, 'r') as f:
+                        cache_data = json.load(f)
+                        existing_valid = set(cache_data.get('valid', []))
+                        existing_invalid = set(cache_data.get('invalid', []))
+                except Exception as e:
+                    if self.verbose:
+                        print(f"Failed to load existing cache for merge: {e}")
+            
+            # Get current state and merge
+            with self._cache_lock:
+                # Merge: union of existing and current
+                merged_valid = existing_valid | self._valid_indices
+                merged_invalid = existing_invalid | self._invalid_indices
+                # Update in-memory state to include merged results
+                self._valid_indices = merged_valid
+                self._invalid_indices = merged_invalid
+                # Make copies for saving
+                valid_list = sorted(list(merged_valid))
+                invalid_list = sorted(list(merged_invalid))
+                timestamp = time.time()
+                total_samples = len(self.base_dataset)
+                self._cache_updates_since_save = 0
+            
+            # Save merged cache
+            try:
+                cache_data = {
+                    'valid': valid_list,
+                    'invalid': invalid_list,
+                    'timestamp': timestamp,
+                    'total_samples': total_samples
+                }
+                temp_file = self.cache_file + '.tmp'
+                with open(temp_file, 'w') as f:
+                    json.dump(cache_data, f, indent=2)
+                os.replace(temp_file, self.cache_file)
+                if self.verbose:
+                    print(f"Final cache saved to {self.cache_file}: {len(valid_list)} valid, {len(invalid_list)} invalid indices (merged)")
+            except Exception as e:
+                if self.verbose:
+                    print(f"Failed to save final cache: {e}")
     
     def __getitem__(self, index: int) -> Dict[str, torch.Tensor]:
         """
@@ -166,14 +373,115 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                 - 'flow': Flow tensor (2, H, W) from trg to src
         """
 
-        sample, gotit = self.base_dataset[index]
+        sample = None
+        gotit = False
+        cache_updated = False
         
-        while not gotit:
-            # Resampling because index failed to get valid samples.
-            new_index = _random.randint(0, len(self.base_dataset) - 1)
-            if self.verbose:
-                print(f"Resampling because index {index} failed to get valid samples. New index: {new_index}")
-            sample, gotit = self.base_dataset[new_index]
+        # Try the requested index first if not known to be invalid
+        if self._is_index_valid(index):
+            # Check if it's known-valid - if so, use it directly (fast path)
+            if self._is_index_known_valid(index):
+                # Already know it's valid, use it directly without checking
+                sample, gotit = self.base_dataset[index]
+                # Should always be valid, but handle edge case
+                if not gotit:
+                    # Unexpected - remove from valid cache and add to invalid
+                    with self._cache_lock:
+                        self._valid_indices.discard(index)
+                        self._invalid_indices.add(index)
+                    gotit = False  # Will trigger resampling
+            else:
+                # Not known yet, try it to discover
+                sample, gotit = self.base_dataset[index]
+                if gotit:
+                    if self._add_valid_index(index):
+                        cache_updated = True
+                else:
+                    # Invalid sample encountered - add to cache
+                    if self._add_invalid_index(index):
+                        cache_updated = True
+                        if self.verbose:
+                            with self._cache_lock:
+                                invalid_count = len(self._invalid_indices)
+                            print(f"Added invalid index {index} to cache (total invalid: {invalid_count})")
+        else:
+            # Known-invalid index requested - immediately use a known-valid one if available
+            # This avoids expensive resampling loop when cache is built
+            valid_idx = self._get_random_valid_index()
+            if valid_idx is not None:
+                index = valid_idx
+                sample, gotit = self.base_dataset[index]
+                # Should be valid, but verify
+                if not gotit:
+                    # Unexpected - remove from cache
+                    with self._cache_lock:
+                        self._valid_indices.discard(index)
+                        self._invalid_indices.add(index)
+                    gotit = False  # Will trigger resampling
+            # If no known-valid indices yet, fall through to resampling loop to build cache
+        
+        # If invalid, try to find a valid sample
+        attempts = 0
+        start_time = time.time()
+        max_attempts = 100
+        resample_timeout = 5.0
+        
+        while not gotit and attempts < max_attempts:
+            # Timeout check - if we have known valid indices, use one to avoid crashing
+            if time.time() - start_time > resample_timeout:
+                valid_idx = self._get_random_valid_index()
+                if valid_idx is not None:
+                    # Use known valid index from cache to avoid training crash
+                    if self.verbose:
+                        print(f"Timeout after {resample_timeout}s, using random known-valid index")
+                    index = valid_idx
+                    sample, gotit = self.base_dataset[index]
+                    if gotit:
+                        # Ensure it's still marked as valid
+                        self._add_valid_index(index)
+                    break
+                # If no known valid indices yet, continue with normal attempts
+                # (should find a valid sample eventually)
+            
+            # Prefer known-valid indices
+            valid_idx = self._get_random_valid_index()
+            if valid_idx is not None:
+                index = valid_idx
+            else:
+                # Try sequential indices near the original first
+                if attempts < 10:
+                    offset = (attempts // 2 + 1) * (1 if attempts % 2 == 0 else -1)
+                    index = (index + offset) % len(self.base_dataset)
+                else:
+                    # Fall back to random
+                    index = _random.randint(0, len(self.base_dataset) - 1)
+            
+            # Skip known-invalid indices
+            if not self._is_index_valid(index):
+                attempts += 1
+                continue
+                
+            sample, gotit = self.base_dataset[index]
+            if gotit:
+                if self._add_valid_index(index):
+                    cache_updated = True
+            else:
+                # Invalid sample encountered - add to cache
+                if self._add_invalid_index(index):
+                    cache_updated = True
+                    if self.verbose:
+                        with self._cache_lock:
+                            invalid_count = len(self._invalid_indices)
+                        print(f"Added invalid index {index} to cache (total invalid: {invalid_count})")
+            
+            attempts += 1
+        
+        if not gotit:
+            raise RuntimeError(f"Failed to get valid sample after {attempts} attempts")
+        
+        # Save cache periodically (every 10 updates)
+        if cache_updated and self._should_save_cache():
+            self._save_cache()
         
         # Keep everything on CPU - DataLoader will handle GPU transfer
         # Extract the data we need (keep on CPU)
