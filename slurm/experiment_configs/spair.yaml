@@ -34,7 +34,7 @@ grids:
       train_dataset: ["spair"]
       freeze:
         - True
-        - False
+        # - False
     name_template: "{train_dataset}_freeze{freeze}"
 
 

@@ -101,6 +101,9 @@ class PointOdysseyDataset(torch.utils.data.Dataset):
             self.sequences = self.sequences[:1]
             print('Quick mode: using first sequence only')
 
+        # For validation, use only first 20% of frames in each sequence to speed up loading
+        val_sequence_fraction = 0.2 if self.dset in ['val', 'test'] else None
+        
         for seq in self.sequences:
             
             if self.verbose: 
@@ -110,8 +113,24 @@ class PointOdysseyDataset(torch.utils.data.Dataset):
 
             annotations_path = os.path.join(seq, 'anno.npz')
             if os.path.isfile(annotations_path):
+                num_frames = len(os.listdir(rgb_path))
+                
+                # Limit to first 20% of sequence for validation
+                if val_sequence_fraction is not None and val_sequence_fraction < 1.0:
+                    max_frame_idx = int(num_frames * val_sequence_fraction)
+                    # Ensure we have enough frames for at least one clip
+                    max_stride = max(strides) if strides else 1
+                    max_frame_idx = max(max_frame_idx, self.S * max_stride)
+                    if self.verbose:
+                        print(f'  Limiting to first {val_sequence_fraction*100:.0f}% of frames: {max_frame_idx}/{num_frames}')
+                else:
+                    max_frame_idx = num_frames
+                
                 for stride in strides:
-                    for ii in range(0,len(os.listdir(rgb_path))-self.S*stride+1, clip_step):
+                    # Limit the range to first K% of frames for validation
+                    max_start_idx = max_frame_idx - self.S*stride + 1
+                    total_possible = num_frames - self.S*stride + 1
+                    for ii in range(0, min(max_start_idx, total_possible), clip_step):
                         full_idx = ii + np.arange(self.S)*stride
                         self.rgb_paths.append([os.path.join(seq, 'rgbs', 'rgb_%05d.jpg' % idx) for idx in full_idx])
                         self.mask_paths.append([os.path.join(seq, 'masks', 'mask_%05d.png' % idx) for idx in full_idx])

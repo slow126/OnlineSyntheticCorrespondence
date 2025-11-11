@@ -34,6 +34,6 @@ grids:
       train_dataset: ["synthetic"]
       freeze:
         - True
-        - False
+        # - False
     name_template: "{train_dataset}_freeze{freeze}"
 

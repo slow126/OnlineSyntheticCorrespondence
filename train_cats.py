@@ -838,7 +838,7 @@ def main():
             return len(train_dataloader)
         elif args.steps_per_epoch == 'logarithmic':
             # Logarithmic progression: 2^epoch, capped at 1024
-            steps = min(2 ** epoch, 1024)
+            steps = min(2 ** epoch, 2048)
             return steps
         else:
             # Integer value
