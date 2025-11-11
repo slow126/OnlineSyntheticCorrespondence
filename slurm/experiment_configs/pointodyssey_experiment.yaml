@@ -36,9 +36,11 @@ grids:
         - [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
       strides_pointodyssey: 
         - [1]
+        - [2]
         - [4]
       sequence_length_pointodyssey:
         - 4
+        - 8
         - 16
       freeze:
         - True
