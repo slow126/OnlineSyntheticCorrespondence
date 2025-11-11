@@ -1,0 +1,56 @@
+# Experiment Configuration File
+# Define experiments using parameter grids or individual experiments
+
+# Base parameters applied to all experiments (unless overridden)
+base:
+  epochs: 50
+  batch-size: 8
+  lr: 3e-4
+  lr-backbone: 3e-6
+  freeze: true
+  augmentation: true
+  feature_size: 32
+  size: 512
+  split_to_use_for_validation: "test"
+  scheduler: "step"
+  step_gamma: 0.5
+  weight-decay: 0.05
+  momentum: 0.9
+  thres: "img"
+  val_batch_size: 8
+  enable_debug: false
+  steps_per_epoch: logarithmic
+  pointodyssey_val_max_sequences: 4
+
+# Parameter grids - generates all combinations
+grids:
+  # Example grid: train_dataset x eval_config x learning_rate
+  - name: "pointodyssey stride sweep"
+    parameters:
+      train_dataset: ["pointodyssey"]
+      eval_benchmarks: 
+        - ["kitti2012", "kitti2015"]
+      eval_alphas:
+        - [0.1, 0.1]
+      strides_pointodyssey: 
+        - [1]
+        - [2]
+        - [4]
+      sequence_length_pointodyssey:
+        - 4
+        - 8
+        - 16
+      freeze:
+        - True
+        # - False
+    name_template: "{train_dataset}_stride{_join(strides_pointodyssey,'_')}_sequence_length{sequence_length_pointodyssey}_freeze{freeze}_eval{_join(eval_benchmarks,'_')}"
+
+# Dataset-specific defaults (applied based on train_dataset)
+dataset_defaults:
+  pointodyssey:
+    num_pts_to_track_pointodyssey: 64
+    all_points_pointodyssey: True
+    verbose_pointodyssey: false
+
+
+
