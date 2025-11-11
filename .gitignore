@@ -87,6 +87,7 @@ debug/
 
 # SLURM
 slurm/slurm_jobs/*
+slurm/*_jobs/*
 
 # Fingerprints
 fingerprints/
