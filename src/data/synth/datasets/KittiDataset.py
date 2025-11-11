@@ -62,7 +62,8 @@ class KittiDataset(Dataset):
             normalize_images: If True, returns validation format with keypoints
             thres: PCK threshold type ('img' or 'bbox')
             max_pts: Maximum number of keypoints for validation
-            split_ratio: Train/val split ratio if no official split (default 0.9)
+            split_ratio: Train/val split ratio for old structure with 'training' directory (default 0.8)
+                         Not used if 'train'/'val' directories exist (files are already split)
         """
         self.root = Path(root)
         self.split = split
@@ -74,40 +75,71 @@ class KittiDataset(Dataset):
         self.thres = thres
         self.max_pts = max_pts
         
+        # Build dataset file list
+        # Support both old structure (training directory with split) and new structure (train/val directories)
+        # Check for new structure first (train/val directories)
+        train_dir = self.root / 'train'
+        val_dir = self.root / 'val'
+        training_dir = self.root / 'training'
+        
         # Auto-detect version if needed
         if version == 'auto':
-            training_dir = self.root / 'training'
-            if (training_dir / 'colored_0').exists():
-                version = '2012'
-            elif (training_dir / 'image_2').exists():
-                version = '2015'
-            else:
-                raise ValueError(f"Cannot auto-detect KITTI version. Checked for 'colored_0' (2012) or 'image_2' (2015) in {training_dir}")
+            # Try new structure first (train/val)
+            if train_dir.exists():
+                if (train_dir / 'colored_0').exists():
+                    version = '2012'
+                elif (train_dir / 'image_2').exists():
+                    version = '2015'
+            # Fall back to old structure (training)
+            elif training_dir.exists():
+                if (training_dir / 'colored_0').exists():
+                    version = '2012'
+                elif (training_dir / 'image_2').exists():
+                    version = '2015'
+            
+            if version == 'auto':
+                raise ValueError(f"Cannot auto-detect KITTI version. Checked for 'colored_0' (2012) or 'image_2' (2015) in train/val or training directories")
         
         self.version = version
         
-        # Build dataset file list
-        # Use training directory with split ratio for both train and val
-        training_dir = self.root / 'training'
-        if not training_dir.exists():
-            raise ValueError(f"Training directory not found: {training_dir}")
-        
-        # Use make_dataset to get file list
-        # occ=True for 'occ', occ=False for 'noc', only_occ=True for 'only_occ'
-        occ = (occ_type == 'occ')
-        only_occ = (occ_type == 'only_occ')
-        
-        train_list, val_list = make_dataset(str(training_dir), split=split_ratio, occ=occ, only_occ=only_occ)
-        
-        # Select appropriate split
-        if split == 'train':
-            self.file_list = train_list
-            self.data_dir_name = 'training'
-        elif split == 'val':
-            self.file_list = val_list
-            self.data_dir_name = 'training'
+        if train_dir.exists() and val_dir.exists():
+            # New structure: separate train/val directories with files already split
+            # Files are physically separated, no split logic needed
+            print(f"Using new structure: train/val directories")
+            if split == 'train':
+                data_dir = train_dir
+                self.data_dir_name = 'train'
+            elif split == 'val':
+                data_dir = val_dir
+                self.data_dir_name = 'val'
+            else:
+                raise ValueError(f"split must be 'train' or 'val', got '{split}'")
+            
+            # Use make_dataset to get file list (all files in directory, split=1.0)
+            occ = (occ_type == 'occ')
+            only_occ = (occ_type == 'only_occ')
+            
+            file_list, _ = make_dataset(str(data_dir), split=1.0, occ=occ, only_occ=only_occ)
+            self.file_list = file_list
+        elif training_dir.exists():
+            # Old structure: training directory with split ratio
+            # Use make_dataset to get file list with split ratio
+            occ = (occ_type == 'occ')
+            only_occ = (occ_type == 'only_occ')
+            
+            train_list, val_list = make_dataset(str(training_dir), split=split_ratio, occ=occ, only_occ=only_occ)
+            
+            # Select appropriate split
+            if split == 'train':
+                self.file_list = train_list
+                self.data_dir_name = 'training'
+            elif split == 'val':
+                self.file_list = val_list
+                self.data_dir_name = 'training'
+            else:
+                raise ValueError(f"split must be 'train' or 'val', got '{split}'")
         else:
-            raise ValueError(f"split must be 'train' or 'val', got '{split}'")
+            raise ValueError(f"Neither 'train'/'val' directories nor 'training' directory found in {self.root}")
         
         # Create resize transform if size is specified
         if size is not None:

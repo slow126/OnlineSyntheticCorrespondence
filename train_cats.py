@@ -251,7 +251,7 @@ def main():
                         help='random seed for flow subsampling (for reproducibility). Set to "none" for random. [default: None]')
     
     # KITTI dataset parameters
-    parser.add_argument('--kitti_root', type=str, default='/home/spencer/Data/correspondence/',
+    parser.add_argument('--kitti_root', type=str, default='/home/spencer/Data/correspondence/kitti-split',
                         help='root directory containing kitti-2012 and kitti-2015 folders')
 
 
