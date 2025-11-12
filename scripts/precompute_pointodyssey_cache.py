@@ -110,7 +110,7 @@ def main():
         N=args.N,
         strides=args.strides,
         quick=False,
-        verbose=False,  # Enable verbose to see progress
+        verbose=True,  # Enable verbose to see progress
         resize_size=(args.size+64, args.size+64),
         crop_size=(args.size, args.size),
         filter_instances=True,
