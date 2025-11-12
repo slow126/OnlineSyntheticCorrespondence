@@ -309,7 +309,6 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
             with open(worker_file, 'w') as f:
                 json.dump(cache_data, f, indent=2)
                 f.flush()
-                os.fsync(f.fileno())
             # Disable verbose printing during precomputation to avoid stdout contention
             # if self.verbose:
             #     print(f"Worker {worker_id} saved cache: {len(worker_cache['valid'])} valid, {len(worker_cache['invalid'])} invalid indices")
