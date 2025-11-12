@@ -106,6 +106,17 @@ def generate_grid_experiments(grid_config: Dict[str, Any], base_params: Dict[str
         # Override with grid parameters
         exp_config.update(params)
         
+        # Apply dataset defaults for any dataset in eval_benchmarks (for validation datasets)
+        eval_benchmarks = exp_config.get('eval_benchmarks', [])
+        if dataset_defaults and isinstance(eval_benchmarks, list):
+            for benchmark in eval_benchmarks:
+                benchmark_str = str(benchmark).lower()
+                # Check if this benchmark has defaults (e.g., 'pointodyssey' in eval_benchmarks)
+                for dataset_key, defaults in dataset_defaults.items():
+                    if dataset_key.lower() in benchmark_str:
+                        if defaults and isinstance(defaults, dict):
+                            exp_config.update(defaults)
+        
         # Set CPU-based defaults (val_num_workers, n_threads)
         set_cpu_based_defaults(exp_config, machine_config)
         
@@ -124,6 +135,19 @@ def generate_grid_experiments(grid_config: Dict[str, Any], base_params: Dict[str
                 exp_config['num_pts_to_track_pointodyssey'] = 32
         elif train_dataset in ['kitti2012', 'kitti2015'] and 'kitti_root' not in exp_config:
             exp_config['kitti_root'] = datasets.get('kitti_root', '')
+        
+        # Add dataset paths for validation benchmarks
+        if isinstance(eval_benchmarks, list):
+            eval_benchmarks_str = [str(b).lower() for b in eval_benchmarks]
+            # Add pointodyssey_root if pointodyssey is in eval_benchmarks
+            if any('pointodyssey' in b for b in eval_benchmarks_str) and 'pointodyssey_root' not in exp_config:
+                exp_config['pointodyssey_root'] = datasets.get('pointodyssey_root', '')
+            # Add flyingthings_root if flyingthings is in eval_benchmarks
+            if any('flyingthings' in b for b in eval_benchmarks_str) and 'flyingthings_root' not in exp_config:
+                exp_config['flyingthings_root'] = datasets.get('flyingthings_root', '')
+            # Add kitti_root if kitti is in eval_benchmarks
+            if any('kitti' in b for b in eval_benchmarks_str) and 'kitti_root' not in exp_config:
+                exp_config['kitti_root'] = datasets.get('kitti_root', '')
         
         experiments.append(exp_config)
     
@@ -162,6 +186,17 @@ def load_experiments(experiment_config: Dict[str, Any], machine_config: Dict[str
         # Override with individual experiment params
         final_config.update(exp_config)
         
+        # Apply dataset defaults for any dataset in eval_benchmarks (for validation datasets)
+        eval_benchmarks = final_config.get('eval_benchmarks', [])
+        if dataset_defaults and isinstance(eval_benchmarks, list):
+            for benchmark in eval_benchmarks:
+                benchmark_str = str(benchmark).lower()
+                # Check if this benchmark has defaults (e.g., 'pointodyssey' in eval_benchmarks)
+                for dataset_key, defaults in dataset_defaults.items():
+                    if dataset_key.lower() in benchmark_str:
+                        if defaults and isinstance(defaults, dict):
+                            final_config.update(defaults)
+        
         # Set CPU-based defaults (val_num_workers, n_threads)
         set_cpu_based_defaults(final_config, machine_config)
         
@@ -179,6 +214,19 @@ def load_experiments(experiment_config: Dict[str, Any], machine_config: Dict[str
                 final_config['num_pts_to_track_pointodyssey'] = 32
         elif train_dataset in ['kitti2012', 'kitti2015'] and 'kitti_root' not in final_config:
             final_config['kitti_root'] = datasets.get('kitti_root', '')
+        
+        # Add dataset paths for validation benchmarks
+        if isinstance(eval_benchmarks, list):
+            eval_benchmarks_str = [str(b).lower() for b in eval_benchmarks]
+            # Add pointodyssey_root if pointodyssey is in eval_benchmarks
+            if any('pointodyssey' in b for b in eval_benchmarks_str) and 'pointodyssey_root' not in final_config:
+                final_config['pointodyssey_root'] = datasets.get('pointodyssey_root', '')
+            # Add flyingthings_root if flyingthings is in eval_benchmarks
+            if any('flyingthings' in b for b in eval_benchmarks_str) and 'flyingthings_root' not in final_config:
+                final_config['flyingthings_root'] = datasets.get('flyingthings_root', '')
+            # Add kitti_root if kitti is in eval_benchmarks
+            if any('kitti' in b for b in eval_benchmarks_str) and 'kitti_root' not in final_config:
+                final_config['kitti_root'] = datasets.get('kitti_root', '')
         
         all_experiments.append(final_config)
     
@@ -242,21 +290,25 @@ def build_train_command(exp_config: Dict[str, Any], machine_config: Dict[str, An
             cmd_parts.extend(['--kitti_root', datasets.get('kitti_root', '')])
     
     # Add dataset paths for validation benchmarks
-    # Add pointodyssey_root if pointodyssey is in eval_benchmarks (for validation)
-    if 'pointodyssey' in str(exp_config.get('eval_benchmarks', [])) and 'pointodyssey_root' not in exp_config:
-        if datasets.get('pointodyssey_root'):
-            cmd_parts.extend(['--pointodyssey_root', datasets.get('pointodyssey_root', '')])
-    
-    # Add kitti_root if kitti2012 or kitti2015 is in eval_benchmarks (for validation)
     eval_benchmarks = exp_config.get('eval_benchmarks', [])
     if isinstance(eval_benchmarks, list):
-        if any('kitti2012' in str(b) or 'kitti2015' in str(b) for b in eval_benchmarks) and 'kitti_root' not in exp_config:
+        eval_benchmarks_str = [str(b).lower() for b in eval_benchmarks]
+        # Add pointodyssey_root if pointodyssey is in eval_benchmarks (for validation)
+        if any('pointodyssey' in b for b in eval_benchmarks_str) and 'pointodyssey_root' not in exp_config:
+            if datasets.get('pointodyssey_root'):
+                cmd_parts.extend(['--pointodyssey_root', datasets.get('pointodyssey_root', '')])
+        # Add flyingthings_root if flyingthings is in eval_benchmarks (for validation)
+        if any('flyingthings' in b for b in eval_benchmarks_str) and 'flyingthings_root' not in exp_config:
+            if datasets.get('flyingthings_root'):
+                cmd_parts.extend(['--flyingthings_root', datasets.get('flyingthings_root', '')])
+        # Add kitti_root if kitti is in eval_benchmarks (for validation)
+        if any('kitti' in b for b in eval_benchmarks_str) and 'kitti_root' not in exp_config:
             if datasets.get('kitti_root'):
                 cmd_parts.extend(['--kitti_root', datasets.get('kitti_root', '')])
-    
-    if 'tss' in str(exp_config.get('eval_benchmarks', [])) and 'tss_root' not in exp_config:
-        if datasets.get('tss_root'):
-            cmd_parts.extend(['--tss_root', datasets.get('tss_root', '')])
+        # Add tss_root if tss is in eval_benchmarks (for validation)
+        if any('tss' in b for b in eval_benchmarks_str) and 'tss_root' not in exp_config:
+            if datasets.get('tss_root'):
+                cmd_parts.extend(['--tss_root', datasets.get('tss_root', '')])
     
     if 'datapath' not in exp_config:
         if datasets.get('datapath'):
