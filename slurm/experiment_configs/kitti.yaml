@@ -3,7 +3,7 @@
 
 # Base parameters applied to all experiments (unless overridden)
 base:
-  epochs: 20
+  epochs: 200
   batch-size: 8
   lr: 3e-4
   lr-backbone: 3e-6
@@ -27,30 +27,22 @@ base:
 # Parameter grids - generates all combinations
 grids:
   # Example grid: train_dataset x eval_config x learning_rate
-  - name: "flyingthings freeze sweep"
+  - name: "kitti"
     parameters:
       eval_benchmarks: 
         - ["kitti2012", "kitti2015", "pointodyssey", "tss", "pfpascal", "pfwillow", "spair"]
       eval_alphas:
         - [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
-      train_dataset: ["flyingthings"]
+      train_dataset: ["kitti"]
       freeze:
         - True
         # - False
-      subsample_flow:
-        - 0.1
-        - 0.5
-        - 1.0
-    name_template: "{train_dataset}_freeze{freeze}_subsample{subsample_flow}"
+    name_template: "{train_dataset}_freeze{freeze}"
   
 dataset_defaults:
   pointodyssey:
     num_pts_to_track_pointodyssey: 32
     all_points_pointodyssey: True
     verbose_pointodyssey: false
-
-
-
-  
 
 

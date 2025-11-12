@@ -23,7 +23,7 @@ base:
   train_dataset: synthetic
   geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
   processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
-  kitti_val_use_full_training: True
+  kitti_val_use_full_training: false
   val_batch_size: 32
 
 # Individual experiments with paired parameters

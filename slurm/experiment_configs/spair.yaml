@@ -20,7 +20,7 @@ base:
   val_batch_size: 8
   enable_debug: false
   steps_per_epoch: logarithmic
-  kitti_val_use_full_training: True
+  kitti_val_use_full_training: false
   val_batch_size: 32
 
 

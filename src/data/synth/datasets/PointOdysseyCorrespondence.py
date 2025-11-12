@@ -16,8 +16,6 @@ import matplotlib.colors as mcolors
 import random as _random
 import json
 import hashlib
-import threading
-import time
 
 # Add the project root to sys.path so models.CATs_PlusPlus can be imported
 project_root = Path(__file__).parent.parent.parent.parent.parent
@@ -154,7 +152,7 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
             except ImportError:
                 self.kps_to_flow = None
         
-        # Cache management for valid/invalid indices
+        # Cache management for valid/invalid indices (read-only)
         self.cache_dir = os.path.join(actual_dataset_location, '.cache')
         os.makedirs(self.cache_dir, exist_ok=True)
         
@@ -180,93 +178,58 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
         cache_name = f'valid_indices_{actual_dset}_S{S}_N{N}_strides{strides_str}_{config_hash}.json'
         self.cache_file = os.path.join(self.cache_dir, cache_name)
         
-        # Thread-safe data structures
-        self._cache_lock = threading.Lock()
-        self._valid_indices = set()
-        self._invalid_indices = set()
+        # Read-only cache: sorted list for fast indexing
+        self._valid_indices_list = None  # Sorted list of valid indices
+        self._invalid_indices_set = None  # Set for fast lookup
         
-        # Load existing cache
+        # Load existing cache (read-only, no locks needed)
         self._load_cache()
-        
-        # Check if cache exists and enable read-only mode if it does
-        self._cache_readonly = False
-        if os.path.exists(self.cache_file):
-            try:
-                with open(self.cache_file, 'r') as f:
-                    cache_data = json.load(f)
-                    existing_valid = set(cache_data.get('valid', []))
-                    existing_invalid = set(cache_data.get('invalid', []))
-                    total_cached = len(existing_valid) + len(existing_invalid)
-                    total_samples = len(self.base_dataset)
-                    
-                    # If cache exists and covers >50% of dataset, make it read-only
-                    # (allows some discovery but prevents most writes)
-                    if total_cached > 0.5 * total_samples:
-                        self._cache_readonly = True
-                        print(f"[PointOdyssey] Cache exists ({total_cached}/{total_samples} indices), enabling read-only mode", flush=True)
-                    elif self.verbose:
-                        print(f"[PointOdyssey] Cache exists ({total_cached}/{total_samples} indices), but coverage <50%, allowing writes", flush=True)
-            except Exception as e:
-                print(f"[PointOdyssey] Could not check cache completeness: {e}", flush=True)
-        else:
-            print(f"[PointOdyssey] No cache found at {self.cache_file}, starting fresh", flush=True)
         
     def __len__(self) -> int:
         """Return the number of samples in the dataset.
         If cache exists and has valid indices, return count of valid indices only.
-        Otherwise, return full dataset length for discovery.
+        Otherwise, return full dataset length for random resampling.
         """
-        with self._cache_lock:
-            if self._valid_indices:
-                # Cache exists and we're not in precomputation mode - only use valid indices
-                return len(self._valid_indices)
+        if self._valid_indices_list is not None:
+            return len(self._valid_indices_list)
         return len(self.base_dataset)
     
     def _load_cache(self):
-        """Load validation cache from disk (called before threading starts)."""
+        """Load validation cache from disk (read-only, called at init)."""
         if os.path.exists(self.cache_file):
             try:
                 with open(self.cache_file, 'r') as f:
                     cache_data = json.load(f)
-                    self._valid_indices = set(cache_data.get('valid', []))
-                    self._invalid_indices = set(cache_data.get('invalid', []))
+                    valid_indices = cache_data.get('valid', [])
+                    invalid_indices = cache_data.get('invalid', [])
+                    
+                    # Convert to sorted list for fast indexing and set for fast lookup
+                    self._valid_indices_list = sorted(valid_indices)
+                    self._invalid_indices_set = set(invalid_indices)
+                    
+                # Always print cache status (independent of verbose)
                 if self.verbose:
-                    print(f"Loaded cache from {self.cache_file}: {len(self._valid_indices)} valid, {len(self._invalid_indices)} invalid indices")
+                    print(f"[PointOdyssey] Loaded cache from {self.cache_file}: {len(self._valid_indices_list)} valid, {len(self._invalid_indices_set)} invalid indices", flush=True)
+                else:
+                    print(f"[PointOdyssey] Using cache: {len(self._valid_indices_list)} valid indices (dataset size: {len(self._valid_indices_list)})", flush=True)
             except Exception as e:
-                if self.verbose:
-                    print(f"Failed to load cache: {e}")
-                self._valid_indices = set()
-                self._invalid_indices = set()
+                # Always print cache errors (independent of verbose)
+                print(f"[PointOdyssey] Failed to load cache: {e}", flush=True)
+                self._valid_indices_list = None
+                self._invalid_indices_set = None
         else:
-            if self.verbose:
-                print(f"No existing cache found at {self.cache_file}, starting fresh")
-    
-    def _is_index_valid(self, index):
-        """Thread-safe check if index is not in invalid set."""
-        with self._cache_lock:
-            return index not in self._invalid_indices
-    
-    def _is_index_known_valid(self, index):
-        """Thread-safe check if index is in valid set."""
-        with self._cache_lock:
-            return index in self._valid_indices
-    
-    
-    def _get_random_valid_index(self):
-        """Thread-safe get random valid index."""
-        with self._cache_lock:
-            if self._valid_indices:
-                return _random.choice(list(self._valid_indices))
-            return None
+            # Always print when no cache found (independent of verbose)
+            print(f"[PointOdyssey] No cache found at {self.cache_file}, will use random resampling", flush=True)
+            self._valid_indices_list = None
+            self._invalid_indices_set = None
     
     def __getitem__(self, index: int) -> Dict[str, torch.Tensor]:
         """
         Get a sample from the dataset (training/validation mode - READ ONLY).
-        Uses cache if available, otherwise does resampling with retries.
-        NEVER writes to cache - this is for training/validation only.
+        Uses cache if available (fast lookup), otherwise does random resampling.
         
         Args:
-            index: Sample index
+            index: Sample index (0 to len(self)-1)
             
         Returns:
             Dictionary containing:
@@ -274,82 +237,45 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                 - 'trg_img': Target image tensor (C, H, W) 
                 - 'flow': Flow tensor (2, H, W) from trg to src
         """
-        sample = None
-        gotit = False
-        
-        # Check if cache exists and map index to valid index
-        with self._cache_lock:
-            has_valid_cache = len(self._valid_indices) > 0
-        
-        if has_valid_cache:
-            # Cache exists - map requested index to actual valid index
-            actual_index = self._get_valid_index_at_position(index)
-            if actual_index is not None:
-                # Use the mapped valid index
+        # If cache exists, map index to valid index (fast lookup)
+        if self._valid_indices_list is not None:
+            # Map requested index to actual valid index in cache
+            if index < len(self._valid_indices_list):
+                actual_index = self._valid_indices_list[index]
                 sample, gotit = self.base_dataset[actual_index]
-                if not gotit:
-                    # Unexpected - but don't modify cache, just try resampling
-                    gotit = False
-        
-        if not has_valid_cache or not gotit:
-            # No cache yet or cache lookup failed - use resampling logic (but don't write to cache)
-            # Try the requested index first if not known to be invalid
-            if self._is_index_valid(index):
-                # Check if it's known-valid - if so, use it directly (fast path)
-                if self._is_index_known_valid(index):
-                    # Already know it's valid, use it directly
-                    sample, gotit = self.base_dataset[index]
+                if gotit:
+                    # Success - proceed to process sample
+                    pass
                 else:
-                    # Not known yet, try it (but don't write to cache)
-                    sample, gotit = self.base_dataset[index]
+                    # Cache says valid but base dataset says invalid - fall through to resampling
+                    gotit = False
             else:
-                # Known-invalid index requested - use a known-valid one if available
-                valid_idx = self._get_random_valid_index()
-                if valid_idx is not None:
-                    index = valid_idx
-                    sample, gotit = self.base_dataset[index]
-            
-            # If invalid, try to find a valid sample (resampling loop, but don't write to cache)
-            attempts = 0
-            start_time = time.time()
+                # Index out of range for cache - shouldn't happen if __len__ is correct
+                gotit = False
+        else:
+            # No cache - use random resampling
+            gotit = False
+        
+        # If cache lookup failed or no cache exists, do random resampling
+        if not gotit:
             max_attempts = 100
-            resample_timeout = 5.0
+            attempts = 0
             
             while not gotit and attempts < max_attempts:
-                # Timeout check - use cached valid index if available
-                if time.time() - start_time > resample_timeout:
-                    valid_idx = self._get_random_valid_index()
-                    if valid_idx is not None:
-                        if self.verbose:
-                            print(f"Timeout after {resample_timeout}s, using random known-valid index")
-                        index = valid_idx
-                        sample, gotit = self.base_dataset[index]
-                        if gotit:
-                            break
+                # Random sample from base dataset
+                random_index = _random.randint(0, len(self.base_dataset) - 1)
                 
-                # Prefer known-valid indices
-                valid_idx = self._get_random_valid_index()
-                if valid_idx is not None:
-                    index = valid_idx
-                else:
-                    # Try sequential indices near the original first
-                    if attempts < 10:
-                        offset = (attempts // 2 + 1) * (1 if attempts % 2 == 0 else -1)
-                        index = (index + offset) % len(self.base_dataset)
-                    else:
-                        # Fall back to random
-                        index = _random.randint(0, len(self.base_dataset) - 1)
-                
-                # Skip known-invalid indices
-                if not self._is_index_valid(index):
+                # Skip known-invalid indices if we have invalid set
+                if self._invalid_indices_set is not None and random_index in self._invalid_indices_set:
                     attempts += 1
                     continue
-                    
-                sample, gotit = self.base_dataset[index]
+                
+                # Try this index
+                sample, gotit = self.base_dataset[random_index]
                 attempts += 1
-        
-        if not gotit:
-            raise RuntimeError(f"Failed to get valid sample after {attempts} attempts")
+            
+            if not gotit:
+                raise RuntimeError(f"Failed to get valid sample after {max_attempts} random attempts")
         
         # Keep everything on CPU - DataLoader will handle GPU transfer
         # Extract the data we need (keep on CPU)
