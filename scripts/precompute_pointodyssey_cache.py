@@ -118,8 +118,7 @@ def main():
         cats_feat_size=args.feature_size,
         all_points=args.all_points,
         max_sequences=args.max_sequences,
-        max_pts=args.max_pts,
-        precompute_mode=True,
+        max_pts=args.max_pts
     )
     
     print(f"\nDataset length: {len(dataset)}")
@@ -158,7 +157,7 @@ def main():
     all_results = {idx: False for idx in range(base_dataset_len)}  # index -> gotit
     
     try:
-        with tqdm(total=base_dataset_len, desc="Processing indices") as pbar:
+        with tqdm(total=len(dataloader), desc="Processing indices") as pbar:
             for batch_results in dataloader:
                 # batch_results is a dict: {index: gotit, ...}
                 all_results.update(batch_results)

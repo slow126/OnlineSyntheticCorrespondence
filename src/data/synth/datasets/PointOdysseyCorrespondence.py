@@ -64,8 +64,7 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                  thres: str = 'img',
                  normalize_images: bool = False,
                  normalize: bool = True,
-                 val_sequence_fraction: Optional[float] = None,
-                 precompute_mode: bool = False):
+                 val_sequence_fraction: Optional[float] = None):
         """
         Initialize the PointOdyssey flow dataset.
         
@@ -92,7 +91,6 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
             thres: PCK threshold type ('img' or 'bbox')
             normalize_images: If True, enables validation mode and returns keypoints-based format for evaluation
             normalize: If True, applies ImageNet normalization to images (default: True, model expects normalized images)
-            precompute_mode: If True, enables precomputation mode (default: False)
         """
         # Check if the dataset has the expected structure (with train/val/test subdirs)
         expected_dset_path = os.path.join(dataset_location, dset)
@@ -262,12 +260,6 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
             return None
     
     def __getitem__(self, index: int) -> Dict[str, torch.Tensor]:
-        if self.precompute_mode:
-            return self.__getitem_precompute__(index)
-        else:
-            return self.__getitem_training__(index)
-
-    def __getitem_training__(self, index: int) -> Dict[str, torch.Tensor]:
         """
         Get a sample from the dataset (training/validation mode - READ ONLY).
         Uses cache if available, otherwise does resampling with retries.
@@ -505,26 +497,6 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
 
         # All tensors are already on CPU, no need to move them
         return out
-    
-    def __getitem_precompute__(self, index: int, worker_id: int = None):
-        """
-        Simple precomputation version - just try index and return gotit status.
-        No cache writing - results are collected in precompute script.
-        
-        Args:
-            index: Sample index to check
-            worker_id: Optional worker ID (unused, kept for compatibility)
-            
-        Returns:
-            Dict with 'index' and 'gotit' bool
-        """
-        # Try the requested index
-        try:
-            sample, gotit = self.base_dataset[index]
-            return {'index': index, 'gotit': gotit}
-        except Exception as e:
-            # Any error means invalid
-            return {'index': index, 'gotit': False}
     
     def _create_flow_field(self, 
                           src_trajs: torch.Tensor, 
