@@ -119,6 +119,7 @@ def main():
         all_points=args.all_points,
         max_sequences=args.max_sequences,
         max_pts=args.max_pts,
+        precompute_mode=True,
     )
     
     print(f"\nDataset length: {len(dataset)}")
@@ -153,7 +154,8 @@ def main():
     print(f"\nProcessing {base_dataset_len} indices with DataLoader ({args.num_workers} workers)...")
     print("(Results will be collected in memory and written once at the end)")
     
-    all_results = {}  # index -> gotit
+    # Pre-initialize all indices to False (invalid)
+    all_results = {idx: False for idx in range(base_dataset_len)}  # index -> gotit
     
     try:
         with tqdm(total=base_dataset_len, desc="Processing indices") as pbar:
