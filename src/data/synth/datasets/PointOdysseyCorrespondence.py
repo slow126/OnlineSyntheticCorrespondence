@@ -213,6 +213,8 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
             except Exception as e:
                 if self.verbose:
                     print(f"Could not check cache completeness: {e}")
+        else:
+            print(f"No cache found at {self.cache_file}, starting fresh")
         
     def __len__(self) -> int:
         """Return the number of samples in the dataset.
