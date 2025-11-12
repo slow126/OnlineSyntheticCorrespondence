@@ -186,6 +186,35 @@ def main():
         'total_samples': base_dataset_len
     }
     
+    # Extract and save the config used for hashing
+    base = dataset.base_dataset
+    config_used = {
+        'dataset_location': base.dataset_location if hasattr(base, 'dataset_location') else 'unknown',
+        'dset': base.dset,
+        'S': dataset.S,
+        'N': dataset.N,
+        'strides': sorted(base.strides) if hasattr(base, 'strides') else [],
+        'clip_step': base.clip_step if hasattr(base, 'clip_step') else 2,
+        'resize_size': base.resize_size if hasattr(base, 'resize_size') else None,
+        'crop_size': base.crop_size if hasattr(base, 'crop_size') else None,
+        'req_full': base.req_full if hasattr(base, 'req_full') else False,
+        'max_sequences': base.max_sequences if hasattr(base, 'max_sequences') else None,
+        'val_sequence_fraction': base.val_sequence_fraction if hasattr(base, 'val_sequence_fraction') else None,
+    }
+    
+    # Save config to a file with the same hash in the name
+    config_file = dataset.cache_file.replace('.json', '_config.json')
+    with open(config_file, 'w') as f:
+        json.dump({
+            'config': config_used,
+            'config_string': json.dumps(config_used, sort_keys=True),
+            'hash': dataset._expected_hash,
+            'cache_file': os.path.basename(dataset.cache_file),
+            'timestamp': time.time(),
+        }, f, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    
     # Write to final cache file
     final_temp = dataset.cache_file + '.final_merge.tmp'
     with open(final_temp, 'w') as f:
@@ -208,6 +237,7 @@ def main():
     print(f"  Total cached: {total_cached:,} / {base_dataset_len:,}")
     print(f"  Coverage: {coverage:.1f}%")
     print(f"  Cache file: {dataset.cache_file}")
+    print(f"  Config file: {config_file}")
     print("="*60)
     print("\n✅ You can now run training jobs - they will use this cache in read-only mode.")
 
