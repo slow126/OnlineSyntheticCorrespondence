@@ -36,7 +36,7 @@ grids:
       train_dataset: ["flyingthings"]
       freeze:
         - True
-        - False
+        # - False
       subsample_flow:
         - 0.1
         - 0.5
