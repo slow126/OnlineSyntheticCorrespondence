@@ -367,7 +367,6 @@ class KittiDataset(Dataset):
             sample['src_imsize'] = img_size_tuple
             sample['trg_imsize'] = img_size_tuple
             sample['datalen'] = torch.tensor(len(self), dtype=torch.int32)
-            sample['flow_full'] = full_flow
         
         return sample
 
