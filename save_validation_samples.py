@@ -4,7 +4,6 @@ Collects 100 samples (10 batches with batch_size=10) from each validation datalo
 """
 
 import os
-import pickle
 import yaml
 import torch
 from torch.utils.data import DataLoader
@@ -22,7 +21,7 @@ BATCH_SIZE = 10
 NUM_BATCHES = 100  # Total samples = BATCH_SIZE * NUM_BATCHES = 100
 CONFIG_PATH = 'slurm/machine_configs/local.yaml'
 DATASET_CONFIG_PATH = 'src/configs/online_synth_configs/OnlineDatasetConfig_FullFlow.yaml'
-OUTPUT_PATH = 'validation_samples.pkl'
+OUTPUT_PATH = 'validation_samples.pt'  # Use .pt extension for torch.save
 
 
 def load_dataset_config(config_path):
@@ -274,15 +273,21 @@ def main():
             traceback.print_exc()
             continue
     
-    # Save the dictionary
+    # Save the dictionary using torch.save (more efficient for PyTorch tensors)
     print(f"\n{'='*60}")
     print(f"Saving all batches to {OUTPUT_PATH}...")
-    with open(OUTPUT_PATH, 'wb') as f:
-        pickle.dump(all_batches, f)
+    print(f"  This may take a while for large files...")
+    
+    # torch.save is more efficient for PyTorch tensors and handles large files better
+    torch.save(all_batches, OUTPUT_PATH, _use_new_zipfile_serialization=True)
+    
+    # Check file size
+    file_size_gb = os.path.getsize(OUTPUT_PATH) / (1024**3)
     
     print(f"✓ Saved validation samples for {len(all_batches)} benchmarks")
     print(f"  Total size: {sum(len(batches) for batches in all_batches.values())} batches")
     print(f"  Output file: {OUTPUT_PATH}")
+    print(f"  File size: {file_size_gb:.2f} GB")
 
 
 if __name__ == '__main__':

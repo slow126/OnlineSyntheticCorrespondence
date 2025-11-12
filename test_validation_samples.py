@@ -1,17 +1,16 @@
 """
-Script to load validation samples from pickle file.
+Script to load validation samples from torch save file.
 """
 
-import pickle
+import torch
 
 # Path to the saved validation samples
-VALIDATION_SAMPLES_PATH = 'validation_samples.pkl'
+VALIDATION_SAMPLES_PATH = 'validation_samples.pt'
 
 
 def load_validation_samples(file_path):
-    """Load validation samples dictionary from pickle file."""
-    with open(file_path, 'rb') as f:
-        samples = pickle.load(f)
+    """Load validation samples dictionary from torch save file."""
+    samples = torch.load(file_path, map_location='cpu')
     return samples
 
 
@@ -22,8 +21,8 @@ if __name__ == '__main__':
     print(f"\nLoaded validation samples for {len(validation_samples)} benchmarks:")
     for benchmark, batches in validation_samples.items():
         print(f"  {benchmark}: {len(batches)} batches")
-        if len(batches) > 0:
-            print(f"    First batch keys: {list(batches[0].keys())}")
+        # if len(batches) > 0:
+        #     print(f"    First batch keys: {list(batches[0].keys())}")
     
     # The dictionary is now available as 'validation_samples'
     # Example usage:
