@@ -151,11 +151,19 @@ def main():
         for batch_idx, batch in enumerate(tqdm(dataloader, desc="Processing batches")):
             # Just accessing the batch builds the cache
             # The dataset's __getitem__ method handles cache updates
+            # In precomputation mode, invalid indices raise RuntimeError which we catch and skip
             try:
                 if batch is not None:
                     valid_count += len(batch.get('src_img', [])) if isinstance(batch, dict) else args.batch_size
                 else:
                     invalid_count += args.batch_size
+            except RuntimeError as e:
+                # Expected in precomputation mode when no valid sample found quickly
+                # This is fine - we're just discovering which indices are invalid
+                error_count += 1
+                invalid_count += args.batch_size
+                if batch_idx % 1000 == 0:  # Print less frequently
+                    print(f"\nSkipped batch {batch_idx} (no valid sample found quickly): {e}")
             except Exception as e:
                 error_count += 1
                 if batch_idx % 100 == 0:  # Print errors occasionally
