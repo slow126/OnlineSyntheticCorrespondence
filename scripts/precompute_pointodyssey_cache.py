@@ -95,6 +95,11 @@ def main():
     dataset._cache_save_interval = 1000  # Save less frequently to reduce I/O overhead
     print("Enabled worker temp file mode (each worker saves to its own file)")
     
+    # Initialize worker caches BEFORE starting threads (eliminates dictionary contention)
+    print(f"\nInitializing {args.num_workers} worker caches...")
+    dataset.initialize_worker_caches(args.num_workers)
+    print("Worker caches initialized (no blocking during precomputation)")
+    
     print(f"\nDataset length: {len(dataset)}")
     print(f"Cache file: {dataset.cache_file}")
     
@@ -113,9 +118,6 @@ def main():
     def process_index(index, worker_id):
         """Process a single index - just try to access it to build cache."""
         try:
-            # Ensure worker temp file mode is enabled
-            dataset._use_worker_temp_files = True
-            dataset._cache_save_interval = 1000
             
             # Use the precompute function (writes to cache) - pass worker_id for thread-safe saving
             _ = dataset.__getitem_precompute__(index, worker_id=worker_id)

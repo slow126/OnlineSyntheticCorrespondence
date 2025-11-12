@@ -187,6 +187,8 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
         self._worker_id = None  # Will be set by worker_init_fn for parallel processing
         self._invalid_indices = set()
         self._cache_save_interval = 1000  # Save interval for precomputation (per-worker)
+        self._base_dataset_len = None  # Cache base dataset length to avoid repeated calls
+        self._worker_caches = None  # Will be initialized by initialize_worker_caches() before threading
         
         # Load existing cache
         self._load_cache()
@@ -276,6 +278,21 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                     return sorted_valid[position]
             return None
     
+    def initialize_worker_caches(self, num_workers: int):
+        """Initialize per-worker cache storage before starting threads (call this once before threading)."""
+        if self._worker_caches is None:
+            self._worker_caches = {}
+        for worker_id in range(num_workers):
+            if worker_id not in self._worker_caches:
+                self._worker_caches[worker_id] = {
+                    'valid': set(),
+                    'invalid': set(),
+                    'updates': 0
+                }
+        # Cache base dataset length once to avoid repeated calls
+        if self._base_dataset_len is None:
+            self._base_dataset_len = len(self.base_dataset)
+    
     def _save_worker_cache(self, worker_id, worker_cache):
         """Save a worker's local cache to its own file (async, no locking needed - each worker has its own file)."""
         if self._cache_readonly:
@@ -286,18 +303,21 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                 'valid': sorted(list(worker_cache['valid'])),
                 'invalid': sorted(list(worker_cache['invalid'])),
                 'timestamp': time.time(),
-                'total_samples': len(self.base_dataset)
+                'total_samples': self._base_dataset_len if self._base_dataset_len is not None else len(self.base_dataset)
             }
             worker_file = self.cache_file + f'.worker_{worker_id}.json'
             with open(worker_file, 'w') as f:
                 json.dump(cache_data, f, indent=2)
                 f.flush()
                 os.fsync(f.fileno())
-            if self.verbose:
-                print(f"Worker {worker_id} saved cache: {len(worker_cache['valid'])} valid, {len(worker_cache['invalid'])} invalid indices")
+            # Disable verbose printing during precomputation to avoid stdout contention
+            # if self.verbose:
+            #     print(f"Worker {worker_id} saved cache: {len(worker_cache['valid'])} valid, {len(worker_cache['invalid'])} invalid indices")
         except Exception as e:
-            if self.verbose:
-                print(f"Worker {worker_id} failed to save cache: {e}")
+            # Disable verbose printing during precomputation to avoid stdout contention
+            # if self.verbose:
+            #     print(f"Worker {worker_id} failed to save cache: {e}")
+            pass
     
     def merge_worker_temp_files(self):
         """Merge all worker temp files into the main cache file (blocking - waits for all workers to finish)."""
@@ -305,7 +325,7 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
         import os
         
         # First, save any remaining in-memory worker caches to their files
-        if hasattr(self, '_worker_caches'):
+        if self._worker_caches is not None:
             for worker_id, worker_cache in self._worker_caches.items():
                 if worker_cache['updates'] > 0:
                     # Save any remaining updates
@@ -322,7 +342,7 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
             if self.verbose:
                 print(f"No worker files found to merge (patterns: {worker_pattern}, {temp_pattern})")
             # Still merge in-memory caches if they exist
-            if hasattr(self, '_worker_caches'):
+            if self._worker_caches is not None:
                 all_valid = set()
                 all_invalid = set()
                 for worker_id, worker_cache in self._worker_caches.items():
@@ -354,7 +374,7 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                     print(f"Failed to load temp file {temp_file}: {e}")
         
         # Also merge in-memory worker caches
-        if hasattr(self, '_worker_caches'):
+        if self._worker_caches is not None:
             for worker_id, worker_cache in self._worker_caches.items():
                 all_valid.update(worker_cache['valid'])
                 all_invalid.update(worker_cache['invalid'])
@@ -392,7 +412,7 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                 'valid': valid_list,
                 'invalid': invalid_list,
                 'timestamp': timestamp,
-                'total_samples': total_samples if total_samples is not None else len(self.base_dataset)
+                'total_samples': total_samples if total_samples is not None else (self._base_dataset_len if self._base_dataset_len is not None else len(self.base_dataset))
             }
             
             # Write to final cache file
@@ -679,20 +699,13 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
         Raises:
             RuntimeError: If index is invalid (expected during precomputation)
         """
-        # Initialize per-worker cache storage if needed
-        if not hasattr(self, '_worker_caches'):
-            self._worker_caches = {}
-        
-        if worker_id is not None and worker_id not in self._worker_caches:
-            self._worker_caches[worker_id] = {
-                'valid': set(),
-                'invalid': set(),
-                'updates': 0
-            }
-        
-        # Get this worker's local cache (no locking - each worker has its own)
+        # Get this worker's local cache (assumes _worker_caches was initialized before threading)
         if worker_id is not None:
-            worker_cache = self._worker_caches[worker_id]
+            if self._worker_caches is None:
+                raise RuntimeError(f"Worker caches not initialized. Call dataset.initialize_worker_caches(num_workers) before starting threads.")
+            worker_cache = self._worker_caches.get(worker_id)
+            if worker_cache is None:
+                raise RuntimeError(f"Worker {worker_id} cache not initialized. Call dataset.initialize_worker_caches(num_workers) with num_workers > {worker_id}.")
         else:
             # Fallback: use shared cache (shouldn't happen in precompute mode)
             worker_cache = None
