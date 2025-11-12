@@ -208,12 +208,13 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                     # (allows some discovery but prevents most writes)
                     if total_cached > 0.5 * total_samples:
                         self._cache_readonly = True
-                        print(f"Cache exists ({total_cached}/{total_samples} indices), enabling read-only mode")
+                        print(f"[PointOdyssey] Cache exists ({total_cached}/{total_samples} indices), enabling read-only mode", flush=True)
+                    elif self.verbose:
+                        print(f"[PointOdyssey] Cache exists ({total_cached}/{total_samples} indices), but coverage <50%, allowing writes", flush=True)
             except Exception as e:
-                if self.verbose:
-                    print(f"Could not check cache completeness: {e}")
+                print(f"[PointOdyssey] Could not check cache completeness: {e}", flush=True)
         else:
-            print(f"No cache found at {self.cache_file}, starting fresh")
+            print(f"[PointOdyssey] No cache found at {self.cache_file}, starting fresh", flush=True)
         
     def __len__(self) -> int:
         """Return the number of samples in the dataset.
