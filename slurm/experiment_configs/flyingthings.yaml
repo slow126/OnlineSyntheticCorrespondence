@@ -30,18 +30,14 @@ grids:
   - name: "flyingthings freeze sweep"
     parameters:
       eval_benchmarks: 
-        - ["kitti2012", "kitti2015", "pointodyssey", "tss", "pfpascal", "pfwillow", "spair"]
+        - ["kitti2012", "kitti2015", "pointodyssey", "tss", "pfpascal", "pfwillow", "spair", "flyingthings"]
       eval_alphas:
-        - [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+        - [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
       train_dataset: ["flyingthings"]
       freeze:
         - True
         # - False
-      subsample_flow:
-        - 0.1
-        - 0.5
-        - 1.0
-    name_template: "{train_dataset}_freeze{freeze}_subsample{subsample_flow}"
+    name_template: "{train_dataset}_freeze{freeze}"
   
 dataset_defaults:
   pointodyssey:

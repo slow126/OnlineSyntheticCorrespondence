@@ -31,9 +31,9 @@ grids:
     parameters:
       train_dataset: ["pointodyssey"]
       eval_benchmarks: 
-        - ["kitti2012", "kitti2015", "tss", "pfpascal", "pfwillow", "spair", "pointodyssey"]
+        - ["kitti2012", "kitti2015", "tss", "pfpascal", "pfwillow", "spair", "pointodyssey", "flyingthings"]
       eval_alphas:
-        - [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+        - [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
       strides_pointodyssey: 
         - [1]
         - [4]

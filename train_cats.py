@@ -337,7 +337,7 @@ def main():
     
     # Evaluation parameters
     parser.add_argument('--eval_benchmarks', type=str, nargs='+', default=['spair'],
-                        choices=['synthetic', 'spair', 'pfpascal', 'pfwillow', 'caltech', 'tss', 'pointodyssey', 'kitti2012', 'kitti2015'],
+                        choices=['synthetic', 'spair', 'pfpascal', 'pfwillow', 'caltech', 'tss', 'pointodyssey', 'kitti2012', 'kitti2015', 'flyingthings'],
                         help='list of benchmarks for evaluation during training')
     parser.add_argument('--eval_alphas', type=float, nargs='+', default=[0.1],
                         help='list of alpha values for each evaluation benchmark (must match eval_benchmarks length)')
@@ -596,6 +596,11 @@ def main():
                 shuffle=False,
                 pin_memory=True
             )
+        elif benchmark == 'flyingthings':
+            val_dataset = FlyingThingsDataset(root=args.flyingthings_root, split="test", transforms=None, size=(args.size, args.size), downsample_flow=args.feature_size, 
+                                            subsample_flow=args.subsample_flow, subsample_flow_seed=args.subsample_flow_seed, use_valid_mask=True, reverse_flow=True, filter_out_of_bounds=True)
+            # Note: Dataset returns CPU tensors - DataLoader handles GPU transfer
+            val_dataloader = DataLoader(val_dataset, batch_size=args.val_batch_size, num_workers=args.val_num_workers, persistent_workers=True, prefetch_factor=8, shuffle=False)
         else:
             val_dataset = download.load_dataset(benchmark, args.datapath, args.thres, device, args.split_to_use_for_validation, False, args.feature_size)
             val_dataloader = DataLoader(val_dataset,

@@ -37,8 +37,8 @@ experiments:
     scale_sampler_abs_scale: 0.1
     scale_sampler_rel_loc: 0
     scale_sampler_rel_scale: 0.01
-    eval_benchmarks: ["kitti2012", "kitti2015", "pointodyssey", "tss", "pfpascal", "pfwillow", "spair"]
-    eval_alphas: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+    eval_benchmarks: ["kitti2012", "kitti2015", "pointodyssey", "tss", "pfpascal", "pfwillow", "spair", "flyingthings"]
+    eval_alphas: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
   
   - name: "synthetic_small_flow_centered"
     angle_sampler_x_loc: -0.005
@@ -48,8 +48,8 @@ experiments:
     scale_sampler_abs_scale: 0.1
     scale_sampler_rel_loc: -0.005
     scale_sampler_rel_scale: 0.01
-    eval_benchmarks: ["kitti2012", "kitti2015", "pointodyssey", "tss", "pfpascal", "pfwillow", "spair"]
-    eval_alphas: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+    eval_benchmarks: ["kitti2012", "kitti2015", "pointodyssey", "tss", "pfpascal", "pfwillow", "spair", "flyingthings"]
+    eval_alphas: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
 
   # Large flow scenarios
   - name: "synthetic_large_flow_all_large"
@@ -60,8 +60,8 @@ experiments:
     scale_sampler_abs_scale: 0.5
     scale_sampler_rel_loc: -0.35
     scale_sampler_rel_scale: 0.5
-    eval_benchmarks: ["kitti2012", "kitti2015", "pointodyssey", "tss", "pfpascal", "pfwillow", "spair"]
-    eval_alphas: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+    eval_benchmarks: ["kitti2012", "kitti2015", "pointodyssey", "tss", "pfpascal", "pfwillow", "spair", "flyingthings"]
+    eval_alphas: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
   
   - name: "synthetic_large_flow_centered"
     angle_sampler_x_loc: -0.16667
@@ -71,8 +71,8 @@ experiments:
     scale_sampler_abs_scale: 0.5
     scale_sampler_rel_loc: -0.35
     scale_sampler_rel_scale: 0.5
-    eval_benchmarks: ["kitti2012", "kitti2015", "pointodyssey", "tss", "pfpascal", "pfwillow", "spair"]
-    eval_alphas: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+    eval_benchmarks: ["kitti2012", "kitti2015", "pointodyssey", "tss", "pfpascal", "pfwillow", "spair", "flyingthings"]
+    eval_alphas: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
 
   # Mixed scenarios (to explore interactions)
   - name: "synthetic_small_angle_large_scale"
@@ -83,8 +83,8 @@ experiments:
     scale_sampler_abs_scale: 0.5
     scale_sampler_rel_loc: -0.35
     scale_sampler_rel_scale: 0.5
-    eval_benchmarks: ["kitti2012", "kitti2015", "pointodyssey", "tss", "pfpascal", "pfwillow", "spair"]
-    eval_alphas: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+    eval_benchmarks: ["kitti2012", "kitti2015", "pointodyssey", "tss", "pfpascal", "pfwillow", "spair", "flyingthings"]
+    eval_alphas: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
   
   - name: "synthetic_large_angle_small_scale"
     angle_sampler_x_loc: 0
@@ -94,8 +94,8 @@ experiments:
     scale_sampler_abs_scale: 0.1
     scale_sampler_rel_loc: 0
     scale_sampler_rel_scale: 0.01
-    eval_benchmarks: ["kitti2012", "kitti2015", "pointodyssey", "tss", "pfpascal", "pfwillow", "spair"]
-    eval_alphas: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+    eval_benchmarks: ["kitti2012", "kitti2015", "pointodyssey", "tss", "pfpascal", "pfwillow", "spair", "flyingthings"]
+    eval_alphas: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
 
 dataset_defaults:
   pointodyssey:

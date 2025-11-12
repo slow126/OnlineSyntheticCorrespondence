@@ -276,7 +276,9 @@ class FlyingThingsDataset(Dataset, nn.Module):
                  subsample_flow_seed: Optional[int] = None,
                  reverse_flow: bool = False,
                  filter_out_of_bounds: bool = True, use_valid_mask: bool = True,
-                 normalize: bool = True):
+                 normalize: bool = True,
+                 max_pts: int = 200,
+                 thres: str = 'img'):
         Dataset.__init__(self)
         nn.Module.__init__(self)
         self.dataset = datasets.FlyingThings3D(root=root, split=split, transforms=transforms)
@@ -287,6 +289,8 @@ class FlyingThingsDataset(Dataset, nn.Module):
         # Store flow transformation parameters (applied once at the end, not in processors)
         self.reverse_flow = reverse_flow
         self.normalize = normalize
+        self.max_pts = max_pts
+        self.thres = thres
         
         # Cache device detection for faster tensor operations
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -313,6 +317,79 @@ class FlyingThingsDataset(Dataset, nn.Module):
         
     def __len__(self):
         return len(self.dataset)
+    
+    def _sample_keypoints_from_flow(
+        self,
+        flow: torch.Tensor,
+        num_kps: int
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Sample keypoints from valid flow regions.
+        
+        Args:
+            flow: Flow tensor [2, H, W] (after all transforms)
+            num_kps: Number of keypoints to sample
+            
+        Returns:
+            trg_kps: Target keypoints [2, num_kps] (x, y format)
+            src_kps: Source keypoints [2, num_kps] (computed from flow)
+        """
+        _, h, w = flow.shape
+        
+        # Find valid flow regions (not inf and non-zero magnitude)
+        flow_mag = flow.norm(dim=0)
+        valid_mask = flow_mag.isfinite() & (flow_mag > 0)
+        
+        # Sample from valid regions
+        valid_y, valid_x = torch.where(valid_mask)
+        num_valid = len(valid_y)
+        
+        if num_valid == 0:
+            # No valid points - return zeros
+            trg_kps = torch.zeros((2, num_kps), dtype=torch.float32)
+            src_kps = torch.zeros((2, num_kps), dtype=torch.float32)
+            return trg_kps, src_kps
+        
+        if num_valid <= num_kps:
+            # Use all valid points, then pad with zeros
+            indices = torch.arange(num_valid)
+            n_to_pad = num_kps - num_valid
+        else:
+            # Randomly sample exactly num_kps points
+            indices = torch.randperm(num_valid)[:num_kps]
+            n_to_pad = 0
+        
+        sampled_y = valid_y[indices]
+        sampled_x = valid_x[indices]
+        
+        trg_kps = torch.stack([sampled_x.float(), sampled_y.float()])  # [2, n_sampled] (x, y)
+        
+        # Compute source keypoints using flow
+        # Flow goes from target to source, so: src_kp = trg_kp + flow(trg_kp)
+        src_kps = torch.zeros_like(trg_kps)
+        for i in range(len(indices)):
+            y, x = int(sampled_y[i]), int(sampled_x[i])
+            if y < flow.shape[1] and x < flow.shape[2]:
+                src_kps[0, i] = trg_kps[0, i] + flow[0, y, x]
+                src_kps[1, i] = trg_kps[1, i] + flow[1, y, x]
+            else:
+                src_kps[:, i] = trg_kps[:, i]  # Fallback if out of bounds
+        
+        # Pad to num_kps if needed
+        if n_to_pad > 0:
+            trg_kps = torch.cat([trg_kps, torch.zeros((2, n_to_pad), dtype=torch.float32)], dim=1)
+            src_kps = torch.cat([src_kps, torch.zeros((2, n_to_pad), dtype=torch.float32)], dim=1)
+        
+        n_pts = min(num_kps, num_valid)
+        return trg_kps, src_kps, n_pts
+    
+    def _get_pckthres(self, imsize: Tuple[int, int]) -> torch.Tensor:
+        """Get PCK threshold based on image size."""
+        if self.thres == 'img':
+            return torch.tensor(max(imsize), dtype=torch.float32)
+        else:
+            # Default to image size
+            return torch.tensor(max(imsize), dtype=torch.float32)
 
     def __getitem__(self, idx):
         item = self.dataset[idx]
@@ -350,22 +427,46 @@ class FlyingThingsDataset(Dataset, nn.Module):
         # Add valid flow mask if available
         if valid_flow_mask is not None:
             sample["valid_flow_mask"] = valid_flow_mask
-        
+
         # Apply resize transform if specified
         if self.resize_transform is not None:
             sample = self.resize_transform(sample)
         
-
-        
+        # Sample keypoints from flow before subsampling and downsampling
+        # This gives better spatial coverage from the full-resolution flow
+        trg_kps, src_kps, n_pts = self._sample_keypoints_from_flow(sample['flow'], self.max_pts)
+        sample["trg_kps"] = trg_kps
+        sample["src_kps"] = src_kps
+        sample["n_pts"] = torch.tensor(n_pts, dtype=torch.int32)
         
         # Apply flow subsampling if specified (before downsampling)
         if self.flow_subsampler is not None:
             valid_mask = sample.get('valid_flow_mask', None)
             sample['flow'] = self.flow_subsampler(sample['flow'], valid_mask)
+
         
         # Apply flow downsampling if specified (after subsampling)
         if self.flow_downsampler is not None:
             sample['flow'] = self.flow_downsampler(sample['flow'])
+        
+        # Add validation fields (pckthres, imsize, datalen)
+        # Get image size after all transforms
+        src_img_final = sample['src_img']
+        if src_img_final.ndim == 3:
+            C, H, W = src_img_final.shape
+            img_size_tuple = (H, W)
+        else:
+            H, W = src_img_final.shape[-2:]
+            img_size_tuple = (H, W)
+        
+        # Get PCK threshold
+        pckthres = self._get_pckthres(img_size_tuple)
+        
+        # Add validation fields
+        sample['pckthres'] = pckthres
+        sample['src_imsize'] = img_size_tuple
+        sample['trg_imsize'] = img_size_tuple
+        sample['datalen'] = torch.tensor(len(self), dtype=torch.int32)
         
         return sample
     
