@@ -21,7 +21,7 @@ BATCH_SIZE = 10
 NUM_BATCHES = 100  # Total samples = BATCH_SIZE * NUM_BATCHES = 100
 CONFIG_PATH = 'slurm/machine_configs/remote.yaml'
 DATASET_CONFIG_PATH = 'src/configs/online_synth_configs/OnlineDatasetConfig_FullFlow.yaml'
-OUTPUT_PATH = 'validation_samples.pt'  # Use .pt extension for torch.save
+OUTPUT_DIR = '/tmp/validation_samples'  # Directory to save individual dataset files
 
 
 def load_dataset_config(config_path):
@@ -115,13 +115,17 @@ def main():
             print(f"Downloading {benchmark} dataset if needed...")
             download.download_dataset(DEFAULTS['datapath'], benchmark)
     
-    # Dictionary to store all batches
-    all_batches = {}
+    # Create output directory
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    print(f"Output directory: {OUTPUT_DIR}")
+    
+    # Track saved files for summary
+    saved_files = {}
     
     # Geometry config overrides for synthetic dataset (None = use defaults)
     geometry_config_overrides = None
     
-    # Setup validation dataloaders and collect batches
+    # Setup validation dataloaders, collect batches, and save immediately
     for benchmark in EVAL_BENCHMARKS:
         print(f"\n{'='*60}")
         print(f"Processing benchmark: {benchmark}")
@@ -264,8 +268,25 @@ def main():
             # Collect batches
             print(f"Collecting {NUM_BATCHES} batches (batch_size={BATCH_SIZE})...")
             batches = collect_batches(val_dataloader, NUM_BATCHES)
-            all_batches[benchmark] = batches
             print(f"✓ Collected {len(batches)} batches for {benchmark}")
+            
+            # Save immediately to reduce memory usage
+            output_file = os.path.join(OUTPUT_DIR, f"{benchmark}.pt")
+            print(f"Saving to {output_file}...")
+            torch.save(batches, output_file, _use_new_zipfile_serialization=True)
+            
+            # Check file size
+            file_size_gb = os.path.getsize(output_file) / (1024**3)
+            saved_files[benchmark] = {
+                'file': output_file,
+                'batches': len(batches),
+                'size_gb': file_size_gb
+            }
+            print(f"✓ Saved {len(batches)} batches ({file_size_gb:.2f} GB) to {output_file}")
+            
+            # Clear batches from memory
+            del batches
+            torch.cuda.empty_cache() if torch.cuda.is_available() else None
             
         except Exception as e:
             print(f"✗ Error processing {benchmark}: {e}")
@@ -273,21 +294,18 @@ def main():
             traceback.print_exc()
             continue
     
-    # Save the dictionary using torch.save (more efficient for PyTorch tensors)
+    # Print summary
     print(f"\n{'='*60}")
-    print(f"Saving all batches to {OUTPUT_PATH}...")
-    print(f"  This may take a while for large files...")
-    
-    # torch.save is more efficient for PyTorch tensors and handles large files better
-    torch.save(all_batches, OUTPUT_PATH, _use_new_zipfile_serialization=True)
-    
-    # Check file size
-    file_size_gb = os.path.getsize(OUTPUT_PATH) / (1024**3)
-    
-    print(f"✓ Saved validation samples for {len(all_batches)} benchmarks")
-    print(f"  Total size: {sum(len(batches) for batches in all_batches.values())} batches")
-    print(f"  Output file: {OUTPUT_PATH}")
-    print(f"  File size: {file_size_gb:.2f} GB")
+    print(f"Summary: Saved {len(saved_files)} benchmarks")
+    print(f"{'='*60}")
+    total_batches = 0
+    total_size_gb = 0
+    for benchmark, info in saved_files.items():
+        print(f"  {benchmark}: {info['batches']} batches, {info['size_gb']:.2f} GB -> {info['file']}")
+        total_batches += info['batches']
+        total_size_gb += info['size_gb']
+    print(f"\n  Total: {total_batches} batches, {total_size_gb:.2f} GB")
+    print(f"  Output directory: {OUTPUT_DIR}")
 
 
 if __name__ == '__main__':
