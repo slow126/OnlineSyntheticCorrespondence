@@ -16,6 +16,7 @@ import matplotlib.colors as mcolors
 import random as _random
 import json
 import hashlib
+import glob
 
 # Add the project root to sys.path so models.CATs_PlusPlus can be imported
 project_root = Path(__file__).parent.parent.parent.parent.parent
@@ -178,6 +179,10 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
         cache_name = f'valid_indices_{actual_dset}_S{S}_N{N}_strides{strides_str}_{config_hash}.json'
         self.cache_file = os.path.join(self.cache_dir, cache_name)
         
+        # Store pattern for fallback matching (human-readable parts: dset, S, N, strides)
+        self._cache_pattern = f'valid_indices_{actual_dset}_S{S}_N{N}_strides{strides_str}_*.json'
+        self._expected_hash = config_hash  # Store for debug messages
+        
         # Read-only cache: sorted list for fast indexing
         self._valid_indices_list = None  # Sorted list of valid indices
         self._invalid_indices_set = None  # Set for fast lookup
@@ -195,10 +200,43 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
         return len(self.base_dataset)
     
     def _load_cache(self):
-        """Load validation cache from disk (read-only, called at init)."""
+        """Load validation cache from disk (read-only, called at init).
+        First tries exact hash match, then falls back to matching by human-readable pattern (dset, S, N, strides).
+        """
+        cache_file_to_use = None
+        hash_mismatch = False
+        
+        # First, try exact hash match
         if os.path.exists(self.cache_file):
+            cache_file_to_use = self.cache_file
+        else:
+            # Fallback: search for cache files matching the human-readable pattern
+            # Pattern: valid_indices_{dset}_S{S}_N{N}_strides{strides}_*.json
+            pattern = os.path.join(self.cache_dir, self._cache_pattern)
+            matching_files = glob.glob(pattern)
+            
+            if matching_files:
+                # Use the most recent matching file (by modification time)
+                matching_files.sort(key=os.path.getmtime, reverse=True)
+                cache_file_to_use = matching_files[0]
+                hash_mismatch = True
+                
+                # Extract hash from filename for info
+                filename = os.path.basename(cache_file_to_use)
+                # Pattern: valid_indices_*_S*_N*_strides*_HASH.json
+                parts = filename.replace('.json', '').split('_')
+                found_hash = parts[-1] if parts else "unknown"
+                
+                print(f"[PointOdyssey] ⚠️  Exact hash match not found, but found matching cache by pattern!", flush=True)
+                print(f"[PointOdyssey]   Expected hash: {self._expected_hash}", flush=True)
+                print(f"[PointOdyssey]   Found hash: {found_hash}", flush=True)
+                print(f"[PointOdyssey]   Using cache: {os.path.basename(cache_file_to_use)}", flush=True)
+                print(f"[PointOdyssey]   (Matched by: dset, S, N, strides - safe to use)", flush=True)
+        
+        # Load the cache file if found
+        if cache_file_to_use:
             try:
-                with open(self.cache_file, 'r') as f:
+                with open(cache_file_to_use, 'r') as f:
                     cache_data = json.load(f)
                     valid_indices = cache_data.get('valid', [])
                     invalid_indices = cache_data.get('invalid', [])
@@ -208,8 +246,11 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                     self._invalid_indices_set = set(invalid_indices)
                     
                 # Always print cache status (independent of verbose)
-                if self.verbose:
-                    print(f"[PointOdyssey] Loaded cache from {self.cache_file}: {len(self._valid_indices_list)} valid, {len(self._invalid_indices_set)} invalid indices", flush=True)
+                if hash_mismatch:
+                    # Already printed warning above, just print success
+                    print(f"[PointOdyssey] Loaded {len(self._valid_indices_list)} valid indices from cache", flush=True)
+                elif self.verbose:
+                    print(f"[PointOdyssey] Loaded cache from {os.path.basename(cache_file_to_use)}: {len(self._valid_indices_list)} valid, {len(self._invalid_indices_set)} invalid indices", flush=True)
                 else:
                     print(f"[PointOdyssey] Using cache: {len(self._valid_indices_list)} valid indices (dataset size: {len(self._valid_indices_list)})", flush=True)
             except Exception as e:
@@ -219,7 +260,9 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                 self._invalid_indices_set = None
         else:
             # Always print when no cache found (independent of verbose)
-            print(f"[PointOdyssey] No cache found at {self.cache_file}, will use random resampling", flush=True)
+            print(f"[PointOdyssey] No cache found (searched for exact: {os.path.basename(self.cache_file)})", flush=True)
+            print(f"[PointOdyssey] Pattern search: {self._cache_pattern}", flush=True)
+            print(f"[PointOdyssey] Will use random resampling", flush=True)
             self._valid_indices_list = None
             self._invalid_indices_set = None
     
