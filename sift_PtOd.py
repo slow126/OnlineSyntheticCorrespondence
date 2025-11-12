@@ -110,3 +110,26 @@ for result in sorted_results:
 
 print("=" * 120)
 
+# Print table sorted by SPair PCK (descending)
+print("\n" + "=" * 120)
+print("SORTED BY SPAIR PCK (DESCENDING)")
+print("=" * 120)
+print(f"{'Experiment Name':<80} {'PointOdyssey PCK':<20} {'SPair PCK':<20}")
+print("=" * 120)
+
+# Sort by SPair PCK (descending), handling None values
+sorted_results_spair = sorted(
+    results, 
+    key=lambda x: x['spair_pck'] if x['spair_pck'] is not None else -1,
+    reverse=True
+)
+
+for result in sorted_results_spair:
+    name = result['name']
+    ptod_pck = f"{result['pointodyssey_pck']:.2f}%" if result['pointodyssey_pck'] is not None else "N/A"
+    spair_pck = f"{result['spair_pck']:.2f}%" if result['spair_pck'] is not None else "N/A"
+    
+    print(f"{name:<80} {ptod_pck:<20} {spair_pck:<20}")
+
+print("=" * 120)
+
