@@ -498,6 +498,26 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
         # All tensors are already on CPU, no need to move them
         return out
     
+    def __getitem_precompute__(self, index: int, worker_id: int = None):
+        """
+        Simple precomputation version - just try index and return gotit status.
+        No cache writing - results are collected in precompute script.
+        
+        Args:
+            index: Sample index to check
+            worker_id: Optional worker ID (unused, kept for compatibility)
+            
+        Returns:
+            Dict with 'index' and 'gotit' bool
+        """
+        # Try the requested index
+        try:
+            sample, gotit = self.base_dataset[index]
+            return {'index': index, 'gotit': gotit}
+        except Exception as e:
+            # Any error means invalid
+            return {'index': index, 'gotit': False}
+    
     def _create_flow_field(self, 
                           src_trajs: torch.Tensor, 
                           trg_trajs: torch.Tensor,
