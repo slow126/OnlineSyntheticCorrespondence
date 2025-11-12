@@ -95,6 +95,12 @@ def main():
         max_pts=args.max_pts,
     )
     
+    # Enable worker temp file mode: each worker saves to its own file
+    # We'll merge all worker files at the end
+    dataset._use_worker_temp_files = True
+    dataset._cache_save_interval = 100  # Save periodically so workers write their files
+    print("Enabled worker temp file mode (each worker saves to its own file)")
+    
     print(f"\nDataset length: {len(dataset)}")
     print(f"Cache file: {dataset.cache_file}")
     
@@ -106,8 +112,21 @@ def main():
             print("Aborting.")
             return
     
-    # Create DataLoader with many workers (no GPU needed, uses system RAM)
+    # Worker init function: set worker_id on each worker's dataset instance
+    def worker_init_fn(worker_id):
+        """Set worker_id on the dataset instance in each worker process."""
+        # Get the dataset instance for this worker
+        worker_info = torch.utils.data.get_worker_info()
+        if worker_info is not None:
+            worker_dataset = worker_info.dataset
+            worker_dataset._worker_id = worker_id
+            worker_dataset._use_worker_temp_files = True
+            worker_dataset._cache_save_interval = 100
+    
+    # Create DataLoader with parallel workers
     print(f"\nCreating DataLoader with {args.num_workers} workers...")
+    print("(Each worker will save cache to its own file, then we'll merge at the end)")
+    
     dataloader = DataLoader(
         dataset,
         batch_size=args.batch_size,
@@ -116,11 +135,13 @@ def main():
         prefetch_factor=args.prefetch_factor,
         pin_memory=False,  # No GPU, so no pin_memory needed
         persistent_workers=True if args.num_workers > 0 else False,
+        worker_init_fn=worker_init_fn,  # Set worker_id on each worker
     )
     
     # Iterate through all batches to build cache
     print(f"\nBuilding cache by processing {len(dataloader)} batches...")
     print("(This may take a while - dataset will discover valid/invalid indices)")
+    print("(Workers will periodically save to their temp files)")
     
     valid_count = 0
     invalid_count = 0
@@ -132,27 +153,52 @@ def main():
             # The dataset's __getitem__ method handles cache updates
             try:
                 if batch is not None:
-                    valid_count += args.batch_size
+                    valid_count += len(batch.get('src_img', [])) if isinstance(batch, dict) else args.batch_size
                 else:
                     invalid_count += args.batch_size
             except Exception as e:
                 error_count += 1
                 if batch_idx % 100 == 0:  # Print errors occasionally
                     print(f"\nError in batch {batch_idx}: {e}")
-            
-            # Periodic cache save (every 100 batches)
-            if (batch_idx + 1) % 100 == 0:
-                # Force a save by triggering the save mechanism
-                # The dataset will save automatically based on _cache_save_interval
-                pass
     
     except KeyboardInterrupt:
         print("\n\n⚠️  Interrupted by user!")
-        print("Saving partial cache...")
+        print("Merging partial cache from workers...")
     
-    # Force final save
-    print("\nSaving final cache...")
+    # After DataLoader finishes, workers may have unsaved cache in memory
+    # We can't directly trigger saves from worker processes, but they should have
+    # saved periodically. Let's merge what we have and do a quick pass to catch any missed indices.
+    print("\nDataLoader finished. Merging worker temp files...")
+    
+    # Merge all existing worker temp files
+    dataset.merge_worker_temp_files()
+    
+    # Reload cache to ensure main process has the merged state
+    dataset._load_cache()
+    with dataset._cache_lock:
+        merged_valid = len(dataset._valid_indices)
+        merged_invalid = len(dataset._invalid_indices)
+    print(f"After merging worker files: {merged_valid} valid, {merged_invalid} invalid indices")
+    
+    # Do a full pass in main process to catch any indices that workers didn't save
+    # before they shut down (workers lose in-memory cache on shutdown)
+    # This will be faster than the first pass since workers already discovered most indices
+    print("Doing full pass in main process to ensure completeness...")
+    print("(Workers may have lost some in-memory cache on shutdown)")
+    for idx in tqdm(range(len(dataset)), desc="Collecting remaining cache"):
+        try:
+            _ = dataset[idx]  # Access to trigger cache update
+        except:
+            pass
+    
+    # Final save from main process (merges with any existing cache)
+    print("\nSaving final cache from main process...")
     dataset.save_cache_final()
+    
+    # Merge again in case main process created a temp file
+    dataset.merge_worker_temp_files()
+    
+    # Use the same dataset for final stats
     
     # Print summary
     with dataset._cache_lock:

@@ -184,6 +184,8 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
         self._cache_lock = threading.Lock()
         self._save_lock = threading.Lock()  # Separate lock for save operations to prevent concurrent saves
         self._valid_indices = set()
+        self._use_worker_temp_files = False  # If True, workers save to persistent temp files instead of merging to main cache
+        self._worker_id = None  # Will be set by worker_init_fn for parallel processing
         self._invalid_indices = set()
         self._cache_save_interval = 10
         self._cache_updates_since_save = 0
@@ -281,15 +283,67 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                     'total_samples': total_samples
                 }
                 # Write to temp file first, then rename (atomic write)
-                temp_file = self.cache_file + '.tmp'
-                with open(temp_file, 'w') as f:
-                    json.dump(cache_data, f, indent=2)
-                os.replace(temp_file, self.cache_file)
-                if self.verbose:
-                    print(f"Saved cache to {self.cache_file}: {len(valid_list)} valid, {len(invalid_list)} invalid indices (merged)")
+                import os
+                import threading
+                
+                # If using worker temp files mode with worker_id, save to worker-specific file
+                if self._use_worker_temp_files and self._worker_id is not None:
+                    # Each worker saves to its own file (no conflicts)
+                    worker_file = self.cache_file + f'.worker_{self._worker_id}.json'
+                    with open(worker_file, 'w') as f:
+                        json.dump(cache_data, f, indent=2)
+                        f.flush()
+                        os.fsync(f.fileno())
+                    if self.verbose:
+                        print(f"Worker {self._worker_id} saved cache: {len(valid_list)} valid, {len(invalid_list)} invalid indices")
+                else:
+                    # Normal mode: use process ID + thread ID in temp filename
+                    temp_file = self.cache_file + f'.tmp.{os.getpid()}.{threading.get_ident()}'
+                    
+                    # Write to temp file
+                    with open(temp_file, 'w') as f:
+                        json.dump(cache_data, f, indent=2)
+                        f.flush()
+                        os.fsync(f.fileno())  # Ensure data is written to disk
+                    
+                    # If using worker temp files mode (but no worker_id), keep the temp file
+                    if self._use_worker_temp_files:
+                        # Keep temp file for later merging
+                        if self.verbose:
+                            print(f"Saved worker cache to {temp_file}: {len(valid_list)} valid, {len(invalid_list)} invalid indices")
+                    else:
+                        # Normal mode: rename temp file to main cache file
+                        # Only rename if temp file exists and is valid
+                        # Use try-except for the rename in case another process already renamed
+                        if os.path.exists(temp_file):
+                            try:
+                                os.replace(temp_file, self.cache_file)
+                                if self.verbose:
+                                    print(f"Saved cache to {self.cache_file}: {len(valid_list)} valid, {len(invalid_list)} invalid indices (merged)")
+                            except (OSError, FileNotFoundError) as e:
+                                # Another process may have already saved, or temp file was deleted
+                                if self.verbose:
+                                    print(f"Could not rename temp file (may have been saved by another process): {e}")
+                                # Clean up our temp file
+                                try:
+                                    if os.path.exists(temp_file):
+                                        os.remove(temp_file)
+                                except:
+                                    pass
+                        else:
+                            if self.verbose:
+                                print(f"Temp file disappeared before rename, skipping save")
             except Exception as e:
                 if self.verbose:
                     print(f"Failed to save cache: {e}")
+                # Clean up temp file if it exists
+                try:
+                    import threading
+                    temp_file = self.cache_file + f'.tmp.{os.getpid()}.{threading.get_ident()}'
+                    if os.path.exists(temp_file):
+                        os.remove(temp_file)
+                except:
+                    pass
     
     def _is_index_valid(self, index):
         """Thread-safe check if index is not in invalid set."""
@@ -380,15 +434,163 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                     'timestamp': timestamp,
                     'total_samples': total_samples
                 }
-                temp_file = self.cache_file + '.tmp'
-                with open(temp_file, 'w') as f:
-                    json.dump(cache_data, f, indent=2)
-                os.replace(temp_file, self.cache_file)
-                if self.verbose:
-                    print(f"Final cache saved to {self.cache_file}: {len(valid_list)} valid, {len(invalid_list)} invalid indices (merged)")
+                import os
+                import threading
+                
+                # If using worker temp files mode with worker_id, save to worker-specific file
+                if self._use_worker_temp_files and self._worker_id is not None:
+                    # Each worker saves to its own file (no conflicts)
+                    worker_file = self.cache_file + f'.worker_{self._worker_id}.json'
+                    with open(worker_file, 'w') as f:
+                        json.dump(cache_data, f, indent=2)
+                        f.flush()
+                        os.fsync(f.fileno())
+                    if self.verbose:
+                        print(f"Worker {self._worker_id} saved final cache: {len(valid_list)} valid, {len(invalid_list)} invalid indices")
+                else:
+                    # Normal mode: use process ID + thread ID in temp filename
+                    temp_file = self.cache_file + f'.tmp.{os.getpid()}.{threading.get_ident()}'
+                    
+                    # Write to temp file
+                    with open(temp_file, 'w') as f:
+                        json.dump(cache_data, f, indent=2)
+                        f.flush()
+                        os.fsync(f.fileno())  # Ensure data is written to disk
+                    
+                    # If using worker temp files mode (but no worker_id), keep the temp file
+                    if self._use_worker_temp_files:
+                        # Keep temp file for later merging
+                        if self.verbose:
+                            print(f"Saved final worker cache to {temp_file}: {len(valid_list)} valid, {len(invalid_list)} invalid indices")
+                    else:
+                        # Normal mode: rename temp file to main cache file
+                        # Only rename if temp file exists and is valid
+                        # Use try-except for the rename in case another process already renamed
+                        if os.path.exists(temp_file):
+                            try:
+                                os.replace(temp_file, self.cache_file)
+                                if self.verbose:
+                                    print(f"Final cache saved to {self.cache_file}: {len(valid_list)} valid, {len(invalid_list)} invalid indices (merged)")
+                            except (OSError, FileNotFoundError) as e:
+                                # Another process may have already saved, or temp file was deleted
+                                if self.verbose:
+                                    print(f"Could not rename temp file (may have been saved by another process): {e}")
+                                # Clean up our temp file
+                                try:
+                                    if os.path.exists(temp_file):
+                                        os.remove(temp_file)
+                                except:
+                                    pass
             except Exception as e:
                 if self.verbose:
                     print(f"Failed to save final cache: {e}")
+                # Clean up temp file if it exists
+                try:
+                    import threading
+                    temp_file = self.cache_file + f'.tmp.{os.getpid()}.{threading.get_ident()}'
+                    if os.path.exists(temp_file):
+                        os.remove(temp_file)
+                except:
+                    pass
+    
+    def merge_worker_temp_files(self):
+        """Merge all worker temp files into the main cache file."""
+        import glob
+        import os
+        
+        # Find all worker files (both .worker_*.json and .tmp.* patterns)
+        worker_pattern = self.cache_file + '.worker_*.json'
+        temp_pattern = self.cache_file + '.tmp.*'
+        worker_files = glob.glob(worker_pattern)
+        temp_files = glob.glob(temp_pattern)
+        all_files = worker_files + temp_files
+        
+        if not all_files:
+            if self.verbose:
+                print(f"No worker files found to merge (patterns: {worker_pattern}, {temp_pattern})")
+            return
+        
+        if self.verbose:
+            print(f"Found {len(all_files)} worker files to merge ({len(worker_files)} worker files, {len(temp_files)} temp files)")
+        
+        # Collect all valid/invalid indices from all worker files
+        all_valid = set()
+        all_invalid = set()
+        total_samples = None
+        
+        for temp_file in all_files:
+            try:
+                with open(temp_file, 'r') as f:
+                    cache_data = json.load(f)
+                    all_valid.update(cache_data.get('valid', []))
+                    all_invalid.update(cache_data.get('invalid', []))
+                    if total_samples is None:
+                        total_samples = cache_data.get('total_samples')
+            except Exception as e:
+                if self.verbose:
+                    print(f"Failed to load temp file {temp_file}: {e}")
+        
+        # Merge with existing cache file if it exists
+        if os.path.exists(self.cache_file):
+            try:
+                with open(self.cache_file, 'r') as f:
+                    existing_cache = json.load(f)
+                    all_valid.update(existing_cache.get('valid', []))
+                    all_invalid.update(existing_cache.get('invalid', []))
+            except Exception as e:
+                if self.verbose:
+                    print(f"Failed to load existing cache for merge: {e}")
+        
+        # Merge with in-memory state
+        with self._cache_lock:
+            all_valid.update(self._valid_indices)
+            all_invalid.update(self._invalid_indices)
+            self._valid_indices = all_valid
+            self._invalid_indices = all_invalid
+        
+        # Save merged cache
+        valid_list = sorted(list(all_valid))
+        invalid_list = sorted(list(all_invalid))
+        timestamp = time.time()
+        
+        try:
+            cache_data = {
+                'valid': valid_list,
+                'invalid': invalid_list,
+                'timestamp': timestamp,
+                'total_samples': total_samples if total_samples is not None else len(self.base_dataset)
+            }
+            
+            # Write to final cache file
+            final_temp = self.cache_file + '.final_merge.tmp'
+            with open(final_temp, 'w') as f:
+                json.dump(cache_data, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            
+            # Atomic rename
+            os.replace(final_temp, self.cache_file)
+            
+            if self.verbose:
+                print(f"Merged cache saved to {self.cache_file}: {len(valid_list)} valid, {len(invalid_list)} invalid indices")
+            
+            # Clean up worker files
+            for temp_file in all_files:
+                try:
+                    os.remove(temp_file)
+                except Exception as e:
+                    if self.verbose:
+                        print(f"Failed to remove temp file {temp_file}: {e}")
+            
+        except Exception as e:
+            if self.verbose:
+                print(f"Failed to save merged cache: {e}")
+            # Clean up final temp if it exists
+            try:
+                if os.path.exists(final_temp):
+                    os.remove(final_temp)
+            except:
+                pass
     
     def __getitem__(self, index: int) -> Dict[str, torch.Tensor]:
         """
