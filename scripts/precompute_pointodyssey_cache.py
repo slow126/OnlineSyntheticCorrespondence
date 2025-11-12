@@ -153,8 +153,8 @@ def main():
     print(f"\nProcessing {base_dataset_len} indices with DataLoader ({args.num_workers} workers)...")
     print("(Results will be collected in memory and written once at the end)")
     
-    # Pre-initialize all indices to False (invalid)
-    all_results = {idx: False for idx in range(base_dataset_len)}  # index -> gotit
+    # Start with empty dict - will be filled as batches are processed
+    all_results = {}  # index -> gotit
     
     try:
         with tqdm(total=len(dataloader), desc="Processing batches") as pbar:
@@ -167,6 +167,13 @@ def main():
     except KeyboardInterrupt:
         print("\n\n⚠️  Interrupted by user!")
         print(f"Collected {len(all_results)} results so far...")
+    
+    # Verify we processed all indices
+    if len(all_results) != base_dataset_len:
+        print(f"\n⚠️  Warning: Processed {len(all_results)} indices, expected {base_dataset_len}")
+        missing_indices = set(range(base_dataset_len)) - set(all_results.keys())
+        if missing_indices:
+            print(f"  Missing indices: {sorted(missing_indices)[:10]}{'...' if len(missing_indices) > 10 else ''}")
     
     # Write results to cache file
     print("\nWriting cache file...")
