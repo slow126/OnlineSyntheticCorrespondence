@@ -187,6 +187,10 @@ class PointOdysseyDataset(torch.utils.data.Dataset):
             A.ImageCompression(quality_lower=50, quality_upper=100, p=0.3),
         ], p=0.8)
         
+        # Cache for annotation files (per-worker, since each worker has its own dataset instance)
+        # This avoids reloading the same annotation file when processing multiple clips from the same sequence
+        self._cached_annotation_path = None
+        self._cached_annotations = None
 
     def getitem_helper(self, index):
         sample = None
@@ -197,20 +201,29 @@ class PointOdysseyDataset(torch.utils.data.Dataset):
             mask_paths = self.mask_paths[index]
             full_idx = self.full_idxs[index]
             annotations_path = self.annotation_paths[index]
-            try:
-                annotations = np.load(annotations_path, allow_pickle=True, mmap_mode='r')
-                # Copy the slices we need immediately to avoid holding file handle
-                trajs = np.array(annotations['trajs_2d'][full_idx]).astype(np.float32)
-                visibs = np.array(annotations['visibs'][full_idx]).astype(np.float32)
-                valids = np.array(annotations['valids'][full_idx]).astype(np.float32)
-                del annotations  # Release file handle
-            except (OSError, ValueError, TypeError):
-                # Fallback if mmap fails (e.g., compressed .npz files)
-                annotations = np.load(annotations_path, allow_pickle=True)
-                trajs = annotations['trajs_2d'][full_idx].astype(np.float32)
-                visibs = annotations['visibs'][full_idx].astype(np.float32)
-                valids = annotations['valids'][full_idx].astype(np.float32)
-                del annotations
+            
+            # Use cached annotation if it's the same file
+            if annotations_path != self._cached_annotation_path:
+                # Load new annotation file
+                try:
+                    annotations = np.load(annotations_path, allow_pickle=True, mmap_mode='r')
+                    # Cache the mmap object for reuse (mmap allows concurrent reads)
+                    self._cached_annotations = annotations
+                    self._cached_annotation_path = annotations_path
+                except (OSError, ValueError, TypeError):
+                    # Fallback if mmap fails (e.g., compressed .npz files)
+                    annotations = np.load(annotations_path, allow_pickle=True)
+                    self._cached_annotations = annotations
+                    self._cached_annotation_path = annotations_path
+            else:
+                # Reuse cached annotation
+                annotations = self._cached_annotations
+            
+            # Copy the slices we need immediately
+            trajs = np.array(annotations['trajs_2d'][full_idx]).astype(np.float32)
+            visibs = np.array(annotations['visibs'][full_idx]).astype(np.float32)
+            valids = np.array(annotations['valids'][full_idx]).astype(np.float32)
+            # Don't delete annotations here - we're caching it for reuse
 
             # some data is valid in 3d but invalid in 2d
             # here we will filter to the data which is valid in 2d

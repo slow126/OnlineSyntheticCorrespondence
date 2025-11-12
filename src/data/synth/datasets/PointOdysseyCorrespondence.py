@@ -93,6 +93,9 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
         """
         # Check if the dataset has the expected structure (with train/val/test subdirs)
         expected_dset_path = os.path.join(dataset_location, dset)
+        self.dataset_location = dataset_location
+        self.dset = dset
+        self.strides = strides
         if not os.path.exists(expected_dset_path):
             # If no train/val/test subdirs, assume sequences are directly in dataset_location
             print(f"Warning: No '{dset}' subdirectory found in {dataset_location}")

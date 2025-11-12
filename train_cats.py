@@ -549,7 +549,7 @@ def main():
                 N=args.num_pts_to_track_pointodyssey,
                 quick=False,
                 max_sequences=args.pointodyssey_val_max_sequences,
-                verbose=args.enable_debug and args.verbose_pointodyssey,
+                verbose=args.verbose_pointodyssey,
                 resize_size=(args.size+64, args.size+64),
                 crop_size=(args.size, args.size),
                 filter_instances=True,
