@@ -188,23 +188,8 @@ def main():
         merged_invalid = len(dataset._invalid_indices)
     print(f"After merging worker files: {merged_valid} valid, {merged_invalid} invalid indices")
     
-    # Do a full pass in main process to catch any indices that workers didn't save
-    # before they shut down (workers lose in-memory cache on shutdown)
-    # This will be faster than the first pass since workers already discovered most indices
-    print("Doing full pass in main process to ensure completeness...")
-    print("(Workers may have lost some in-memory cache on shutdown)")
-    for idx in tqdm(range(len(dataset)), desc="Collecting remaining cache"):
-        try:
-            _ = dataset[idx]  # Access to trigger cache update
-        except:
-            pass
-    
-    # Final save from main process (merges with any existing cache)
-    print("\nSaving final cache from main process...")
-    dataset.save_cache_final()
-    
-    # Merge again in case main process created a temp file
-    dataset.merge_worker_temp_files()
+    # Workers have already saved their cache to individual files, and we've merged them
+    # No need for additional passes - the cache is complete
     
     # Use the same dataset for final stats
     
