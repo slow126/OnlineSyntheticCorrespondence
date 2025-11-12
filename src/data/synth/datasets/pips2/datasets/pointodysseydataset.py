@@ -49,7 +49,6 @@ class PointOdysseyDataset(torch.utils.data.Dataset):
                  quick=False,
                  max_sequences=None,
                  verbose=False,
-                 all_points=False,
                  val_sequence_fraction: Optional[float] = None,
     ):
         print('loading pointodyssey dataset...')
@@ -58,7 +57,7 @@ class PointOdysseyDataset(torch.utils.data.Dataset):
         self.N = N
         self.req_full = req_full
         self.verbose = verbose
-        self.all_points = all_points
+
         self.use_augs = use_augs
         self.dset = dset
 
@@ -198,10 +197,20 @@ class PointOdysseyDataset(torch.utils.data.Dataset):
             mask_paths = self.mask_paths[index]
             full_idx = self.full_idxs[index]
             annotations_path = self.annotation_paths[index]
-            annotations = np.load(annotations_path, allow_pickle=True)
-            trajs = annotations['trajs_2d'][full_idx].astype(np.float32) # S,N,2
-            visibs = annotations['visibs'][full_idx].astype(np.float32) # S,N
-            valids = annotations['valids'][full_idx].astype(np.float32) # S,N
+            try:
+                annotations = np.load(annotations_path, allow_pickle=True, mmap_mode='r')
+                # Copy the slices we need immediately to avoid holding file handle
+                trajs = np.array(annotations['trajs_2d'][full_idx]).astype(np.float32)
+                visibs = np.array(annotations['visibs'][full_idx]).astype(np.float32)
+                valids = np.array(annotations['valids'][full_idx]).astype(np.float32)
+                del annotations  # Release file handle
+            except (OSError, ValueError, TypeError):
+                # Fallback if mmap fails (e.g., compressed .npz files)
+                annotations = np.load(annotations_path, allow_pickle=True)
+                trajs = annotations['trajs_2d'][full_idx].astype(np.float32)
+                visibs = annotations['visibs'][full_idx].astype(np.float32)
+                valids = annotations['valids'][full_idx].astype(np.float32)
+                del annotations
 
             # some data is valid in 3d but invalid in 2d
             # here we will filter to the data which is valid in 2d
@@ -229,8 +238,6 @@ class PointOdysseyDataset(torch.utils.data.Dataset):
 
             if self.req_full:
                 min_N = self.N//2
-            elif self.all_points:
-                min_N = N - 1
             else:
                 min_N = self.N
 
@@ -289,8 +296,6 @@ class PointOdysseyDataset(torch.utils.data.Dataset):
             
             N = trajs.shape[1]
 
-            if self.all_points:
-                min_N = N - 1
 
             if N < min_N:
                 if self.verbose:
@@ -404,8 +409,6 @@ class PointOdysseyDataset(torch.utils.data.Dataset):
 
             N = trajs.shape[1]
 
-            if self.all_points:
-                min_N = N - 1
             
             if N < min_N:
                 if self.verbose:

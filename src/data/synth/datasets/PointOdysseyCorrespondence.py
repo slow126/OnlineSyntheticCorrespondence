@@ -84,7 +84,7 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
             reverse_flow: Whether to reverse flow direction
             downsample_for_cats: Whether to downsample flow for CATs (training mode)
             cats_feat_size: Feature size for downsampled flow
-            all_points: Whether to use all points
+            all_points: Doesn't do any thing anymore.
             max_sequences: Maximum number of sequences to use (None = all, deterministic sampling)
             max_pts: Maximum number of keypoints (default: 40). Padded keypoints use (0, 0) so flow is (0, 0) and doesn't affect metrics.
             thres: PCK threshold type ('img' or 'bbox')
@@ -118,7 +118,6 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
             quick=quick,
             max_sequences=max_sequences,
             verbose=verbose,
-            all_points=all_points,
             val_sequence_fraction=val_sequence_fraction
         )
         
@@ -168,10 +167,10 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
             'resize_size': resize_size,
             'crop_size': crop_size,
             'req_full': req_full,
-            'all_points': all_points,
             'max_sequences': max_sequences,
             'val_sequence_fraction': val_sequence_fraction,
         }, sort_keys=True)
+        
         config_hash = hashlib.md5(config_str.encode()).hexdigest()[:8]  # Use first 8 chars for brevity
         
         # Create a more readable filename with key parameters
@@ -891,7 +890,6 @@ def test_dataset_with_visualization(dataset_path: str = None, size: Optional[int
         filter_instances=True,
         resize_size=(size+64, size+64),
         crop_size=(size, size),
-        all_points=downsample_for_cats,
         downsample_for_cats=downsample_for_cats,
         cats_feat_size=32,
     )

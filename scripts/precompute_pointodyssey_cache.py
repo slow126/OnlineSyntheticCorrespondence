@@ -25,7 +25,7 @@ import time
 from pathlib import Path
 from tqdm import tqdm
 import torch
-from torch.utils.data import DataLoader, SequentialSampler
+from torch.utils.data import DataLoader
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -142,7 +142,6 @@ def main():
     dataloader = DataLoader(
         precompute_dataset,
         batch_size=args.batch_size,
-        sampler=SequentialSampler(precompute_dataset),
         num_workers=args.num_workers,
         prefetch_factor=args.prefetch_factor if args.num_workers > 0 else None,
         pin_memory=False,  # Not needed for precompute (CPU only)
