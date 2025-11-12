@@ -45,3 +45,4 @@ dataset_defaults:
     all_points_pointodyssey: True
     verbose_pointodyssey: false
     strides_pointodyssey: 1 2 4
+    sequence_length_pointodyssey: 4
