@@ -555,7 +555,7 @@ def main():
                 filter_instances=True,
                 downsample_for_cats=True,  
                 cats_feat_size=args.feature_size,
-                all_points=False,
+                all_points=args.all_points_pointodyssey,
                 max_pts=40,
                 thres=args.thres,
                 normalize_images=True, 

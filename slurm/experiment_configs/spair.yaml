@@ -40,7 +40,11 @@ grids:
     name_template: "{train_dataset}_freeze{freeze}"
 
 
-
+dataset_defaults:
+  pointodyssey:
+    num_pts_to_track_pointodyssey: 64
+    all_points_pointodyssey: True
+    verbose_pointodyssey: false
 
   
 

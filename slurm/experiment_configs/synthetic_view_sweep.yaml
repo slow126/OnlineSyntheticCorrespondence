@@ -61,3 +61,8 @@ grids:
         - 0.5
     name_template: "{train_dataset}_xloc{angle_sampler_x_loc}_xscale{angle_sampler_x_scale}_yloc{angle_sampler_y_loc}_yscale{angle_sampler_y_scale}_absscale{scale_sampler_abs_scale}_relloc{scale_sampler_rel_loc}_relscale{scale_sampler_rel_scale}"
 
+dataset_defaults:
+  pointodyssey:
+    num_pts_to_track_pointodyssey: 64
+    all_points_pointodyssey: True
+    verbose_pointodyssey: false
