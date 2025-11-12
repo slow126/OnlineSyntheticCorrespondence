@@ -19,7 +19,7 @@ import models.CATs_PlusPlus.data.download as download
 # Configuration
 BATCH_SIZE = 10
 NUM_BATCHES = 100  # Total samples = BATCH_SIZE * NUM_BATCHES = 100
-CONFIG_PATH = 'slurm/machine_configs/local.yaml'
+CONFIG_PATH = 'slurm/machine_configs/remote.yaml'
 DATASET_CONFIG_PATH = 'src/configs/online_synth_configs/OnlineDatasetConfig_FullFlow.yaml'
 OUTPUT_PATH = 'validation_samples.pt'  # Use .pt extension for torch.save
 
