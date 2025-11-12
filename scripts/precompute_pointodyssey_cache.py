@@ -157,12 +157,12 @@ def main():
     all_results = {idx: False for idx in range(base_dataset_len)}  # index -> gotit
     
     try:
-        with tqdm(total=len(dataloader), desc="Processing indices") as pbar:
+        with tqdm(total=len(dataloader), desc="Processing batches") as pbar:
             for batch_results in dataloader:
                 # batch_results is a dict: {index: gotit, ...}
                 # update() is C-optimized and faster than manual loop
                 all_results.update(batch_results)
-                pbar.update(len(batch_results))
+                pbar.update(1)  # Update by 1 batch
     
     except KeyboardInterrupt:
         print("\n\n⚠️  Interrupted by user!")
