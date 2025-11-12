@@ -654,7 +654,9 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
     
     def __getitem__(self, index: int) -> Dict[str, torch.Tensor]:
         """
-        Get a sample from the dataset.
+        Get a sample from the dataset (training/validation mode - READ ONLY).
+        Uses cache if available, otherwise does resampling with retries.
+        NEVER writes to cache - this is for training/validation only.
         
         Args:
             index: Sample index
@@ -665,136 +667,58 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                 - 'trg_img': Target image tensor (C, H, W) 
                 - 'flow': Flow tensor (2, H, W) from trg to src
         """
-
         sample = None
         gotit = False
-        cache_updated = False
         
-        # Fast path for precomputation mode: just try the requested index, mark invalid, use first valid if needed
-        if self._use_worker_temp_files and self._worker_id is not None:
-            # Precomputation mode: try requested index only, mark invalid, use first cached valid if needed
+        # Check if cache exists and map index to valid index
+        with self._cache_lock:
+            has_valid_cache = len(self._valid_indices) > 0
+        
+        if has_valid_cache:
+            # Cache exists - map requested index to actual valid index
+            actual_index = self._get_valid_index_at_position(index)
+            if actual_index is not None:
+                # Use the mapped valid index
+                sample, gotit = self.base_dataset[actual_index]
+                if not gotit:
+                    # Unexpected - but don't modify cache, just try resampling
+                    gotit = False
+        
+        if not has_valid_cache or not gotit:
+            # No cache yet or cache lookup failed - use resampling logic (but don't write to cache)
+            # Try the requested index first if not known to be invalid
             if self._is_index_valid(index):
-                sample, gotit = self.base_dataset[index]
-                if gotit:
-                    # Valid - mark it and use it
-                    if self._add_valid_index(index):
-                        cache_updated = True
+                # Check if it's known-valid - if so, use it directly (fast path)
+                if self._is_index_known_valid(index):
+                    # Already know it's valid, use it directly
+                    sample, gotit = self.base_dataset[index]
                 else:
-                    # Invalid - mark it
-                    if self._add_invalid_index(index):
-                        cache_updated = True
-            
-            # If requested index was invalid, use first cached valid index if available
-            if not gotit:
-                valid_idx = self._get_first_valid_index()
+                    # Not known yet, try it (but don't write to cache)
+                    sample, gotit = self.base_dataset[index]
+            else:
+                # Known-invalid index requested - use a known-valid one if available
+                valid_idx = self._get_random_valid_index()
                 if valid_idx is not None:
-                    # Use first known-valid index from cache
                     index = valid_idx
                     sample, gotit = self.base_dataset[index]
-                    if gotit:
-                        # Ensure it's still marked as valid
-                        self._add_valid_index(index)
-                    else:
-                        # Unexpected - remove from cache
-                        with self._cache_lock:
-                            self._valid_indices.discard(index)
-                            self._invalid_indices.add(index)
-                        gotit = False
-                
-                # If no cached valid index available, raise exception (precompute script will skip)
-                if not gotit:
-                    raise RuntimeError(f"Index {index} invalid and no cached valid indices available (precomputation mode)")
-        else:
-            # Normal mode: if cache exists, map index to valid index; otherwise use full resampling logic
-            with self._cache_lock:
-                has_valid_cache = len(self._valid_indices) > 0
             
-            if has_valid_cache:
-                # Cache exists - map requested index to actual valid index
-                actual_index = self._get_valid_index_at_position(index)
-                if actual_index is not None:
-                    # Use the mapped valid index
-                    sample, gotit = self.base_dataset[actual_index]
-                    if gotit:
-                        # Ensure it's still marked as valid
-                        self._add_valid_index(actual_index)
-                    else:
-                        # Unexpected - remove from cache
-                        with self._cache_lock:
-                            self._valid_indices.discard(actual_index)
-                            self._invalid_indices.add(actual_index)
-                        gotit = False
-                else:
-                    # Index out of range for valid indices - shouldn't happen if __len__ is correct
-                    gotit = False
-            
-            if not has_valid_cache or not gotit:
-                # No cache yet or cache lookup failed - use full resampling logic for discovery
-                # Try the requested index first if not known to be invalid
-                if self._is_index_valid(index):
-                    # Check if it's known-valid - if so, use it directly (fast path)
-                    if self._is_index_known_valid(index):
-                        # Already know it's valid, use it directly without checking
-                        sample, gotit = self.base_dataset[index]
-                        # Should always be valid, but handle edge case
-                        if not gotit:
-                            # Unexpected - remove from valid cache and add to invalid
-                            with self._cache_lock:
-                                self._valid_indices.discard(index)
-                                self._invalid_indices.add(index)
-                            gotit = False  # Will trigger resampling
-                    else:
-                        # Not known yet, try it to discover
-                        sample, gotit = self.base_dataset[index]
-                        if gotit:
-                            if self._add_valid_index(index):
-                                cache_updated = True
-                        else:
-                            # Invalid sample encountered - add to cache
-                            if self._add_invalid_index(index):
-                                cache_updated = True
-                            if self.verbose:
-                                with self._cache_lock:
-                                    invalid_count = len(self._invalid_indices)
-                                print(f"Added invalid index {index} to cache (total invalid: {invalid_count})")
-                else:
-                    # Known-invalid index requested - immediately use a known-valid one if available
-                    # This avoids expensive resampling loop when cache is built
-                    valid_idx = self._get_random_valid_index()
-                    if valid_idx is not None:
-                        index = valid_idx
-                        sample, gotit = self.base_dataset[index]
-                        # Should be valid, but verify
-                        if not gotit:
-                            # Unexpected - remove from cache
-                            with self._cache_lock:
-                                self._valid_indices.discard(index)
-                                self._invalid_indices.add(index)
-                            gotit = False  # Will trigger resampling
-                    # If no known-valid indices yet, fall through to resampling loop to build cache
-            
-            # If invalid, try to find a valid sample (full resampling loop)
+            # If invalid, try to find a valid sample (resampling loop, but don't write to cache)
             attempts = 0
             start_time = time.time()
             max_attempts = 100
             resample_timeout = 5.0
             
             while not gotit and attempts < max_attempts:
-                # Timeout check - if we have known valid indices, use one to avoid crashing
+                # Timeout check - use cached valid index if available
                 if time.time() - start_time > resample_timeout:
                     valid_idx = self._get_random_valid_index()
                     if valid_idx is not None:
-                        # Use known valid index from cache to avoid training crash
                         if self.verbose:
                             print(f"Timeout after {resample_timeout}s, using random known-valid index")
                         index = valid_idx
                         sample, gotit = self.base_dataset[index]
                         if gotit:
-                            # Ensure it's still marked as valid
-                            self._add_valid_index(index)
-                        break
-                    # If no known valid indices yet, continue with normal attempts
-                    # (should find a valid sample eventually)
+                            break
                 
                 # Prefer known-valid indices
                 valid_idx = self._get_random_valid_index()
@@ -815,26 +739,10 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                     continue
                     
                 sample, gotit = self.base_dataset[index]
-                if gotit:
-                    if self._add_valid_index(index):
-                        cache_updated = True
-                else:
-                    # Invalid sample encountered - add to cache
-                    if self._add_invalid_index(index):
-                        cache_updated = True
-                        if self.verbose:
-                            with self._cache_lock:
-                                invalid_count = len(self._invalid_indices)
-                            print(f"Added invalid index {index} to cache (total invalid: {invalid_count})")
-                
                 attempts += 1
         
         if not gotit:
             raise RuntimeError(f"Failed to get valid sample after {attempts} attempts")
-        
-        # Save cache periodically (every 10 updates)
-        if cache_updated and self._should_save_cache():
-            self._save_cache()
         
         # Keep everything on CPU - DataLoader will handle GPU transfer
         # Extract the data we need (keep on CPU)
@@ -982,6 +890,53 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
 
         # All tensors are already on CPU, no need to move them
         return out
+    
+    def __getitem_precompute__(self, index: int, worker_id: int = None):
+        """
+        Simple precomputation version - just try index, mark valid/invalid, raise if invalid.
+        This is the ONLY function that writes to cache.
+        
+        Args:
+            index: Sample index to check
+            worker_id: Optional worker ID for thread-safe cache saving (used for worker temp files)
+            
+        Returns:
+            Sample dict if valid
+            
+        Raises:
+            RuntimeError: If index is invalid (expected during precomputation)
+        """
+        # Set worker_id if provided (for thread-safe saving)
+        old_worker_id = self._worker_id
+        if worker_id is not None:
+            self._worker_id = worker_id
+        
+        try:
+            # Try the requested index
+            if self._is_index_valid(index):
+                sample, gotit = self.base_dataset[index]
+                if gotit:
+                    # Valid - mark it
+                    self._add_valid_index(index)
+                    # Check if we should save
+                    if self._should_save_cache():
+                        self._save_cache()
+                    # Return sample (though we don't actually need it for precomputation)
+                    return sample
+                else:
+                    # Invalid - mark it
+                    self._add_invalid_index(index)
+                    # Check if we should save
+                    if self._should_save_cache():
+                        self._save_cache()
+                    # Raise immediately - precompute script will catch and skip
+                    raise RuntimeError(f"Index {index} is invalid (precomputation mode)")
+            else:
+                # Already known invalid - skip immediately
+                raise RuntimeError(f"Index {index} is known invalid (precomputation mode)")
+        finally:
+            # Restore old worker_id
+            self._worker_id = old_worker_id
     
     def _create_flow_field(self, 
                           src_trajs: torch.Tensor, 

@@ -2,7 +2,7 @@
 """
 Precompute PointOdyssey cache to avoid conflicts during training.
 
-This script uses a threaded DataLoader to efficiently precompute the cache
+This script uses ThreadPoolExecutor to efficiently precompute the cache
 without needing GPU. Can use lots of system RAM for fast parallel processing.
 
 Usage:
@@ -14,8 +14,7 @@ Usage:
         --strides 1 2 4 \
         --size 512 \
         --feature_size 32 \
-        --num_workers 16 \
-        --batch_size 32
+        --num_workers 16
 """
 
 import argparse
@@ -23,8 +22,7 @@ import os
 import sys
 from pathlib import Path
 from tqdm import tqdm
-import torch
-from torch.utils.data import DataLoader
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -56,11 +54,7 @@ def main():
     parser.add_argument('--all_points', action='store_true',
                         help='Use all points')
     parser.add_argument('--num_workers', type=int, default=16,
-                        help='Number of worker threads for DataLoader (use lots for speed)')
-    parser.add_argument('--batch_size', type=int, default=32,
-                        help='Batch size for DataLoader (does not affect cache, just speed)')
-    parser.add_argument('--prefetch_factor', type=int, default=4,
-                        help='Prefetch factor for DataLoader')
+                        help='Number of worker threads (use lots for speed)')
     
     args = parser.parse_args()
     
@@ -71,7 +65,7 @@ def main():
     print(f"  Root: {args.pointodyssey_root}")
     print(f"  S={args.S}, N={args.N}, strides={args.strides}")
     print(f"  size={args.size}, feature_size={args.feature_size}")
-    print(f"  num_workers={args.num_workers}, batch_size={args.batch_size}")
+    print(f"  num_workers={args.num_workers}")
     print("="*60)
     
     # Create dataset (same parameters as training)
@@ -112,73 +106,60 @@ def main():
             print("Aborting.")
             return
     
-    # Worker init function: set worker_id on each worker's dataset instance
-    def worker_init_fn(worker_id):
-        """Set worker_id on the dataset instance in each worker process."""
-        # Get the dataset instance for this worker
-        worker_info = torch.utils.data.get_worker_info()
-        if worker_info is not None:
-            worker_dataset = worker_info.dataset
-            worker_dataset._worker_id = worker_id
-            worker_dataset._use_worker_temp_files = True
-            worker_dataset._cache_save_interval = 1000  # Save less frequently to reduce I/O overhead
+    # Process indices using ThreadPoolExecutor
+    print(f"\nProcessing {len(dataset)} indices with {args.num_workers} threads...")
+    print("(Each thread will save cache to its own file, then we'll merge at the end)")
     
-    # Create DataLoader with parallel workers
-    print(f"\nCreating DataLoader with {args.num_workers} workers...")
-    print("(Each worker will save cache to its own file, then we'll merge at the end)")
+    def process_index(index, worker_id):
+        """Process a single index - just try to access it to build cache."""
+        try:
+            # Ensure worker temp file mode is enabled
+            dataset._use_worker_temp_files = True
+            dataset._cache_save_interval = 1000
+            
+            # Use the precompute function (writes to cache) - pass worker_id for thread-safe saving
+            _ = dataset.__getitem_precompute__(index, worker_id=worker_id)
+            return (index, True, None)
+        except RuntimeError as e:
+            # Expected - invalid index, just skip
+            return (index, False, None)
+        except Exception as e:
+            return (index, False, str(e))
     
-    dataloader = DataLoader(
-        dataset,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        shuffle=False,  # Sequential is fine for precomputation
-        prefetch_factor=args.prefetch_factor,
-        pin_memory=False,  # No GPU, so no pin_memory needed
-        persistent_workers=True if args.num_workers > 0 else False,
-        worker_init_fn=worker_init_fn,  # Set worker_id on each worker
-    )
-    
-    # Iterate through all batches to build cache
-    print(f"\nBuilding cache by processing {len(dataloader)} batches...")
-    print("(This may take a while - dataset will discover valid/invalid indices)")
-    print("(Workers will periodically save to their temp files)")
-    
+    # Process all indices in parallel
     valid_count = 0
     invalid_count = 0
     error_count = 0
     
     try:
-        for batch_idx, batch in enumerate(tqdm(dataloader, desc="Processing batches")):
-            # Just accessing the batch builds the cache
-            # The dataset's __getitem__ method handles cache updates
-            # In precomputation mode, invalid indices raise RuntimeError which we catch and skip
-            try:
-                if batch is not None:
-                    valid_count += len(batch.get('src_img', [])) if isinstance(batch, dict) else args.batch_size
-                else:
-                    invalid_count += args.batch_size
-            except RuntimeError as e:
-                # Expected in precomputation mode when no valid sample found quickly
-                # This is fine - we're just discovering which indices are invalid
-                error_count += 1
-                invalid_count += args.batch_size
-                if batch_idx % 1000 == 0:  # Print less frequently
-                    print(f"\nSkipped batch {batch_idx} (no valid sample found quickly): {e}")
-            except Exception as e:
-                error_count += 1
-                if batch_idx % 100 == 0:  # Print errors occasionally
-                    print(f"\nError in batch {batch_idx}: {e}")
+        with ThreadPoolExecutor(max_workers=args.num_workers) as executor:
+            # Submit all tasks
+            futures = {}
+            for idx in range(len(dataset)):
+                worker_id = idx % args.num_workers
+                future = executor.submit(process_index, idx, worker_id)
+                futures[future] = idx
+            
+            # Process results as they complete
+            with tqdm(total=len(dataset), desc="Processing indices") as pbar:
+                for future in as_completed(futures):
+                    index, is_valid, error = future.result()
+                    if is_valid:
+                        valid_count += 1
+                    else:
+                        invalid_count += 1
+                        if error:
+                            error_count += 1
+                            if error_count % 100 == 0:  # Print errors occasionally
+                                print(f"\nError at index {index}: {error}")
+                    pbar.update(1)
     
     except KeyboardInterrupt:
         print("\n\n⚠️  Interrupted by user!")
         print("Merging partial cache from workers...")
     
-    # After DataLoader finishes, workers may have unsaved cache in memory
-    # We can't directly trigger saves from worker processes, but they should have
-    # saved periodically. Let's merge what we have and do a quick pass to catch any missed indices.
-    print("\nDataLoader finished. Merging worker temp files...")
-    
     # Merge all existing worker temp files
+    print("\nMerging worker temp files...")
     dataset.merge_worker_temp_files()
     
     # Reload cache to ensure main process has the merged state
@@ -187,11 +168,6 @@ def main():
         merged_valid = len(dataset._valid_indices)
         merged_invalid = len(dataset._invalid_indices)
     print(f"After merging worker files: {merged_valid} valid, {merged_invalid} invalid indices")
-    
-    # Workers have already saved their cache to individual files, and we've merged them
-    # No need for additional passes - the cache is complete
-    
-    # Use the same dataset for final stats
     
     # Print summary
     with dataset._cache_lock:
@@ -210,6 +186,7 @@ def main():
     print(f"  Cache file: {dataset.cache_file}")
     print("="*60)
     print("\n✅ You can now run training jobs - they will use this cache in read-only mode.")
+    print(f"   Processed: {valid_count:,} valid, {invalid_count:,} invalid, {error_count:,} errors")
 
 
 if __name__ == '__main__':
