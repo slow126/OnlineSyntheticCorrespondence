@@ -21,7 +21,7 @@ base:
   enable_debug: false
   steps_per_epoch: 10
   kitti_val_use_full_training: false
-  val_batch_size: 32
+  val_batch_size: 16
 
 
 # Parameter grids - generates all combinations
@@ -30,7 +30,7 @@ grids:
   - name: "synthetic freeze sweep"
     parameters:
       eval_benchmarks: 
-        - ["kitti2012", "kitti2015", "pointodyssey", "tss", "pfpascal", "pfwillow", "spair", "flyingthings"]
+        - ["flyingthings", "kitti2012", "kitti2015", "pointodyssey", "tss", "pfpascal", "pfwillow", "spair", ]
       eval_alphas:
         - [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
       train_dataset: ["synthetic"]
