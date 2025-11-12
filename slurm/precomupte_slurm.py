@@ -153,7 +153,7 @@ def main():
                 f"--size 512 "
                 f"--feature_size 32 "
                 f"--max_pts 32 "
-                f"--num_workers 64 "
+                f"--num_workers {machine_config.get('slurm', {}).get('cpus_per_task', 32)}"
                 f"--batch_size 64 "
                 f"--all_points"
             )
