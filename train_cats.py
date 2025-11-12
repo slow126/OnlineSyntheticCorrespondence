@@ -307,6 +307,8 @@ def main():
                         help='Maximum number of sequences to use for PointOdyssey validation (None = all, deterministic sampling)')
     parser.add_argument('--pointodyssey_max_pts', type=int, default=200,
                         help='Maximum number of keypoints for PointOdyssey training (default: 200, use as many as possible)')
+    parser.add_argument('--val_sequence_fraction_pointodyssey', type=float, default=1.0,
+                        help='Fraction of sequences to use for PointOdyssey validation (default: 1.0)')
 
     # Flow filtering parameters (applied during training only)
     parser.add_argument('--min_flow_length', type=lambda x: None if str(x).lower() == 'none' else float(x), default=None,
@@ -545,20 +547,19 @@ def main():
                 dataset_location=args.pointodyssey_root,
                 dset='val',
                 use_augs=False,
-                S=args.sequence_length_pointodyssey,
-                N=args.num_pts_to_track_pointodyssey,
+                S=4,
+                N=32,
                 quick=False,
-                max_sequences=args.pointodyssey_val_max_sequences,
-                verbose=args.verbose_pointodyssey,
+                verbose=False,
                 resize_size=(args.size+64, args.size+64),
                 crop_size=(args.size, args.size),
                 filter_instances=True,
                 downsample_for_cats=True,  
                 cats_feat_size=args.feature_size,
-                all_points=args.all_points_pointodyssey,
-                max_pts=32,
+                max_pts=200,
                 thres=args.thres,
                 normalize_images=True, 
+                val_sequence_fraction=args.val_sequence_fraction_pointodyssey
             )
             val_dataloader = DataLoader(
                 val_dataset, 

@@ -121,7 +121,6 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
             quick=quick,
             max_sequences=max_sequences,
             verbose=verbose,
-            val_sequence_fraction=val_sequence_fraction
         )
         
         self.S = S
@@ -135,6 +134,7 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
         self.thres = thres
         self.normalize_images = normalize_images
         self.normalize = normalize
+        self.val_sequence_fraction = val_sequence_fraction
         # Device management - defaults to CPU
         self._device = torch.device('cpu')
         
@@ -192,6 +192,10 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
         # Load existing cache (read-only, no locks needed)
         self._load_cache()
         
+        # Downsample cache if val_sequence_fraction is provided
+        if val_sequence_fraction is not None and val_sequence_fraction < 1.0 and self._valid_indices_list is not None:
+            self._downsample_cache(val_sequence_fraction)
+        
     def __len__(self) -> int:
         """Return the number of samples in the dataset.
         If cache exists and has valid indices, return count of valid indices only.
@@ -201,6 +205,34 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
             return len(self._valid_indices_list)
         return len(self.base_dataset)
     
+    def _downsample_cache(self, val_sequence_fraction):
+        """
+        Downsample the valid indices list by keeping only a fraction of them.
+        This reduces the dataset size for faster validation.
+        
+        Args:
+            val_sequence_fraction: Fraction to keep (e.g., 0.2 keeps 20% of valid indices)
+        """
+        if self._valid_indices_list is None or len(self._valid_indices_list) == 0:
+            return
+        
+        original_count = len(self._valid_indices_list)
+        target_count = int(original_count * val_sequence_fraction)
+        
+        if target_count == 0:
+            target_count = 1  # Keep at least one sample
+        
+        # Evenly sample indices to keep the distribution uniform
+        # Use numpy to get evenly spaced indices
+        indices_to_keep = np.linspace(0, original_count - 1, target_count, dtype=int)
+        self._valid_indices_list = [self._valid_indices_list[i] for i in indices_to_keep]
+        
+        # Keep the list sorted (it should already be sorted, but ensure it)
+        self._valid_indices_list = sorted(self._valid_indices_list)
+        
+        if self.verbose:
+            print(f"[PointOdyssey] Downsampled cache: {original_count} -> {len(self._valid_indices_list)} valid indices (fraction: {val_sequence_fraction})", flush=True)
+
     def _load_cache(self):
         """Load validation cache from disk (read-only, called at init).
         First tries exact hash match, then falls back to matching by human-readable pattern (dset, S, N, strides).
@@ -264,14 +296,14 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
             # Always print when no cache found (independent of verbose)
             print(f"[PointOdyssey] No cache found (searched for exact: {os.path.basename(self.cache_file)})", flush=True)
             print(f"[PointOdyssey] Pattern search: {self._cache_pattern}", flush=True)
-            print(f"[PointOdyssey] Will use random resampling", flush=True)
+            print(f"[PointOdyssey] Will use first valid index fallback", flush=True)
             self._valid_indices_list = None
             self._invalid_indices_set = None
     
     def __getitem__(self, index: int) -> Dict[str, torch.Tensor]:
         """
         Get a sample from the dataset (training/validation mode - READ ONLY).
-        Uses cache if available (fast lookup), otherwise does random resampling.
+        Uses cache if available (fast lookup), otherwise grabs the first valid index.
         
         Args:
             index: Sample index (0 to len(self)-1)
@@ -292,35 +324,35 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                     # Success - proceed to process sample
                     pass
                 else:
-                    # Cache says valid but base dataset says invalid - fall through to resampling
+                    # Cache says valid but base dataset says invalid - fall through to first valid index
                     gotit = False
             else:
                 # Index out of range for cache - shouldn't happen if __len__ is correct
                 gotit = False
         else:
-            # No cache - use random resampling
+            # No cache - will grab first valid index
             gotit = False
         
-        # If cache lookup failed or no cache exists, do random resampling
+        # If cache lookup failed or no cache exists, grab the first valid index
         if not gotit:
-            max_attempts = 100
-            attempts = 0
-            
-            while not gotit and attempts < max_attempts:
-                # Random sample from base dataset
-                random_index = _random.randint(0, len(self.base_dataset) - 1)
-                
-                # Skip known-invalid indices if we have invalid set
-                if self._invalid_indices_set is not None and random_index in self._invalid_indices_set:
-                    attempts += 1
-                    continue
-                
-                # Try this index
-                sample, gotit = self.base_dataset[random_index]
-                attempts += 1
+            # If we have a cache with valid indices, use the first one
+            if self._valid_indices_list is not None and len(self._valid_indices_list) > 0:
+                actual_index = self._valid_indices_list[0]
+                sample, gotit = self.base_dataset[actual_index]
+            else:
+                # No cache - iterate through indices to find first valid one
+                for idx in range(len(self.base_dataset)):
+                    # Skip known-invalid indices if we have invalid set
+                    if self._invalid_indices_set is not None and idx in self._invalid_indices_set:
+                        continue
+                    
+                    # Try this index
+                    sample, gotit = self.base_dataset[idx]
+                    if gotit:
+                        break
             
             if not gotit:
-                raise RuntimeError(f"Failed to get valid sample after {max_attempts} random attempts")
+                raise RuntimeError(f"Failed to get valid sample - no valid indices found")
         
         # Keep everything on CPU - DataLoader will handle GPU transfer
         # Extract the data we need (keep on CPU)

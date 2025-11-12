@@ -19,7 +19,7 @@ base:
   thres: "img"
   val_batch_size: 8
   enable_debug: false
-  steps_per_epoch: logarithmic
+  steps_per_epoch: 1000
   train_dataset: synthetic
   geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
   processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
@@ -99,6 +99,5 @@ experiments:
 
 dataset_defaults:
   pointodyssey:
-    num_pts_to_track_pointodyssey: 32
-    all_points_pointodyssey: True
     verbose_pointodyssey: false
+    val_sequence_fraction_pointodyssey: 0.2

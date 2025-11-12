@@ -19,7 +19,7 @@ base:
   thres: "img"
   val_batch_size: 8
   enable_debug: false
-  steps_per_epoch: logarithmic
+  steps_per_epoch: 1000
   kitti_val_use_full_training: false
   val_batch_size: 32
 
@@ -30,7 +30,7 @@ grids:
   - name: "synthetic freeze sweep"
     parameters:
       eval_benchmarks: 
-        - ["kitti2012", "kitti2015", "pointodyssey", "tss", "pfpascal", "pfwillow", "spair", "flyingthings"]
+        - ["kitti2012", "kitti2015", "pointodyssey", "tss", "pfpascal", "pfwillow", "spair"]
       eval_alphas:
         - [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
       train_dataset: ["synthetic"]
@@ -41,8 +41,5 @@ grids:
 
 dataset_defaults:
   pointodyssey:
-    num_pts_to_track_pointodyssey: 32
-    all_points_pointodyssey: True
     verbose_pointodyssey: false
-    strides_pointodyssey: 1 2 4
-    sequence_length_pointodyssey: 4
+    val_sequence_fraction_pointodyssey: 0.2
