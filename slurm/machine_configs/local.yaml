@@ -12,6 +12,7 @@ datasets:
   flyingthings_root: "/home/spencer/Data/FlyingThings3D_tiny/"
   pointodyssey_root: "/home/spencer/Data/PointOdyssey"
   tss_root: "/home/spencer/Data/correspondence/TSS_CVPR2016"
+  kitti_root: "/home/spencer/Data/correspondence/kitti-split"
   datapath: "./models/Datasets_CATs"
 
 # SLURM resource defaults (can be overridden per experiment)

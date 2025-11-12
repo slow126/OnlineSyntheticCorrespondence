@@ -13,6 +13,7 @@ datasets:
   pointodyssey_root: "/home/slow1/Data/PointOdyssey"  # UPDATE THIS
   tss_root: "/home/slow1/Data/correspondence/TSS_CVPR2016"  # UPDATE THIS
   kitti_root: "/home/slow1/Data/correspondence/kitti-split"  # UPDATE THIS
+  kitti_unsplit_root: "/home/slow1/Data/correspondence/kitti"  # UPDATE THIS
   datapath: "./models/Datasets_CATs"
 
 # SLURM resource defaults

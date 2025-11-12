@@ -296,6 +296,7 @@ class KittiDataset(Dataset):
         
         # Load flow
         flow = self._load_flow(flow_path)
+        full_flow = flow.clone()
         
         # Get original image size before any transforms
         _, orig_h, orig_w = src_img.shape
@@ -366,6 +367,7 @@ class KittiDataset(Dataset):
             sample['src_imsize'] = img_size_tuple
             sample['trg_imsize'] = img_size_tuple
             sample['datalen'] = torch.tensor(len(self), dtype=torch.int32)
+            sample['flow_full'] = full_flow
         
         return sample
 

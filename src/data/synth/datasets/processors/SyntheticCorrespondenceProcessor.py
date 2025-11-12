@@ -298,7 +298,7 @@ class SyntheticCorrespondenceProcessor:
 
         # calculate ground-truth flow from geometry
         flow = flow_by_coordinate_matching(batch[0]['geometry'], batch[1]['geometry'], self.index)
-
+        full_flow = flow.clone()
         # subsampling flow (for ablation experiments)
         has_trainer = hasattr(self, 'trainer') and self.trainer is not None
         if has_trainer:
@@ -327,7 +327,7 @@ class SyntheticCorrespondenceProcessor:
             flow = self.downsample_flow(flow, self.cats_feat_size)
 
         post_batch['flow'] = flow
-
+        post_batch['flow_full'] = full_flow
         return post_batch
 
     def downsample_flow(self, flow, feat_size):

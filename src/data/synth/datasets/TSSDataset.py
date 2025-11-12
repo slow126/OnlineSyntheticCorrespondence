@@ -302,6 +302,7 @@ class TSSDataset(Dataset):
             'category_id': torch.tensor(label),
             'category': pair_dir.parent.name,
             'datalen': len(self.pairs),
+            'flow_full': flow_full,
         }
         
         return batch

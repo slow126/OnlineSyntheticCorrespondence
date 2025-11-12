@@ -423,7 +423,7 @@ class FlyingThingsDataset(Dataset, nn.Module):
             "trg_img": trg_img,
             "flow": flow,
         }
-        
+        full_flow = sample['flow'].clone()
         # Add valid flow mask if available
         if valid_flow_mask is not None:
             sample["valid_flow_mask"] = valid_flow_mask
@@ -467,7 +467,7 @@ class FlyingThingsDataset(Dataset, nn.Module):
         sample['src_imsize'] = img_size_tuple
         sample['trg_imsize'] = img_size_tuple
         sample['datalen'] = torch.tensor(len(self), dtype=torch.int32)
-        
+        sample['flow_full'] = full_flow
         return sample
     
     
