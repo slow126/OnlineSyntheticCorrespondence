@@ -44,3 +44,4 @@ dataset_defaults:
     num_pts_to_track_pointodyssey: 32
     all_points_pointodyssey: True
     verbose_pointodyssey: false
+    strides_pointodyssey: 1 2 4

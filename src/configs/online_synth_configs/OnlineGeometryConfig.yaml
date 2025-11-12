@@ -48,7 +48,7 @@ scale_sampler:
     scale: 0.25
 
 # Dataset size and sampling
-num_samples: 10000  # Total number of samples to generate
+num_samples: 30000  # Total number of samples to generate
 
 # Image configuration
 size: 512  # [height, width]
