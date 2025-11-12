@@ -21,7 +21,7 @@ BATCH_SIZE = 10
 NUM_BATCHES = 100  # Total samples = BATCH_SIZE * NUM_BATCHES = 100
 CONFIG_PATH = 'slurm/machine_configs/remote.yaml'
 DATASET_CONFIG_PATH = 'src/configs/online_synth_configs/OnlineDatasetConfig_FullFlow.yaml'
-OUTPUT_DIR = '/tmp/validation_samples'  # Directory to save individual dataset files
+OUTPUT_DIR = '/home/slow1/validation_samples'  # Directory to save individual dataset files
 
 
 def load_dataset_config(config_path):
