@@ -2,8 +2,8 @@
 """
 Precompute PointOdyssey cache to avoid conflicts during training.
 
-This script uses ThreadPoolExecutor to efficiently precompute the cache
-without needing GPU. Can use lots of system RAM for fast parallel processing.
+This script uses PyTorch DataLoader for efficient parallel processing
+with all its optimizations (prefetching, batching, etc.).
 
 Usage:
     python scripts/precompute_pointodyssey_cache.py \
@@ -18,17 +18,45 @@ Usage:
 """
 
 import argparse
+import json
 import os
 import sys
+import time
 from pathlib import Path
 from tqdm import tqdm
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import torch
+from torch.utils.data import DataLoader, SequentialSampler
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.data.synth.datasets.PointOdysseyCorrespondence import PointOdysseyFlowDataset
+
+
+class PrecomputeDataset:
+    """Wrapper dataset that calls __getitem_precompute__ for DataLoader."""
+    def __init__(self, base_dataset, indices):
+        self.base_dataset = base_dataset
+        self.indices = indices
+    
+    def __len__(self):
+        return len(self.indices)
+    
+    def __getitem__(self, idx):
+        index = self.indices[idx]
+        return self.base_dataset.__getitem_precompute__(index)
+
+
+def precompute_collate_fn(batch):
+    """
+    Custom collate function for precomputation.
+    Returns a dict mapping index -> gotit for all items in batch.
+    """
+    result = {}
+    for item in batch:
+        result[item['index']] = item['gotit']
+    return result
 
 
 def main():
@@ -53,8 +81,12 @@ def main():
                         help='Maximum number of sequences (None = all)')
     parser.add_argument('--all_points', action='store_true',
                         help='Use all points')
-    parser.add_argument('--num_workers', type=int, default=16,
-                        help='Number of worker threads (use lots for speed)')
+    parser.add_argument('--num_workers', type=int, default=32,
+                        help='Number of DataLoader workers (use lots for speed)')
+    parser.add_argument('--batch_size', type=int, default=64,
+                        help='Batch size for DataLoader (1 is fine for precompute)')
+    parser.add_argument('--prefetch_factor', type=int, default=4,
+                        help='Prefetch factor for DataLoader')
     
     args = parser.parse_args()
     
@@ -65,7 +97,7 @@ def main():
     print(f"  Root: {args.pointodyssey_root}")
     print(f"  S={args.S}, N={args.N}, strides={args.strides}")
     print(f"  size={args.size}, feature_size={args.feature_size}")
-    print(f"  num_workers={args.num_workers}")
+    print(f"  num_workers={args.num_workers}, batch_size={args.batch_size}")
     print("="*60)
     
     # Create dataset (same parameters as training)
@@ -89,17 +121,6 @@ def main():
         max_pts=args.max_pts,
     )
     
-    # Enable worker temp file mode: each worker saves to its own file
-    # We'll merge all worker files at the end
-    dataset._use_worker_temp_files = True
-    dataset._cache_save_interval = 1000  # Save less frequently to reduce I/O overhead
-    print("Enabled worker temp file mode (each worker saves to its own file)")
-    
-    # Initialize worker caches BEFORE starting threads (eliminates dictionary contention)
-    print(f"\nInitializing {args.num_workers} worker caches...")
-    dataset.initialize_worker_caches(args.num_workers)
-    print("Worker caches initialized (no blocking during precomputation)")
-    
     print(f"\nDataset length: {len(dataset)}")
     print(f"Cache file: {dataset.cache_file}")
     
@@ -111,84 +132,76 @@ def main():
             print("Aborting.")
             return
     
-    # Process indices using ThreadPoolExecutor
-    print(f"\nProcessing {len(dataset)} indices with {args.num_workers} threads...")
-    print("(Each thread will save cache to its own file, then we'll merge at the end)")
+    # Get base dataset length (all indices to process)
+    base_dataset_len = len(dataset.base_dataset)
     
-    def process_index(index, worker_id):
-        """Process a single index - just try to access it to build cache."""
-        try:
-            
-            # Use the precompute function (writes to cache) - pass worker_id for thread-safe saving
-            _ = dataset.__getitem_precompute__(index, worker_id=worker_id)
-            return (index, True, None)
-        except RuntimeError as e:
-            # Expected - invalid index, just skip
-            return (index, False, None)
-        except Exception as e:
-            return (index, False, str(e))
+    # Create wrapper dataset that uses __getitem_precompute__
+    precompute_dataset = PrecomputeDataset(dataset, list(range(base_dataset_len)))
     
-    # Process all indices in parallel
-    valid_count = 0
-    invalid_count = 0
-    error_count = 0
+    # Create DataLoader with SequentialSampler
+    dataloader = DataLoader(
+        precompute_dataset,
+        batch_size=args.batch_size,
+        sampler=SequentialSampler(precompute_dataset),
+        num_workers=args.num_workers,
+        prefetch_factor=args.prefetch_factor if args.num_workers > 0 else None,
+        pin_memory=False,  # Not needed for precompute (CPU only)
+        collate_fn=precompute_collate_fn,
+    )
+    
+    # Collect all results in a dictionary
+    print(f"\nProcessing {base_dataset_len} indices with DataLoader ({args.num_workers} workers)...")
+    print("(Results will be collected in memory and written once at the end)")
+    
+    all_results = {}  # index -> gotit
     
     try:
-        with ThreadPoolExecutor(max_workers=args.num_workers) as executor:
-            # Submit all tasks
-            futures = {}
-            for idx in range(len(dataset)):
-                worker_id = idx % args.num_workers
-                future = executor.submit(process_index, idx, worker_id)
-                futures[future] = idx
-            
-            # Process results as they complete
-            with tqdm(total=len(dataset), desc="Processing indices") as pbar:
-                for future in as_completed(futures):
-                    index, is_valid, error = future.result()
-                    if is_valid:
-                        valid_count += 1
-                    else:
-                        invalid_count += 1
-                        if error:
-                            error_count += 1
-                            if error_count % 100 == 0:  # Print errors occasionally
-                                print(f"\nError at index {index}: {error}")
-                    pbar.update(1)
+        with tqdm(total=base_dataset_len, desc="Processing indices") as pbar:
+            for batch_results in dataloader:
+                # batch_results is a dict: {index: gotit, ...}
+                all_results.update(batch_results)
+                pbar.update(len(batch_results))
     
     except KeyboardInterrupt:
         print("\n\n⚠️  Interrupted by user!")
-        print("Merging partial cache from workers...")
+        print(f"Collected {len(all_results)} results so far...")
     
-    # Merge all existing worker temp files
-    print("\nMerging worker temp files...")
-    dataset.merge_worker_temp_files()
+    # Write results to cache file
+    print("\nWriting cache file...")
+    valid_indices = sorted([idx for idx, gotit in all_results.items() if gotit])
+    invalid_indices = sorted([idx for idx, gotit in all_results.items() if not gotit])
     
-    # Reload cache to ensure main process has the merged state
-    dataset._load_cache()
-    with dataset._cache_lock:
-        merged_valid = len(dataset._valid_indices)
-        merged_invalid = len(dataset._invalid_indices)
-    print(f"After merging worker files: {merged_valid} valid, {merged_invalid} invalid indices")
+    cache_data = {
+        'valid': valid_indices,
+        'invalid': invalid_indices,
+        'timestamp': time.time(),
+        'total_samples': base_dataset_len
+    }
+    
+    # Write to final cache file
+    final_temp = dataset.cache_file + '.final_merge.tmp'
+    with open(final_temp, 'w') as f:
+        json.dump(cache_data, f, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    
+    # Atomic rename
+    os.replace(final_temp, dataset.cache_file)
     
     # Print summary
-    with dataset._cache_lock:
-        final_valid = len(dataset._valid_indices)
-        final_invalid = len(dataset._invalid_indices)
-        total_cached = final_valid + final_invalid
-        coverage = (total_cached / len(dataset)) * 100 if len(dataset) > 0 else 0
+    total_cached = len(all_results)
+    coverage = (total_cached / base_dataset_len) * 100 if base_dataset_len > 0 else 0
     
     print("\n" + "="*60)
     print("Cache Precomputation Complete!")
     print("="*60)
-    print(f"  Valid indices: {final_valid:,}")
-    print(f"  Invalid indices: {final_invalid:,}")
-    print(f"  Total cached: {total_cached:,} / {len(dataset):,}")
+    print(f"  Valid indices: {len(valid_indices):,}")
+    print(f"  Invalid indices: {len(invalid_indices):,}")
+    print(f"  Total cached: {total_cached:,} / {base_dataset_len:,}")
     print(f"  Coverage: {coverage:.1f}%")
     print(f"  Cache file: {dataset.cache_file}")
     print("="*60)
     print("\n✅ You can now run training jobs - they will use this cache in read-only mode.")
-    print(f"   Processed: {valid_count:,} valid, {invalid_count:,} invalid, {error_count:,} errors")
 
 
 if __name__ == '__main__':

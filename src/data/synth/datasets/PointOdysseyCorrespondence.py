@@ -64,7 +64,8 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                  thres: str = 'img',
                  normalize_images: bool = False,
                  normalize: bool = True,
-                 val_sequence_fraction: Optional[float] = None):
+                 val_sequence_fraction: Optional[float] = None,
+                 precompute_mode: bool = False):
         """
         Initialize the PointOdyssey flow dataset.
         
@@ -91,6 +92,7 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
             thres: PCK threshold type ('img' or 'bbox')
             normalize_images: If True, enables validation mode and returns keypoints-based format for evaluation
             normalize: If True, applies ImageNet normalization to images (default: True, model expects normalized images)
+            precompute_mode: If True, enables precomputation mode (default: False)
         """
         # Check if the dataset has the expected structure (with train/val/test subdirs)
         expected_dset_path = os.path.join(dataset_location, dset)
@@ -183,12 +185,7 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
         # Thread-safe data structures
         self._cache_lock = threading.Lock()
         self._valid_indices = set()
-        self._use_worker_temp_files = False  # If True, workers save to persistent temp files instead of merging to main cache
-        self._worker_id = None  # Will be set by worker_init_fn for parallel processing
         self._invalid_indices = set()
-        self._cache_save_interval = 1000  # Save interval for precomputation (per-worker)
-        self._base_dataset_len = None  # Cache base dataset length to avoid repeated calls
-        self._worker_caches = None  # Will be initialized by initialize_worker_caches() before threading
         
         # Load existing cache
         self._load_cache()
@@ -222,7 +219,7 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
         Otherwise, return full dataset length for discovery.
         """
         with self._cache_lock:
-            if self._valid_indices and not self._use_worker_temp_files:
+            if self._valid_indices:
                 # Cache exists and we're not in precomputation mode - only use valid indices
                 return len(self._valid_indices)
         return len(self.base_dataset)
@@ -264,188 +261,13 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                 return _random.choice(list(self._valid_indices))
             return None
     
-    def _get_first_valid_index(self):
-        """Thread-safe get first valid index (faster than random)."""
-        with self._cache_lock:
-            if self._valid_indices:
-                return min(self._valid_indices)  # Get first (smallest) valid index
-            return None
-    
-    def _get_valid_index_at_position(self, position):
-        """Get valid index at given position in sorted valid indices list."""
-        with self._cache_lock:
-            if self._valid_indices:
-                sorted_valid = sorted(self._valid_indices)
-                if position < len(sorted_valid):
-                    return sorted_valid[position]
-            return None
-    
-    def initialize_worker_caches(self, num_workers: int):
-        """Initialize per-worker cache storage before starting threads (call this once before threading)."""
-        if self._worker_caches is None:
-            self._worker_caches = {}
-        for worker_id in range(num_workers):
-            if worker_id not in self._worker_caches:
-                self._worker_caches[worker_id] = {
-                    'valid': set(),
-                    'invalid': set(),
-                    'updates': 0
-                }
-        # Cache base dataset length once to avoid repeated calls
-        if self._base_dataset_len is None:
-            self._base_dataset_len = len(self.base_dataset)
-    
-    def _save_worker_cache(self, worker_id, worker_cache):
-        """Save a worker's local cache to its own file (async, no locking needed - each worker has its own file)."""
-        if self._cache_readonly:
-            return
-        
-        try:
-            cache_data = {
-                'valid': sorted(list(worker_cache['valid'])),
-                'invalid': sorted(list(worker_cache['invalid'])),
-                'timestamp': time.time(),
-                'total_samples': self._base_dataset_len if self._base_dataset_len is not None else len(self.base_dataset)
-            }
-            worker_file = self.cache_file + f'.worker_{worker_id}.json'
-            with open(worker_file, 'w') as f:
-                json.dump(cache_data, f, indent=2)
-                f.flush()
-            # Disable verbose printing during precomputation to avoid stdout contention
-            # if self.verbose:
-            #     print(f"Worker {worker_id} saved cache: {len(worker_cache['valid'])} valid, {len(worker_cache['invalid'])} invalid indices")
-        except Exception as e:
-            # Disable verbose printing during precomputation to avoid stdout contention
-            # if self.verbose:
-            #     print(f"Worker {worker_id} failed to save cache: {e}")
-            pass
-    
-    def merge_worker_temp_files(self):
-        """Merge all worker temp files into the main cache file (blocking - waits for all workers to finish)."""
-        import glob
-        import os
-        
-        # First, save any remaining in-memory worker caches to their files
-        if self._worker_caches is not None:
-            for worker_id, worker_cache in self._worker_caches.items():
-                if worker_cache['updates'] > 0:
-                    # Save any remaining updates
-                    self._save_worker_cache(worker_id, worker_cache)
-        
-        # Find all worker files
-        worker_pattern = self.cache_file + '.worker_*.json'
-        temp_pattern = self.cache_file + '.tmp.*'
-        worker_files = glob.glob(worker_pattern)
-        temp_files = glob.glob(temp_pattern)
-        all_files = worker_files + temp_files
-        
-        if not all_files:
-            if self.verbose:
-                print(f"No worker files found to merge (patterns: {worker_pattern}, {temp_pattern})")
-            # Still merge in-memory caches if they exist
-            if self._worker_caches is not None:
-                all_valid = set()
-                all_invalid = set()
-                for worker_id, worker_cache in self._worker_caches.items():
-                    all_valid.update(worker_cache['valid'])
-                    all_invalid.update(worker_cache['invalid'])
-                
-                # Save merged cache
-                self._save_merged_cache(all_valid, all_invalid)
-            return
-        
-        if self.verbose:
-            print(f"Found {len(all_files)} worker files to merge ({len(worker_files)} worker files, {len(temp_files)} temp files)")
-        
-        # Collect all valid/invalid indices from all worker files
-        all_valid = set()
-        all_invalid = set()
-        total_samples = None
-        
-        for temp_file in all_files:
-            try:
-                with open(temp_file, 'r') as f:
-                    cache_data = json.load(f)
-                    all_valid.update(cache_data.get('valid', []))
-                    all_invalid.update(cache_data.get('invalid', []))
-                    if total_samples is None:
-                        total_samples = cache_data.get('total_samples')
-            except Exception as e:
-                if self.verbose:
-                    print(f"Failed to load temp file {temp_file}: {e}")
-        
-        # Also merge in-memory worker caches
-        if self._worker_caches is not None:
-            for worker_id, worker_cache in self._worker_caches.items():
-                all_valid.update(worker_cache['valid'])
-                all_invalid.update(worker_cache['invalid'])
-        
-        # Merge with existing cache file if it exists
-        if os.path.exists(self.cache_file):
-            try:
-                with open(self.cache_file, 'r') as f:
-                    existing_cache = json.load(f)
-                    all_valid.update(existing_cache.get('valid', []))
-                    all_invalid.update(existing_cache.get('invalid', []))
-            except Exception as e:
-                if self.verbose:
-                    print(f"Failed to load existing cache for merge: {e}")
-        
-        # Save merged cache
-        self._save_merged_cache(all_valid, all_invalid, total_samples)
-        
-        # Clean up worker files
-        for temp_file in all_files:
-            try:
-                os.remove(temp_file)
-            except Exception as e:
-                if self.verbose:
-                    print(f"Failed to remove temp file {temp_file}: {e}")
-    
-    def _save_merged_cache(self, all_valid, all_invalid, total_samples=None):
-        """Save the merged cache to the main cache file."""
-        valid_list = sorted(list(all_valid))
-        invalid_list = sorted(list(all_invalid))
-        timestamp = time.time()
-        
-        try:
-            cache_data = {
-                'valid': valid_list,
-                'invalid': invalid_list,
-                'timestamp': timestamp,
-                'total_samples': total_samples if total_samples is not None else (self._base_dataset_len if self._base_dataset_len is not None else len(self.base_dataset))
-            }
-            
-            # Write to final cache file
-            final_temp = self.cache_file + '.final_merge.tmp'
-            with open(final_temp, 'w') as f:
-                json.dump(cache_data, f, indent=2)
-                f.flush()
-                os.fsync(f.fileno())
-            
-            # Atomic rename
-            os.replace(final_temp, self.cache_file)
-            
-            # Update in-memory state (only after successful save)
-            with self._cache_lock:
-                self._valid_indices = all_valid
-                self._invalid_indices = all_invalid
-            
-            if self.verbose:
-                print(f"Merged cache saved to {self.cache_file}: {len(valid_list)} valid, {len(invalid_list)} invalid indices")
-            
-        except Exception as e:
-            if self.verbose:
-                print(f"Failed to save merged cache: {e}")
-            # Clean up final temp if it exists
-            try:
-                final_temp = self.cache_file + '.final_merge.tmp'
-                if os.path.exists(final_temp):
-                    os.remove(final_temp)
-            except:
-                pass
-    
     def __getitem__(self, index: int) -> Dict[str, torch.Tensor]:
+        if self.precompute_mode:
+            return self.__getitem_precompute__(index)
+        else:
+            return self.__getitem_training__(index)
+
+    def __getitem_training__(self, index: int) -> Dict[str, torch.Tensor]:
         """
         Get a sample from the dataset (training/validation mode - READ ONLY).
         Uses cache if available, otherwise does resampling with retries.
@@ -686,63 +508,23 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
     
     def __getitem_precompute__(self, index: int, worker_id: int = None):
         """
-        Simple precomputation version - just try index, mark valid/invalid, raise if invalid.
-        This is the ONLY function that writes to cache.
-        Each worker maintains its own local valid/invalid sets (no locking needed).
+        Simple precomputation version - just try index and return gotit status.
+        No cache writing - results are collected in precompute script.
         
         Args:
             index: Sample index to check
-            worker_id: Optional worker ID for thread-safe cache saving (used for worker temp files)
+            worker_id: Optional worker ID (unused, kept for compatibility)
             
         Returns:
-            Sample dict if valid
-            
-        Raises:
-            RuntimeError: If index is invalid (expected during precomputation)
+            Dict with 'index' and 'gotit' bool
         """
-        # Get this worker's local cache (assumes _worker_caches was initialized before threading)
-        if worker_id is not None:
-            if self._worker_caches is None:
-                raise RuntimeError(f"Worker caches not initialized. Call dataset.initialize_worker_caches(num_workers) before starting threads.")
-            worker_cache = self._worker_caches.get(worker_id)
-            if worker_cache is None:
-                raise RuntimeError(f"Worker {worker_id} cache not initialized. Call dataset.initialize_worker_caches(num_workers) with num_workers > {worker_id}.")
-        else:
-            # Fallback: use shared cache (shouldn't happen in precompute mode)
-            worker_cache = None
-        
         # Try the requested index
-        if worker_cache is None or index not in worker_cache['invalid']:
+        try:
             sample, gotit = self.base_dataset[index]
-            if gotit:
-                # Valid - add to worker's local cache (no lock needed!)
-                if worker_cache is not None:
-                    if index not in worker_cache['valid']:
-                        worker_cache['valid'].add(index)
-                        worker_cache['updates'] += 1
-                        
-                        # Periodically save worker's local cache to its own file (async, no lock)
-                        if worker_cache['updates'] >= self._cache_save_interval:
-                            self._save_worker_cache(worker_id, worker_cache)
-                            worker_cache['updates'] = 0
-                
-                return sample
-            else:
-                # Invalid - add to worker's local cache (no lock needed!)
-                if worker_cache is not None:
-                    if index not in worker_cache['invalid']:
-                        worker_cache['invalid'].add(index)
-                        worker_cache['updates'] += 1
-                        
-                        # Periodically save worker's local cache to its own file (async, no lock)
-                        if worker_cache['updates'] >= self._cache_save_interval:
-                            self._save_worker_cache(worker_id, worker_cache)
-                            worker_cache['updates'] = 0
-                
-                raise RuntimeError(f"Index {index} is invalid (precomputation mode)")
-        else:
-            # Already known invalid in this worker's cache
-            raise RuntimeError(f"Index {index} is known invalid (precomputation mode)")
+            return {'index': index, 'gotit': gotit}
+        except Exception as e:
+            # Any error means invalid
+            return {'index': index, 'gotit': False}
     
     def _create_flow_field(self, 
                           src_trajs: torch.Tensor, 
