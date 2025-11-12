@@ -478,9 +478,10 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
         Returns:
             Dict with 'index' and 'gotit' bool
         """
-        # Try the requested index
+        # Try the requested index - call getitem_helper directly to avoid creating fake samples
+        # when gotit=False, which reduces memory allocation overhead
         try:
-            sample, gotit = self.base_dataset[index]
+            sample, gotit = self.base_dataset.getitem_helper(index)
             return {'index': index, 'gotit': gotit}
         except Exception as e:
             # Any error means invalid
