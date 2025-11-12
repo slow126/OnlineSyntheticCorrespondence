@@ -597,6 +597,7 @@ def main():
                 pin_memory=True
             )
         elif benchmark == 'flyingthings':
+            print(f"Flyingthings val root: {args.flyingthings_root}")
             val_dataset = FlyingThingsDataset(root=args.flyingthings_root, split="test", transforms=None, size=(args.size, args.size), downsample_flow=args.feature_size, 
                                             subsample_flow=args.subsample_flow, subsample_flow_seed=args.subsample_flow_seed, use_valid_mask=True, reverse_flow=True, filter_out_of_bounds=True)
             # Note: Dataset returns CPU tensors - DataLoader handles GPU transfer

@@ -194,6 +194,7 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
         
         # Downsample cache if val_sequence_fraction is provided
         if val_sequence_fraction is not None and val_sequence_fraction < 1.0 and self._valid_indices_list is not None:
+            print(f"[PointOdyssey] Downsampling cache to {val_sequence_fraction} of valid indices", flush=True)
             self._downsample_cache(val_sequence_fraction)
         
     def __len__(self) -> int:
