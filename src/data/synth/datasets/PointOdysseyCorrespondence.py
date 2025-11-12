@@ -191,6 +191,27 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
         # Load existing cache
         self._load_cache()
         
+        # Check if cache exists and enable read-only mode if it does
+        self._cache_readonly = False
+        if os.path.exists(self.cache_file):
+            try:
+                with open(self.cache_file, 'r') as f:
+                    cache_data = json.load(f)
+                    existing_valid = set(cache_data.get('valid', []))
+                    existing_invalid = set(cache_data.get('invalid', []))
+                    total_cached = len(existing_valid) + len(existing_invalid)
+                    total_samples = len(self.base_dataset)
+                    
+                    # If cache exists and covers >50% of dataset, make it read-only
+                    # (allows some discovery but prevents most writes)
+                    if total_cached > 0.5 * total_samples:
+                        self._cache_readonly = True
+                        if self.verbose:
+                            print(f"Cache exists ({total_cached}/{total_samples} indices), enabling read-only mode")
+            except Exception as e:
+                if self.verbose:
+                    print(f"Could not check cache completeness: {e}")
+        
     def __len__(self) -> int:
         """Return the number of samples in the dataset."""
         return len(self.base_dataset)
@@ -216,6 +237,10 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
     
     def _save_cache(self):
         """Save validation cache to disk (thread-safe, prevents concurrent saves)."""
+        # Skip saves in read-only mode
+        if self._cache_readonly:
+            return
+        
         # Use blocking acquire so all threads get a chance to save
         # The save operation is fast, so the wait is minimal
         with self._save_lock:
@@ -311,6 +336,12 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
     
     def save_cache_final(self):
         """Force save cache (call this at end of training/validation)."""
+        # Skip saves in read-only mode
+        if self._cache_readonly:
+            if self.verbose:
+                print("Cache is read-only, skipping final save")
+            return
+        
         # Force save with save lock to prevent concurrent saves
         with self._save_lock:
             # Load existing cache from disk and merge with current state
