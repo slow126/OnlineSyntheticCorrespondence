@@ -283,9 +283,6 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                     'total_samples': total_samples
                 }
                 # Write to temp file first, then rename (atomic write)
-                import os
-                import threading
-                
                 # If using worker temp files mode with worker_id, save to worker-specific file
                 if self._use_worker_temp_files and self._worker_id is not None:
                     # Each worker saves to its own file (no conflicts)
@@ -434,9 +431,6 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                     'timestamp': timestamp,
                     'total_samples': total_samples
                 }
-                import os
-                import threading
-                
                 # If using worker temp files mode with worker_id, save to worker-specific file
                 if self._use_worker_temp_files and self._worker_id is not None:
                     # Each worker saves to its own file (no conflicts)
