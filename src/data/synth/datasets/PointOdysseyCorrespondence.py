@@ -243,38 +243,19 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
         if self._cache_readonly:
             return
         
-        # Use blocking acquire so all threads get a chance to save
-        # The save operation is fast, so the wait is minimal
-        with self._save_lock:
-            # Load existing cache from disk and merge with current state
-            # This ensures we don't lose indices discovered by other threads
-            existing_valid = set()
-            existing_invalid = set()
-            if os.path.exists(self.cache_file):
-                try:
-                    with open(self.cache_file, 'r') as f:
-                        cache_data = json.load(f)
-                        existing_valid = set(cache_data.get('valid', []))
-                        existing_invalid = set(cache_data.get('invalid', []))
-                except Exception as e:
-                    if self.verbose:
-                        print(f"Failed to load existing cache for merge: {e}")
-            
-            # Get current in-memory state and merge with existing
+        # In worker mode with worker_id, each worker writes to its own file (no lock needed)
+        # Otherwise, use blocking acquire so all threads get a chance to save
+        if self._use_worker_temp_files and self._worker_id is not None:
+            # Worker-specific save - no lock needed since each worker has its own file
+            # Get current in-memory state (no merging from disk during parallel processing)
             with self._cache_lock:
-                # Merge: union of existing and current
-                merged_valid = existing_valid | self._valid_indices
-                merged_invalid = existing_invalid | self._invalid_indices
-                # Update in-memory state to include merged results
-                self._valid_indices = merged_valid
-                self._invalid_indices = merged_invalid
                 # Make copies for saving
-                valid_list = sorted(list(merged_valid))
-                invalid_list = sorted(list(merged_invalid))
+                valid_list = sorted(list(self._valid_indices))
+                invalid_list = sorted(list(self._invalid_indices))
                 timestamp = time.time()
                 total_samples = len(self.base_dataset)
             
-            # File I/O outside the cache lock (but still holding save_lock)
+            # File I/O (no save lock needed - each worker has its own file)
             try:
                 cache_data = {
                     'valid': valid_list,
@@ -282,18 +263,58 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                     'timestamp': timestamp,
                     'total_samples': total_samples
                 }
-                # Write to temp file first, then rename (atomic write)
-                # If using worker temp files mode with worker_id, save to worker-specific file
-                if self._use_worker_temp_files and self._worker_id is not None:
-                    # Each worker saves to its own file (no conflicts)
-                    worker_file = self.cache_file + f'.worker_{self._worker_id}.json'
-                    with open(worker_file, 'w') as f:
-                        json.dump(cache_data, f, indent=2)
-                        f.flush()
-                        os.fsync(f.fileno())
-                    if self.verbose:
-                        print(f"Worker {self._worker_id} saved cache: {len(valid_list)} valid, {len(invalid_list)} invalid indices")
-                else:
+                # Each worker saves to its own file (no conflicts)
+                worker_file = self.cache_file + f'.worker_{self._worker_id}.json'
+                with open(worker_file, 'w') as f:
+                    json.dump(cache_data, f, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
+                if self.verbose:
+                    print(f"Worker {self._worker_id} saved cache: {len(valid_list)} valid, {len(invalid_list)} invalid indices")
+            except Exception as e:
+                if self.verbose:
+                    print(f"Failed to save cache: {e}")
+        else:
+            # Normal mode: use blocking acquire so all threads get a chance to save
+            # The save operation is fast, so the wait is minimal
+            with self._save_lock:
+                # Load existing cache from disk and merge with current state
+                # This ensures we don't lose indices discovered by other threads
+                existing_valid = set()
+                existing_invalid = set()
+                if os.path.exists(self.cache_file):
+                    try:
+                        with open(self.cache_file, 'r') as f:
+                            cache_data = json.load(f)
+                            existing_valid = set(cache_data.get('valid', []))
+                            existing_invalid = set(cache_data.get('invalid', []))
+                    except Exception as e:
+                        if self.verbose:
+                            print(f"Failed to load existing cache for merge: {e}")
+                
+                # Get current in-memory state and merge with existing
+                with self._cache_lock:
+                    # Merge: union of existing and current
+                    merged_valid = existing_valid | self._valid_indices
+                    merged_invalid = existing_invalid | self._invalid_indices
+                    # Update in-memory state to include merged results
+                    self._valid_indices = merged_valid
+                    self._invalid_indices = merged_invalid
+                    # Make copies for saving
+                    valid_list = sorted(list(merged_valid))
+                    invalid_list = sorted(list(merged_invalid))
+                    timestamp = time.time()
+                    total_samples = len(self.base_dataset)
+                
+                # File I/O outside the cache lock (but still holding save_lock)
+                try:
+                    cache_data = {
+                        'valid': valid_list,
+                        'invalid': invalid_list,
+                        'timestamp': timestamp,
+                        'total_samples': total_samples
+                    }
+                    # Write to temp file first, then rename (atomic write)
                     # Normal mode: use process ID + thread ID in temp filename
                     temp_file = self.cache_file + f'.tmp.{os.getpid()}.{threading.get_ident()}'
                     
@@ -330,17 +351,17 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                         else:
                             if self.verbose:
                                 print(f"Temp file disappeared before rename, skipping save")
-            except Exception as e:
-                if self.verbose:
-                    print(f"Failed to save cache: {e}")
-                # Clean up temp file if it exists
-                try:
-                    import threading
-                    temp_file = self.cache_file + f'.tmp.{os.getpid()}.{threading.get_ident()}'
-                    if os.path.exists(temp_file):
-                        os.remove(temp_file)
-                except:
-                    pass
+                except Exception as e:
+                    if self.verbose:
+                        print(f"Failed to save cache: {e}")
+                    # Clean up temp file if it exists
+                    try:
+                        import threading
+                        temp_file = self.cache_file + f'.tmp.{os.getpid()}.{threading.get_ident()}'
+                        if os.path.exists(temp_file):
+                            os.remove(temp_file)
+                    except:
+                        pass
     
     def _is_index_valid(self, index):
         """Thread-safe check if index is not in invalid set."""
@@ -393,37 +414,20 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                 print("Cache is read-only, skipping final save")
             return
         
-        # Force save with save lock to prevent concurrent saves
-        with self._save_lock:
-            # Load existing cache from disk and merge with current state
-            existing_valid = set()
-            existing_invalid = set()
-            if os.path.exists(self.cache_file):
-                try:
-                    with open(self.cache_file, 'r') as f:
-                        cache_data = json.load(f)
-                        existing_valid = set(cache_data.get('valid', []))
-                        existing_invalid = set(cache_data.get('invalid', []))
-                except Exception as e:
-                    if self.verbose:
-                        print(f"Failed to load existing cache for merge: {e}")
-            
-            # Get current state and merge
+        # In worker mode with worker_id, each worker writes to its own file (no lock needed)
+        # Otherwise, use blocking acquire so all threads get a chance to save
+        if self._use_worker_temp_files and self._worker_id is not None:
+            # Worker-specific save - no lock needed since each worker has its own file
+            # Get current in-memory state (no merging from disk during parallel processing)
             with self._cache_lock:
-                # Merge: union of existing and current
-                merged_valid = existing_valid | self._valid_indices
-                merged_invalid = existing_invalid | self._invalid_indices
-                # Update in-memory state to include merged results
-                self._valid_indices = merged_valid
-                self._invalid_indices = merged_invalid
                 # Make copies for saving
-                valid_list = sorted(list(merged_valid))
-                invalid_list = sorted(list(merged_invalid))
+                valid_list = sorted(list(self._valid_indices))
+                invalid_list = sorted(list(self._invalid_indices))
                 timestamp = time.time()
                 total_samples = len(self.base_dataset)
                 self._cache_updates_since_save = 0
             
-            # Save merged cache
+            # File I/O (no save lock needed - each worker has its own file)
             try:
                 cache_data = {
                     'valid': valid_list,
@@ -431,17 +435,56 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                     'timestamp': timestamp,
                     'total_samples': total_samples
                 }
-                # If using worker temp files mode with worker_id, save to worker-specific file
-                if self._use_worker_temp_files and self._worker_id is not None:
-                    # Each worker saves to its own file (no conflicts)
-                    worker_file = self.cache_file + f'.worker_{self._worker_id}.json'
-                    with open(worker_file, 'w') as f:
-                        json.dump(cache_data, f, indent=2)
-                        f.flush()
-                        os.fsync(f.fileno())
-                    if self.verbose:
-                        print(f"Worker {self._worker_id} saved final cache: {len(valid_list)} valid, {len(invalid_list)} invalid indices")
-                else:
+                # Each worker saves to its own file (no conflicts)
+                worker_file = self.cache_file + f'.worker_{self._worker_id}.json'
+                with open(worker_file, 'w') as f:
+                    json.dump(cache_data, f, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
+                if self.verbose:
+                    print(f"Worker {self._worker_id} saved final cache: {len(valid_list)} valid, {len(invalid_list)} invalid indices")
+            except Exception as e:
+                if self.verbose:
+                    print(f"Failed to save final cache: {e}")
+        else:
+            # Normal mode: force save with save lock to prevent concurrent saves
+            with self._save_lock:
+                # Load existing cache from disk and merge with current state
+                existing_valid = set()
+                existing_invalid = set()
+                if os.path.exists(self.cache_file):
+                    try:
+                        with open(self.cache_file, 'r') as f:
+                            cache_data = json.load(f)
+                            existing_valid = set(cache_data.get('valid', []))
+                            existing_invalid = set(cache_data.get('invalid', []))
+                    except Exception as e:
+                        if self.verbose:
+                            print(f"Failed to load existing cache for merge: {e}")
+                
+                # Get current state and merge
+                with self._cache_lock:
+                    # Merge: union of existing and current
+                    merged_valid = existing_valid | self._valid_indices
+                    merged_invalid = existing_invalid | self._invalid_indices
+                    # Update in-memory state to include merged results
+                    self._valid_indices = merged_valid
+                    self._invalid_indices = merged_invalid
+                    # Make copies for saving
+                    valid_list = sorted(list(merged_valid))
+                    invalid_list = sorted(list(merged_invalid))
+                    timestamp = time.time()
+                    total_samples = len(self.base_dataset)
+                    self._cache_updates_since_save = 0
+                
+                # Save merged cache
+                try:
+                    cache_data = {
+                        'valid': valid_list,
+                        'invalid': invalid_list,
+                        'timestamp': timestamp,
+                        'total_samples': total_samples
+                    }
                     # Normal mode: use process ID + thread ID in temp filename
                     temp_file = self.cache_file + f'.tmp.{os.getpid()}.{threading.get_ident()}'
                     
@@ -475,17 +518,17 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
                                         os.remove(temp_file)
                                 except:
                                     pass
-            except Exception as e:
-                if self.verbose:
-                    print(f"Failed to save final cache: {e}")
-                # Clean up temp file if it exists
-                try:
-                    import threading
-                    temp_file = self.cache_file + f'.tmp.{os.getpid()}.{threading.get_ident()}'
-                    if os.path.exists(temp_file):
-                        os.remove(temp_file)
-                except:
-                    pass
+                except Exception as e:
+                    if self.verbose:
+                        print(f"Failed to save final cache: {e}")
+                    # Clean up temp file if it exists
+                    try:
+                        import threading
+                        temp_file = self.cache_file + f'.tmp.{os.getpid()}.{threading.get_ident()}'
+                        if os.path.exists(temp_file):
+                            os.remove(temp_file)
+                    except:
+                        pass
     
     def merge_worker_temp_files(self):
         """Merge all worker temp files into the main cache file."""

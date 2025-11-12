@@ -98,7 +98,7 @@ def main():
     # Enable worker temp file mode: each worker saves to its own file
     # We'll merge all worker files at the end
     dataset._use_worker_temp_files = True
-    dataset._cache_save_interval = 100  # Save periodically so workers write their files
+    dataset._cache_save_interval = 1000  # Save less frequently to reduce I/O overhead
     print("Enabled worker temp file mode (each worker saves to its own file)")
     
     print(f"\nDataset length: {len(dataset)}")
@@ -121,7 +121,7 @@ def main():
             worker_dataset = worker_info.dataset
             worker_dataset._worker_id = worker_id
             worker_dataset._use_worker_temp_files = True
-            worker_dataset._cache_save_interval = 100
+            worker_dataset._cache_save_interval = 1000  # Save less frequently to reduce I/O overhead
     
     # Create DataLoader with parallel workers
     print(f"\nCreating DataLoader with {args.num_workers} workers...")
