@@ -20,7 +20,7 @@ import models.CATs_PlusPlus.data.download as download
 BATCH_SIZE = 10
 NUM_BATCHES = 100  # Total samples = BATCH_SIZE * NUM_BATCHES = 100
 CONFIG_PATH = 'slurm/machine_configs/remote.yaml'
-DATASET_CONFIG_PATH = 'src/configs/online_synth_configs/OnlineDatasetConfig_FullFlow.yaml'
+DATASET_CONFIG_PATH = 'src/configs/online_synth_configs/OnlineDatasetConfig.yaml'
 OUTPUT_DIR = '/home/slow1/validation_samples'  # Directory to save individual dataset files
 
 
@@ -178,7 +178,7 @@ def main():
                     resize_size=(DEFAULTS['size']+64, DEFAULTS['size']+64),
                     crop_size=(DEFAULTS['size'], DEFAULTS['size']),
                     filter_instances=True,
-                    downsample_for_cats=False,  
+                    downsample_for_cats=True,  
                     cats_feat_size=DEFAULTS['feature_size'],
                     max_pts=200,
                     thres=DEFAULTS['thres'],
