@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """
 Create confusion matrix visualizations comparing training datasets vs evaluation benchmarks.
-Creates two matrices: one for best performance and one for average performance.
+Creates four matrices: 
+  - Best performance (absolute values)
+  - Average performance (absolute values)
+  - Best performance (column-normalized, relative within each benchmark)
+  - Average performance (column-normalized, relative within each benchmark)
 Orders rows and columns to align matching training datasets and benchmarks on the diagonal.
 """
 
 import argparse
 import csv
+import json
 import os
 import re
 import sys
@@ -578,7 +583,121 @@ def build_confusion_matrix_data(snapshots_data, metric='pck', use_best=True):
     }
 
 
-def create_confusion_matrix_plot(matrix_data, output_path, title_suffix="", metric='pck'):
+def normalize_matrix_columns(matrix):
+    """
+    Normalize each column (benchmark) independently using min-max normalization.
+    For each column, maps values to [0, 1] range where:
+    - max value in column -> 1.0
+    - min value in column -> 0.0
+    
+    Handles NaN values by ignoring them in min/max calculation.
+    
+    Args:
+        matrix: 2D numpy array (training_datasets x benchmarks)
+        
+    Returns:
+        Normalized matrix with same shape
+    """
+    normalized = matrix.copy()
+    
+    for j in range(matrix.shape[1]):
+        column = matrix[:, j]
+        # Get valid (non-NaN) values
+        valid_mask = ~np.isnan(column)
+        if not np.any(valid_mask):
+            # All NaN, leave as is
+            continue
+        
+        valid_values = column[valid_mask]
+        col_min = np.min(valid_values)
+        col_max = np.max(valid_values)
+        
+        # Handle case where all values are the same
+        if col_max == col_min:
+            # Set all valid values to 0.5 (middle of range)
+            normalized[valid_mask, j] = 0.5
+        else:
+            # Min-max normalization: (x - min) / (max - min)
+            normalized[valid_mask, j] = (valid_values - col_min) / (col_max - col_min)
+    
+    return normalized
+
+
+def save_matrix_data(matrix_data, output_path, metric='pck', use_best=True):
+    """
+    Save confusion matrix data to a JSON file (with numpy arrays saved separately).
+    
+    Args:
+        matrix_data: Dictionary from build_confusion_matrix_data
+        output_path: Path to save the data (will create .json and .npy files)
+        metric: Metric name
+        use_best: Whether this is best or average performance
+    """
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Save numpy array separately
+    npy_path = output_path.with_suffix('.npy')
+    np.save(npy_path, matrix_data['matrix'])
+    
+    # Save metadata as JSON
+    json_data = {
+        'metric': metric,
+        'use_best': use_best,
+        'training_labels': matrix_data['training_labels'],
+        'benchmark_labels': matrix_data['benchmark_labels'],
+        'matrix_shape': list(matrix_data['matrix'].shape),
+        'matrix_file': npy_path.name
+    }
+    
+    json_path = output_path.with_suffix('.json')
+    with open(json_path, 'w') as f:
+        json.dump(json_data, f, indent=2)
+    
+    print(f"Saved matrix data: {json_path} (matrix: {npy_path})")
+
+
+def load_matrix_data(input_path):
+    """
+    Load confusion matrix data from JSON and numpy files.
+    
+    Args:
+        input_path: Path to the JSON file (or .json/.npy base path)
+        
+    Returns:
+        Dictionary with 'matrix', 'training_labels', 'benchmark_labels', 'metric', 'use_best'
+    """
+    input_path = Path(input_path)
+    
+    # If .npy was provided, find the .json
+    if input_path.suffix == '.npy':
+        json_path = input_path.with_suffix('.json')
+    else:
+        json_path = input_path.with_suffix('.json')
+        npy_path = input_path.with_suffix('.npy')
+    
+    if not json_path.exists():
+        raise FileNotFoundError(f"JSON file not found: {json_path}")
+    if not npy_path.exists():
+        raise FileNotFoundError(f"NumPy file not found: {npy_path}")
+    
+    # Load JSON metadata
+    with open(json_path, 'r') as f:
+        json_data = json.load(f)
+    
+    # Load numpy matrix
+    matrix = np.load(npy_path)
+    
+    return {
+        'matrix': matrix,
+        'training_labels': json_data['training_labels'],
+        'benchmark_labels': json_data['benchmark_labels'],
+        'metric': json_data.get('metric', 'pck'),
+        'use_best': json_data.get('use_best', True)
+    }
+
+
+def create_confusion_matrix_plot(matrix_data, output_path, title_suffix="", metric='pck', normalized=False):
     """
     Create and save a confusion matrix heatmap visualization.
     
@@ -587,6 +706,7 @@ def create_confusion_matrix_plot(matrix_data, output_path, title_suffix="", metr
         output_path: Path to save the plot
         title_suffix: Additional text for title (e.g., "Best Performance")
         metric: Metric name for title
+        normalized: If True, matrix is normalized and colorbar label will reflect this
     """
     matrix = matrix_data['matrix']
     training_labels = matrix_data['training_labels']
@@ -598,17 +718,22 @@ def create_confusion_matrix_plot(matrix_data, output_path, title_suffix="", metr
     # Create heatmap
     # Use a colormap that works well for performance metrics (higher is better)
     # RdYlGn: Red (low/bad) -> Yellow (medium) -> Green (high/good)
+    cbar_label = 'Normalized Score (0=worst, 1=best)' if normalized else f'{metric.upper()} (%)'
+    fmt_str = '.3f' if normalized else '.2f'
+    
     sns.heatmap(matrix, 
                 annot=True, 
-                fmt='.2f',
+                fmt=fmt_str,
                 cmap='RdYlGn',  # Red-Yellow-Green: green for high (good), red for low (bad)
-                cbar_kws={'label': f'{metric.upper()} (%)'},
+                cbar_kws={'label': cbar_label},
                 xticklabels=benchmark_labels,
                 yticklabels=training_labels,
                 ax=ax,
                 linewidths=0.5,
                 linecolor='gray',
-                mask=np.isnan(matrix))
+                mask=np.isnan(matrix),
+                vmin=0.0 if normalized else None,
+                vmax=1.0 if normalized else None)
     
     # Highlight diagonal cells where training dataset base matches benchmark
     # Only highlight the first matching training variant for each benchmark
@@ -629,7 +754,8 @@ def create_confusion_matrix_plot(matrix_data, output_path, title_suffix="", metr
                 highlighted_benchmarks.add(base)
     
     metric_display = metric.replace('_', ' ').title()
-    ax.set_title(f'{metric_display} Confusion Matrix - {title_suffix}', 
+    norm_suffix = " (Column-Normalized)" if normalized else ""
+    ax.set_title(f'{metric_display} Confusion Matrix - {title_suffix}{norm_suffix}', 
                 fontsize=14, fontweight='bold', pad=20)
     ax.set_xlabel('Evaluation Benchmark', fontsize=12)
     ax.set_ylabel('Training Dataset', fontsize=12)
@@ -683,6 +809,19 @@ Examples:
         help='Filter specific benchmarks to include (default: all benchmarks)'
     )
     
+    parser.add_argument(
+        '--save_data',
+        action='store_true',
+        help='Save matrix data to JSON/numpy files for faster reloading'
+    )
+    
+    parser.add_argument(
+        '--load_data',
+        type=str,
+        default=None,
+        help='Load matrix data from saved files (provide base path, e.g., ./data/pck_best)'
+    )
+    
     args = parser.parse_args()
     
     # 1. Collect all snapshot directories
@@ -713,18 +852,40 @@ Examples:
     
     # 3. Build confusion matrix for best performance
     print(f"\nBuilding confusion matrices for metric: {args.metric}...")
-    best_matrix_data = build_confusion_matrix_data(
-        snapshots_data, 
-        metric=args.metric, 
-        use_best=True
-    )
     
-    # 4. Build confusion matrix for average performance
-    avg_matrix_data = build_confusion_matrix_data(
-        snapshots_data, 
-        metric=args.metric, 
-        use_best=False
-    )
+    # Try loading saved data if requested
+    if args.load_data:
+        try:
+            print(f"Loading saved data from: {args.load_data}")
+            best_matrix_data = load_matrix_data(f"{args.load_data}_best")
+            avg_matrix_data = load_matrix_data(f"{args.load_data}_average")
+            print("Successfully loaded saved data!")
+        except FileNotFoundError as e:
+            print(f"Warning: Could not load saved data: {e}")
+            print("Computing matrices from scratch...")
+            best_matrix_data = build_confusion_matrix_data(
+                snapshots_data, 
+                metric=args.metric, 
+                use_best=True
+            )
+            avg_matrix_data = build_confusion_matrix_data(
+                snapshots_data, 
+                metric=args.metric, 
+                use_best=False
+            )
+    else:
+        best_matrix_data = build_confusion_matrix_data(
+            snapshots_data, 
+            metric=args.metric, 
+            use_best=True
+        )
+        
+        # 4. Build confusion matrix for average performance
+        avg_matrix_data = build_confusion_matrix_data(
+            snapshots_data, 
+            metric=args.metric, 
+            use_best=False
+        )
     
     # Filter benchmarks if specified
     if args.benchmarks:
@@ -737,22 +898,73 @@ Examples:
                 matrix_data['benchmark_labels'] = [matrix_data['benchmark_labels'][i] 
                                                   for i in benchmark_indices]
     
-    # 5. Create and save plots
+    # 5. Create normalized versions
+    best_matrix_data_normalized = {
+        'matrix': normalize_matrix_columns(best_matrix_data['matrix']),
+        'training_labels': best_matrix_data['training_labels'],
+        'benchmark_labels': best_matrix_data['benchmark_labels']
+    }
+    
+    avg_matrix_data_normalized = {
+        'matrix': normalize_matrix_columns(avg_matrix_data['matrix']),
+        'training_labels': avg_matrix_data['training_labels'],
+        'benchmark_labels': avg_matrix_data['benchmark_labels']
+    }
+    
+    # 6. Save data if requested
+    if args.save_data:
+        output_path = Path(args.output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        print(f"\nSaving matrix data...")
+        save_matrix_data(
+            best_matrix_data,
+            output_path / f'{args.metric}_best_matrix_data',
+            metric=args.metric,
+            use_best=True
+        )
+        save_matrix_data(
+            avg_matrix_data,
+            output_path / f'{args.metric}_average_matrix_data',
+            metric=args.metric,
+            use_best=False
+        )
+    
+    # 7. Create and save plots
     output_path = Path(args.output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     
+    # Original plots (absolute values)
     create_confusion_matrix_plot(
         best_matrix_data, 
         output_path / f'{args.metric}_best_confusion_matrix.png',
         title_suffix="Best Performance",
-        metric=args.metric
+        metric=args.metric,
+        normalized=False
     )
     
     create_confusion_matrix_plot(
         avg_matrix_data, 
         output_path / f'{args.metric}_average_confusion_matrix.png',
         title_suffix="Average Performance",
-        metric=args.metric
+        metric=args.metric,
+        normalized=False
+    )
+    
+    # Normalized plots (relative performance within each benchmark)
+    create_confusion_matrix_plot(
+        best_matrix_data_normalized, 
+        output_path / f'{args.metric}_best_confusion_matrix_normalized.png',
+        title_suffix="Best Performance",
+        metric=args.metric,
+        normalized=True
+    )
+    
+    create_confusion_matrix_plot(
+        avg_matrix_data_normalized, 
+        output_path / f'{args.metric}_average_confusion_matrix_normalized.png',
+        title_suffix="Average Performance",
+        metric=args.metric,
+        normalized=True
     )
     
     print("\nDone!")

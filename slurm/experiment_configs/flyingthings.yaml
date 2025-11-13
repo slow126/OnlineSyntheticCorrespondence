@@ -18,7 +18,7 @@ base:
   momentum: 0.9
   thres: "img"
   enable_debug: false
-  steps_per_epoch: 1000
+  steps_per_epoch: 5000
   kitti_val_use_full_training: false
   val_batch_size: 16
 

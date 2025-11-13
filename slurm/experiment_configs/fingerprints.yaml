@@ -34,7 +34,7 @@ dataset_defaults:
     verbose_pointodyssey: false
     val_sequence_fraction_pointodyssey: 0.2
 
-# Parameter grids - generates all combinations
+# # Parameter grids - generates all combinations
 grids:
   # FlyingThings freeze sweep
   - name: "flyingthings freeze sweep"
