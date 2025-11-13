@@ -21,7 +21,7 @@ base:
   enable_debug: false
   steps_per_epoch: 5000
   kitti_val_use_full_training: false
-  val_batch_size: 16
+  val_batch_size: 8
 
 
 # Parameter grids - generates all combinations
