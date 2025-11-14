@@ -80,6 +80,45 @@ class OnlineCorrespondenceDataset():
         batch = default_collate(batch)
         batch = self.processor.batch_to_device(batch, self.processor.device)
         return self.processor.process_scene(batch)
+    
+    def process_geometry(self, batch):
+        batch = self.processor.batch_to_device(batch, self.processor.device)
+        return self.processor.process_scene(batch)
+    
+    def process_sample(self, raw_sample):
+        """
+        Process a single raw sample (without batch dimension) through the processor.
+        
+        Args:
+            raw_sample: Single raw sample from __getitem__ (list of two dicts: [src_dict, trg_dict])
+        
+        Returns:
+            Processed sample dict with tensors without batch dimension
+        """
+        # raw_sample is a list of two dicts [src_dict, trg_dict]
+        # Add batch dimension using default_collate
+        # default_collate expects a list of samples, so we wrap raw_sample in a list
+        batch = default_collate([raw_sample])
+        # Convert to list if it's a tuple (default_collate may return tuple)
+        if isinstance(batch, tuple):
+            batch = list(batch)
+        # Move to device
+        batch = self.processor.batch_to_device(batch, self.processor.device)
+        # Process through processor
+        processed_batch = self.processor.process_scene(batch)
+        # Remove batch dimension (squeeze dim 0) from all tensors
+        processed_sample = {}
+        for key, value in processed_batch.items():
+            if isinstance(value, torch.Tensor):
+                # Remove batch dimension
+                if value.dim() > 0:
+                    processed_sample[key] = value.squeeze(0)
+                else:
+                    processed_sample[key] = value
+            else:
+                processed_sample[key] = value
+        return processed_sample
+
 
     @property
     def device(self):

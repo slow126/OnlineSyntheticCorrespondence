@@ -280,6 +280,7 @@ def calculate_umap_parameters(categories, feature_matrix, build_algo='auto', n_c
     else:
         n_neighbors = 15  # Default fallback
     
+    n_neighbors = 15
     # n_components: 2D for visualization
     n_components = 2
     
@@ -295,18 +296,19 @@ def calculate_umap_parameters(categories, feature_matrix, build_algo='auto', n_c
         'n_components': n_components,
         'min_dist': min_dist,
         'metric': metric,
-        'random_state': 42
+        # 'random_state': 42
     }
     
     # Add cuML-specific parameters
     if USE_CUML:
         params['build_algo'] = build_algo
         
-        # Calculate n_clusters for batching if not provided
+        # # Calculate n_clusters for batching if not provided
         if n_clusters is None:
             # Use number of unique categories as base, with some scaling
             n_clusters = max(2, min(8, n_unique_categories))
-        
+    
+
         # Build keywords for cuML
         build_kwds = {
             'nnd_graph_degree': 32,  # Smaller for faster computation

@@ -52,9 +52,9 @@ bg_color_sampler_dict:
 use_worley_sampler: true
 use_grf_sampler: false
 
-subsample_flow: 0.1
+subsample_flow: None
 subsample_during_train: false
 subsample_during_val: false
-subsample_without_trainer: true
+subsample_without_trainer: false
 downsample_for_cats: false
 cats_feat_size: 32
