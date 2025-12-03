@@ -52,12 +52,8 @@ dataset:
   pointodyssey_disable_motion_filter: true
 
 evaluation:
-  # eval_benchmarks: ['kitti2012', 'kitti2015', 'flyingthings', 'tss', 'synthetic', 'pfpascal', 'pfwillow', 'spair', 'pointodyssey']
-  # eval_alphas: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
-  # eval_benchmarks: ['spair', 'synthetic', 'pfwillow', 'pfpascal', 'pointodyssey']
-  # eval_alphas: [0.1, 0.1, 0.1, 0.1, 0.1]
-  eval_benchmarks: ['spair']
-  eval_alphas: [0.1]
+  eval_benchmarks: ['kitti2012', 'kitti2015', 'flyingthings', 'tss', 'synthetic', 'pfpascal', 'pfwillow', 'spair', 'pointodyssey']
+  eval_alphas: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
   thres: 'img'  # 'auto', 'img', 'bbox', 'bbox-kp'
   split_to_use_for_validation: 'val'  # 'val' or 'test'
   val_batch_size: 8
