@@ -72,10 +72,10 @@ evaluation:
   # Benchmark dataset paths
   datapath: './models/Datasets_CATs'
   tss_root: '/home/slow1/Data/correspondence/TSS_CVPR2016'
-  kitti_root: '/home/local/Data/correspondence/kitti'
+  kitti_root: '/home/slow1/Data/correspondence/kitti'
   kitti_val_use_full_training: true
-  pointodyssey_root: '/home/local/Data/PointOdyssey'
-  flyingthings_root: '/home/local/Data/FlyingThings3D_tiny'
+  pointodyssey_root: '/home/slow1/Data/PointOdyssey'
+  flyingthings_root: '/home/slow1/Data/FlyingThings3D_tiny'
   
   # Validation dataset parameters (overrides for specific benchmarks)
   val_datasets:
