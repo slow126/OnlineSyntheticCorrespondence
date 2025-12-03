@@ -21,7 +21,7 @@ mandelbulb_sampler:
 
 
 # Dataset settings
-num_samples: 1000
+num_samples: 100
 random_flip: 0.5
 random_swap: true
 julia_sampler:
@@ -47,8 +47,6 @@ scale_sampler:
     loc: -0.25
     scale: 0.25
 
-# Dataset size and sampling
-num_samples: 30000  # Total number of samples to generate
 
 # Image configuration
 size: 512  # [height, width]

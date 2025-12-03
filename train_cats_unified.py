@@ -834,7 +834,8 @@ def main():
                 writer = csv.writer(f)
                 writer.writerow(['epoch', 'training_steps', 'benchmark', 'pck', 'loss',
                                 'pck_motion_aware', 'pck_motion_small', 'pck_motion_medium', 'pck_motion_large',
-                                'zero_flow_precision', 'zero_flow_recall', 'zero_flow_f1', 'static_bias_ratio'])
+                                'zero_flow_precision', 'zero_flow_recall', 'zero_flow_f1', 'static_bias_ratio',
+                                'mmd2_pred_corr_vs_pred_miss', 'mmd2_pred_corr_vs_gt', 'mmd2_pred_miss_vs_gt'])
                 f.flush()
                 os.fsync(f.fileno())
             validation_log_initialized = True
@@ -856,6 +857,11 @@ def main():
                 zero_f1 = zero_flow_metrics.get('zero_f1', '') if zero_flow_metrics else ''
                 static_bias = zero_flow_metrics.get('static_bias_ratio', '') if zero_flow_metrics else ''
                 
+                # Get MMD values
+                mmd_pred_corr_vs_pred_miss = results.get('mmd2_pred_corr_vs_pred_miss', '')
+                mmd_pred_corr_vs_gt = results.get('mmd2_pred_corr_vs_gt', '')
+                mmd_pred_miss_vs_gt = results.get('mmd2_pred_miss_vs_gt', '')
+                
                 writer.writerow([
                     epoch + 1,
                     cumulative_steps,
@@ -869,7 +875,10 @@ def main():
                     f"{zero_precision:.4f}" if isinstance(zero_precision, (int, float)) else '',
                     f"{zero_recall:.4f}" if isinstance(zero_recall, (int, float)) else '',
                     f"{zero_f1:.4f}" if isinstance(zero_f1, (int, float)) else '',
-                    f"{static_bias:.4f}" if isinstance(static_bias, (int, float)) else ''
+                    f"{static_bias:.4f}" if isinstance(static_bias, (int, float)) else '',
+                    f"{mmd_pred_corr_vs_pred_miss:.6f}" if isinstance(mmd_pred_corr_vs_pred_miss, (int, float)) else '',
+                    f"{mmd_pred_corr_vs_gt:.6f}" if isinstance(mmd_pred_corr_vs_gt, (int, float)) else '',
+                    f"{mmd_pred_miss_vs_gt:.6f}" if isinstance(mmd_pred_miss_vs_gt, (int, float)) else ''
                 ])
             f.flush()
             os.fsync(f.fileno())
@@ -1089,9 +1098,13 @@ def main():
         print(f"  Cumulative training steps: {cumulative_training_steps}")
         
         # Validation
+        mmd_every_n_epochs = training_config.get('mmd_every_n_epochs', 0)
+        if mmd_every_n_epochs > 0:
+            print(f"MMD calculation enabled: every {mmd_every_n_epochs} epochs (current epoch: {epoch})")
         val_results = validate_epoch_multi_benchmark(
             model, val_dataloaders, device, epoch, multi_evaluator,
-            primary_benchmark=eval_config['eval_benchmarks'][0]
+            primary_benchmark=eval_config['eval_benchmarks'][0],
+            mmd_every_n_epochs=mmd_every_n_epochs
         )
         
         # Log results for each benchmark
@@ -1101,6 +1114,20 @@ def main():
             print(f"{benchmark} - Val Loss: {results['loss']:.4f}, PCK: {results['pck']:.2f}%")
             test_writer.add_scalar(f'val/{benchmark}/PCK', results['pck'], epoch)
             test_writer.add_scalar(f'val/{benchmark}/loss', results['loss'], epoch)
+            
+            # Print MMD results if present (they should already be printed from validation, but ensure visibility)
+            if 'mmd2_pred_corr_vs_pred_miss' in results:
+                mmd_val = results['mmd2_pred_corr_vs_pred_miss']
+                if isinstance(mmd_val, (int, float)) and mmd_val == mmd_val:  # Check for NaN
+                    print(f"{benchmark} - MMD^2 (pred_corr vs pred_miss): {mmd_val:.6f}")
+            if 'mmd2_pred_corr_vs_gt' in results:
+                mmd_val = results['mmd2_pred_corr_vs_gt']
+                if isinstance(mmd_val, (int, float)) and mmd_val == mmd_val:
+                    print(f"{benchmark} - MMD^2 (pred_corr vs gt): {mmd_val:.6f}")
+            if 'mmd2_pred_miss_vs_gt' in results:
+                mmd_val = results['mmd2_pred_miss_vs_gt']
+                if isinstance(mmd_val, (int, float)) and mmd_val == mmd_val:
+                    print(f"{benchmark} - MMD^2 (pred_miss vs gt): {mmd_val:.6f}")
             
             # Log motion-aware metrics
             if 'pck_motion_aware' in results:
@@ -1118,6 +1145,17 @@ def main():
                 test_writer.add_scalar(f'val/{benchmark}/zero_flow_recall', zfm.get('zero_recall', 0), epoch)
                 test_writer.add_scalar(f'val/{benchmark}/zero_flow_f1', zfm.get('zero_f1', 0), epoch)
                 test_writer.add_scalar(f'val/{benchmark}/static_bias_ratio', zfm.get('static_bias_ratio', 0), epoch)
+            
+            # Log MMD metrics if present
+            if 'mmd2_pred_corr_vs_pred_miss' in results:
+                test_writer.add_scalar(f'val/{benchmark}/MMD2_pred_corr_vs_pred_miss', 
+                                      results['mmd2_pred_corr_vs_pred_miss'], epoch)
+            if 'mmd2_pred_corr_vs_gt' in results:
+                test_writer.add_scalar(f'val/{benchmark}/MMD2_pred_corr_vs_gt', 
+                                      results['mmd2_pred_corr_vs_gt'], epoch)
+            if 'mmd2_pred_miss_vs_gt' in results:
+                test_writer.add_scalar(f'val/{benchmark}/MMD2_pred_miss_vs_gt', 
+                                      results['mmd2_pred_miss_vs_gt'], epoch)
             
             # Log per-category results for TSS
             if benchmark == 'tss' and 'pck_by_category' in results:

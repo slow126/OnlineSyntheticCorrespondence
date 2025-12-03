@@ -21,6 +21,7 @@ training:
   augmentation: false
   min_flow_length: null
   max_flow_length: null
+  mmd_every_n_epochs: 0  # 0 = disabled, 1 = every epoch, 2 = every other epoch, etc.
 
   enable_debug: true
   debug_visualization_benchmarks: ['pointodyssey']

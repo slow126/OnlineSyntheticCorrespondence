@@ -181,7 +181,8 @@ def validate_epoch_multi_benchmark(net,
                                   primary_benchmark=None,
                                   use_motion_aware=True,
                                   min_motion_pixels=5.0,
-                                  zero_threshold=0.5):
+                                  zero_threshold=0.5,
+                                  mmd_every_n_epochs=0):
     """
     Validate on multiple benchmarks during training
     
@@ -195,9 +196,10 @@ def validate_epoch_multi_benchmark(net,
         use_motion_aware: If True, compute motion-aware metrics
         min_motion_pixels: Minimum motion magnitude for motion-aware PCK
         zero_threshold: Flow magnitude threshold below which flow is considered "zero"
+        mmd_every_n_epochs: Compute MMD every N epochs (0 = disabled, 1 = every epoch, 2 = every other, etc.)
     
     Returns:
-        dict: Results for each benchmark with 'loss', 'pck', and motion-aware metrics
+        dict: Results for each benchmark with 'loss', 'pck', motion-aware metrics, and MMD metrics
     """
     net.eval()
     
@@ -227,6 +229,21 @@ def validate_epoch_multi_benchmark(net,
             motion_binned_pck = {'small': [], 'medium': [], 'large': []}
             motion_binned_counts = {'small': 0, 'medium': 0, 'large': 0}
             ############# End Motion Aware Section ########
+            
+            ############# MMD Section ########
+            # Initialize streaming MMD if enabled for this epoch
+            streaming_mmd = None
+            if mmd_every_n_epochs > 0 and epoch % mmd_every_n_epochs == 0:
+                try:
+                    from models.CATs_PlusPlus.utils_training.mmd_validation import create_mmd_streaming
+                    streaming_mmd = create_mmd_streaming(device=device)
+                    print(f"MMD enabled for {benchmark} (epoch {epoch}, every {mmd_every_n_epochs} epochs)")
+                except Exception as e:
+                    print(f"ERROR: Failed to initialize MMD streaming for {benchmark}: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    streaming_mmd = None
+            ############# End MMD Section ########
             
             for i, mini_batch in pbar:
                 # Transfer entire batch to GPU once at the start (efficient - single operation)
@@ -277,6 +294,7 @@ def validate_epoch_multi_benchmark(net,
                 all_trg_kps.append(gpu_batch['trg_kps'].cpu())
                 all_n_pts.append(gpu_batch['n_pts'].cpu())
                 
+                
                 # Motion-aware evaluation (if enabled) - aggregate during loop
                 if use_motion_aware:
                     # All tensors already on GPU in gpu_batch
@@ -315,6 +333,24 @@ def validate_epoch_multi_benchmark(net,
                 # Evaluate using the specific benchmark evaluator
                 # All tensors already on GPU in gpu_batch
                 eval_result = multi_evaluator.evaluate(benchmark, estimated_kps, gpu_batch)
+                
+                ############# MMD Section ########
+                # Update streaming MMD if enabled for this epoch
+                if streaming_mmd is not None:
+                    try:
+                        # Get correct/incorrect keypoint IDs for MMD calculation
+                        eval_result_with_correct, correct_id_list = multi_evaluator.evaluators[benchmark].eval_kps_transfer_with_correct(
+                            estimated_kps, gpu_batch
+                        )
+                        from models.CATs_PlusPlus.utils_training.mmd_validation import update_mmd_streaming
+                        update_mmd_streaming(streaming_mmd, pred_flow, flow_gt, gpu_batch['trg_kps'], 
+                                            correct_id_list, gpu_batch['n_pts'], device)
+                    except Exception as e:
+                        # Don't break validation if MMD fails, but print error for debugging
+                        print(f"ERROR: Failed to update MMD streaming for {benchmark} batch {i}: {e}")
+                        import traceback
+                        traceback.print_exc()
+                ############# End MMD Section ########
                 
                 # Track per-category results for TSS
                 if benchmark == 'tss' and 'category' in gpu_batch:
@@ -359,6 +395,54 @@ def validate_epoch_multi_benchmark(net,
                 'loss': avg_loss,
                 'pck': mean_pck
             }
+            
+            ############# MMD Section ########
+            # Compute MMD if streaming was enabled for this epoch
+            if streaming_mmd is not None:
+                try:
+                    from models.CATs_PlusPlus.utils_training.mmd_validation import compute_mmd_from_streaming
+                    mmd_results = compute_mmd_from_streaming(streaming_mmd)
+                    results[benchmark].update(mmd_results)
+                    
+                    # Print MMD results with clear formatting
+                    print(f"\n{benchmark} - MMD^2 Results:")
+                    mmd_val = mmd_results['mmd2_pred_corr_vs_pred_miss']
+                    if isinstance(mmd_val, (int, float)) and mmd_val == mmd_val:  # Check for NaN (NaN != NaN)
+                        print(f"  pred_corr vs pred_miss: {mmd_val:.6f}")
+                    else:
+                        print(f"  pred_corr vs pred_miss: NaN (insufficient samples)")
+                    
+                    mmd_val = mmd_results['mmd2_pred_corr_vs_gt']
+                    if isinstance(mmd_val, (int, float)) and mmd_val == mmd_val:  # Check for NaN
+                        print(f"  pred_corr vs gt: {mmd_val:.6f}")
+                    else:
+                        print(f"  pred_corr vs gt: NaN (insufficient samples)")
+                    
+                    mmd_val = mmd_results['mmd2_pred_miss_vs_gt']
+                    if isinstance(mmd_val, (int, float)) and mmd_val == mmd_val:  # Check for NaN
+                        print(f"  pred_miss vs gt: {mmd_val:.6f}")
+                    else:
+                        print(f"  pred_miss vs gt: NaN (insufficient samples)")
+                    print()
+                except Exception as e:
+                    print(f"ERROR: Failed to compute MMD for {benchmark}: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    # Still add NaN values so CSV logging doesn't break
+                    results[benchmark].update({
+                        'mmd2_pred_corr_vs_pred_miss': float('nan'),
+                        'mmd2_pred_corr_vs_gt': float('nan'),
+                        'mmd2_pred_miss_vs_gt': float('nan')
+                    })
+            else:
+                # MMD not enabled for this epoch - add NaN values for consistency
+                if mmd_every_n_epochs > 0:
+                    results[benchmark].update({
+                        'mmd2_pred_corr_vs_pred_miss': float('nan'),
+                        'mmd2_pred_corr_vs_gt': float('nan'),
+                        'mmd2_pred_miss_vs_gt': float('nan')
+                    })
+            ############# End MMD Section ########
             
             ############# Motion Aware Section ########
             # Compute zero-flow accuracy across entire validation set
