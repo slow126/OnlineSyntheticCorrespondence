@@ -565,7 +565,7 @@ def main():
     if model_config.get('freeze', True):
         print('Backbone frozen!')
     
-    model = CATsImproved(backbone=model_config.get('backbone', 'resnet101'), freeze=model_config.get('freeze', True))
+    model = CATsImproved(backbone=model_config.get('backbone', 'resnet101'), freeze=model_config.get('freeze', True), pretrained_backbone=model_config.get('pretrained_backbone', True))
     
     # Count parameters
     def count_parameters(model):
@@ -765,6 +765,7 @@ def main():
             f.write(f"Evaluation alphas: {', '.join(map(str, eval_config['eval_alphas']))}\n")
             f.write(f"Backbone: {model_config.get('backbone', 'resnet101')}\n")
             f.write(f"Freeze backbone: {model_config.get('freeze', True)}\n")
+            f.write(f"Pretrained backbone: {model_config.get('pretrained_backbone', True)}\n")
             f.write(f"Augmentation: {training_config.get('augmentation', False)}\n")
             
             if is_final:

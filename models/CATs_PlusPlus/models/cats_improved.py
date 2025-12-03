@@ -18,27 +18,28 @@ from .cats_model import CATs
 
 
 class CATsImproved(nn.Module):
-    def __init__(self, backbone='resnet101', freeze=False):
+    def __init__(self, backbone='resnet101', freeze=False, pretrained_backbone=True):
         super().__init__()
 
         # 1. Backbone network initialization
         self.backbone_type = backbone
         if backbone == 'vgg16':
-            self.backbone = vgg.vgg16(pretrained=True)
+            self.backbone = vgg.vgg16(pretrained=pretrained_backbone)
             self.feat_ids = [17, 19, 21, 24, 26, 28, 30]
             self.extract_feats = extract_feat_vgg
             nbottlenecks = [2, 2, 3, 3, 3, 1]
         elif backbone == 'resnet50':
-            self.backbone = resnet.resnet50(pretrained=True)
+            self.backbone = resnet.resnet50(pretrained=pretrained_backbone)
             self.feat_ids = list(range(4, 17))
             self.extract_feats = extract_feat_res
             nbottlenecks = [3, 4, 6, 3]
         elif backbone == 'resnet101':
-            self.backbone = resnet.resnet101(pretrained=True)
+            self.backbone = resnet.resnet101(pretrained=pretrained_backbone)
             self.feat_ids = list(range(4, 34))
             self.extract_feats = extract_feat_res
             nbottlenecks = [3, 4, 23, 3]
         elif backbone == 'clip_resnet101':
+            print(f'Loading CLIP ResNet101. For now only pretrained models are supported for this backbone {backbone}.')
             self.backbone = clip.load("RN101")[0].float()
             self.feat_ids = list(range(4, 34))
             self.extract_feats = extract_feat_clip

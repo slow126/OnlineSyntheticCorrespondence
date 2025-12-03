@@ -1,69 +1,63 @@
-# Training Configuration for Synthetic Dataset
+# Training Configuration for PointOdyssey Dataset
 
-# Model parameters
 model:
   backbone: 'resnet101'
   freeze: true
   pretrained_backbone: true
 
-# Training parameters
 training:
   epochs: 50
   batch_size: 8
-  n_threads: 0  # 0 for synthetic (GPU-bound rendering)
+  n_threads: 16
   seed: 2021
   lr: 3e-4
   lr_backbone: 3e-6
   weight_decay: 0.05
   momentum: 0.9
-  scheduler: 'step'  # 'step' or 'cosine'
+  scheduler: 'step'
   step: '[70, 80, 90]'
   step_gamma: 0.5
-  steps_per_epoch: null  # null = all steps, or integer, or 'logarithmic'
-  augmentation: true
-  
-  # Flow filtering (training only)
+  steps_per_epoch: null
+  augmentation: false
   min_flow_length: null
   max_flow_length: null
 
-  enable_debug: true
+  enable_debug: false 
   debug_visualization_benchmarks: all
   debug_visualization_persist: false
 
   steps_per_epoch: 1000
 
-# Dataset parameters
 dataset:
-  dataset_name: 'synthetic'
+  dataset_name: 'pointodyssey'
   split: 'train'
   size: [512, 512]
   downsample_flow: 32
-  max_kps: null  # null = no truncation, test all keypoints
-  dense_kps_use_all: true  # when dense flow exists, extract all valid kps (set false to sample up to max_kps)
+  max_kps: null  # null = no truncation, use all keypoints Don't think this is used anymore
+  dense_kps_use_all: true  # keep all valid points unless capped
   verbose: false
   debug: false
-  normalize_images: false  # Synthetic already normalized by processor; leave false to avoid double-norm
+  normalize_images: true
   
-  # Synthetic-specific parameters
-  geometry_config_path: 'src/configs/online_synth_configs/OnlineGeometryConfig.yaml'
-  processor_config_path: 'src/configs/online_synth_configs/OnlineProcessorConfig.yaml'
-  opengl_device_index: null  # null = auto-detect
-  
-  # Geometry config overrides (optional)
-  geometry_config_overrides: null
-  # Example:
-  # geometry_config_overrides:
-  #   angle_sampler:
-  #     x_components:
-  #       loc: -0.2
-  #       scale: 0.4
+  # PointOdyssey-specific parameters
+  dataset_location: '/home/slow1/Data/PointOdyssey'
+  pointodyssey_use_augs: false
+  pointodyssey_sequence_length: 2
+  pointodyssey_num_pts_to_track: 32
+  pointodyssey_strides: [4]
+  pointodyssey_quick: false
+  reverse_flow: true
+  thres: 'img'
+  use_all_valid: true  # Use all valid points (no truncation)
+  pointodyssey_disable_motion_filter: true
 
-# Evaluation parameters
 evaluation:
   # eval_benchmarks: ['kitti2012', 'kitti2015', 'flyingthings', 'tss', 'synthetic', 'pfpascal', 'pfwillow', 'spair', 'pointodyssey']
   # eval_alphas: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
-  eval_benchmarks: ['spair', 'synthetic', 'pfwillow', 'pfpascal', 'pointodyssey']
-  eval_alphas: [0.1, 0.1, 0.1, 0.1, 0.1]
+  # eval_benchmarks: ['spair', 'synthetic', 'pfwillow', 'pfpascal', 'pointodyssey']
+  # eval_alphas: [0.1, 0.1, 0.1, 0.1, 0.1]
+  eval_benchmarks: ['spair']
+  eval_alphas: [0.1]
   thres: 'img'  # 'auto', 'img', 'bbox', 'bbox-kp'
   split_to_use_for_validation: 'val'  # 'val' or 'test'
   val_batch_size: 8
@@ -72,11 +66,11 @@ evaluation:
   
   # Benchmark dataset paths
   datapath: './models/Datasets_CATs'
-  tss_root: '/home/spencer/Data/correspondence/TSS_CVPR2016'
-  kitti_root: '/home/spencer/Data/correspondence/kitti'
+  tss_root: '/home/slow1/Data/correspondence/TSS_CVPR2016'
+  kitti_root: '/home/slow1/Data/correspondence/kitti'
   kitti_val_use_full_training: true
-  pointodyssey_root: '/home/spencer/Data/PointOdyssey'
-  flyingthings_root: '/home/spencer/Data/FlyingThings3D_tiny'
+  pointodyssey_root: '/home/slow1/Data/PointOdyssey'
+  flyingthings_root: '/home/slow1/Data/FlyingThings3D_tiny'
   
   # Validation dataset parameters (overrides for specific benchmarks)
   val_datasets:
