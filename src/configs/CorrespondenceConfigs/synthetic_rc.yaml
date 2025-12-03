@@ -4,6 +4,7 @@
 model:
   backbone: 'resnet101'
   freeze: true
+  pretrained_backbone: true
 
 # Training parameters
 training:
@@ -59,10 +60,8 @@ dataset:
 
 # Evaluation parameters
 evaluation:
-  eval_benchmarks: ['kitti2012', 'kitti2015', 'flyingthings', 'tss', 'synthetic', 'pfpascal', 'pfwillow', 'spair', 'pointodyssey']
-  eval_alphas: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
-  # eval_benchmarks: ['spair', 'synthetic', 'pfwillow', 'pfpascal', 'pointodyssey']
-  # eval_alphas: [0.1, 0.1, 0.1, 0.1, 0.1]
+  eval_benchmarks: ['kitti2012', 'kitti2015', 'pointodyssey', 'flyingthings', 'tss', 'synthetic', 'pfpascal', 'pfwillow', 'spair']
+  eval_alphas: [0.01, 0.01, 0.01, 0.05, 0.05, 0.1, 0.1, 0.1, 0.1]
   thres: 'img'  # 'auto', 'img', 'bbox', 'bbox-kp'
   split_to_use_for_validation: 'val'  # 'val' or 'test'
   val_batch_size: 8
