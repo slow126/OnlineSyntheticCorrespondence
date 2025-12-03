@@ -50,6 +50,8 @@ class PointOdysseyDataset(torch.utils.data.Dataset):
                  max_sequences=None,
                  verbose=False,
                  val_sequence_fraction: Optional[float] = None,
+                 use_all_valid=False,
+                 disable_motion_filter=False,
     ):
         print('loading pointodyssey dataset...')
 
@@ -57,6 +59,8 @@ class PointOdysseyDataset(torch.utils.data.Dataset):
         self.N = N
         self.req_full = req_full
         self.verbose = verbose
+        self.use_all_valid = use_all_valid
+        self.disable_motion_filter = disable_motion_filter
 
         self.use_augs = use_augs
         self.dset = dset
@@ -401,19 +405,42 @@ class PointOdysseyDataset(torch.utils.data.Dataset):
             visibs = visibs[:,val_ok]
             valids = valids[:,val_ok]
 
+            # Early return if no trajectories left after filtering
+            N = trajs.shape[1]
+            if N == 0:
+                if self.verbose:
+                    print('No trajectories left after val_ok filtering')
+                return None, False
+
             # some of the data is a bit crazy,
             # so we will filter down based on motion
-            trajs_norm = trajs / max(H,W)
-            vel = trajs_norm[1:] - trajs_norm[:-1]
-            accel = vel[1:] - vel[:-1]
-            jerk = accel[1:] - accel[:-1]
-            # utils.basic.print_stats_py('vel', np.linalg.norm(vel, axis=-1))
-            # utils.basic.print_stats_py('accel', np.linalg.norm(accel, axis=-1))
-            # utils.basic.print_stats_py('jerk', np.linalg.norm(jerk, axis=-1))
-            vel_ok = np.max(np.linalg.norm(vel, axis=-1), axis=0) < 0.4 # N
-            accel_ok = np.max(np.linalg.norm(accel, axis=-1), axis=0) < 0.3 # N
-            jerk_ok = np.max(np.linalg.norm(jerk, axis=-1), axis=0) < 0.1 # N
-            mot_ok = vel_ok & accel_ok & jerk_ok
+            # Skip motion filtering if disabled (useful for correspondence tasks)
+            if self.disable_motion_filter:
+                # Skip motion filtering entirely
+                mot_ok = np.ones(N, dtype=bool)
+            elif self.S > 2:
+                # Full motion filtering for longer sequences
+                trajs_norm = trajs / max(H,W)
+                vel = trajs_norm[1:] - trajs_norm[:-1]
+                accel = vel[1:] - vel[:-1]
+                jerk = accel[1:] - accel[:-1]
+                
+                # Filter based on motion smoothness
+                vel_ok = np.max(np.linalg.norm(vel, axis=-1), axis=0) < 0.4 # N
+                accel_ok = np.max(np.linalg.norm(accel, axis=-1), axis=0) < 0.3 # N
+                jerk_ok = np.max(np.linalg.norm(jerk, axis=-1), axis=0) < 0.1 # N
+                mot_ok = vel_ok & accel_ok & jerk_ok
+            else:
+                # For S <= 2, only do basic velocity check if possible
+                if self.S == 2:
+                    trajs_norm = trajs / max(H,W)
+                    vel = trajs_norm[1:] - trajs_norm[:-1]  # Shape: (1, N, 2)
+                    # Filter out trajectories with excessive velocity (outliers)
+                    vel_ok = np.max(np.linalg.norm(vel, axis=-1), axis=0) < 0.4 # N
+                    mot_ok = vel_ok
+                else:
+                    # S == 1, no motion to filter
+                    mot_ok = np.ones(N, dtype=bool)
             # if np.sum(~mot_ok):
             #     print('sum(mot_ok), sum(~mot_ok)', np.sum(mot_ok), np.sum(~mot_ok))
             trajs = trajs[:,mot_ok]
@@ -428,32 +455,45 @@ class PointOdysseyDataset(torch.utils.data.Dataset):
                     print('returning after cropping: N=%d; need at least N=%d' % (N, min_N))
                 return None, False
 
-            if N < self.N:
-                if self.verbose:
-                    print('N=%d; ideally we want N=%d, but we will pad' % (N, self.N))
-
-            # even out the distribution, across initial positions and velocities
-            # fps based on xy0 and mean motion
-            xym = np.concatenate([trajs[0], np.mean(trajs[1:] - trajs[:-1], axis=0)], axis=-1)
-            inds = utils.misc.farthest_point_sample_py(xym, self.N)
-            trajs = trajs[:,inds]
-            visibs = visibs[:,inds]
-            valids = valids[:,inds]
-
             # we won't supervise with the extremes, but let's clamp anyway just to be safe
             trajs = np.minimum(np.maximum(trajs, np.array([-64,-64])), np.array([W+64, H+64])) # S,N,2
             
-            N = trajs.shape[1]
-            N_ = min(N, self.N)
-            inds = np.random.choice(N, N_, replace=False)
+            if self.use_all_valid:
+                # Return all valid trajectories (no truncation)
+                N = trajs.shape[1]
+                
+                # prep for batching, using actual N (not fixed self.N)
+                trajs_full = np.zeros((self.S, N, 2)).astype(np.float32)
+                visibs_full = np.zeros((self.S, N)).astype(np.float32)
+                valids_full = np.zeros((self.S, N)).astype(np.float32)
+                trajs_full[:,:N] = trajs
+                visibs_full[:,:N] = visibs
+                valids_full[:,:N] = valids
+            else:
+                # Original behavior: use farthest point sampling to select diverse subset
+                if N < self.N:
+                    if self.verbose:
+                        print('N=%d; ideally we want N=%d, but we will pad' % (N, self.N))
 
-            # prep for batching, by fixing N
-            trajs_full = np.zeros((self.S, self.N, 2)).astype(np.float32)
-            visibs_full = np.zeros((self.S, self.N)).astype(np.float32)
-            valids_full = np.zeros((self.S, self.N)).astype(np.float32)
-            trajs_full[:,:N_] = trajs[:,inds]
-            visibs_full[:,:N_] = visibs[:,inds]
-            valids_full[:,:N_] = valids[:,inds]
+                # even out the distribution, across initial positions and velocities
+                # fps based on xy0 and mean motion
+                xym = np.concatenate([trajs[0], np.mean(trajs[1:] - trajs[:-1], axis=0)], axis=-1)
+                inds = utils.misc.farthest_point_sample_py(xym, self.N)
+                trajs = trajs[:,inds]
+                visibs = visibs[:,inds]
+                valids = valids[:,inds]
+
+                N = trajs.shape[1]
+                N_ = min(N, self.N)
+                inds = np.random.choice(N, N_, replace=False)
+
+                # prep for batching, by fixing N
+                trajs_full = np.zeros((self.S, self.N, 2)).astype(np.float32)
+                visibs_full = np.zeros((self.S, self.N)).astype(np.float32)
+                valids_full = np.zeros((self.S, self.N)).astype(np.float32)
+                trajs_full[:,:N_] = trajs[:,inds]
+                visibs_full[:,:N_] = visibs[:,inds]
+                valids_full[:,:N_] = valids[:,inds]
 
             rgbs = torch.from_numpy(np.stack(rgbs, 0)).permute(0,3,1,2).byte() # S,C,H,W
             masks = torch.from_numpy(np.stack(masks, 0)).unsqueeze(1).byte() # S,C,H,W

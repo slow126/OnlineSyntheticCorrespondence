@@ -268,6 +268,37 @@ class FlowDownsampler:
         
         return flow_downsampled
 
+
+class FlyingThingsSimpleDataset(Dataset, nn.Module):
+    def __init__(self, root: str, split: str, transforms: Optional[Callable] = None, reverse_flow: bool = False):
+        Dataset.__init__(self)
+        nn.Module.__init__(self)
+        self.dataset = datasets.FlyingThings3D(root=root, split=split, transforms=transforms)
+        self.reverse_flow = reverse_flow
+        
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        item = self.dataset[idx]
+        if self.reverse_flow:
+            src_index = 1
+            trg_index = 0
+        else:
+            src_index = 0
+            trg_index = 1
+        
+        # Convert PIL Images to tensors (keep on CPU - DataLoader will handle GPU transfer)
+        src_img = torch.from_numpy(np.array(item[src_index])).permute(2, 0, 1).float() / 255.0
+        trg_img = torch.from_numpy(np.array(item[trg_index])).permute(2, 0, 1).float() / 255.0
+        flow = torch.from_numpy(np.array(item[2])).float()
+
+        return {
+            "src_img": src_img,
+            "trg_img": trg_img,
+            "flow": flow,
+        }
+
 class FlyingThingsDataset(Dataset, nn.Module):
     def __init__(self, root: str, split: str, transforms: Optional[Callable] = None, 
                  size: Optional[Tuple[int, int]] = None, 
@@ -392,6 +423,26 @@ class FlyingThingsDataset(Dataset, nn.Module):
             return torch.tensor(max(imsize), dtype=torch.float32)
 
     def __getitem__(self, idx):
+        item = self.dataset[idx]
+        if self.reverse_flow:
+            src_index = 1
+            trg_index = 0
+        else:
+            src_index = 0
+            trg_index = 1
+        
+        # Convert PIL Images to tensors (keep on CPU - DataLoader will handle GPU transfer)
+        src_img = torch.from_numpy(np.array(item[src_index])).permute(2, 0, 1).float() / 255.0
+        trg_img = torch.from_numpy(np.array(item[trg_index])).permute(2, 0, 1).float() / 255.0
+        flow = torch.from_numpy(np.array(item[2])).float()
+
+        return {
+            "src_img": src_img,
+            "trg_img": trg_img,
+            "flow": flow,
+        }
+
+    def __getitem__old(self, idx):
         item = self.dataset[idx]
         if self.reverse_flow:
             src_index = 1

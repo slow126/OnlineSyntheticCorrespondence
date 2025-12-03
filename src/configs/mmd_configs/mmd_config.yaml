@@ -1,0 +1,131 @@
+# MMD Configuration Presets
+# Maximum Mean Discrepancy (MMD) with RBF kernels and Random Fourier Features (RFF)
+#
+# Usage:
+#   from src.mmd import load_config_from_yaml
+#   config = load_config_from_yaml('src/configs/mmd_configs/mmd_config.yaml')
+#
+# Or load a specific preset:
+#   config = load_config_from_yaml('src/configs/mmd_configs/mmd_config.yaml', preset='flow_features')
+
+# ============================================================================
+# Flow Features Configuration
+# ============================================================================
+# For comparing flow features (typically 32-dimensional)
+flow_features:
+  input_dim: 32
+  sigmas: [0.5, 1.0, 2.0]  # Multi-scale RBF bandwidths
+  features_per_sigma: 256  # RFF features per sigma (total: 768 features)
+  seed: 42
+  backend: torch
+  device: cuda
+  unbiased: false
+
+# ============================================================================
+# Flow Vectors Configuration (4D: x, y, dx, dy)
+# ============================================================================
+# For comparing raw flow vectors as [x, y, dx, dy] from flow_full
+flow_vectors:
+  input_dim: 4  # [x, y, dx, dy]
+  sigmas: [0.5, 1.0, 2.0, 3.0, 4.0]  # Multi-scale RBF bandwidths
+  features_per_sigma: 256  # RFF features per sigma (total: 768 features)
+  seed: 42
+  backend: torch
+  device: cuda
+  unbiased: true
+
+# ============================================================================
+# DINO Features Configuration
+# ============================================================================
+# For comparing DINO semantic features (typically 768-dimensional for DINOv2 base)
+dino_features:
+  input_dim: 768
+  sigmas: [0.5, 1.0, 2.0]  # Multi-scale RBF bandwidths
+  features_per_sigma: 512  # Higher features for high-dimensional inputs
+  seed: 42
+  backend: torch
+  device: cuda
+  unbiased: false
+
+# ============================================================================
+# General Purpose Configuration
+# ============================================================================
+# Balanced configuration for general feature comparison
+general:
+  input_dim: 128
+  sigmas: [0.5, 1.0, 2.0]
+  features_per_sigma: 256
+  seed: 42
+  backend: numpy
+  device: null  # Auto-detect for PyTorch
+  unbiased: false
+
+# ============================================================================
+# Fast Configuration
+# ============================================================================
+# Optimized for speed (fewer features, single sigma)
+# Use for quick comparisons or large-scale experiments
+fast:
+  input_dim: 128
+  sigmas: [1.0]  # Single sigma for speed
+  features_per_sigma: 128  # Fewer features
+  seed: 42
+  backend: numpy
+  device: null
+  unbiased: false
+
+# ============================================================================
+# High Accuracy Configuration
+# ============================================================================
+# Optimized for accuracy (many features, fine multi-scale)
+# Use when accuracy is more important than speed
+accurate:
+  input_dim: 128
+  sigmas: [0.25, 0.5, 1.0, 2.0, 4.0]  # Fine multi-scale
+  features_per_sigma: 1024  # Very high feature count
+  seed: 42
+  backend: torch
+  device: cuda
+  unbiased: false
+
+# ============================================================================
+# Unbiased Configuration
+# ============================================================================
+# Uses unbiased MMD estimator (excludes diagonal terms)
+# Useful for statistical testing
+unbiased:
+  input_dim: 128
+  sigmas: [0.5, 1.0, 2.0]
+  features_per_sigma: 256
+  seed: 42
+  backend: numpy
+  device: null
+  unbiased: true
+
+# ============================================================================
+# CPU-only Configuration
+# ============================================================================
+# For systems without GPU
+cpu:
+  input_dim: 128
+  sigmas: [0.5, 1.0, 2.0]
+  features_per_sigma: 256
+  seed: 42
+  backend: numpy
+  device: null
+  unbiased: false
+
+# ============================================================================
+# Default Configuration (used when no preset specified)
+# ============================================================================
+# This is the default config loaded when using load_config_from_yaml()
+# without specifying a preset
+mmd:
+  input_dim: 128
+  sigmas: [0.5, 1.0, 2.0]
+  features_per_sigma: 256
+  seed: 42
+  backend: numpy
+  device: null
+  unbiased: false
+

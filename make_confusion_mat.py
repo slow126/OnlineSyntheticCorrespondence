@@ -4,8 +4,8 @@ Create confusion matrix visualizations comparing training datasets vs evaluation
 Creates four matrices: 
   - Best performance (absolute values)
   - Average performance (absolute values)
-  - Best performance (column-normalized, relative within each benchmark)
-  - Average performance (column-normalized, relative within each benchmark)
+  - Best performance (column-standardized, mean 0 std 1 within each benchmark)
+  - Average performance (column-standardized, mean 0 std 1 within each benchmark)
 Orders rows and columns to align matching training datasets and benchmarks on the diagonal.
 """
 
@@ -583,22 +583,23 @@ def build_confusion_matrix_data(snapshots_data, metric='pck', use_best=True):
     }
 
 
-def normalize_matrix_columns(matrix):
+def standardize_matrix_columns(matrix):
     """
-    Normalize each column (benchmark) independently using min-max normalization.
-    For each column, maps values to [0, 1] range where:
-    - max value in column -> 1.0
-    - min value in column -> 0.0
+    Standardize each column (benchmark) independently to have mean 0 and std 1.
+    For each column, transforms values using z-score standardization:
+    - mean -> 0.0
+    - std -> 1.0
+    - Formula: (x - mean) / std
     
-    Handles NaN values by ignoring them in min/max calculation.
+    Handles NaN values by ignoring them in mean/std calculation.
     
     Args:
         matrix: 2D numpy array (training_datasets x benchmarks)
         
     Returns:
-        Normalized matrix with same shape
+        Standardized matrix with same shape
     """
-    normalized = matrix.copy()
+    standardized = matrix.copy()
     
     for j in range(matrix.shape[1]):
         column = matrix[:, j]
@@ -609,18 +610,18 @@ def normalize_matrix_columns(matrix):
             continue
         
         valid_values = column[valid_mask]
-        col_min = np.min(valid_values)
-        col_max = np.max(valid_values)
+        col_mean = np.mean(valid_values)
+        col_std = np.std(valid_values)
         
-        # Handle case where all values are the same
-        if col_max == col_min:
-            # Set all valid values to 0.5 (middle of range)
-            normalized[valid_mask, j] = 0.5
+        # Handle case where std is 0 (all values are the same)
+        if col_std == 0:
+            # Set all valid values to 0 (mean-centered)
+            standardized[valid_mask, j] = 0.0
         else:
-            # Min-max normalization: (x - min) / (max - min)
-            normalized[valid_mask, j] = (valid_values - col_min) / (col_max - col_min)
+            # Z-score standardization: (x - mean) / std
+            standardized[valid_mask, j] = (valid_values - col_mean) / col_std
     
-    return normalized
+    return standardized
 
 
 def save_matrix_data(matrix_data, output_path, metric='pck', use_best=True):
@@ -697,7 +698,7 @@ def load_matrix_data(input_path):
     }
 
 
-def create_confusion_matrix_plot(matrix_data, output_path, title_suffix="", metric='pck', normalized=False):
+def create_confusion_matrix_plot(matrix_data, output_path, title_suffix="", metric='pck', standardized=False):
     """
     Create and save a confusion matrix heatmap visualization.
     
@@ -706,7 +707,7 @@ def create_confusion_matrix_plot(matrix_data, output_path, title_suffix="", metr
         output_path: Path to save the plot
         title_suffix: Additional text for title (e.g., "Best Performance")
         metric: Metric name for title
-        normalized: If True, matrix is normalized and colorbar label will reflect this
+        standardized: If True, matrix is standardized (mean 0, std 1) and colorbar label will reflect this
     """
     matrix = matrix_data['matrix']
     training_labels = matrix_data['training_labels']
@@ -718,8 +719,8 @@ def create_confusion_matrix_plot(matrix_data, output_path, title_suffix="", metr
     # Create heatmap
     # Use a colormap that works well for performance metrics (higher is better)
     # RdYlGn: Red (low/bad) -> Yellow (medium) -> Green (high/good)
-    cbar_label = 'Normalized Score (0=worst, 1=best)' if normalized else f'{metric.upper()} (%)'
-    fmt_str = '.3f' if normalized else '.2f'
+    cbar_label = 'Standardized Score (mean=0, std=1)' if standardized else f'{metric.upper()} (%)'
+    fmt_str = '.3f' if standardized else '.2f'
     
     sns.heatmap(matrix, 
                 annot=True, 
@@ -732,8 +733,8 @@ def create_confusion_matrix_plot(matrix_data, output_path, title_suffix="", metr
                 linewidths=0.5,
                 linecolor='gray',
                 mask=np.isnan(matrix),
-                vmin=0.0 if normalized else None,
-                vmax=1.0 if normalized else None)
+                vmin=None,
+                vmax=None)
     
     # Highlight diagonal cells where training dataset base matches benchmark
     # Only highlight the first matching training variant for each benchmark
@@ -754,8 +755,8 @@ def create_confusion_matrix_plot(matrix_data, output_path, title_suffix="", metr
                 highlighted_benchmarks.add(base)
     
     metric_display = metric.replace('_', ' ').title()
-    norm_suffix = " (Column-Normalized)" if normalized else ""
-    ax.set_title(f'{metric_display} Confusion Matrix - {title_suffix}{norm_suffix}', 
+    std_suffix = " (Column-Standardized)" if standardized else ""
+    ax.set_title(f'{metric_display} Confusion Matrix - {title_suffix}{std_suffix}', 
                 fontsize=14, fontweight='bold', pad=20)
     ax.set_xlabel('Evaluation Benchmark', fontsize=12)
     ax.set_ylabel('Training Dataset', fontsize=12)
@@ -898,15 +899,15 @@ Examples:
                 matrix_data['benchmark_labels'] = [matrix_data['benchmark_labels'][i] 
                                                   for i in benchmark_indices]
     
-    # 5. Create normalized versions
-    best_matrix_data_normalized = {
-        'matrix': normalize_matrix_columns(best_matrix_data['matrix']),
+    # 5. Create standardized versions
+    best_matrix_data_standardized = {
+        'matrix': standardize_matrix_columns(best_matrix_data['matrix']),
         'training_labels': best_matrix_data['training_labels'],
         'benchmark_labels': best_matrix_data['benchmark_labels']
     }
     
-    avg_matrix_data_normalized = {
-        'matrix': normalize_matrix_columns(avg_matrix_data['matrix']),
+    avg_matrix_data_standardized = {
+        'matrix': standardize_matrix_columns(avg_matrix_data['matrix']),
         'training_labels': avg_matrix_data['training_labels'],
         'benchmark_labels': avg_matrix_data['benchmark_labels']
     }
@@ -939,7 +940,7 @@ Examples:
         output_path / f'{args.metric}_best_confusion_matrix.png',
         title_suffix="Best Performance",
         metric=args.metric,
-        normalized=False
+        standardized=False
     )
     
     create_confusion_matrix_plot(
@@ -947,24 +948,24 @@ Examples:
         output_path / f'{args.metric}_average_confusion_matrix.png',
         title_suffix="Average Performance",
         metric=args.metric,
-        normalized=False
+        standardized=False
     )
     
-    # Normalized plots (relative performance within each benchmark)
+    # Standardized plots (mean 0, std 1 within each benchmark)
     create_confusion_matrix_plot(
-        best_matrix_data_normalized, 
-        output_path / f'{args.metric}_best_confusion_matrix_normalized.png',
+        best_matrix_data_standardized, 
+        output_path / f'{args.metric}_best_confusion_matrix_standardized.png',
         title_suffix="Best Performance",
         metric=args.metric,
-        normalized=True
+        standardized=True
     )
     
     create_confusion_matrix_plot(
-        avg_matrix_data_normalized, 
-        output_path / f'{args.metric}_average_confusion_matrix_normalized.png',
+        avg_matrix_data_standardized, 
+        output_path / f'{args.metric}_average_confusion_matrix_standardized.png',
         title_suffix="Average Performance",
         metric=args.metric,
-        normalized=True
+        standardized=True
     )
     
     print("\nDone!")

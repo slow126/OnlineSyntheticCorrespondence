@@ -1,0 +1,90 @@
+# Flow MMD Comparison Configuration
+# Calculate MMD between flow features from different datasets
+
+# Datasets to compare
+datasets:
+  - name: pointodyssey
+    split: val
+    num_batches: 1000
+  - name: synthetic
+    split: val
+    num_batches: 1000
+  - name: kitti2012
+    split: val  # Will be overridden to 'training' if kitti_val_use_full_training: true
+    num_batches: 1000
+  - name: kitti2015
+    split: val  # Will be overridden to 'training' if kitti_val_use_full_training: true
+    num_batches: 1000
+  - name: spair
+    split: val
+    num_batches: 1000
+  - name: pfpascal
+    split: val
+    num_batches: 1000
+  - name: pfwillow
+    split: test  # PFWillow only has test split
+    num_batches: 1000
+  - name: flyingthings
+    split: test
+    num_batches: 1000
+  - name: tss
+    split: val
+    num_batches: 1000 
+
+# Data loading parameters
+batch_size: 8
+num_workers: 32  # Set to 0 for synthetic (GPU-bound), or higher for other datasets
+
+# MMD configuration preset (from mmd_config.yaml)
+mmd_preset: flow_vectors  # Options: flow_vectors (4D), flow_features (32D), general, fast, accurate
+
+# Common dataset parameters (applied to all datasets)
+dataset_params:
+  size: [512, 512]
+  downsample_flow: 32
+  max_kps: null  # null = no truncation
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: false  # Will be overridden per-dataset if needed
+  kitti_val_use_full_training: true  # If true, KITTI datasets use full training set instead of val split
+
+dataset_overrides:
+  spair:
+    datapath: './models/Datasets_CATs'
+    normalize_images: false  # SPair already normalized
+  pfpascal:
+    datapath: './models/Datasets_CATs'
+    normalize_images: false  # PF-Pascal already normalized
+  pfwillow:
+    datapath: './models/Datasets_CATs'
+    normalize_images: false  # PF-Willow already normalized
+  synthetic:
+    geometry_config_path: 'src/configs/online_synth_configs/OnlineGeometryConfig_Val.yaml'
+    processor_config_path: 'src/configs/online_synth_configs/OnlineProcessorConfig.yaml'
+    normalize_images: false  # Synthetic already normalized
+  pointodyssey:
+    dataset_location: '/home/spencer/Data/PointOdyssey'
+    normalize_images: true
+    pointodyssey_sequence_length: 4
+    pointodyssey_num_pts_to_track: 32  # Minimum requirement; use_all_valid will get all valid trajectories
+    use_all_valid: true  # Get all valid trajectories instead of limiting to num_pts_to_track
+  kitti2012:
+    datapath: '/home/spencer/Data/correspondence/kitti'
+    normalize_images: true
+  kitti2015:
+    datapath: '/home/spencer/Data/correspondence/kitti'
+    normalize_images: true
+  flyingthings:
+    datapath: '/home/spencer/Data/FlyingThings3D_tiny'
+    normalize_images: true
+  tss:
+    datapath: '/home/spencer/Data/correspondence/TSS_CVPR2016'
+    normalize_images: true
+
+# Output options
+output:
+  save_results: true
+  results_file: 'flow_mmd_results.csv'
+  print_pairs: true
+

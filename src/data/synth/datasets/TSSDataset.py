@@ -4,7 +4,7 @@ This dataset reads TSS dataset format and converts it to the format expected by 
 """
 
 from pathlib import Path
-from typing import Union, Optional
+from typing import Union, Optional, Dict
 import random
 
 from PIL import Image
@@ -16,6 +16,100 @@ from torchvision import transforms
 from torchvision.transforms.functional import normalize
 
 from src.io import read_flo_file
+
+
+class TSSSimpleDataset(Dataset):
+    """
+    TSS Dataset for training. Returns full resolution flow in pixel space.
+    
+    Returns:
+        - src_img: Source image [3, H, W]
+        - trg_img: Target image [3, H, W]
+        - flow: Flow [2, H, W] in pixel space (full resolution)
+    """
+    
+    def __init__(
+        self,
+        root: Union[str, Path],
+        reverse_flow: bool = False,
+    ):
+        """
+        Initialize TSS dataset.
+        
+        Args:
+            root: Root directory of TSS dataset
+            reverse_flow: If True, reverse flow direction
+        """
+        self.root = Path(root)
+        self.reverse_flow = reverse_flow
+        
+        # Load dataset pairs
+        self.labels = {}
+        self.pairs = []
+        
+        idx = 0
+        for sub in sorted(self.root.iterdir()):
+            if not sub.is_dir():
+                continue
+            self.labels[sub.name] = idx
+            idx += 1
+            pair_dirs = sorted(sub.iterdir())
+            self.pairs.extend(pair_dirs)
+    
+    def __len__(self):
+        return len(self.pairs)
+    
+    def _read_image(self, path: Path, name: str) -> torch.Tensor:
+        """Read image and convert to tensor [3, H, W] in [0, 1] range"""
+        img = Image.open(path.joinpath(name)).convert('RGB')
+        # Convert to tensor: (H, W, C) -> (C, H, W) and normalize to [0, 1]
+        # Use .contiguous() to ensure tensor can be resized during collation
+        img_tensor = torch.from_numpy(np.array(img)).permute(2, 0, 1).float().contiguous() / 255.0
+        return img_tensor
+    
+    def _read_flow(self, path: Path, name: str) -> torch.Tensor:
+        """Read flow file and return in pixel space [2, H, W]"""
+        flow = read_flo_file(path.joinpath(name))
+        h, w = flow.shape[:2]
+        
+        # Use .contiguous() to ensure tensor can be resized during collation
+        flow = torch.from_numpy(flow).moveaxis(-1, 0).contiguous()  # [2, H, W]
+        
+        # Mark invalid flow (typically > 1e9)
+        flow[flow > 1e9] = torch.inf
+        
+        return flow
+    
+    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+        """
+        Get a sample from the dataset.
+        
+        Returns:
+            Dictionary containing:
+                - 'src_img': Source image [3, H, W] in [0, 1] range
+                - 'trg_img': Target image [3, H, W] in [0, 1] range
+                - 'flow': Flow [2, H, W] in pixel space (full resolution)
+        """
+        pair_dir = self.pairs[idx]
+        
+        # Read images
+        src_img = self._read_image(pair_dir, 'image1.png')
+        trg_img = self._read_image(pair_dir, 'image2.png')
+        
+        # Read flow (flow2 goes from image2 to image1, which is target to source)
+        flow = self._read_flow(pair_dir, 'flow2.flo')
+        
+        # Reverse flow if requested
+        if self.reverse_flow:
+            flow = -flow
+        
+        sample = {
+            'src_img': src_img,
+            'trg_img': trg_img,
+            'flow': flow,  # Full resolution flow in pixel space
+        }
+        
+        return sample
 
 
 class TSSDataset(Dataset):

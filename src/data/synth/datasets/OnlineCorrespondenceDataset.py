@@ -79,7 +79,18 @@ class OnlineCorrespondenceDataset():
     def collate_fn(self, batch):
         batch = default_collate(batch)
         batch = self.processor.batch_to_device(batch, self.processor.device)
-        return self.processor.process_scene(batch)
+        processed_batch = self.processor.process_scene(batch)
+
+        # Keep an explicit alias for feature-grid flow so downstream
+        # visualizers/debuggers can rely on a stable key during training.
+        if (
+            "flow_downsampled" not in processed_batch
+            and self.processor.downsample_for_cats
+            and "flow" in processed_batch
+        ):
+            processed_batch["flow_downsampled"] = processed_batch["flow"]
+
+        return processed_batch
     
     def process_geometry(self, batch):
         batch = self.processor.batch_to_device(batch, self.processor.device)

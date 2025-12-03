@@ -29,6 +29,324 @@ sys.path.insert(0, str(pips2_path))
 # Import the base dataset and utils
 from src.data.synth.datasets.pips2.datasets.pointodysseydataset import PointOdysseyDataset as BasePointOdysseyDataset
 
+class PointOdysseySimpleDataset(torch.utils.data.Dataset):
+    """
+    Wrapper for PointOdyssey dataset that returns simple data. This should replace the Bespoke Flow Dataset.
+    
+    Returns:
+        - src_img: Source image (first frame)
+        - trg_img: Target image (second frame) 
+        - src_kps: Source keypoints (2, M) in pixel space, only valid keypoints (filtered)
+        - trg_kps: Target keypoints (2, M) in pixel space, only valid keypoints (filtered)
+        - n_pts: Number of valid keypoints (scalar tensor)
+    """
+    
+    def __init__(self, 
+                 dataset_location: str = '/home/spencer/Data/sample',
+                 dset: str = 'train',
+                 use_augs: bool = False,
+                 S: int = 8,
+                 N: int = 32,
+                 strides: list = [1, 2, 4,],    
+                 clip_step: int = 2,
+                 resize_size: tuple = (512 + 64, 512 + 64),
+                 crop_size: tuple = (512, 512),
+                 req_full: bool = False,
+                 quick: bool = False,
+                 verbose: bool = True,
+                 reverse_flow: bool = True,
+                 thres: str = 'img',
+                 use_all_valid: bool = False,
+                 disable_motion_filter: bool = False):
+        """
+        Initialize the PointOdyssey flow dataset.
+        
+        Args:
+            dataset_location: Path to PointOdyssey dataset
+            dset: Dataset split ('train', 'val', 'test')
+            use_augs: Whether to use data augmentations
+            S: Number of frames per sequence
+            N: Number of points to track (used as minimum requirement and for farthest point sampling when use_all_valid=False)
+            strides: Frame strides for sampling
+            clip_step: Step size for clip sampling
+            resize_size: Size to resize images to
+            crop_size: Size to crop images to
+            req_full: Whether to require full sequences
+            quick: Whether to use quick mode (fewer samples)
+            verbose: Whether to print verbose information
+            reverse_flow: Whether to reverse flow direction
+            thres: PCK threshold type ('img' or 'bbox')
+            use_all_valid: If True, returns all valid trajectories after filtering (no truncation).
+                          If False, uses farthest point sampling to select N diverse trajectories (default: False)
+            disable_motion_filter: If True, disables motion filtering (velocity/acceleration/jerk checks).
+                                  Useful for correspondence tasks where you only need valid correspondences
+                                  between frames, not smooth trajectories (default: False)
+        """
+        # Check if the dataset has the expected structure (with train/val/test subdirs)
+        expected_dset_path = os.path.join(dataset_location, dset)
+        self.dataset_location = dataset_location
+        self.dset = dset
+        self.strides = strides
+        if not os.path.exists(expected_dset_path):
+            # If no train/val/test subdirs, assume sequences are directly in dataset_location
+            print(f"Warning: No '{dset}' subdirectory found in {dataset_location}")
+            print("Assuming sequences are directly in the dataset location")
+            # Create a temporary structure by pointing to the parent directory
+            actual_dataset_location = os.path.dirname(dataset_location)
+            actual_dset = os.path.basename(dataset_location)
+        else:
+            actual_dataset_location = dataset_location
+            actual_dset = dset
+            
+        self.base_dataset = BasePointOdysseyDataset(
+            dataset_location=actual_dataset_location,
+            dset=actual_dset,
+            use_augs=use_augs,
+            S=S,
+            N=N,
+            strides=strides,
+            clip_step=clip_step,
+            resize_size=resize_size,
+            crop_size=crop_size,
+            req_full=req_full,
+            quick=quick,
+            verbose=verbose,
+            use_all_valid=use_all_valid,
+            disable_motion_filter=disable_motion_filter,
+        )
+        
+        self.S = S
+        self.N = N
+        self.verbose = verbose
+        self.reverse_flow = reverse_flow
+        self.thres = thres
+        # Device management - defaults to CPU
+        self._device = torch.device('cpu')
+        
+        # Cache management for valid/invalid indices (read-only)
+        self.cache_dir = os.path.join(actual_dataset_location, '.cache')
+        os.makedirs(self.cache_dir, exist_ok=True)
+        
+        # Create a unique hash for this dataset configuration
+        config_str = json.dumps({
+            'dataset_location': actual_dataset_location,
+            'dset': actual_dset,
+            'S': S,
+            'N': N,
+            'strides': sorted(strides),
+            'clip_step': clip_step,
+            'resize_size': resize_size,
+            'crop_size': crop_size,
+            'req_full': req_full,
+        }, sort_keys=True)
+        
+        config_hash = hashlib.md5(config_str.encode()).hexdigest()[:8]  # Use first 8 chars for brevity
+        
+        # Create a more readable filename with key parameters
+        strides_str = '_'.join(map(str, sorted(strides)))
+        cache_name = f'valid_indices_{actual_dset}_S{S}_N{N}_strides{strides_str}_{config_hash}.json'
+        self.cache_file = os.path.join(self.cache_dir, cache_name)
+        
+        # Store pattern for fallback matching (human-readable parts: dset, S, N, strides)
+        self._cache_pattern = f'valid_indices_{actual_dset}_S{S}_N{N}_strides{strides_str}_*.json'
+        self._expected_hash = config_hash  # Store for debug messages
+        
+        # Read-only cache: sorted list for fast indexing
+        self._valid_indices_list = None  # Sorted list of valid indices
+        self._invalid_indices_set = None  # Set for fast lookup
+        
+        # Load existing cache (read-only, no locks needed)
+        self._load_cache()
+        
+    def __len__(self) -> int:
+        """Return the number of samples in the dataset.
+        If cache exists and has valid indices, return count of valid indices only.
+        Otherwise, return full dataset length for random resampling.
+        """
+        if self._valid_indices_list is not None:
+            return len(self._valid_indices_list)
+        return len(self.base_dataset)
+
+    def _load_cache(self):
+        """Load validation cache from disk (read-only, called at init).
+        First tries exact hash match, then falls back to matching by human-readable pattern (dset, S, N, strides).
+        """
+        cache_file_to_use = None
+        hash_mismatch = False
+        
+        # First, try exact hash match
+        if os.path.exists(self.cache_file):
+            cache_file_to_use = self.cache_file
+        else:
+            # Fallback: search for cache files matching the human-readable pattern
+            # Pattern: valid_indices_{dset}_S{S}_N{N}_strides{strides}_*.json
+            pattern = os.path.join(self.cache_dir, self._cache_pattern)
+            matching_files = glob.glob(pattern)
+            
+            if matching_files:
+                # Use the most recent matching file (by modification time)
+                matching_files.sort(key=os.path.getmtime, reverse=True)
+                cache_file_to_use = matching_files[0]
+                hash_mismatch = True
+                
+                # Extract hash from filename for info
+                filename = os.path.basename(cache_file_to_use)
+                # Pattern: valid_indices_*_S*_N*_strides*_HASH.json
+                parts = filename.replace('.json', '').split('_')
+                found_hash = parts[-1] if parts else "unknown"
+                
+                print(f"[PointOdyssey] ⚠️  Exact hash match not found, but found matching cache by pattern!", flush=True)
+                print(f"[PointOdyssey]   Expected hash: {self._expected_hash}", flush=True)
+                print(f"[PointOdyssey]   Found hash: {found_hash}", flush=True)
+                print(f"[PointOdyssey]   Using cache: {os.path.basename(cache_file_to_use)}", flush=True)
+                print(f"[PointOdyssey]   (Matched by: dset, S, N, strides - safe to use)", flush=True)
+        
+        # Load the cache file if found
+        if cache_file_to_use:
+            try:
+                with open(cache_file_to_use, 'r') as f:
+                    cache_data = json.load(f)
+                    valid_indices = cache_data.get('valid', [])
+                    invalid_indices = cache_data.get('invalid', [])
+                    
+                    # Convert to sorted list for fast indexing and set for fast lookup
+                    self._valid_indices_list = sorted(valid_indices)
+                    self._invalid_indices_set = set(invalid_indices)
+                    
+                # Always print cache status (independent of verbose)
+                if hash_mismatch:
+                    # Already printed warning above, just print success
+                    print(f"[PointOdyssey] Loaded {len(self._valid_indices_list)} valid indices from cache", flush=True)
+                elif self.verbose:
+                    print(f"[PointOdyssey] Loaded cache from {os.path.basename(cache_file_to_use)}: {len(self._valid_indices_list)} valid, {len(self._invalid_indices_set)} invalid indices", flush=True)
+                else:
+                    print(f"[PointOdyssey] Using cache: {len(self._valid_indices_list)} valid indices (dataset size: {len(self._valid_indices_list)})", flush=True)
+            except Exception as e:
+                # Always print cache errors (independent of verbose)
+                print(f"[PointOdyssey] Failed to load cache: {e}", flush=True)
+                self._valid_indices_list = None
+                self._invalid_indices_set = None
+        else:
+            # Always print when no cache found (independent of verbose)
+            print(f"[PointOdyssey] No cache found (searched for exact: {os.path.basename(self.cache_file)})", flush=True)
+            print(f"[PointOdyssey] Pattern search: {self._cache_pattern}", flush=True)
+            print(f"[PointOdyssey] Will use first valid index fallback", flush=True)
+            self._valid_indices_list = None
+            self._invalid_indices_set = None
+    
+
+    def __getitem__(self, index: int) -> Dict[str, torch.Tensor]:
+        """
+        Get a sample from the dataset (training/validation mode - READ ONLY).
+        Uses cache if available (fast lookup), otherwise grabs the first valid index.
+        
+        Args:
+            index: Sample index (0 to len(self)-1)
+            
+        Returns:
+            Dictionary containing:
+                - 'src_img': Source image tensor (C, H, W)
+                - 'trg_img': Target image tensor (C, H, W) 
+                - 'flow': Flow tensor (2, H, W) from trg to src
+        """
+        # If cache exists, map index to valid index (fast lookup)
+        if self._valid_indices_list is not None:
+            # Map requested index to actual valid index in cache
+            if index < len(self._valid_indices_list):
+                actual_index = self._valid_indices_list[index]
+                sample, gotit = self.base_dataset[actual_index]
+                if gotit:
+                    # Success - proceed to process sample
+                    pass
+                else:
+                    # Cache says valid but base dataset says invalid - fall through to first valid index
+                    gotit = False
+            else:
+                # Index out of range for cache - shouldn't happen if __len__ is correct
+                gotit = False
+        else:
+            # No cache - will grab first valid index
+            gotit = False
+        
+        # If cache lookup failed or no cache exists, grab the first valid index
+        if not gotit:
+            # If we have a cache with valid indices, use the first one
+            if self._valid_indices_list is not None and len(self._valid_indices_list) > 0:
+                actual_index = self._valid_indices_list[0]
+                sample, gotit = self.base_dataset[actual_index]
+            else:
+                # No cache - iterate through indices to find first valid one
+                for idx in range(len(self.base_dataset)):
+                    # Skip known-invalid indices if we have invalid set
+                    if self._invalid_indices_set is not None and idx in self._invalid_indices_set:
+                        continue
+                    
+                    # Try this index
+                    sample, gotit = self.base_dataset[idx]
+                    if gotit:
+                        break
+            
+            if not gotit:
+                raise RuntimeError(f"Failed to get valid sample - no valid indices found")
+        
+        # Keep everything on CPU - DataLoader will handle GPU transfer
+        # Extract the data we need (keep on CPU)
+        rgbs = sample['rgbs']  # (S, C, H, W) - keep on CPU
+        trajs = sample['trajs']  # (S, N, 2) - keep on CPU
+        visibs = sample['visibs']  # (S, N) - keep on CPU
+        valids = sample['valids']  # (S, N) - keep on CPU
+        masks = sample['masks']  # (S, 1, H, W) - keep on CPU
+
+        i, j = 0, self.S - 1
+        if self.reverse_flow:
+            i, j = j, i
+        
+        src_img = rgbs[i]
+        trg_img = rgbs[j]
+        
+        # Convert images to float32 in [0, 1] range (on CPU)
+        src_img = src_img.to(torch.float32) / 255.0
+        trg_img = trg_img.to(torch.float32) / 255.0
+        
+        # Clamp to ensure valid [0, 1] range before normalization
+        src_img = torch.clamp(src_img, 0.0, 1.0)
+        trg_img = torch.clamp(trg_img, 0.0, 1.0)
+
+        # Trajectories and flags for those two frames
+        src_trajs = trajs[i]  # (N, 2)
+        trg_trajs = trajs[j]  # (N, 2)
+        src_vis = visibs[i]  # (N,)
+        trg_vis = visibs[j]  # (N,)
+        src_valid = valids[i]  # (N,)
+        trg_valid = valids[j]  # (N,)
+
+        # Filter to only valid keypoints (both src and trg must be valid)
+        valid_mask = src_valid.bool() & trg_valid.bool()
+        valid_indices = valid_mask.nonzero(as_tuple=False).squeeze(1)
+        
+        if len(valid_indices) == 0:
+            # No valid keypoints - return empty keypoints
+            src_kps = torch.zeros((2, 0), dtype=torch.float32, device=src_trajs.device)
+            trg_kps = torch.zeros((2, 0), dtype=torch.float32, device=trg_trajs.device)
+            n_pts = 0
+        else:
+            # Extract valid keypoints only
+            valid_src_trajs = src_trajs[valid_indices]  # (M, 2)
+            valid_trg_trajs = trg_trajs[valid_indices]  # (M, 2)
+            
+            # Convert to keypoints format [2, M] (x, y coordinates)
+            # Trajectories are already in pixel space
+            src_kps = valid_src_trajs.t()  # (2, M) - transpose from (M, 2) to (2, M)
+            trg_kps = valid_trg_trajs.t()  # (2, M) - transpose from (M, 2) to (2, M)
+            n_pts = len(valid_indices)
+
+        return {
+            "src_img": src_img,
+            "trg_img": trg_img,
+            "src_kps": src_kps,  # (2, M) in pixel space, only valid keypoints
+            "trg_kps": trg_kps,  # (2, M) in pixel space, only valid keypoints
+            "n_pts": torch.tensor(n_pts, dtype=torch.int32, device=src_trajs.device),
+        }
 
 class PointOdysseyFlowDataset(torch.utils.data.Dataset):
     """
@@ -301,6 +619,7 @@ class PointOdysseyFlowDataset(torch.utils.data.Dataset):
             self._valid_indices_list = None
             self._invalid_indices_set = None
     
+
     def __getitem__(self, index: int) -> Dict[str, torch.Tensor]:
         """
         Get a sample from the dataset (training/validation mode - READ ONLY).

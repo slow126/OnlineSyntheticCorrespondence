@@ -348,6 +348,8 @@ def main():
                         help='batch size for validation. [default: 8]')
     parser.add_argument('--val_num_workers', type=int, default=16,
                         help='number of workers for validation. [default: 16]')
+    parser.add_argument('--val_persistent_workers', type=boolean_string, nargs='?', const=True, default=False,
+                        help='Keep validation workers alive between epochs. Disable to avoid memory piling up across multiple benchmarks. [default: False]')
     parser.add_argument('--tss_root', type=str, default='/home/spencer/Data/correspondence/TSS_CVPR2016',
                         help='root directory of the TSS dataset')
 
@@ -541,7 +543,15 @@ def main():
                 feature_size=args.feature_size,
                 thres=args.thres
             )
-            val_dataloader = DataLoader(val_dataset, batch_size=args.val_batch_size, num_workers=args.val_num_workers, persistent_workers=True, prefetch_factor=8, shuffle=False)
+            val_dataloader = DataLoader(
+                val_dataset,
+                batch_size=args.val_batch_size,
+                num_workers=args.val_num_workers,
+                persistent_workers=args.val_persistent_workers and args.val_num_workers > 0,
+                prefetch_factor=8 if args.val_num_workers > 0 else None,
+                shuffle=False,
+                pin_memory=True
+            )
         elif benchmark == 'pointodyssey':
             val_dataset = PointOdysseyFlowDataset(
                 dataset_location=args.pointodyssey_root,
@@ -564,9 +574,9 @@ def main():
             val_dataloader = DataLoader(
                 val_dataset, 
                 batch_size=args.val_batch_size, 
-                num_workers=args.val_num_workers, 
-                persistent_workers=True, 
-                prefetch_factor=8, 
+                num_workers=args.val_num_workers,
+                persistent_workers=args.val_persistent_workers and args.val_num_workers > 0,
+                prefetch_factor=8 if args.val_num_workers > 0 else None,
                 shuffle=False, 
                 pin_memory=True
             )
@@ -591,8 +601,8 @@ def main():
                 val_dataset,
                 batch_size=args.val_batch_size,
                 num_workers=args.val_num_workers,
-                persistent_workers=True,
-                prefetch_factor=8,
+                persistent_workers=args.val_persistent_workers and args.val_num_workers > 0,
+                prefetch_factor=8 if args.val_num_workers > 0 else None,
                 shuffle=False,
                 pin_memory=True
             )
@@ -601,14 +611,22 @@ def main():
             val_dataset = FlyingThingsDataset(root=args.flyingthings_root, split="test", transforms=None, size=(args.size, args.size), downsample_flow=args.feature_size, 
                                             subsample_flow=args.subsample_flow, subsample_flow_seed=args.subsample_flow_seed, use_valid_mask=True, reverse_flow=True, filter_out_of_bounds=True)
             # Note: Dataset returns CPU tensors - DataLoader handles GPU transfer
-            val_dataloader = DataLoader(val_dataset, batch_size=args.val_batch_size, num_workers=args.val_num_workers, persistent_workers=True, prefetch_factor=8, shuffle=False)
+            val_dataloader = DataLoader(
+                val_dataset,
+                batch_size=args.val_batch_size,
+                num_workers=args.val_num_workers,
+                persistent_workers=args.val_persistent_workers and args.val_num_workers > 0,
+                prefetch_factor=8 if args.val_num_workers > 0 else None,
+                shuffle=False,
+                pin_memory=True
+            )
         else:
             val_dataset = download.load_dataset(benchmark, args.datapath, args.thres, device, args.split_to_use_for_validation, False, args.feature_size)
             val_dataloader = DataLoader(val_dataset,
                 batch_size=args.val_batch_size,
                 num_workers=args.val_num_workers,
-                persistent_workers=True,
-                prefetch_factor=8,
+                persistent_workers=args.val_persistent_workers and args.val_num_workers > 0,
+                prefetch_factor=8 if args.val_num_workers > 0 else None,
                 shuffle=False,
                 pin_memory=True)
         

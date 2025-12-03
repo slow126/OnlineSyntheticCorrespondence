@@ -327,6 +327,11 @@ class SyntheticCorrespondenceProcessor:
             flow = self.downsample_flow(flow, self.cats_feat_size)
 
         post_batch['flow'] = flow
+        # Keep an explicit alias so callers that expect both full-res and
+        # downsampled flows can find the feature-grid version.
+        if self.downsample_for_cats:
+            post_batch['flow_downsampled'] = flow
+
         post_batch['flow_full'] = full_flow
         return post_batch
 

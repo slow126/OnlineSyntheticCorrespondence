@@ -436,6 +436,14 @@ class CorrespondenceVisualizer:
             ax.annotate('', xy=(end_x[i], end_y[i]), xytext=(start_x[i], start_y[i]),
                        arrowprops=dict(arrowstyle='->', color=colors[i], alpha=0.8, lw=1.5))
         
+        # Plot keypoint markers: green dots for target (start), red dots for source (end)
+        # Target keypoints (green) - at start of arrow in right image
+        ax.scatter(start_x, start_y, c='green', s=30, marker='o', alpha=0.9, 
+                  edgecolors='darkgreen', linewidths=1, zorder=10, label='Target (trg)')
+        # Source keypoints (red) - at end of arrow in left image
+        ax.scatter(end_x, end_y, c='red', s=30, marker='o', alpha=0.9, 
+                  edgecolors='darkred', linewidths=1, zorder=10, label='Source (src)')
+        
         # Set axis limits to match combined image
         ax.set_xlim(0, w * 2)
         ax.set_ylim(h, 0)  # Flip y-axis to match image coordinates
@@ -521,6 +529,18 @@ class CorrespondenceVisualizer:
             ax.quiver(valid_x[i], valid_y[i], valid_flow_x[i], valid_flow_y[i],
                      angles='xy', scale_units='xy', scale=1,
                      color=colors[i], alpha=0.8, width=0.003)
+        
+        # Compute source keypoint positions: target + flow
+        src_x = valid_x + valid_flow_x
+        src_y = valid_y + valid_flow_y
+        
+        # Plot keypoint markers: green dots for target (start), red dots for source (end)
+        # Target keypoints (green) - at start of arrow
+        ax.scatter(valid_x, valid_y, c='green', s=30, marker='o', alpha=0.9, 
+                  edgecolors='darkgreen', linewidths=1, zorder=10, label='Target (trg)')
+        # Source keypoints (red) - at end of arrow
+        ax.scatter(src_x, src_y, c='red', s=30, marker='o', alpha=0.9, 
+                  edgecolors='darkred', linewidths=1, zorder=10, label='Source (src)')
         
         # Set axis limits to match image
         ax.set_xlim(0, w)

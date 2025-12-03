@@ -34,8 +34,20 @@ class EvaluatorInstance:
             npt_val = npt.item()
             
             if npt_val > 0:
-                _, correct_ids, _ = self.classify_prd(pk[:, :npt], tk[:, :npt], thres)
-                pck.append((len(correct_ids) / npt_val) * 100)
+                # Filter out invalid keypoints (marked with -1)
+                pk_slice = pk[:, :npt]
+                tk_slice = tk[:, :npt]
+                valid_mask = (pk_slice[0, :] >= 0) & (pk_slice[1, :] >= 0) & (tk_slice[0, :] >= 0) & (tk_slice[1, :] >= 0)
+                
+                if valid_mask.sum() > 0:
+                    # Only evaluate valid keypoints
+                    pk_valid = pk_slice[:, valid_mask]
+                    tk_valid = tk_slice[:, valid_mask]
+                    _, correct_ids, _ = self.classify_prd(pk_valid, tk_valid, thres)
+                    pck.append((len(correct_ids) / valid_mask.sum().item()) * 100)
+                else:
+                    # All keypoints are invalid
+                    pck.append(0.0)
             else:
                 # No valid points - PCK is undefined, set to 0
                 pck.append(0.0)
@@ -58,9 +70,22 @@ class EvaluatorInstance:
             npt_val = npt.item()
             
             if npt_val > 0:
-                _, correct_ids, _ = self.classify_prd(pk[:, :npt], tk[:, :npt], thres)
-                correct_id_list.append(correct_ids)
-                pck.append((len(correct_ids) / npt_val) * 100)
+                # Filter out invalid keypoints (marked with -1)
+                pk_slice = pk[:, :npt]
+                tk_slice = tk[:, :npt]
+                valid_mask = (pk_slice[0, :] >= 0) & (pk_slice[1, :] >= 0) & (tk_slice[0, :] >= 0) & (tk_slice[1, :] >= 0)
+                
+                if valid_mask.sum() > 0:
+                    # Only evaluate valid keypoints
+                    pk_valid = pk_slice[:, valid_mask]
+                    tk_valid = tk_slice[:, valid_mask]
+                    _, correct_ids, _ = self.classify_prd(pk_valid, tk_valid, thres)
+                    correct_id_list.append(correct_ids)
+                    pck.append((len(correct_ids) / valid_mask.sum().item()) * 100)
+                else:
+                    # All keypoints are invalid
+                    correct_id_list.append([])
+                    pck.append(0.0)
             else:
                 # No valid points - PCK is undefined, set to 0
                 correct_id_list.append([])
@@ -157,8 +182,19 @@ class EvaluatorInstance:
             thres = batch['pckthres'][idx]
             npt = batch['n_pts'][idx]
             
-            # Compute motion magnitude for each keypoint
-            motion = trk[:, :npt] - tk[:, :npt]
+            # Filter out invalid keypoints (marked with -1) first
+            pk_slice = pk[:, :npt]
+            tk_slice = tk[:, :npt]
+            trk_slice = trk[:, :npt]
+            valid_mask = (pk_slice[0, :] >= 0) & (pk_slice[1, :] >= 0) & (tk_slice[0, :] >= 0) & (tk_slice[1, :] >= 0) & (trk_slice[0, :] >= 0) & (trk_slice[1, :] >= 0)
+            
+            if valid_mask.sum() == 0:
+                # All keypoints are invalid
+                pck.append(0.0)
+                continue
+            
+            # Compute motion magnitude for each valid keypoint
+            motion = trk_slice[:, valid_mask] - tk_slice[:, valid_mask]
             motion_magnitude = torch.norm(motion, dim=0)
             
             # Only evaluate keypoints with significant motion
@@ -169,8 +205,8 @@ class EvaluatorInstance:
             
             if motion_mask.sum() > 0:
                 # Only evaluate on moving keypoints
-                pk_moving = pk[:, :npt][:, motion_mask]
-                tk_moving = tk[:, :npt][:, motion_mask]
+                pk_moving = pk_slice[:, valid_mask][:, motion_mask]
+                tk_moving = tk_slice[:, valid_mask][:, motion_mask]
                 _, correct_ids, _ = self.classify_prd(pk_moving, tk_moving, thres)
                 
                 pck.append((len(correct_ids) / motion_mask.sum().item()) * 100)
@@ -196,17 +232,27 @@ class EvaluatorInstance:
             thres = batch['pckthres'][idx]
             npt = batch['n_pts'][idx]
             
-            # Compute motion magnitude for each keypoint
-            motion = trk[:, :npt] - tk[:, :npt]
+            # Filter out invalid keypoints (marked with -1) first
+            pk_slice = pk[:, :npt]
+            tk_slice = tk[:, :npt]
+            trk_slice = trk[:, :npt]
+            valid_mask = (pk_slice[0, :] >= 0) & (pk_slice[1, :] >= 0) & (tk_slice[0, :] >= 0) & (tk_slice[1, :] >= 0) & (trk_slice[0, :] >= 0) & (trk_slice[1, :] >= 0)
+            
+            if valid_mask.sum() == 0:
+                # All keypoints are invalid, skip this sample
+                continue
+            
+            # Compute motion magnitude for each valid keypoint
+            motion = trk_slice[:, valid_mask] - tk_slice[:, valid_mask]
             motion_magnitude = torch.norm(motion, dim=0)
             
-            # Classify each keypoint into motion bins
+            # Classify each valid keypoint into motion bins
             for bin_name, (min_motion, max_motion) in motion_bins.items():
                 bin_mask = (motion_magnitude >= min_motion) & (motion_magnitude < max_motion)
                 
                 if bin_mask.sum() > 0:
-                    pk_bin = pk[:, :npt][:, bin_mask]
-                    tk_bin = tk[:, :npt][:, bin_mask]
+                    pk_bin = pk_slice[:, valid_mask][:, bin_mask]
+                    tk_bin = tk_slice[:, valid_mask][:, bin_mask]
                     _, correct_ids, _ = self.classify_prd(pk_bin, tk_bin, thres)
                     
                     results[bin_name]['pck'].append((len(correct_ids) / bin_mask.sum().item()) * 100)

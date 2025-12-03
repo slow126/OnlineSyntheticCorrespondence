@@ -23,6 +23,211 @@ from src.data.real.datasets.optical_flow.kitti import load_flow_from_png, make_d
 from src.data.synth.datasets.FlyingThingsDataset import FlowDownsampler, FlowAwareResize
 
 
+class KittiSimpleDataset(Dataset):
+    """
+    KITTI-2012 and KITTI-2015 dataset for CATs++. This should replace the Bespoke Flow Dataset.
+    
+    Returns:
+        - src_img: Source image (first frame)
+        - trg_img: Target image (second frame) 
+        - flow: Optical flow from trg to src (dx, dy)
+    """
+    
+    def __init__(
+        self,
+        root: str,
+        split: str = 'train',
+        version: str = 'auto',
+        occ_type: str = 'occ',
+        reverse_flow: bool = False,
+    ):
+        """
+        Initialize KITTI dataset.
+        
+        Args:
+            root: Path to kitti-2012 or kitti-2015 folder (should contain 'training' subdirectory)
+            split: 'train' or 'val'
+            version: 'auto', '2012', or '2015' (auto-detects by checking for colored_0 vs image_2)
+            occ_type: 'noc', 'occ', or 'only_occ' (type of flow to use)
+            size: Optional (H, W) tuple to resize images
+            downsample_flow: Optional feat_size for CATS downsampling (e.g., 32)
+            normalize: If True, applies ImageNet normalization to images
+            normalize_images: If True, returns validation format with keypoints
+            thres: PCK threshold type ('img' or 'bbox')
+            max_pts: Maximum number of keypoints for validation
+            split_ratio: Train/val split ratio for old structure with 'training' directory (default 0.8)
+                         Not used if 'train'/'val' directories exist (files are already split)
+        """
+        self.root = Path(root)
+        self.split = split
+        self.occ_type = occ_type
+        self.reverse_flow = reverse_flow
+        
+        # Build dataset file list
+        # Support both old structure (training directory with split) and new structure (train/val directories)
+        # Check for new structure first (train/val directories)
+        train_dir = self.root / 'train'
+        val_dir = self.root / 'val'
+        training_dir = self.root / 'training'
+        
+        # Auto-detect version if needed
+        if version == 'auto':
+            # Try new structure first (train/val)
+            if train_dir.exists():
+                if (train_dir / 'colored_0').exists():
+                    version = '2012'
+                elif (train_dir / 'image_2').exists():
+                    version = '2015'
+            # Fall back to old structure (training)
+            elif training_dir.exists():
+                if (training_dir / 'colored_0').exists():
+                    version = '2012'
+                elif (training_dir / 'image_2').exists():
+                    version = '2015'
+            
+            if version == 'auto':
+                raise ValueError(f"Cannot auto-detect KITTI version. Checked for 'colored_0' (2012) or 'image_2' (2015) in train/val or training directories")
+        
+        self.version = version
+        
+        if train_dir.exists() and val_dir.exists():
+            # New structure: separate train/val directories with files already split
+            # Files are physically separated, no split logic needed
+            print(f"Using new structure: train/val directories")
+            if split == 'train':
+                data_dir = train_dir
+                self.data_dir_name = 'train'
+            elif split == 'val':
+                data_dir = val_dir
+                self.data_dir_name = 'val'
+            else:
+                raise ValueError(f"split must be 'train' or 'val', got '{split}'")
+            
+            # Use make_dataset to get file list (all files in directory, split=1.0)
+            occ = (occ_type == 'occ')
+            only_occ = (occ_type == 'only_occ')
+            
+            file_list, _ = make_dataset(str(data_dir), split=1.0, occ=occ, only_occ=only_occ)
+            self.file_list = file_list
+        elif training_dir.exists():
+            # Old structure: training directory with split ratio
+            # Use make_dataset to get file list with split ratio
+            occ = (occ_type == 'occ')
+            only_occ = (occ_type == 'only_occ')
+            if split == 'train':
+                split = 'training'
+            
+            # Special case: split='training' means use all data from training directory
+            if split == 'training':
+                # Use split=0.0 to get all samples in val_list (we'll use it for validation)
+                _, all_list = make_dataset(str(training_dir), split=0.0, occ=occ, only_occ=only_occ)
+                self.file_list = all_list
+                self.data_dir_name = 'training'
+                print(f"Using full training set: {len(self.file_list)} samples")
+            else:
+                train_list, val_list = make_dataset(str(training_dir), split=split_ratio, occ=occ, only_occ=only_occ)
+                
+                # Select appropriate split
+                if split == 'train':
+                    self.file_list = train_list
+                    self.data_dir_name = 'training'
+                elif split == 'val':
+                    self.file_list = val_list
+                    self.data_dir_name = 'training'
+                else:
+                    raise ValueError(f"split must be 'train', 'val', or 'training', got '{split}'")
+        else:
+            raise ValueError(f"Neither 'train'/'val' directories nor 'training' directory found in {self.root}")
+        
+        print(f"KITTI-{version} dataset initialized: {len(self.file_list)} samples in '{split}' split (occ_type={occ_type})")
+    
+    def __len__(self):
+        return len(self.file_list)
+    
+    def _load_image(self, img_path: str) -> torch.Tensor:
+        """Load and preprocess image."""
+        img = cv2.imread(img_path)
+        if img is None:
+            raise ValueError(f"Failed to load image: {img_path}")
+        
+        # Convert BGR to RGB
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        
+        # Convert to tensor: (H, W, C) -> (C, H, W) and normalize to [0, 1]
+        img_tensor = torch.from_numpy(img).permute(2, 0, 1).float() / 255.0
+        
+        return img_tensor
+    
+    def _load_flow(self, flow_path) -> torch.Tensor:
+        """Load flow from PNG file."""
+        if isinstance(flow_path, (list, tuple)):
+            # For only_occ mode, we get both flow_occ and flow_noc
+            flow_path = flow_path[0]  # Use flow_occ
+        
+        full_path = self.root / self.data_dir_name / flow_path
+        flow_np, valid_mask = load_flow_from_png(str(full_path))
+        
+        # Convert to torch tensor: (H, W, 2) -> (2, H, W)
+        flow = torch.from_numpy(flow_np).permute(2, 0, 1).float()
+        
+        # Invalid pixels are already inf, keep them
+        return flow
+
+    
+    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+        """
+        Get a sample from the dataset.
+        
+        Returns:
+            Training format (normalize_images=False):
+                - 'src_img': Source image [3, H, W]
+                - 'trg_img': Target image [3, H, W]
+                - 'flow': Flow [2, H, W] or [2, feat_size, feat_size] if downsampled
+            
+            Validation format (normalize_images=True):
+                - All training fields plus:
+                - 'src_kps': Source keypoints [2, max_pts]
+                - 'trg_kps': Target keypoints [2, max_pts]
+                - 'n_pts': Number of valid keypoints
+                - 'pckthres': PCK threshold
+                - 'src_imsize': Source image size (H, W)
+                - 'trg_imsize': Target image size (H, W)
+                - 'datalen': Dataset length
+        """
+        # Get file paths
+        img_paths, flow_path = self.file_list[idx]
+        
+        # img_paths[0] is source (img1), img_paths[1] is target (img2)
+        # Flow is from target to source (matches our convention)
+        # Load images
+        if self.reverse_flow:
+            src_img_index = 1
+            trg_img_index = 0
+        else:
+            src_img_index = 0
+            trg_img_index = 1
+
+        src_img_path = str(self.root / self.data_dir_name / img_paths[src_img_index])
+        trg_img_path = str(self.root / self.data_dir_name / img_paths[trg_img_index])
+        
+
+        
+        src_img = self._load_image(src_img_path)
+        trg_img = self._load_image(trg_img_path)
+        
+        # Load flow
+        flow = self._load_flow(flow_path)
+        
+        # Create sample dict
+        sample = {
+            'src_img': src_img,
+            'trg_img': trg_img,
+            'flow': flow,
+        }
+        
+        return sample
+
+
 class KittiDataset(Dataset):
     """
     KITTI-2012 and KITTI-2015 dataset for CATs++.

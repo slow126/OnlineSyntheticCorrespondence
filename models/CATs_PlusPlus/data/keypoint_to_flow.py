@@ -69,7 +69,9 @@ class KeypointToFlow:
 
         flow_index = self.feat_ids.index_select(dim=0, index=src_idx[:,1])
 
-        flow_map = torch.zeros(self.feat_size, self.feat_size, 2)
+        # Get device from input tensors to ensure flow_map is on the same device
+        device = src_kps.device
+        flow_map = torch.zeros(self.feat_size, self.feat_size, 2, device=device)
         flow_map[flow_index[:,0],flow_index[:,1]] = flow / (self.img_size // self.feat_size)
 
         flow_map = flow_map.permute(2, 0, 1)

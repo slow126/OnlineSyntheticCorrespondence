@@ -69,14 +69,42 @@ def train_epoch(net,
     for i, mini_batch in pbar:
         optimizer.zero_grad()
         
-        # Apply flow filtering if specified (only during training)
-        if flow_filter is not None and 'flow' in mini_batch:
-            mini_batch['flow'] = flow_filter.filter_batch_flow(mini_batch['flow'])
+        # Transfer entire batch to GPU once at the start (efficient - single operation)
+        # Use explicit device comparison to handle "cuda" vs "cuda:0" properly
+        gpu_batch = {}
+        for key, value in mini_batch.items():
+            if isinstance(value, torch.Tensor):
+                # Explicit device comparison: check type and index separately
+                value_device = value.device
+                needs_transfer = (
+                    value_device.type != device.type or
+                    (value_device.index if value_device.index is not None else 0) != 
+                    (device.index if device.index is not None else 0)
+                )
+                if needs_transfer:
+                    gpu_batch[key] = value.to(device, non_blocking=True)
+                else:
+                    gpu_batch[key] = value  # Already on correct device
+            else:
+                gpu_batch[key] = value  # Keep non-tensors as-is
         
-        flow_gt = mini_batch['flow'].to(device)
+        # Ensure all async transfers complete before using tensors
+        if device.type == 'cuda' and any(isinstance(v, torch.Tensor) and v.device.type == 'cuda' for v in gpu_batch.values()):
+            torch.cuda.synchronize(device)
+        
+        # Use flow_downsampled if available (CorrespondenceDataset), otherwise use flow (old datasets)
+        if 'flow_downsampled' in gpu_batch:
+            flow_gt_key = 'flow_downsampled'
+        else:
+            flow_gt_key = 'flow'
+        
+        # Apply flow filtering if specified (only during training)
+        if flow_filter is not None and flow_gt_key in gpu_batch:
+            gpu_batch[flow_gt_key] = flow_filter.filter_batch_flow(gpu_batch[flow_gt_key])
+        
+        flow_gt = gpu_batch[flow_gt_key]
 
-        pred_flow = net(mini_batch['trg_img'].to(device),
-                         mini_batch['src_img'].to(device))
+        pred_flow = net(gpu_batch['trg_img'], gpu_batch['src_img'])
         
         Loss = EPE(pred_flow, flow_gt) 
         Loss.backward()
@@ -103,13 +131,39 @@ def validate_epoch(net,
         pbar = tqdm(enumerate(val_loader), total=len(val_loader), position=0, leave=True)
         pck_array = []
         for i, mini_batch in pbar:
-            flow_gt = mini_batch['flow'].to(device)
-            pred_flow = net(mini_batch['trg_img'].to(device),
-                            mini_batch['src_img'].to(device))
+            # Transfer entire batch to GPU once at the start (efficient - single operation)
+            # Use explicit device comparison to handle "cuda" vs "cuda:0" properly
+            gpu_batch = {}
+            for key, value in mini_batch.items():
+                if isinstance(value, torch.Tensor):
+                    # Explicit device comparison: check type and index separately
+                    value_device = value.device
+                    needs_transfer = (
+                        value_device.type != device.type or
+                        (value_device.index if value_device.index is not None else 0) != 
+                        (device.index if device.index is not None else 0)
+                    )
+                    if needs_transfer:
+                        gpu_batch[key] = value.to(device, non_blocking=True)
+                    else:
+                        gpu_batch[key] = value  # Already on correct device
+                else:
+                    gpu_batch[key] = value  # Keep non-tensors as-is
+            
+            # Ensure all async transfers complete before using tensors
+            if device.type == 'cuda' and any(isinstance(v, torch.Tensor) and v.device.type == 'cuda' for v in gpu_batch.values()):
+                torch.cuda.synchronize(device)
+            
+            # Use flow_downsampled if available (CorrespondenceDataset), otherwise use flow (old datasets)
+            if 'flow_downsampled' in gpu_batch:
+                flow_gt = gpu_batch['flow_downsampled']
+            else:
+                flow_gt = gpu_batch['flow']
+            pred_flow = net(gpu_batch['trg_img'], gpu_batch['src_img'])
 
-            estimated_kps = flow2kps(mini_batch['trg_kps'].to(device), pred_flow, mini_batch['n_pts'].to(device))
+            estimated_kps = flow2kps(gpu_batch['trg_kps'], pred_flow, gpu_batch['n_pts'])
 
-            eval_result = Evaluator.eval_kps_transfer(estimated_kps.cpu(), mini_batch)
+            eval_result = Evaluator.eval_kps_transfer(estimated_kps.cpu(), gpu_batch)
             
             Loss = EPE(pred_flow, flow_gt) 
 

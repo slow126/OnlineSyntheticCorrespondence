@@ -3,12 +3,12 @@
 
 # Shader configurations
 shaders:
-  # program0: "/home/spencer/Deployments/synthetic-correspondence/rendering/shaders/terrain_sdf.glsl"
-  program0: "/home/spencer/Deployments/synthetic-correspondence/rendering/shaders/quatJulia.c"
-  # program1: "/home/spencer/Deployments/synthetic-correspondence/rendering/shaders/quatJulia.c"
-  # program2: "/home/spencer/Deployments/synthetic-correspondence/rendering/shaders/mandelbulb.glsl"
-  # program3: "/home/spencer/Deployments/synthetic-correspondence/rendering/shaders/deformed_sphere.glsl"
-  # merge: "/home/spencer/Deployments/synthetic-correspondence/rendering/shaders/merge.glsl"
+  # program0: "./rendering/shaders/terrain_sdf.glsl"
+  program0: "./rendering/shaders/mandelbulb_background_new.glsl"
+  program1: "./rendering/shaders/quatJulia.c"
+  program2: "./rendering/shaders/quatJulia.c"
+  program3: "./rendering/shaders/deformed_sphere.glsl"
+  merge: "./rendering/shaders/merge.glsl"
 
 
 
@@ -19,9 +19,8 @@ mandelbulb_sampler:
     offset: 2.5
 
 
-
 # Dataset settings
-num_samples: 1000
+num_samples: 10000
 random_flip: 0.0
 random_swap: true
 julia_sampler:
@@ -47,11 +46,6 @@ scale_sampler:
     loc: -0.25
     scale: 0.25
 
-# Dataset size and sampling
-num_samples: 100  # Total number of samples to generate
-train_split: 0.8    # Fraction of data for training
-val_split: 0.1      # Fraction of data for validation
-test_split: 0.1     # Fraction of data for testing
 
 # Image configuration
 size: 512  # [height, width]
@@ -60,5 +54,4 @@ crop: "center"
 # Random seed
 seed: 987654321 
 
-single_process: true
 

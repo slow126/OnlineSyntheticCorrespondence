@@ -75,12 +75,27 @@ def flow2kps(trg_kps, flow, n_pts, upsample_size=(512, 512)):
     flow = F.interpolate(flow, upsample_size, mode='bilinear') * (upsample_size[0] / h)
     
     src_kps = []
-    for trg_kps, flow, n_pts in zip(trg_kps.long(), flow, n_pts):
-        size = trg_kps.size(1)
+    for trg_kps_batch, flow_batch, n_pts_batch in zip(trg_kps.long(), flow, n_pts):
+        size = trg_kps_batch.size(1)
 
-        kp = torch.clamp(trg_kps.narrow_copy(1, 0, n_pts), 0, upsample_size[0] - 1)
-        estimated_kps = kp + flow[:, kp[1, :], kp[0, :]]
-        estimated_kps = torch.cat((estimated_kps, torch.ones(2, size - n_pts).cuda() * -1), dim=1)
+        kp = torch.clamp(trg_kps_batch.narrow_copy(1, 0, n_pts_batch), 0, upsample_size[0] - 1)
+        
+        # Sample flow at keypoint locations
+        # flow_batch is [2, H, W], kp is [2, N] where kp[0] is x and kp[1] is y
+        sampled_flow = flow_batch[:, kp[1, :], kp[0, :]]  # [2, N]
+        
+        # Check for invalid flow values (inf or both components exactly 0)
+        flow_mag = sampled_flow.norm(dim=0)  # [N]
+        is_valid = flow_mag.isfinite() & (flow_mag > 1e-6)  # Valid if finite and non-zero
+        
+        # Compute estimated keypoints
+        estimated_kps = kp + sampled_flow
+        
+        # Mark invalid keypoints (where flow was invalid) with -1
+        estimated_kps[:, ~is_valid] = -1
+        
+        # Pad remaining keypoints with -1
+        estimated_kps = torch.cat((estimated_kps, torch.ones(2, size - n_pts_batch, device=estimated_kps.device, dtype=estimated_kps.dtype) * -1), dim=1)
         src_kps.append(estimated_kps)
 
     return torch.stack(src_kps)

@@ -29,6 +29,15 @@ def compute_zero_flow_accuracy(pred_flow, gt_flow, pred_kps, gt_kps, trg_kps, n_
     - Static bias: Ratio of zero predictions to zero GT
       (pred=zero) / (gt=zero)
     """
+    # Ensure all tensors are on the same device (CPU for memory efficiency)
+    device = pred_flow.device
+    pred_flow = pred_flow.to(device, non_blocking=True)
+    gt_flow = gt_flow.to(device, non_blocking=True)
+    pred_kps = pred_kps.to(device, non_blocking=True)
+    gt_kps = gt_kps.to(device, non_blocking=True)
+    trg_kps = trg_kps.to(device, non_blocking=True)
+    n_pts = n_pts.to(device, non_blocking=True) if isinstance(n_pts, torch.Tensor) else n_pts
+    
     batch_size = pred_flow.shape[0]
     
     metrics = {
@@ -77,11 +86,16 @@ def compute_zero_flow_accuracy(pred_flow, gt_flow, pred_kps, gt_kps, trg_kps, n_
     }
     
     for b in range(batch_size):
-        npt = n_pts[b].item()
+        npt = n_pts[b].item() if isinstance(n_pts[b], torch.Tensor) else int(n_pts[b])
         if npt > 0:
+            # Ensure all keypoint tensors are on the same device for this batch
+            gt_kps_b = gt_kps[b].to(device, non_blocking=True)
+            trg_kps_b = trg_kps[b].to(device, non_blocking=True)
+            pred_kps_b = pred_kps[b].to(device, non_blocking=True)
+            
             # Compute motion magnitude from keypoints
-            gt_kp_motion = torch.norm(gt_kps[b][:, :npt] - trg_kps[b][:, :npt], dim=0)
-            pred_kp_motion = torch.norm(pred_kps[b][:, :npt] - trg_kps[b][:, :npt], dim=0)
+            gt_kp_motion = torch.norm(gt_kps_b[:, :npt] - trg_kps_b[:, :npt], dim=0)
+            pred_kp_motion = torch.norm(pred_kps_b[:, :npt] - trg_kps_b[:, :npt], dim=0)
             
             # Classify as zero or non-zero
             pred_kp_zero = pred_kp_motion < zero_threshold
@@ -195,7 +209,7 @@ def validate_epoch_multi_benchmark(net,
     with torch.no_grad():
         for benchmark, val_loader in val_loaders.items():
             print(f"Validating on {benchmark}...")
-            
+
             running_total_loss = 0
             pbar = tqdm(enumerate(val_loader), total=len(val_loader), desc=f"Val {benchmark}")
             pck_array = []
@@ -215,39 +229,74 @@ def validate_epoch_multi_benchmark(net,
             ############# End Motion Aware Section ########
             
             for i, mini_batch in pbar:
-                flow_gt = mini_batch['flow'].to(device)
-                pred_flow = net(mini_batch['trg_img'].to(device),
-                               mini_batch['src_img'].to(device))
-
+                # Transfer entire batch to GPU once at the start (efficient - single operation)
+                # This ensures all tensors are on the same device throughout the loop
+                # Use explicit device comparison to handle "cuda" vs "cuda:0" properly
+                gpu_batch = {}
+                for key, value in mini_batch.items():
+                    if isinstance(value, torch.Tensor):
+                        # Explicit device comparison: check type and index separately
+                        # This handles cases where device is "cuda" vs "cuda:0"
+                        value_device = value.device
+                        needs_transfer = (
+                            value_device.type != device.type or
+                            (value_device.index if value_device.index is not None else 0) != 
+                            (device.index if device.index is not None else 0)
+                        )
+                        if needs_transfer:
+                            gpu_batch[key] = value.to(device, non_blocking=True)
+                        else:
+                            gpu_batch[key] = value  # Already on correct device
+                    else:
+                        gpu_batch[key] = value  # Keep non-tensors as-is (e.g., 'category' strings)
                 
+                # Ensure all async transfers complete before using tensors
+                # This is critical when mixing datasets (synthetic on GPU, others on CPU)
+                if device.type == 'cuda' and any(isinstance(v, torch.Tensor) and v.device.type == 'cuda' for v in gpu_batch.values()):
+                    torch.cuda.synchronize(device)
+                
+                # Use flow_downsampled if available (CorrespondenceDataset), otherwise use flow (old datasets)
+                if 'flow_downsampled' in gpu_batch:
+                    flow_gt = gpu_batch['flow_downsampled']
+                else:
+                    flow_gt = gpu_batch['flow']
+
+
+                pred_flow = net(gpu_batch['trg_img'], gpu_batch['src_img'])
                 
                 # Convert flow to keypoints for evaluation
-                estimated_kps = flow2kps(mini_batch['trg_kps'].to(device), pred_flow, mini_batch['n_pts'].to(device))
+                estimated_kps = flow2kps(gpu_batch['trg_kps'], pred_flow, gpu_batch['n_pts'])
 
                 ############# Motion Aware Section ########
-                # Store for zero-flow analysis
+                # Store for zero-flow analysis (move to CPU for memory efficiency)
                 all_pred_flows.append(pred_flow.cpu())
                 all_gt_flows.append(flow_gt.cpu())
                 all_pred_kps.append(estimated_kps.cpu())
-                all_gt_kps.append(mini_batch['src_kps'])
-                all_trg_kps.append(mini_batch['trg_kps'])
-                all_n_pts.append(mini_batch['n_pts'])
+                # Ensure all keypoints are on CPU for consistency
+                all_gt_kps.append(gpu_batch['src_kps'].cpu())
+                all_trg_kps.append(gpu_batch['trg_kps'].cpu())
+                all_n_pts.append(gpu_batch['n_pts'].cpu())
                 
                 # Motion-aware evaluation (if enabled) - aggregate during loop
                 if use_motion_aware:
+                    # All tensors already on GPU in gpu_batch
                     motion_eval = multi_evaluator.evaluators[benchmark].eval_kps_transfer_with_motion_prior(
-                        estimated_kps.cpu(), mini_batch, min_motion_pixels=min_motion_pixels
+                        estimated_kps, gpu_batch, min_motion_pixels=min_motion_pixels
                     )
                     motion_pck_array += motion_eval['pck']
                     
                     # Motion-binned evaluation - aggregate properly
                     motion_binned = multi_evaluator.evaluators[benchmark].eval_kps_transfer_motion_binned(
-                        estimated_kps.cpu(), mini_batch
+                        estimated_kps, gpu_batch
                     )
                     # For each sample, get PCK per bin
-                    for idx, (pk, tk, trk) in enumerate(zip(estimated_kps.cpu(), mini_batch['src_kps'], mini_batch['trg_kps'])):
-                        thres = mini_batch['pckthres'][idx]
-                        npt = mini_batch['n_pts'][idx]
+                    # All tensors are already on GPU from gpu_batch
+                    src_kps = gpu_batch['src_kps']
+                    trg_kps = gpu_batch['trg_kps']
+                    
+                    for idx, (pk, tk, trk) in enumerate(zip(estimated_kps, src_kps, trg_kps)):
+                        thres = gpu_batch['pckthres'][idx]
+                        npt = gpu_batch['n_pts'][idx]
                         motion = trk[:, :npt] - tk[:, :npt]
                         motion_magnitude = torch.norm(motion, dim=0)
                         
@@ -264,11 +313,12 @@ def validate_epoch_multi_benchmark(net,
                 ############# End Motion Aware Section ########
 
                 # Evaluate using the specific benchmark evaluator
-                eval_result = multi_evaluator.evaluate(benchmark, estimated_kps.cpu(), mini_batch)
+                # All tensors already on GPU in gpu_batch
+                eval_result = multi_evaluator.evaluate(benchmark, estimated_kps, gpu_batch)
                 
                 # Track per-category results for TSS
-                if benchmark == 'tss' and 'category' in mini_batch:
-                    categories = mini_batch['category']
+                if benchmark == 'tss' and 'category' in gpu_batch:
+                    categories = gpu_batch['category']
                     pck_values = eval_result['pck']
                     
                     # Handle both batched (list) and single category values
@@ -313,12 +363,76 @@ def validate_epoch_multi_benchmark(net,
             ############# Motion Aware Section ########
             # Compute zero-flow accuracy across entire validation set
             if all_pred_flows:
+                # All tensors should be on CPU at this point (moved during append)
                 pred_flow_all = torch.cat(all_pred_flows, dim=0)
                 gt_flow_all = torch.cat(all_gt_flows, dim=0)
-                pred_kps_all = torch.cat(all_pred_kps, dim=0)
-                gt_kps_all = torch.cat(all_gt_kps, dim=0)
-                trg_kps_all = torch.cat(all_trg_kps, dim=0)
-                n_pts_all = torch.cat(all_n_pts, dim=0)
+                
+                # Handle variable-sized keypoints (when using dense keypoints, batches may have different sizes)
+                # Find max keypoint size across all batches
+                # Keypoint tensors have shape [B, 2, N] where N is the number of keypoints
+                # Note: All tensors are already on CPU (moved during loop for memory efficiency)
+                max_kps = 0
+                kps_device = None
+                for kps_tensor in all_pred_kps + all_gt_kps + all_trg_kps:
+                    if isinstance(kps_tensor, torch.Tensor):
+                        if kps_device is None:
+                            kps_device = kps_tensor.device
+                        if kps_tensor.shape[2] > max_kps:
+                            max_kps = kps_tensor.shape[2]
+                
+                # Pad all keypoint tensors to max_kps (ensure all on same device)
+                if max_kps > 0 and kps_device is not None:
+                    padded_pred_kps = []
+                    padded_gt_kps = []
+                    padded_trg_kps = []
+                    
+                    for kps_tensor in all_pred_kps:
+                        kps_tensor = kps_tensor.to(kps_device, non_blocking=True)  # Ensure same device
+                        if kps_tensor.shape[2] < max_kps:
+                            pad_size = max_kps - kps_tensor.shape[2]
+                            padding = torch.ones(kps_tensor.shape[0], 2, pad_size, dtype=kps_tensor.dtype, device=kps_device) * -1
+                            kps_tensor = torch.cat([kps_tensor, padding], dim=2)
+                        padded_pred_kps.append(kps_tensor)
+                    
+                    for kps_tensor in all_gt_kps:
+                        if isinstance(kps_tensor, torch.Tensor):
+                            kps_tensor = kps_tensor.to(kps_device, non_blocking=True)  # Ensure same device
+                            if kps_tensor.shape[2] < max_kps:
+                                pad_size = max_kps - kps_tensor.shape[2]
+                                padding = torch.ones(kps_tensor.shape[0], 2, pad_size, dtype=kps_tensor.dtype, device=kps_device) * -1
+                                kps_tensor = torch.cat([kps_tensor, padding], dim=2)
+                        padded_gt_kps.append(kps_tensor)
+                    
+                    for kps_tensor in all_trg_kps:
+                        if isinstance(kps_tensor, torch.Tensor):
+                            kps_tensor = kps_tensor.to(kps_device, non_blocking=True)  # Ensure same device
+                            if kps_tensor.shape[2] < max_kps:
+                                pad_size = max_kps - kps_tensor.shape[2]
+                                padding = torch.ones(kps_tensor.shape[0], 2, pad_size, dtype=kps_tensor.dtype, device=kps_device) * -1
+                                kps_tensor = torch.cat([kps_tensor, padding], dim=2)
+                        padded_trg_kps.append(kps_tensor)
+                    
+                    pred_kps_all = torch.cat(padded_pred_kps, dim=0)
+                    gt_kps_all = torch.cat(padded_gt_kps, dim=0)
+                    trg_kps_all = torch.cat(padded_trg_kps, dim=0)
+                else:
+                    # Ensure all tensors are on the same device before concatenating
+                    if all_pred_kps:
+                        kps_device = all_pred_kps[0].device
+                        pred_kps_all = torch.cat([kps.to(kps_device, non_blocking=True) for kps in all_pred_kps], dim=0)
+                        gt_kps_all = torch.cat([kps.to(kps_device, non_blocking=True) if isinstance(kps, torch.Tensor) else kps for kps in all_gt_kps], dim=0)
+                        trg_kps_all = torch.cat([kps.to(kps_device, non_blocking=True) if isinstance(kps, torch.Tensor) else kps for kps in all_trg_kps], dim=0)
+                    else:
+                        pred_kps_all = torch.cat(all_pred_kps, dim=0)
+                        gt_kps_all = torch.cat(all_gt_kps, dim=0)
+                        trg_kps_all = torch.cat(all_trg_kps, dim=0)
+                
+                # Ensure n_pts is on the same device
+                if all_n_pts:
+                    n_pts_device = all_n_pts[0].device if isinstance(all_n_pts[0], torch.Tensor) else torch.device('cpu')
+                    n_pts_all = torch.cat([n_pts.to(n_pts_device, non_blocking=True) if isinstance(n_pts, torch.Tensor) else n_pts for n_pts in all_n_pts], dim=0)
+                else:
+                    n_pts_all = torch.cat(all_n_pts, dim=0)
                 
                 zero_flow_metrics = compute_zero_flow_accuracy(
                     pred_flow_all, gt_flow_all, pred_kps_all, gt_kps_all, 
@@ -407,13 +521,40 @@ def validate_epoch_single_benchmark(net,
         pbar = tqdm(enumerate(val_loader), total=len(val_loader))
         pck_array = []
         for i, mini_batch in pbar:
-            flow_gt = mini_batch['flow'].to(device)
-            pred_flow = net(mini_batch['trg_img'].to(device),
-                           mini_batch['src_img'].to(device))
+            # Transfer entire batch to GPU once at the start (efficient - single operation)
+            # Use explicit device comparison to handle "cuda" vs "cuda:0" properly
+            gpu_batch = {}
+            for key, value in mini_batch.items():
+                if isinstance(value, torch.Tensor):
+                    # Explicit device comparison: check type and index separately
+                    value_device = value.device
+                    needs_transfer = (
+                        value_device.type != device.type or
+                        (value_device.index if value_device.index is not None else 0) != 
+                        (device.index if device.index is not None else 0)
+                    )
+                    if needs_transfer:
+                        gpu_batch[key] = value.to(device, non_blocking=True)
+                    else:
+                        gpu_batch[key] = value  # Already on correct device
+                else:
+                    gpu_batch[key] = value  # Keep non-tensors as-is
+            
+            # Ensure all async transfers complete before using tensors
+            if device.type == 'cuda' and any(isinstance(v, torch.Tensor) and v.device.type == 'cuda' for v in gpu_batch.values()):
+                torch.cuda.synchronize(device)
+            
+            # Use flow_downsampled if available (CorrespondenceDataset), otherwise use flow (old datasets)
+            if 'flow_downsampled' in gpu_batch:
+                flow_gt = gpu_batch['flow_downsampled']
+            else:
+                flow_gt = gpu_batch['flow']
+            pred_flow = net(gpu_batch['trg_img'], gpu_batch['src_img'])
 
-            estimated_kps = flow2kps(mini_batch['trg_kps'].to(device), pred_flow, mini_batch['n_pts'].to(device))
+            estimated_kps = flow2kps(gpu_batch['trg_kps'], pred_flow, gpu_batch['n_pts'])
 
-            eval_result = evaluator.evaluate(estimated_kps.cpu(), mini_batch)
+            # All tensors already on GPU in gpu_batch
+            eval_result = evaluator.evaluate(estimated_kps, gpu_batch)
             
             Loss = EPE(pred_flow, flow_gt) 
 
