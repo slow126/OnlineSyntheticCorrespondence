@@ -22,7 +22,7 @@ mandelbulb_sampler:
 
 # Dataset settings
 num_samples: 1000
-random_flip: 0.0
+random_flip: 0.5
 random_swap: true
 julia_sampler:
   distribution: uniform
