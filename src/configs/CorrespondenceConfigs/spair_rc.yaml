@@ -1,62 +1,58 @@
-# Training Configuration for PointOdyssey Dataset
+# Training Configuration for Synthetic Dataset
 
+# Model parameters
 model:
   backbone: 'resnet101'
   freeze: true
   pretrained_backbone: true
 
+# Training parameters
 training:
   epochs: 50
   batch_size: 8
-  n_threads: 16
+  n_threads: 0  # 0 for synthetic (GPU-bound rendering)
   seed: 2021
   lr: 3e-4
   lr_backbone: 3e-6
   weight_decay: 0.05
   momentum: 0.9
-  scheduler: 'step'
+  scheduler: 'step'  # 'step' or 'cosine'
   step: '[70, 80, 90]'
   step_gamma: 0.5
-  steps_per_epoch: null
-  augmentation: false
+  steps_per_epoch: null  # null = all steps, or integer, or 'logarithmic'
+  augmentation: true
+  
+  # Flow filtering (training only)
   min_flow_length: null
   max_flow_length: null
 
   # MMD calculation during validation
   mmd_every_n_epochs: 1  # 0 = disabled, 1 = every epoch, 2 = every other epoch, etc.
 
-  enable_debug: false 
+  enable_debug: true
   debug_visualization_benchmarks: all
   debug_visualization_persist: false
 
   steps_per_epoch: 1000
 
+
+# Dataset parameters
 dataset:
-  dataset_name: 'pointodyssey'
+  dataset_name: 'spair'
   split: 'train'
   size: [512, 512]
   downsample_flow: 32
-  max_kps: null  # null = no truncation, use all keypoints Don't think this is used anymore
-  dense_kps_use_all: true  # keep all valid points unless capped
+  max_kps: null  # null = no truncation, test all keypoints
+  dense_kps_use_all: true  # when dense flow exists, extract all valid kps (set false to sample up to max_kps)
   verbose: false
   debug: false
-  normalize_images: true
-  
-  # PointOdyssey-specific parameters
-  dataset_location: '/home/slow1/Data/PointOdyssey'
-  pointodyssey_use_augs: false
-  pointodyssey_sequence_length: 2
-  pointodyssey_num_pts_to_track: 32
-  pointodyssey_strides: [4]
-  pointodyssey_quick: false
-  reverse_flow: true
-  thres: 'img'
-  use_all_valid: true  # Use all valid points (no truncation)
-  pointodyssey_disable_motion_filter: true
+  normalize_images: false  # Synthetic already normalized by processor; leave false to avoid double-norm
+  datapath: './models/Datasets_CATs'
 
+# Evaluation parameters
 evaluation:
-  eval_benchmarks: ['kitti2012', 'kitti2015', 'flyingthings', 'tss', 'synthetic', 'pfpascal', 'pfwillow', 'spair', 'pointodyssey']
-  eval_alphas: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+  eval_benchmarks: ['kitti2012', 'kitti2015', 'pointodyssey', 'flyingthings', 'tss', 'synthetic', 'pfpascal', 'pfwillow', 'spair']
+  eval_alphas: [0.01, 0.01, 0.01, 0.05, 0.05, 0.1, 0.1, 0.1, 0.1]
   thres: 'img'  # 'auto', 'img', 'bbox', 'bbox-kp'
   split_to_use_for_validation: 'val'  # 'val' or 'test'
   val_batch_size: 8
@@ -76,7 +72,7 @@ evaluation:
     synthetic:
       geometry_config_path: 'src/configs/online_synth_configs/OnlineGeometryConfig_Val.yaml'
       processor_config_path: 'src/configs/online_synth_configs/OnlineProcessorConfig.yaml'
-      normalize_images: false
+      normalize_images: true
     pointodyssey:
       pointodyssey_sequence_length: 4
       pointodyssey_num_pts_to_track: 32  # Minimum requirement; use_all_valid will get all valid trajectories
