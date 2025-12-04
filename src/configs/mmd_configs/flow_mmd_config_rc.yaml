@@ -76,7 +76,7 @@ dataset_overrides:
     datapath: '/home/slow1/Data/correspondence/kitti'
     normalize_images: true
   flyingthings:
-    datapath: '/home/slow1/Data/FlyingThings3D'
+    datapath: '/home/slow1/Data/FlyingThings3D_Pytorch'
     normalize_images: true
   tss:
     datapath: '/home/slow1/Data/correspondence/TSS_CVPR2016'
