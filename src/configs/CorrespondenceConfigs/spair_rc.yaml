@@ -65,7 +65,7 @@ evaluation:
   kitti_root: '/home/slow1/Data/correspondence/kitti'
   kitti_val_use_full_training: true
   pointodyssey_root: '/home/slow1/Data/PointOdyssey'
-  flyingthings_root: '/home/slow1/Data/FlyingThings3D_tiny'
+  flyingthings_root: '/home/slow1/Data/FlyingThings3D'
   
   # Validation dataset parameters (overrides for specific benchmarks)
   val_datasets:
