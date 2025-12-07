@@ -886,47 +886,80 @@ def main():
     # ============================================================
     # INITIAL EVALUATION (Before Training)
     # ============================================================
-    print("\n" + "="*60)
-    print("INITIAL EVALUATION (Before Training)")
-    print("="*60)
-    
-    initial_val_results = validate_epoch_multi_benchmark(
-        model, val_dataloaders, device, -1, multi_evaluator,
-        primary_benchmark=eval_config['eval_benchmarks'][0]
-    )
-    
-    # Log initial results to TensorBoard (epoch=-1)
-    print("\nInitial evaluation results:")
-    for benchmark, results in initial_val_results.items():
-        print(f"  {benchmark}: PCK={results['pck']:.2f}%, Loss={results['loss']:.4f}")
-        test_writer.add_scalar(f'val/{benchmark}/PCK', results['pck'], -1)
-        test_writer.add_scalar(f'val/{benchmark}/loss', results['loss'], -1)
+    if training_config.get('eval_initial', False):
+        print("Initial evaluation enabled")
+        print("\n" + "="*60)
+        print("INITIAL EVALUATION (Before Training)")
+        print("="*60)
         
-        # Log motion-aware metrics
-        if 'pck_motion_aware' in results:
-            test_writer.add_scalar(f'val/{benchmark}/PCK_motion_aware', results['pck_motion_aware'], -1)
+        # Get MMD config - for initial eval, calculate MMD if enabled (always calculate for epoch=-1)
+        mmd_every_n_epochs = training_config.get('mmd_every_n_epochs', 0)
+        if mmd_every_n_epochs > 0:
+            print(f"MMD calculation enabled for initial evaluation")
         
-        if 'motion_binned' in results:
-            for bin_name, bin_data in results['motion_binned'].items():
-                if bin_data.get('count', 0) > 0:
-                    test_writer.add_scalar(f'val/{benchmark}/PCK_motion_{bin_name}', bin_data['mean_pck'], -1)
+        initial_val_results = validate_epoch_multi_benchmark(
+            model, val_dataloaders, device, -1, multi_evaluator,
+            primary_benchmark=eval_config['eval_benchmarks'][0],
+            mmd_every_n_epochs=mmd_every_n_epochs
+        )
         
-        if 'zero_flow_metrics' in results:
-            zfm = results['zero_flow_metrics']
-            test_writer.add_scalar(f'val/{benchmark}/zero_flow_precision', zfm.get('zero_precision', 0), -1)
-            test_writer.add_scalar(f'val/{benchmark}/zero_flow_recall', zfm.get('zero_recall', 0), -1)
-            test_writer.add_scalar(f'val/{benchmark}/zero_flow_f1', zfm.get('zero_f1', 0), -1)
-            test_writer.add_scalar(f'val/{benchmark}/static_bias_ratio', zfm.get('static_bias_ratio', 0), -1)
+        # Log initial results to TensorBoard (epoch=-1)
+        print("\nInitial evaluation results:")
+        for benchmark, results in initial_val_results.items():
+            print(f"  {benchmark}: PCK={results['pck']:.2f}%, Loss={results['loss']:.4f}")
+            test_writer.add_scalar(f'val/{benchmark}/PCK', results['pck'], -1)
+            test_writer.add_scalar(f'val/{benchmark}/loss', results['loss'], -1)
+            
+            # Print MMD results if present
+            if 'mmd2_pred_corr_vs_pred_miss' in results:
+                mmd_val = results['mmd2_pred_corr_vs_pred_miss']
+                if isinstance(mmd_val, (int, float)) and mmd_val == mmd_val:  # Check for NaN
+                    print(f"  {benchmark} - MMD^2 (pred_corr vs pred_miss): {mmd_val:.6f}")
+            if 'mmd2_pred_corr_vs_gt' in results:
+                mmd_val = results['mmd2_pred_corr_vs_gt']
+                if isinstance(mmd_val, (int, float)) and mmd_val == mmd_val:
+                    print(f"  {benchmark} - MMD^2 (pred_corr vs gt): {mmd_val:.6f}")
+            if 'mmd2_pred_miss_vs_gt' in results:
+                mmd_val = results['mmd2_pred_miss_vs_gt']
+                if isinstance(mmd_val, (int, float)) and mmd_val == mmd_val:
+                    print(f"  {benchmark} - MMD^2 (pred_miss vs gt): {mmd_val:.6f}")
+            
+            # Log motion-aware metrics
+            if 'pck_motion_aware' in results:
+                test_writer.add_scalar(f'val/{benchmark}/PCK_motion_aware', results['pck_motion_aware'], -1)
+            
+            if 'motion_binned' in results:
+                for bin_name, bin_data in results['motion_binned'].items():
+                    if bin_data.get('count', 0) > 0:
+                        test_writer.add_scalar(f'val/{benchmark}/PCK_motion_{bin_name}', bin_data['mean_pck'], -1)
+            
+            if 'zero_flow_metrics' in results:
+                zfm = results['zero_flow_metrics']
+                test_writer.add_scalar(f'val/{benchmark}/zero_flow_precision', zfm.get('zero_precision', 0), -1)
+                test_writer.add_scalar(f'val/{benchmark}/zero_flow_recall', zfm.get('zero_recall', 0), -1)
+                test_writer.add_scalar(f'val/{benchmark}/zero_flow_f1', zfm.get('zero_f1', 0), -1)
+                test_writer.add_scalar(f'val/{benchmark}/static_bias_ratio', zfm.get('static_bias_ratio', 0), -1)
+            
+            # Log MMD metrics if present
+            if 'mmd2_pred_corr_vs_pred_miss' in results:
+                test_writer.add_scalar(f'val/{benchmark}/MMD2_pred_corr_vs_pred_miss', 
+                                      results['mmd2_pred_corr_vs_pred_miss'], -1)
+            if 'mmd2_pred_corr_vs_gt' in results:
+                test_writer.add_scalar(f'val/{benchmark}/MMD2_pred_corr_vs_gt', 
+                                      results['mmd2_pred_corr_vs_gt'], -1)
+            if 'mmd2_pred_miss_vs_gt' in results:
+                test_writer.add_scalar(f'val/{benchmark}/MMD2_pred_miss_vs_gt', 
+                                      results['mmd2_pred_miss_vs_gt'], -1)
+        
+        # Log initial results to CSV (epoch=0, training_steps=0)
+        log_validation_results(-1, 0, initial_val_results)
     
-    # Log initial results to CSV (epoch=0, training_steps=0)
-    log_validation_results(-1, 0, initial_val_results)
-    
-    # Calculate initial average PCK
-    initial_avg_pck = sum(r['pck'] for r in initial_val_results.values()) / len(initial_val_results)
-    test_writer.add_scalar('val/average/PCK', initial_avg_pck, -1)
-    print(f"\nInitial average PCK across benchmarks: {initial_avg_pck:.2f}%")
-    print("="*60 + "\n")
-    
+        # Calculate initial average PCK
+        initial_avg_pck = sum(r['pck'] for r in initial_val_results.values()) / len(initial_val_results)
+        test_writer.add_scalar('val/average/PCK', initial_avg_pck, -1)
+        print(f"\nInitial average PCK across benchmarks: {initial_avg_pck:.2f}%")
+        print("="*60 + "\n")
+        
     # Pre-training visualizations (if enabled)
     reference_train_batch = None
     reference_val_batches = {}

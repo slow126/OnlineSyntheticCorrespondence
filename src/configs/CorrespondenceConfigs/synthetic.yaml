@@ -3,13 +3,13 @@
 # Model parameters
 model:
   backbone: 'resnet101'
-  freeze: true
+  freeze: false
   pretrained_backbone: true
 
 # Training parameters
 training:
   epochs: 50
-  batch_size: 8
+  batch_size: 2
   n_threads: 0  # 0 for synthetic (GPU-bound rendering)
   seed: 2021
   lr: 3e-4
@@ -29,11 +29,13 @@ training:
   # MMD calculation during validation
   mmd_every_n_epochs: 1  # 0 = disabled, 1 = every epoch, 2 = every other epoch, etc.
 
-  enable_debug: true
+  enable_debug: false
   debug_visualization_benchmarks: None
   debug_visualization_persist: false
 
-  steps_per_epoch: 1000
+  steps_per_epoch: 100
+
+  eval_initial: true
 
 # Dataset parameters
 dataset:
@@ -63,15 +65,15 @@ dataset:
 
 # Evaluation parameters
 evaluation:
+  # eval_benchmarks: [ 'flyingthings', 'tss', 'synthetic', 'pfpascal', 'pfwillow', 'spair', 'kitti2012', 'kitti2015']
+  # eval_alphas: [0.01, 0.01, 0.01, 0.05, 0.05, 0.1, 0.1, 0.1]
   eval_benchmarks: ['kitti2012', 'kitti2015', 'pointodyssey', 'flyingthings', 'tss', 'synthetic', 'pfpascal', 'pfwillow', 'spair']
   eval_alphas: [0.01, 0.01, 0.01, 0.05, 0.05, 0.1, 0.1, 0.1, 0.1]
-  # eval_benchmarks: ['spair']
-  # eval_alphas: [0.1]
   thres: 'img'  # 'auto', 'img', 'bbox', 'bbox-kp'
-  split_to_use_for_validation: 'val'  # 'val' or 'test'
-  val_batch_size: 8
+  split_to_use_for_validation: 'test'  # 'val' or 'test'
+  val_batch_size: 2
   val_num_workers: 32
-  prefetch_factor: 4
+  prefetch_factor: 6
   
   # Benchmark dataset paths
   datapath: './models/Datasets_CATs'
@@ -93,6 +95,7 @@ evaluation:
       use_all_valid: true  # Get all valid trajectories instead of limiting to num_pts_to_track
       val_sequence_fraction: 1.0
       normalize_images: true
+      split: 'test'
     kitti2012:
       split: 'val'  # or 'training' if kitti_val_use_full_training is true
       normalize_images: true

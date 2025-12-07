@@ -21,7 +21,7 @@ mandelbulb_sampler:
 
 
 # Dataset settings
-num_samples: 100
+num_samples: 10000
 random_flip: 0.5
 random_swap: true
 julia_sampler:

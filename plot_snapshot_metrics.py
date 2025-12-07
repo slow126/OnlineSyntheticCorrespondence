@@ -51,6 +51,45 @@ def load_validation_results(snapshot_path):
     return df
 
 
+def load_pairwise_mmd_comparisons(training_dataset, csv_path='flow_mmd_results.csv'):
+    """
+    Load pairwise MMD² comparisons from CSV file and find all comparisons
+    involving the training dataset.
+    
+    Args:
+        training_dataset: Name of the training dataset (e.g., 'synthetic', 'pointodyssey')
+        csv_path: Path to the CSV file with pairwise comparisons
+        
+    Returns:
+        Dictionary mapping benchmark name -> mmd2 value for training vs benchmark comparison
+    """
+    if not os.path.exists(csv_path):
+        print(f"Warning: {csv_path} not found. Skipping pairwise MMD² comparisons.")
+        return {}
+    
+    df = pd.read_csv(csv_path)
+    pairwise_mmd = {}
+    
+    # Normalize training dataset name for matching (case-insensitive comparison)
+    training_lower = str(training_dataset).lower()
+    
+    # Find all rows where either dataset1 or dataset2 matches training dataset
+    for _, row in df.iterrows():
+        dataset1_lower = str(row['dataset1']).lower()
+        dataset2_lower = str(row['dataset2']).lower()
+        
+        if dataset1_lower == training_lower:
+            # training_dataset vs dataset2
+            eval_set = row['dataset2']
+            pairwise_mmd[eval_set] = row['mmd2']
+        elif dataset2_lower == training_lower:
+            # dataset1 vs training_dataset
+            eval_set = row['dataset1']
+            pairwise_mmd[eval_set] = row['mmd2']
+    
+    return pairwise_mmd
+
+
 def compute_minmax_normalized_pck(df, use_baseline=True):
     """
     Compute min-max (0-1) normalized PCK across benchmarks.
@@ -212,11 +251,34 @@ def compute_zscore_normalized_pck(df, use_baseline=True):
     return df, benchmark_stats
 
 
-def create_combined_summary_figure(df, df_normalized, training_dataset, benchmarks, correlations, normalization_type='zscore'):
+def _plot_with_first_highlight(ax, x, y, label=None, color=None, marker='o', markersize=3, linewidth=1.5):
+    """
+    Plot a line/marker series and highlight the first point with a bolder marker to show direction.
+    """
+    line = ax.plot(
+        x, y, marker=marker, label=label, markersize=markersize,
+        linewidth=linewidth, color=color, alpha=0.8
+    )[0]
+    first_color = line.get_color()
+    # Highlight the first point (direction origin) with a bold marker
+    if len(x) > 0:
+        ax.scatter(
+            x.iloc[0], y.iloc[0],
+            s=(markersize * 3.0) ** 2,
+            facecolor=first_color,
+            edgecolor='k',
+            linewidth=1.0,
+            zorder=5
+        )
+    return line
+
+
+def create_combined_summary_figure(df, df_normalized, training_dataset, benchmarks, correlations, normalization_type='zscore', pairwise_mmd_dict=None):
     """Create a combined 12-plot summary figure with both normalized and unnormalized PCK
     
     Args:
         normalization_type: 'zscore' or 'minmax' - type of normalization used
+        pairwise_mmd_dict: Optional dictionary mapping benchmark -> mmd2 value for training vs benchmark comparisons
     """
     
     # Create figure with 12 subplots (3 rows, 4 columns)
@@ -278,12 +340,21 @@ def create_combined_summary_figure(df, df_normalized, training_dataset, benchmar
     
     # Plot 4: training_steps vs mmd2_pred_corr_vs_gt
     ax = axes[0, 3]
+    benchmark_colors = {}
     for benchmark in benchmarks:
         bench_data = df[df['benchmark'] == benchmark]
         valid_data = bench_data.dropna(subset=['mmd2_pred_corr_vs_gt'])
         if len(valid_data) > 0:
-            ax.plot(valid_data['training_steps'], valid_data['mmd2_pred_corr_vs_gt'], 
+            lines = ax.plot(valid_data['training_steps'], valid_data['mmd2_pred_corr_vs_gt'], 
                     marker='o', label=benchmark, markersize=3, linewidth=1.5)
+            benchmark_colors[benchmark] = lines[0].get_color()
+    # Add horizontal dotted lines for training vs eval set MMD²
+    if pairwise_mmd_dict:
+        for benchmark in benchmarks:
+            if benchmark in pairwise_mmd_dict:
+                line_color = benchmark_colors.get(benchmark, 'gray')
+                ax.axhline(y=pairwise_mmd_dict[benchmark], linestyle=':', linewidth=1.5, 
+                          color=line_color, alpha=0.6)
     ax.set_xlabel('Training Steps')
     ax.set_ylabel('MMD² (pred_corr vs gt)')
     ax.set_title('Training Steps vs MMD² (pred_corr vs gt)')
@@ -296,9 +367,11 @@ def create_combined_summary_figure(df, df_normalized, training_dataset, benchmar
     for benchmark in benchmarks:
         bench_data = df[df['benchmark'] == benchmark]
         valid_data = bench_data.dropna(subset=['mmd2_pred_corr_vs_pred_miss', 'pck'])
+        if 'training_steps' in valid_data.columns:
+            valid_data = valid_data.sort_values('training_steps')
         if len(valid_data) > 0:
-            ax.plot(valid_data['pck'], valid_data['mmd2_pred_corr_vs_pred_miss'], 
-                    marker='o', label=benchmark, markersize=3, linewidth=1.5)
+            _plot_with_first_highlight(ax, valid_data['pck'], valid_data['mmd2_pred_corr_vs_pred_miss'],
+                                       label=benchmark, markersize=3, linewidth=1.5)
     if correlations and HAS_SCIPY:
         if 'mmd2_pred_corr_vs_pred_miss' in correlations['unnormalized'] and 'overall' in correlations['unnormalized']['mmd2_pred_corr_vs_pred_miss']:
             corr_info = correlations['unnormalized']['mmd2_pred_corr_vs_pred_miss']['overall']
@@ -317,9 +390,11 @@ def create_combined_summary_figure(df, df_normalized, training_dataset, benchmar
     for benchmark in benchmarks:
         bench_data = df[df['benchmark'] == benchmark]
         valid_data = bench_data.dropna(subset=['mmd2_pred_corr_vs_gt', 'pck'])
+        if 'training_steps' in valid_data.columns:
+            valid_data = valid_data.sort_values('training_steps')
         if len(valid_data) > 0:
-            ax.plot(valid_data['pck'], valid_data['mmd2_pred_corr_vs_gt'], 
-                    marker='o', label=benchmark, markersize=3, linewidth=1.5)
+            _plot_with_first_highlight(ax, valid_data['pck'], valid_data['mmd2_pred_corr_vs_gt'],
+                                       label=benchmark, markersize=3, linewidth=1.5)
     if correlations and HAS_SCIPY:
         if 'mmd2_pred_corr_vs_gt' in correlations['unnormalized'] and 'overall' in correlations['unnormalized']['mmd2_pred_corr_vs_gt']:
             corr_info = correlations['unnormalized']['mmd2_pred_corr_vs_gt']['overall']
@@ -338,9 +413,11 @@ def create_combined_summary_figure(df, df_normalized, training_dataset, benchmar
     for benchmark in benchmarks:
         bench_data = df[df['benchmark'] == benchmark]
         valid_data = bench_data.dropna(subset=['mmd2_pred_miss_vs_gt', 'pck'])
+        if 'training_steps' in valid_data.columns:
+            valid_data = valid_data.sort_values('training_steps')
         if len(valid_data) > 0:
-            ax.plot(valid_data['pck'], valid_data['mmd2_pred_miss_vs_gt'], 
-                    marker='o', label=benchmark, markersize=3, linewidth=1.5)
+            _plot_with_first_highlight(ax, valid_data['pck'], valid_data['mmd2_pred_miss_vs_gt'],
+                                       label=benchmark, markersize=3, linewidth=1.5)
     if correlations and HAS_SCIPY:
         if 'mmd2_pred_miss_vs_gt' in correlations['unnormalized'] and 'overall' in correlations['unnormalized']['mmd2_pred_miss_vs_gt']:
             corr_info = correlations['unnormalized']['mmd2_pred_miss_vs_gt']['overall']
@@ -356,12 +433,21 @@ def create_combined_summary_figure(df, df_normalized, training_dataset, benchmar
     
     # Plot 8: training_steps vs mmd2_pred_miss_vs_gt
     ax = axes[1, 3]
+    benchmark_colors = {}
     for benchmark in benchmarks:
         bench_data = df[df['benchmark'] == benchmark]
         valid_data = bench_data.dropna(subset=['mmd2_pred_miss_vs_gt'])
         if len(valid_data) > 0:
-            ax.plot(valid_data['training_steps'], valid_data['mmd2_pred_miss_vs_gt'], 
+            lines = ax.plot(valid_data['training_steps'], valid_data['mmd2_pred_miss_vs_gt'], 
                     marker='o', label=benchmark, markersize=3, linewidth=1.5)
+            benchmark_colors[benchmark] = lines[0].get_color()
+    # Add horizontal dotted lines for training vs eval set MMD²
+    if pairwise_mmd_dict:
+        for benchmark in benchmarks:
+            if benchmark in pairwise_mmd_dict:
+                line_color = benchmark_colors.get(benchmark, 'gray')
+                ax.axhline(y=pairwise_mmd_dict[benchmark], linestyle=':', linewidth=1.5, 
+                          color=line_color, alpha=0.6)
     ax.set_xlabel('Training Steps')
     ax.set_ylabel('MMD² (pred_miss vs gt)')
     ax.set_title('Training Steps vs MMD² (pred_miss vs gt)')
@@ -375,16 +461,18 @@ def create_combined_summary_figure(df, df_normalized, training_dataset, benchmar
         for benchmark in benchmarks:
             bench_data = df_normalized[df_normalized['benchmark'] == benchmark]
             valid_data = bench_data.dropna(subset=['mmd2_pred_corr_vs_pred_miss', pck_norm_col])
+            if 'training_steps' in valid_data.columns:
+                valid_data = valid_data.sort_values('training_steps')
             if len(valid_data) > 0:
-                ax.plot(valid_data[pck_norm_col], valid_data['mmd2_pred_corr_vs_pred_miss'], 
-                        marker='o', label=benchmark, markersize=3, linewidth=1.5)
-        if correlations and HAS_SCIPY:
-            if 'mmd2_pred_corr_vs_pred_miss' in correlations['normalized'] and 'overall' in correlations['normalized']['mmd2_pred_corr_vs_pred_miss']:
-                corr_info = correlations['normalized']['mmd2_pred_corr_vs_pred_miss']['overall']
-                corr_text = f"r={corr_info['corr']:.3f}, p={corr_info['p_value']:.3f}"
-                ax.text(0.05, 0.95, corr_text, transform=ax.transAxes, 
-                       fontsize=7, verticalalignment='top',
-                       bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+                _plot_with_first_highlight(ax, valid_data[pck_norm_col], valid_data['mmd2_pred_corr_vs_pred_miss'],
+                                           label=benchmark, markersize=3, linewidth=1.5)
+            if correlations and HAS_SCIPY:
+                if 'mmd2_pred_corr_vs_pred_miss' in correlations['normalized'] and 'overall' in correlations['normalized']['mmd2_pred_corr_vs_pred_miss']:
+                    corr_info = correlations['normalized']['mmd2_pred_corr_vs_pred_miss']['overall']
+                    corr_text = f"r={corr_info['corr']:.3f}, p={corr_info['p_value']:.3f}"
+                    ax.text(0.05, 0.95, corr_text, transform=ax.transAxes, 
+                            fontsize=7, verticalalignment='top',
+                            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
         ax.set_xlabel(pck_norm_label)
         ax.set_ylabel('MMD² (pred_corr vs pred_miss)')
         ax.set_title(f'PCK ({norm_label}) vs MMD² (pred_corr vs pred_miss)')
@@ -404,16 +492,18 @@ def create_combined_summary_figure(df, df_normalized, training_dataset, benchmar
         for benchmark in benchmarks:
             bench_data = df_normalized[df_normalized['benchmark'] == benchmark]
             valid_data = bench_data.dropna(subset=['mmd2_pred_corr_vs_gt', pck_norm_col])
+            if 'training_steps' in valid_data.columns:
+                valid_data = valid_data.sort_values('training_steps')
             if len(valid_data) > 0:
-                ax.plot(valid_data[pck_norm_col], valid_data['mmd2_pred_corr_vs_gt'], 
-                        marker='o', label=benchmark, markersize=3, linewidth=1.5)
-        if correlations and HAS_SCIPY:
-            if 'mmd2_pred_corr_vs_gt' in correlations['normalized'] and 'overall' in correlations['normalized']['mmd2_pred_corr_vs_gt']:
-                corr_info = correlations['normalized']['mmd2_pred_corr_vs_gt']['overall']
-                corr_text = f"r={corr_info['corr']:.3f}, p={corr_info['p_value']:.3f}"
-                ax.text(0.05, 0.95, corr_text, transform=ax.transAxes, 
-                       fontsize=7, verticalalignment='top',
-                       bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+                _plot_with_first_highlight(ax, valid_data[pck_norm_col], valid_data['mmd2_pred_corr_vs_gt'],
+                                           label=benchmark, markersize=3, linewidth=1.5)
+            if correlations and HAS_SCIPY:
+                if 'mmd2_pred_corr_vs_gt' in correlations['normalized'] and 'overall' in correlations['normalized']['mmd2_pred_corr_vs_gt']:
+                    corr_info = correlations['normalized']['mmd2_pred_corr_vs_gt']['overall']
+                    corr_text = f"r={corr_info['corr']:.3f}, p={corr_info['p_value']:.3f}"
+                    ax.text(0.05, 0.95, corr_text, transform=ax.transAxes, 
+                           fontsize=7, verticalalignment='top',
+                           bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
         ax.set_xlabel(pck_norm_label)
         ax.set_ylabel('MMD² (pred_corr vs gt)')
         ax.set_title(f'PCK ({norm_label}) vs MMD² (pred_corr vs gt)')
@@ -433,16 +523,18 @@ def create_combined_summary_figure(df, df_normalized, training_dataset, benchmar
         for benchmark in benchmarks:
             bench_data = df_normalized[df_normalized['benchmark'] == benchmark]
             valid_data = bench_data.dropna(subset=['mmd2_pred_miss_vs_gt', pck_norm_col])
+            if 'training_steps' in valid_data.columns:
+                valid_data = valid_data.sort_values('training_steps')
             if len(valid_data) > 0:
-                ax.plot(valid_data[pck_norm_col], valid_data['mmd2_pred_miss_vs_gt'], 
-                        marker='o', label=benchmark, markersize=3, linewidth=1.5)
-        if correlations and HAS_SCIPY:
-            if 'mmd2_pred_miss_vs_gt' in correlations['normalized'] and 'overall' in correlations['normalized']['mmd2_pred_miss_vs_gt']:
-                corr_info = correlations['normalized']['mmd2_pred_miss_vs_gt']['overall']
-                corr_text = f"r={corr_info['corr']:.3f}, p={corr_info['p_value']:.3f}"
-                ax.text(0.05, 0.95, corr_text, transform=ax.transAxes, 
-                       fontsize=7, verticalalignment='top',
-                       bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+                _plot_with_first_highlight(ax, valid_data[pck_norm_col], valid_data['mmd2_pred_miss_vs_gt'],
+                                           label=benchmark, markersize=3, linewidth=1.5)
+            if correlations and HAS_SCIPY:
+                if 'mmd2_pred_miss_vs_gt' in correlations['normalized'] and 'overall' in correlations['normalized']['mmd2_pred_miss_vs_gt']:
+                    corr_info = correlations['normalized']['mmd2_pred_miss_vs_gt']['overall']
+                    corr_text = f"r={corr_info['corr']:.3f}, p={corr_info['p_value']:.3f}"
+                    ax.text(0.05, 0.95, corr_text, transform=ax.transAxes, 
+                           fontsize=7, verticalalignment='top',
+                           bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
         ax.set_xlabel(pck_norm_label)
         ax.set_ylabel('MMD² (pred_miss vs gt)')
         ax.set_title(f'PCK ({norm_label}) vs MMD² (pred_miss vs gt)')
@@ -464,8 +556,12 @@ def create_combined_summary_figure(df, df_normalized, training_dataset, benchmar
 
 
 def create_single_summary_figure(df, df_plot, training_dataset, benchmarks, pck_col, pck_label, 
-                                 correlations, corr_key, use_zscore, suffix=''):
-    """Create a single 8-plot summary figure with specified PCK column"""
+                                 correlations, corr_key, use_zscore, suffix='', pairwise_mmd_dict=None):
+    """Create a single 8-plot summary figure with specified PCK column
+    
+    Args:
+        pairwise_mmd_dict: Optional dictionary mapping benchmark -> mmd2 value for training vs benchmark comparisons
+    """
     
     # Create figure with 8 subplots (2 rows, 4 columns)
     fig, axes = plt.subplots(2, 4, figsize=(20, 10))
@@ -501,12 +597,21 @@ def create_single_summary_figure(df, df_plot, training_dataset, benchmarks, pck_
     
     # Plot 3: training_steps vs mmd2_pred_corr_vs_gt
     ax = axes[0, 2]
+    benchmark_colors = {}
     for benchmark in benchmarks:
         bench_data = df[df['benchmark'] == benchmark]
         valid_data = bench_data.dropna(subset=['mmd2_pred_corr_vs_gt'])
         if len(valid_data) > 0:
-            ax.plot(valid_data['training_steps'], valid_data['mmd2_pred_corr_vs_gt'], 
+            lines = ax.plot(valid_data['training_steps'], valid_data['mmd2_pred_corr_vs_gt'], 
                     marker='o', label=benchmark, markersize=3, linewidth=1.5)
+            benchmark_colors[benchmark] = lines[0].get_color()
+    # Add horizontal dotted lines for training vs eval set MMD²
+    if pairwise_mmd_dict:
+        for benchmark in benchmarks:
+            if benchmark in pairwise_mmd_dict:
+                line_color = benchmark_colors.get(benchmark, 'gray')
+                ax.axhline(y=pairwise_mmd_dict[benchmark], linestyle=':', linewidth=1.5, 
+                          color=line_color, alpha=0.6)
     ax.set_xlabel('Training Steps')
     ax.set_ylabel('MMD² (pred_corr vs gt)')
     ax.set_title('Training Steps vs MMD² (pred_corr vs gt)')
@@ -515,12 +620,21 @@ def create_single_summary_figure(df, df_plot, training_dataset, benchmarks, pck_
     
     # Plot 4: training_steps vs mmd2_pred_miss_vs_gt
     ax = axes[0, 3]
+    benchmark_colors = {}
     for benchmark in benchmarks:
         bench_data = df[df['benchmark'] == benchmark]
         valid_data = bench_data.dropna(subset=['mmd2_pred_miss_vs_gt'])
         if len(valid_data) > 0:
-            ax.plot(valid_data['training_steps'], valid_data['mmd2_pred_miss_vs_gt'], 
+            lines = ax.plot(valid_data['training_steps'], valid_data['mmd2_pred_miss_vs_gt'], 
                     marker='o', label=benchmark, markersize=3, linewidth=1.5)
+            benchmark_colors[benchmark] = lines[0].get_color()
+    # Add horizontal dotted lines for training vs eval set MMD²
+    if pairwise_mmd_dict:
+        for benchmark in benchmarks:
+            if benchmark in pairwise_mmd_dict:
+                line_color = benchmark_colors.get(benchmark, 'gray')
+                ax.axhline(y=pairwise_mmd_dict[benchmark], linestyle=':', linewidth=1.5, 
+                          color=line_color, alpha=0.6)
     ax.set_xlabel('Training Steps')
     ax.set_ylabel('MMD² (pred_miss vs gt)')
     ax.set_title('Training Steps vs MMD² (pred_miss vs gt)')
@@ -555,12 +669,22 @@ def create_single_summary_figure(df, df_plot, training_dataset, benchmarks, pck_
     
     # Plot 6: pck vs mmd2_pred_corr_vs_gt
     ax = axes[1, 1]
+    benchmark_colors = {}
     for benchmark in benchmarks:
         bench_data = df_plot[df_plot['benchmark'] == benchmark]
         valid_data = bench_data.dropna(subset=['mmd2_pred_corr_vs_gt', pck_col])
         if len(valid_data) > 0:
-            ax.plot(valid_data[pck_col], valid_data['mmd2_pred_corr_vs_gt'], 
+            lines = ax.plot(valid_data[pck_col], valid_data['mmd2_pred_corr_vs_gt'], 
                     marker='o', label=benchmark, markersize=3, linewidth=1.5)
+            benchmark_colors[benchmark] = lines[0].get_color()
+    
+    # Add horizontal dotted lines for training vs eval set MMD²
+    if pairwise_mmd_dict:
+        for benchmark in benchmarks:
+            if benchmark in pairwise_mmd_dict:
+                line_color = benchmark_colors.get(benchmark, 'gray')
+                ax.axhline(y=pairwise_mmd_dict[benchmark], linestyle=':', linewidth=1.5, 
+                          color=line_color, alpha=0.6)
     
     # Add correlation annotation if available
     if correlations and HAS_SCIPY:
@@ -581,12 +705,22 @@ def create_single_summary_figure(df, df_plot, training_dataset, benchmarks, pck_
     
     # Plot 7: pck vs mmd2_pred_miss_vs_gt
     ax = axes[1, 2]
+    benchmark_colors = {}
     for benchmark in benchmarks:
         bench_data = df_plot[df_plot['benchmark'] == benchmark]
         valid_data = bench_data.dropna(subset=['mmd2_pred_miss_vs_gt', pck_col])
         if len(valid_data) > 0:
-            ax.plot(valid_data[pck_col], valid_data['mmd2_pred_miss_vs_gt'], 
+            lines = ax.plot(valid_data[pck_col], valid_data['mmd2_pred_miss_vs_gt'], 
                     marker='o', label=benchmark, markersize=3, linewidth=1.5)
+            benchmark_colors[benchmark] = lines[0].get_color()
+    
+    # Add horizontal dotted lines for training vs eval set MMD²
+    if pairwise_mmd_dict:
+        for benchmark in benchmarks:
+            if benchmark in pairwise_mmd_dict:
+                line_color = benchmark_colors.get(benchmark, 'gray')
+                ax.axhline(y=pairwise_mmd_dict[benchmark], linestyle=':', linewidth=1.5, 
+                          color=line_color, alpha=0.6)
     
     # Add correlation annotation if available
     if correlations and HAS_SCIPY:
@@ -634,7 +768,7 @@ def create_single_summary_figure(df, df_plot, training_dataset, benchmarks, pck_
     return fig
 
 
-def create_plots(df, training_dataset, output_dir=None, normalization_type='zscore', correlations=None, df_normalized=None, benchmark_stats=None):
+def create_plots(df, training_dataset, output_dir=None, normalization_type='zscore', correlations=None, df_normalized=None, benchmark_stats=None, pairwise_mmd_dict=None):
     """Create plots from validation results - creates both normalized and unnormalized versions
     
     Args:
@@ -645,6 +779,7 @@ def create_plots(df, training_dataset, output_dir=None, normalization_type='zsco
         correlations: Optional pre-computed correlation statistics
         df_normalized: Optional pre-computed normalized dataframe
         benchmark_stats: Optional pre-computed benchmark statistics
+        pairwise_mmd_dict: Optional dictionary mapping benchmark -> mmd2 value for training vs benchmark comparisons
     """
     
     use_normalization = normalization_type is not None
@@ -681,7 +816,8 @@ def create_plots(df, training_dataset, output_dir=None, normalization_type='zsco
             training_dataset=training_dataset,
             benchmarks=benchmarks,
             correlations=correlations,
-            normalization_type=normalization_type
+            normalization_type=normalization_type,
+            pairwise_mmd_dict=pairwise_mmd_dict
         )
         output_path_default = os.path.join(output_dir, f'{training_dataset}_metrics.png')
         fig_combined.savefig(output_path_default, dpi=150, bbox_inches='tight')
@@ -696,7 +832,8 @@ def create_plots(df, training_dataset, output_dir=None, normalization_type='zsco
             training_dataset=training_dataset,
             benchmarks=benchmarks,
             correlations=correlations,
-            normalization_type=None
+            normalization_type=None,
+            pairwise_mmd_dict=pairwise_mmd_dict
         )
         output_path_default = os.path.join(output_dir, f'{training_dataset}_metrics.png')
         fig_combined.savefig(output_path_default, dpi=150, bbox_inches='tight')
@@ -715,7 +852,8 @@ def create_plots(df, training_dataset, output_dir=None, normalization_type='zsco
         correlations=correlations,
         corr_key='unnormalized',
         use_zscore=False,
-        suffix='Unnormalized'
+        suffix='Unnormalized',
+        pairwise_mmd_dict=pairwise_mmd_dict
     )
     output_path_unnorm = os.path.join(output_dir, f'{training_dataset}_metrics_unnormalized.png')
     fig_unnorm.savefig(output_path_unnorm, dpi=150, bbox_inches='tight')
@@ -736,7 +874,8 @@ def create_plots(df, training_dataset, output_dir=None, normalization_type='zsco
             correlations=correlations,
             corr_key='normalized',
             use_zscore=(normalization_type == 'zscore'),
-            suffix=f'Normalized ({norm_label})'
+            suffix=f'Normalized ({norm_label})',
+            pairwise_mmd_dict=pairwise_mmd_dict
         )
         output_path_norm = os.path.join(output_dir, f'{training_dataset}_metrics_normalized.png')
         fig_norm.savefig(output_path_norm, dpi=150, bbox_inches='tight')
@@ -1451,9 +1590,15 @@ def main():
         correlations = {}
     correlations.update(motion_correlations)
     
+    # Load pairwise MMD² comparisons
+    pairwise_mmd_dict = load_pairwise_mmd_comparisons(training_dataset)
+    if pairwise_mmd_dict:
+        print(f"Loaded pairwise MMD² comparisons for {len(pairwise_mmd_dict)} benchmarks")
+    
     # Create plots with correlation info
     create_plots(df, training_dataset, output_dir, normalization_type=normalization_type, 
-                correlations=correlations, df_normalized=df_normalized, benchmark_stats=benchmark_stats)
+                correlations=correlations, df_normalized=df_normalized, benchmark_stats=benchmark_stats,
+                pairwise_mmd_dict=pairwise_mmd_dict)
     
     # Create MMD² vs motion-binned PCK plots
     print("Creating MMD² vs motion-binned PCK plots...")
@@ -1464,4 +1609,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

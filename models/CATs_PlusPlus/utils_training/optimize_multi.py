@@ -5,6 +5,7 @@ import torch
 import torch.nn.functional as F
 from models.CATs_PlusPlus.utils_training.utils import flow2kps
 from models.CATs_PlusPlus.utils_training.eval_instance import MultiBenchmarkEvaluator
+from src.data.synth.datasets.flow_utils import flow_from_kps
 
 r'''
     Multi-benchmark validation functions for training with multiple evaluation sets
@@ -338,12 +339,40 @@ def validate_epoch_multi_benchmark(net,
                 # Update streaming MMD if enabled for this epoch
                 if streaming_mmd is not None:
                     try:
+                        # Get flow_full for MMD calculation (must be in pixel space at full resolution)
+                        if 'flow_full' in gpu_batch:
+                            flow_full = gpu_batch['flow_full']
+                        else:
+                            # Some datasets provide feature-grid flow in 'flow'; rebuild pixel flow if needed.
+                            if 'trg_img' in gpu_batch:
+                                _, _, img_h, img_w = gpu_batch['trg_img'].shape
+                            elif 'src_img' in gpu_batch:
+                                _, _, img_h, img_w = gpu_batch['src_img'].shape
+                            else:
+                                raise ValueError("Cannot determine image size to rebuild flow for MMD.")
+
+                            def rebuild_flow_full():
+                                flows = []
+                                for b in range(gpu_batch['src_kps'].shape[0]):
+                                    flows.append(flow_from_kps(gpu_batch['src_kps'][b], gpu_batch['trg_kps'][b], (img_h, img_w)))
+                                return torch.stack(flows, dim=0)
+
+                            if 'flow' in gpu_batch:
+                                flow_candidate = gpu_batch['flow']
+                                # Use directly only if already pixel-aligned
+                                if flow_candidate.shape[2:] == (img_h, img_w):
+                                    flow_full = flow_candidate
+                                else:
+                                    flow_full = rebuild_flow_full()
+                            else:
+                                flow_full = rebuild_flow_full()
+                        
                         # Get correct/incorrect keypoint IDs for MMD calculation
                         eval_result_with_correct, correct_id_list = multi_evaluator.evaluators[benchmark].eval_kps_transfer_with_correct(
                             estimated_kps, gpu_batch
                         )
                         from models.CATs_PlusPlus.utils_training.mmd_validation import update_mmd_streaming
-                        update_mmd_streaming(streaming_mmd, pred_flow, flow_gt, gpu_batch['trg_kps'], 
+                        update_mmd_streaming(streaming_mmd, pred_flow, flow_full, gpu_batch['trg_kps'], 
                                             correct_id_list, gpu_batch['n_pts'], device)
                     except Exception as e:
                         # Don't break validation if MMD fails, but print error for debugging
@@ -650,4 +679,3 @@ def validate_epoch_single_benchmark(net,
         mean_pck = sum(pck_array) / len(pck_array)
 
     return running_total_loss / len(val_loader), mean_pck
-

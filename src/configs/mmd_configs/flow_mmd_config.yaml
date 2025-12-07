@@ -5,31 +5,31 @@
 datasets:
   - name: pointodyssey
     split: val
-    num_batches: 1000
+    num_batches: 10
   - name: synthetic
     split: val
-    num_batches: 1000
+    num_batches: 10
   - name: kitti2012
     split: val  # Will be overridden to 'training' if kitti_val_use_full_training: true
-    num_batches: 1000
+    num_batches: 10
   - name: kitti2015
     split: val  # Will be overridden to 'training' if kitti_val_use_full_training: true
-    num_batches: 1000
+    num_batches: 10
   - name: spair
     split: val
-    num_batches: 1000
+    num_batches: 10
   - name: pfpascal
     split: val
-    num_batches: 1000
+    num_batches: 10
   - name: pfwillow
     split: test  # PFWillow only has test split
-    num_batches: 1000
+    num_batches: 10
   - name: flyingthings
     split: test
-    num_batches: 1000
+    num_batches: 10
   - name: tss
     split: val
-    num_batches: 1000 
+    num_batches: 10 
 
 # Data loading parameters
 batch_size: 8
