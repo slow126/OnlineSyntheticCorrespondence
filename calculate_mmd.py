@@ -5,7 +5,7 @@ This script:
 1. Loads datasets using CorrespondenceDataset
 2. Extracts flow_full from batches (dense grid format)
 3. Converts flows to [x, y, dx, dy] format
-4. Filters out invalid flows (inf/nan)
+4. Filters out invalid flows (inf/nan and zero flows (0,0))
 5. Calculates MMD between datasets using the MMD library
 """
 
@@ -30,12 +30,13 @@ def extract_flow_vectors(flow_full: torch.Tensor) -> np.ndarray:
         flow_full: [2, H, W] tensor where:
             - flow_full[0] = dx (horizontal flow)
             - flow_full[1] = dy (vertical flow)
-            - Invalid flows are marked with inf/nan
+            - Invalid flows are marked with inf/nan or (0,0) vectors
     
     Returns:
         [N, 4] array where N is number of valid flows, columns are [x, y, dx, dy]
         - x, y: pixel coordinates (0-indexed)
         - dx, dy: flow displacement values
+        - Filters out: inf/nan values and (0,0) flow vectors (invalid/no-flow regions)
     """
     if flow_full is None:
         return np.empty((0, 4), dtype=np.float32)
@@ -55,8 +56,13 @@ def extract_flow_vectors(flow_full: torch.Tensor) -> np.ndarray:
     dx_flat = dx.flatten()  # [H*W]
     dy_flat = dy.flatten()  # [H*W]
     
-    # Filter invalid flows (inf/nan)
-    valid_mask = np.isfinite(dx_flat) & np.isfinite(dy_flat)
+    # Filter invalid flows (inf/nan and zero flows)
+    # Zero flows (0,0) often represent invalid/no-flow regions
+    valid_mask = (
+        np.isfinite(dx_flat) & 
+        np.isfinite(dy_flat) & 
+        ~((dx_flat == 0) & (dy_flat == 0))
+    )
     
     # Stack to [N, 4] format: [x, y, dx, dy]
     flow_vectors = np.stack([
