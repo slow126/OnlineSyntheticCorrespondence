@@ -1,0 +1,39 @@
+# Base Training Configuration
+# This file contains default model and training parameters
+# These can be overridden in sweep configs or dataset-specific configs
+
+model:
+  backbone: 'resnet101'
+  freeze: false
+  pretrained_backbone: true
+
+training:
+  epochs: 50
+  batch_size: 8
+  n_threads: 32
+  seed: 2021
+  lr: 3e-4
+  lr_backbone: 3e-6
+  weight_decay: 0.05
+  momentum: 0.9
+  scheduler: 'step'  # 'step' or 'cosine'
+  step: '[70, 80, 90]'
+  step_gamma: 0.5
+  steps_per_epoch: logarithmic  # null = all steps, or integer, or 'logarithmic'
+  augmentation: false
+  min_flow_length: null
+  max_flow_length: null
+  
+  # MMD calculation during validation
+  mmd_every_n_epochs: 1  # 0 = disabled, 1 = every epoch, 2 = every other epoch, etc.
+
+  enable_debug: false
+  debug_visualization_benchmarks: None
+  debug_visualization_persist: true
+
+  eval_initial: true
+
+paths:
+  snapshots: './snapshots'
+  pretrained: null  # Path to pretrained model or null
+  start_epoch: 0  # -1 for new training, or epoch number to resume

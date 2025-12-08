@@ -1,0 +1,61 @@
+# Example Multi-Dataset Sweep Configuration
+# This file defines parameter sweeps across multiple training datasets
+# All datasets will be swept with the same parameter combinations
+
+# Project root directory (required for resolving relative paths)
+project_root: "/home/spencer/Projects/OnlineSyntheticCorrespondence"
+
+# Define training datasets to sweep across
+training_datasets:
+  - name: "flyingthings"
+    base_config: "/home/spencer/Projects/OnlineSyntheticCorrespondence/src/configs/CorrespondenceConfigs/flyingthings.yaml"
+    overrides:
+      dataset.dataset_name: "flyingthings"  # Ensure correct dataset name
+      
+  - name: "spair"
+    base_config: "/home/spencer/Projects/OnlineSyntheticCorrespondence/src/configs/CorrespondenceConfigs/spair.yaml"
+    overrides:
+      dataset.dataset_name: "spair"
+      
+  - name: "pointodyssey"
+    base_config: "/home/spencer/Projects/OnlineSyntheticCorrespondence/src/configs/CorrespondenceConfigs/pointodyssey.yaml"
+    overrides:
+      dataset.dataset_name: "pointodyssey"
+      
+  - name: "synthetic"
+    base_config: "/home/spencer/Projects/OnlineSyntheticCorrespondence/src/configs/CorrespondenceConfigs/synthetic.yaml"
+    overrides:
+      dataset.dataset_name: "synthetic"
+
+# Output directory for generated configs
+output_dir: "/home/spencer/Projects/OnlineSyntheticCorrespondence/slurm/experiment_configs/generated"
+
+# Sweep definitions (applied to all datasets)
+sweeps:
+  # Example: Learning rate sweep with from-scratch training option
+  - name: "lr_sweep"
+    parameters:
+      training.lr: [1e-4, 3e-4, 1e-3]
+      training.lr_backbone: [1e-6, 3e-6]
+      model.pretrained_backbone: [True, False]  # Test from-scratch vs pretrained
+    name_template: "lr{training.lr}_lrbackbone{training.lr_backbone}_pretrained{model.pretrained_backbone}"
+    # Output will be: {dataset_name}_lr{training.lr}_lrbackbone{training.lr_backbone}_pretrained{model.pretrained_backbone}
+    # Example: flyingthings_lr0.0001_lrbackbone1e-06_pretrainedTrue
+
+  # Example: Freeze backbone sweep
+  - name: "freeze_sweep"
+    parameters:
+      model.freeze: [True, False]
+      model.pretrained_backbone: [True, False]
+    name_template: "freeze{model.freeze}_pretrained{model.pretrained_backbone}"
+    # Output will be: {dataset_name}_freeze{model.freeze}_pretrained{model.pretrained_backbone}
+    # Example: synthetic_freezeFalse_pretrainedFalse
+
+  # Example: Logarithmic steps_per_epoch sweep
+  - name: "logarithmic_steps_sweep"
+    parameters:
+      training.steps_per_epoch: ['logarithmic']  # Base 2 progression: 2^epoch, capped at 2048
+      model.pretrained_backbone: [True, False]
+    name_template: "logsteps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}"
+    # Output will be: {dataset_name}_logstepslogarithmic_pretrained{model.pretrained_backbone}
+    # Example: pointodyssey_logstepslogarithmic_pretrainedTrue

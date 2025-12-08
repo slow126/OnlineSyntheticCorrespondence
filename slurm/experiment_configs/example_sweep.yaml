@@ -1,0 +1,30 @@
+# Example Sweep Configuration
+# This file defines parameter sweeps that will generate full training configs
+
+# Project root directory (required for resolving relative paths)
+project_root: "/home/spencer/Projects/OnlineSyntheticCorrespondence"
+
+# Base config template to use
+base_config: "/home/spencer/Projects/OnlineSyntheticCorrespondence/src/configs/CorrespondenceConfigs/pointodyssey.yaml"
+
+# Output directory for generated configs
+output_dir: "experiment_configs/generated"
+
+# Sweep definitions
+sweeps:
+  # Example: Learning rate sweep with from-scratch training option
+  - name: "lr_sweep"
+    parameters:
+      training.lr: [1e-4, 3e-4, 1e-3]
+      training.lr_backbone: [1e-6, 3e-6]
+      model.pretrained_backbone: [True, False]  # Test from-scratch vs pretrained
+    name_template: "lr{training.lr}_lrbackbone{training.lr_backbone}_pretrained{model.pretrained_backbone}"
+    output_dir: "experiment_configs/generated/lr_sweep"
+
+  # Example: Freeze backbone sweep
+  - name: "freeze_sweep"
+    parameters:
+      model.freeze: [True, False]
+      model.pretrained_backbone: [True, False]
+    name_template: "freeze{model.freeze}_pretrained{model.pretrained_backbone}"
+    output_dir: "experiment_configs/generated/freeze_sweep"

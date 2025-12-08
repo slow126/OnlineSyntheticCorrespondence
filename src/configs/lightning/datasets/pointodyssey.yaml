@@ -1,0 +1,25 @@
+# PointOdyssey Dataset Configuration
+# Contains only dataset-specific parameters
+
+dataset:
+  dataset_name: 'pointodyssey'
+  split: 'train'
+  size: [512, 512]
+  downsample_flow: 32
+  max_kps: null  # null = no truncation, use all keypoints
+  dense_kps_use_all: true  # keep all valid points unless capped
+  verbose: false
+  debug: false
+  normalize_images: true
+  
+  # PointOdyssey-specific parameters
+  dataset_location: '/home/spencer/Data/PointOdyssey'
+  pointodyssey_use_augs: false
+  pointodyssey_sequence_length: 2
+  pointodyssey_num_pts_to_track: 32
+  pointodyssey_strides: [1, 2, 4]
+  pointodyssey_quick: false
+  reverse_flow: true
+  thres: 'img'
+  use_all_valid: true  # Use all valid points (no truncation)
+  pointodyssey_disable_motion_filter: true

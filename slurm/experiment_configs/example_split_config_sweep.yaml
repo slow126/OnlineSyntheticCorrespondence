@@ -1,0 +1,71 @@
+# Example Multi-Dataset Sweep Configuration with Split Configs
+# This file demonstrates the new split config format where:
+# - Dataset configs contain only dataset-specific parameters
+# - Training base config contains shared model/training parameters
+# - Eval base config contains shared evaluation parameters
+# This prevents conflicts when sweeping training parameters vs eval parameters
+
+# Project root directory (required for resolving relative paths)
+project_root: "/home/spencer/Projects/OnlineSyntheticCorrespondence"
+
+# Base configs (shared across all datasets)
+training_base: "src/configs/lightning/training_base.yaml"
+eval_base: "src/configs/lightning/eval_base.yaml"
+
+# Define training datasets to sweep across
+training_datasets:
+  - name: "flyingthings"
+    dataset_config: "src/configs/lightning/datasets/flyingthings.yaml"
+    overrides:
+      # Can override training params per dataset if needed
+      training.batch_size: 8
+      training.n_threads: 16
+      
+  - name: "spair"
+    dataset_config: "src/configs/lightning/datasets/spair.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 16
+      
+  - name: "pointodyssey"
+    dataset_config: "src/configs/lightning/datasets/pointodyssey.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 16
+      
+  - name: "synthetic"
+    dataset_config: "src/configs/lightning/datasets/synthetic.yaml"
+    overrides:
+      # Synthetic-specific training overrides
+      training.batch_size: 2
+      training.n_threads: 0  # GPU-bound rendering
+
+# Output directory for generated configs
+# Relative paths starting with 'slurm/' or 'experiment_configs/' are resolved relative to project root
+# Other relative paths are resolved relative to this config file's directory
+output_dir: "slurm/experiment_configs/generated"
+
+# Sweep definitions (applied to all datasets)
+# These only affect training/model parameters, not eval config
+sweeps:
+  # Example: Learning rate sweep with from-scratch training option
+  - name: "lr_sweep"
+    parameters:
+      training.lr: [1e-4, 3e-4, 1e-3]
+      training.lr_backbone: [1e-6, 3e-6]
+      model.pretrained_backbone: [True, False]  # Test from-scratch vs pretrained
+    name_template: "lr{training.lr}_lrbackbone{training.lr_backbone}_pretrained{model.pretrained_backbone}"
+
+  # Example: Freeze backbone sweep
+  - name: "freeze_sweep"
+    parameters:
+      model.freeze: [True, False]
+      model.pretrained_backbone: [True, False]
+    name_template: "freeze{model.freeze}_pretrained{model.pretrained_backbone}"
+
+  # Example: Logarithmic steps_per_epoch sweep
+  - name: "logarithmic_steps_sweep"
+    parameters:
+      training.steps_per_epoch: ['logarithmic']  # Base 2 progression: 2^epoch, capped at 2048
+      model.pretrained_backbone: [True, False]
+    name_template: "logsteps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}"
