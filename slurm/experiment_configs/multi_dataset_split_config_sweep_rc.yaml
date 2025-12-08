@@ -54,4 +54,4 @@ sweeps:
       training.steps_per_epoch: ['logarithmic']  # Base 2 progression: 2^epoch, capped at 2048
       model.freeze: [True, False]
       model.pretrained_backbone: [True, False]
-    name_template: "logsteps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}"
+    name_template: "logsteps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"
