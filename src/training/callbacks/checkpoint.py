@@ -80,8 +80,8 @@ class CheckpointCallback(pl.Callback):
                 scheduler_state = None
                 if trainer.optimizers:
                     optimizer_state = trainer.optimizers[0].state_dict()
-                if trainer.lr_schedulers:
-                    scheduler_state = trainer.lr_schedulers[0]['scheduler'].state_dict()
+                if trainer.lr_scheduler_configs:
+                    scheduler_state = trainer.lr_scheduler_configs[0].scheduler.state_dict()
                 
                 # Save individual benchmark best model
                 self._save_benchmark_model(
@@ -107,8 +107,8 @@ class CheckpointCallback(pl.Callback):
             scheduler_state = None
             if trainer.optimizers:
                 optimizer_state = trainer.optimizers[0].state_dict()
-            if trainer.lr_schedulers:
-                scheduler_state = trainer.lr_schedulers[0]['scheduler'].state_dict()
+            if trainer.lr_scheduler_configs:
+                scheduler_state = trainer.lr_scheduler_configs[0].scheduler.state_dict()
             
             # Save overall best model
             self._save_overall_best_model(
@@ -129,8 +129,8 @@ class CheckpointCallback(pl.Callback):
         scheduler_state = None
         if trainer.optimizers:
             optimizer_state = trainer.optimizers[0].state_dict()
-        if trainer.lr_schedulers:
-            scheduler_state = trainer.lr_schedulers[0]['scheduler'].state_dict()
+        if trainer.lr_scheduler_configs:
+            scheduler_state = trainer.lr_scheduler_configs[0].scheduler.state_dict()
         
         # Save regular epoch checkpoint
         checkpoint_data = {

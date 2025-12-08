@@ -8,8 +8,8 @@ evaluation:
   thres: 'img'  # 'auto', 'img', 'bbox', 'bbox-kp'
   split_to_use_for_validation: 'test'  # 'val' or 'test'
   val_batch_size: 8
-  val_num_workers: 32
-  prefetch_factor: 4
+  val_num_workers: 16
+  prefetch_factor: 2
   
   # Benchmark dataset paths
   datapath: './models/Datasets_CATs'
