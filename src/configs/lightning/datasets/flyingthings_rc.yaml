@@ -13,7 +13,7 @@ dataset:
   normalize_images: true
   
   # FlyingThings-specific parameters
-  datapath: '/home/spencer/Data/FlyingThings3D_tiny'
+  datapath: '/home/slow1/Data/FlyingThings3D_Pytorch'
   reverse_flow: true
   # Note: subsample_flow, use_valid_mask, filter_out_of_bounds may not be supported
   # by CorrespondenceDataset's FlyingThingsSimpleDataset wrapper

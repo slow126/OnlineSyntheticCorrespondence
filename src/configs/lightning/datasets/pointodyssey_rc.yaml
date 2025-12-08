@@ -13,7 +13,7 @@ dataset:
   normalize_images: true
   
   # PointOdyssey-specific parameters
-  dataset_location: '/home/spencer/Data/PointOdyssey'
+  dataset_location: '/home/slow1/Data/PointOdyssey'
   pointodyssey_use_augs: false
   pointodyssey_sequence_length: 2
   pointodyssey_num_pts_to_track: 32
