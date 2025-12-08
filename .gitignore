@@ -102,3 +102,5 @@ plots/
 rc_plots/
 rc2_plots/
 
+# Generated configs
+slurm/experiment_configs/generated/
