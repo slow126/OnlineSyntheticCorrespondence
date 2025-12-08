@@ -272,15 +272,16 @@ def main():
     
     # Configure trainer
     # Handle steps_per_epoch limit if specified
-    # For logarithmic mode, we'll use a callable that returns steps per epoch
     steps_per_epoch_config = training_config.get('steps_per_epoch', None)
     
+    # Add logarithmic steps callback if needed
     if steps_per_epoch_config == 'logarithmic':
-        # Logarithmic mode: use callable that returns steps based on current epoch
-        def get_logarithmic_batches(trainer):
-            epoch = trainer.current_epoch
-            return min(2 ** epoch, 2048)
-        limit_train_batches = get_logarithmic_batches
+        from src.training.callbacks.logarithmic_steps import LogarithmicStepsCallback
+        logarithmic_callback = LogarithmicStepsCallback()
+        logarithmic_callback.enabled = True
+        callbacks.append(logarithmic_callback)
+        # Start with 1 step for epoch 0 (2^0 = 1)
+        limit_train_batches = 1
     elif steps_per_epoch_config is not None:
         # Fixed number of steps per epoch
         limit_train_batches = steps_per_epoch_config
