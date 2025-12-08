@@ -42,14 +42,7 @@ class SummaryCallback(pl.Callback):
     
     def on_validation_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule):
         """Write training summary after validation epoch."""
-        # Get best performance from checkpoint callback
-        checkpoint_callback = None
-        for callback in trainer.callbacks:
-            if isinstance(callback, type(pl_module).__module__ + '.CheckpointCallback'):
-                checkpoint_callback = callback
-                break
-        
-        # Try to find checkpoint callback by checking if it has get_best_performance method
+        # Get best performance from checkpoint callback by checking if it has get_best_performance method
         best_perf = None
         for callback in trainer.callbacks:
             if hasattr(callback, 'get_best_performance'):
