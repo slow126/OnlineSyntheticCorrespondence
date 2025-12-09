@@ -7,7 +7,7 @@ evaluation:
   eval_alphas: [0.01, 0.01, 0.01, 0.05, 0.05, 0.1, 0.1, 0.1, 0.1]
   thres: 'img'  # 'auto', 'img', 'bbox', 'bbox-kp'
   split_to_use_for_validation: 'test'  # 'val' or 'test'
-  val_batch_size: 8
+  val_batch_size: 4
   val_num_workers: 32
   prefetch_factor: 2
   
