@@ -220,15 +220,25 @@ def validate_epoch_multi_benchmark(net,
             
             ############# Motion Aware Section ########
             # Accumulate metrics for zero-flow analysis and motion-aware evaluation
-            all_pred_flows = []
-            all_gt_flows = []
-            all_pred_kps = []
-            all_gt_kps = []
-            all_trg_kps = []
-            all_n_pts = []
-            motion_pck_array = []
-            motion_binned_pck = {'small': [], 'medium': [], 'large': []}
-            motion_binned_counts = {'small': 0, 'medium': 0, 'large': 0}
+            # Only initialize if motion-aware evaluation is enabled
+            if use_motion_aware:
+                all_pred_flows = []
+                all_gt_flows = []
+                all_pred_kps = []
+                all_gt_kps = []
+                all_trg_kps = []
+                all_n_pts = []
+                motion_pck_array = []
+                motion_binned_pck = {'small': [], 'medium': [], 'large': []}
+                motion_binned_counts = {'small': 0, 'medium': 0, 'large': 0}
+            else:
+                # Initialize empty lists to avoid NameError, but they won't be used
+                all_pred_flows = None
+                all_gt_flows = None
+                all_pred_kps = None
+                all_gt_kps = None
+                all_trg_kps = None
+                all_n_pts = None
             ############# End Motion Aware Section ########
             
             ############# MMD Section ########
@@ -287,17 +297,17 @@ def validate_epoch_multi_benchmark(net,
 
                 ############# Motion Aware Section ########
                 # Store for zero-flow analysis (move to CPU for memory efficiency)
-                all_pred_flows.append(pred_flow.cpu())
-                all_gt_flows.append(flow_gt.cpu())
-                all_pred_kps.append(estimated_kps.cpu())
-                # Ensure all keypoints are on CPU for consistency
-                all_gt_kps.append(gpu_batch['src_kps'].cpu())
-                all_trg_kps.append(gpu_batch['trg_kps'].cpu())
-                all_n_pts.append(gpu_batch['n_pts'].cpu())
-                
-                
-                # Motion-aware evaluation (if enabled) - aggregate during loop
+                # Only collect data if motion-aware evaluation is enabled
                 if use_motion_aware:
+                    all_pred_flows.append(pred_flow.cpu())
+                    all_gt_flows.append(flow_gt.cpu())
+                    all_pred_kps.append(estimated_kps.cpu())
+                    # Ensure all keypoints are on CPU for consistency
+                    all_gt_kps.append(gpu_batch['src_kps'].cpu())
+                    all_trg_kps.append(gpu_batch['trg_kps'].cpu())
+                    all_n_pts.append(gpu_batch['n_pts'].cpu())
+                    
+                    # Motion-aware evaluation - aggregate during loop
                     # All tensors already on GPU in gpu_batch
                     motion_eval = multi_evaluator.evaluators[benchmark].eval_kps_transfer_with_motion_prior(
                         estimated_kps, gpu_batch, min_motion_pixels=min_motion_pixels
@@ -475,7 +485,8 @@ def validate_epoch_multi_benchmark(net,
             
             ############# Motion Aware Section ########
             # Compute zero-flow accuracy across entire validation set
-            if all_pred_flows:
+            # Only compute if motion-aware evaluation is enabled
+            if use_motion_aware and all_pred_flows is not None and len(all_pred_flows) > 0:
                 # All tensors should be on CPU at this point (moved during append)
                 pred_flow_all = torch.cat(all_pred_flows, dim=0)
                 gt_flow_all = torch.cat(all_gt_flows, dim=0)

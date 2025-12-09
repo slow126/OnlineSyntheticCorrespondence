@@ -60,6 +60,10 @@ class MMDValidationCallback(pl.Callback):
         min_motion_pixels = self.eval_config.get('min_motion_pixels', 5.0)
         zero_threshold = self.eval_config.get('zero_threshold', 0.5)
         
+        # Debug: Print motion-aware setting
+        config_value = self.eval_config.get('use_motion_aware', 'not set')
+        print(f"Motion-aware evaluation (initial): {use_motion_aware} (type: {type(use_motion_aware).__name__}, from config: {config_value} (type: {type(config_value).__name__}))")
+        
         # Perform validation using existing function (epoch=-1 for initial)
         val_results = validate_epoch_multi_benchmark(
             net=pl_module.model,
@@ -120,6 +124,10 @@ class MMDValidationCallback(pl.Callback):
         use_motion_aware = self.eval_config.get('use_motion_aware', True)
         min_motion_pixels = self.eval_config.get('min_motion_pixels', 5.0)
         zero_threshold = self.eval_config.get('zero_threshold', 0.5)
+        
+        # Debug: Print motion-aware setting
+        config_value = self.eval_config.get('use_motion_aware', 'not set')
+        print(f"Motion-aware evaluation: {use_motion_aware} (type: {type(use_motion_aware).__name__}, from config: {config_value} (type: {type(config_value).__name__}))")
         
         # Perform validation using existing function
         # This preserves exact MMD calculation logic
