@@ -4,7 +4,7 @@
 
 evaluation:
   eval_benchmarks: ['flyingthings', 'tss', 'synthetic', 'pfpascal', 'pfwillow', 'spair', 'kitti2012', 'kitti2015', 'pointodyssey']
-  eval_alphas: [0.05, 0.05, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+  eval_alphas: [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]
   thres: 'img'  # 'auto', 'img', 'bbox', 'bbox-kp'
   split_to_use_for_validation: 'test'  # 'val' or 'test'
   val_batch_size: 4
