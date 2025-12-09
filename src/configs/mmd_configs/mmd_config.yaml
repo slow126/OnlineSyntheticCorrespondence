@@ -49,6 +49,19 @@ dino_features:
   unbiased: false
 
 # ============================================================================
+# ResNet101 Features Configuration
+# ============================================================================
+# For comparing ResNet101 pretrained features (512-dimensional from layer 2)
+resnet101_features:
+  input_dim: 512  # Raw ResNet feature dimension (no projection)
+  sigmas: [0.5, 1.0, 2.0, 4.0]  # Multi-scale RBF bandwidths for 512D features
+  features_per_sigma: 512  # Higher features for high-dimensional inputs
+  seed: 42
+  backend: torch
+  device: cuda
+  unbiased: false
+
+# ============================================================================
 # General Purpose Configuration
 # ============================================================================
 # Balanced configuration for general feature comparison

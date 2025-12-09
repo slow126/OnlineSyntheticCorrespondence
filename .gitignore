@@ -105,3 +105,5 @@ rc2_plots/
 # Generated configs
 slurm/experiment_configs/generated/
 
+# MMD Results
+*results.csv

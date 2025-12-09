@@ -34,6 +34,9 @@ from .validation import (
     test_sigma_sensitivity,
 )
 
+# Feature encoders
+from .encoders import BaseFeatureEncoder, ResNet101Encoder
+
 __all__ = [
     # NumPy classes
     'RBFKernel',
@@ -59,5 +62,8 @@ __all__ = [
     'compare_exact_vs_rff',
     'test_permutation_invariance',
     'test_sigma_sensitivity',
+    # Feature encoders
+    'BaseFeatureEncoder',
+    'ResNet101Encoder',
 ]
 

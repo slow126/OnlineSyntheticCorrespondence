@@ -606,6 +606,115 @@ def create_mmd_vs_pck_scatter_plot(snapshots_data, mmd_lookup, output_dir, datas
     plt.close()
 
 
+def create_feature_mmd_vs_pck_scatter_plot(snapshots_data, mmd_lookup, output_dir, dataset_color_map):
+    """
+    Create scatter plot showing training dataset Feature MMD² vs best PCK.
+    
+    Args:
+        snapshots_data: List of (training_dataset, validation_data_dict, metrics_list, snapshot_path) tuples
+        mmd_lookup: Dictionary mapping (dataset1_split1, dataset2_split2) -> mmd2 value
+                    Also supports (dataset1, dataset2) format for backward compatibility
+        output_dir: Output directory path
+        dataset_color_map: Dictionary mapping training_dataset -> color
+    """
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    
+    # Collect all data points: (mmd2, best_pck, training_dataset, benchmark)
+    data_points = []
+    
+    for training_dataset_label, _, _, snapshot_path in snapshots_data:
+        summary_path = Path(snapshot_path) / 'training_summary.txt'
+        
+        # Get base training dataset name from summary (for MMD lookup)
+        base_training_dataset = parse_training_dataset_from_summary(summary_path)
+        if not base_training_dataset:
+            print(f"  Warning: Could not parse training dataset from {summary_path}")
+            continue
+        
+        # Get best performance per benchmark
+        best_performance = parse_best_performance_from_summary(summary_path)
+        if not best_performance:
+            print(f"  Warning: No best performance data found in {summary_path}")
+            continue
+        
+        # For each benchmark, look up MMD² and store data point
+        for benchmark, best_pck in best_performance.items():
+            benchmark_lower = str(benchmark).lower()
+            
+            # Try to look up MMD² with splits
+            # Training datasets are typically "train" split, benchmarks are typically "test" or "val" split
+            mmd2 = None
+            
+            # Try with explicit splits (new format)
+            training_dataset_train = f"{base_training_dataset}_train"
+            benchmark_test = f"{benchmark_lower}_test"
+            benchmark_val = f"{benchmark_lower}_val"
+            
+            # Try test split first, then val split
+            mmd2 = mmd_lookup.get((training_dataset_train, benchmark_test))
+            if mmd2 is None:
+                mmd2 = mmd_lookup.get((training_dataset_train, benchmark_val))
+            
+            # Fall back to old format without splits (backward compatibility)
+            if mmd2 is None:
+                mmd2 = mmd_lookup.get((base_training_dataset, benchmark_lower))
+            
+            if mmd2 is not None:
+                data_points.append({
+                    'mmd2': mmd2,
+                    'best_pck': best_pck,
+                    'training_dataset': training_dataset_label,  # Use formatted label for display
+                    'benchmark': benchmark
+                })
+            else:
+                print(f"  Warning: Feature MMD² not found for ({base_training_dataset}, {benchmark_lower})")
+    
+    if not data_points:
+        print("Warning: No data points collected for Feature MMD vs PCK scatter plot")
+        return
+    
+    # Create scatter plot
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    # Group points by training dataset for plotting
+    datasets_points = defaultdict(list)
+    for point in data_points:
+        datasets_points[point['training_dataset']].append(point)
+    
+    # Plot each training dataset with different color
+    for training_dataset, points in datasets_points.items():
+        mmd2_values = [p['mmd2'] for p in points]
+        pck_values = [p['best_pck'] for p in points]
+        color = dataset_color_map.get(training_dataset, 'black')
+        
+        ax.scatter(mmd2_values, pck_values, 
+                  color=color, label=training_dataset, 
+                  s=100, alpha=0.7, edgecolors='black', linewidth=1)
+        
+        # Add benchmark labels (optional - can be commented out if too cluttered)
+        for point in points:
+            ax.annotate(point['benchmark'], 
+                       (point['mmd2'], point['best_pck']),
+                       fontsize=7, alpha=0.6,
+                       xytext=(5, 5), textcoords='offset points')
+    
+    ax.set_xlabel('Training Dataset Feature MMD² vs Benchmark', fontsize=12)
+    ax.set_ylabel('Best PCK (%)', fontsize=12)
+    ax.set_title('Training Dataset Feature MMD² vs Best PCK Performance', 
+                fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='best', fontsize=9)
+    
+    plt.tight_layout()
+    
+    # Save plot
+    output_file = output_path / 'training_feature_mmd_vs_best_pck.png'
+    plt.savefig(output_file, dpi=150, bbox_inches='tight')
+    print(f"\nSaved Feature MMD vs PCK scatter plot: {output_file}")
+    plt.close()
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Plot benchmark metrics across multiple snapshots',
@@ -744,7 +853,7 @@ Examples:
     )
     
     # Load MMD lookup and create scatter plot
-    print("\nCreating MMD vs PCK scatter plot...")
+    print("\nCreating Flow MMD vs PCK scatter plot...")
     mmd_lookup = load_mmd_lookup('flow_mmd_results.csv')
     if mmd_lookup:
         create_mmd_vs_pck_scatter_plot(
@@ -754,7 +863,20 @@ Examples:
             dataset_color_map
         )
     else:
-        print("  Skipping MMD vs PCK scatter plot (MMD lookup not available)")
+        print("  Skipping Flow MMD vs PCK scatter plot (MMD lookup not available)")
+    
+    # Load Feature MMD lookup and create scatter plot
+    print("\nCreating Feature MMD vs PCK scatter plot...")
+    feature_mmd_lookup = load_mmd_lookup('feature_mmd_results.csv')
+    if feature_mmd_lookup:
+        create_feature_mmd_vs_pck_scatter_plot(
+            snapshots_data,
+            feature_mmd_lookup,
+            args.output_dir,
+            dataset_color_map
+        )
+    else:
+        print("  Skipping Feature MMD vs PCK scatter plot (Feature MMD lookup not available)")
     
     print("\nDone!")
 

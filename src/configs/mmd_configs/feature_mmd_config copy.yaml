@@ -1,0 +1,110 @@
+# Feature MMD Comparison Configuration
+# Calculate MMD between deep features from different datasets
+
+# Encoder configuration
+encoder: resnet101  # Options: resnet101, dino (future)
+
+# Datasets to compare
+datasets:
+  - name: pointodyssey
+    split: train
+    num_batches: 10000
+  - name: synthetic
+    split: train
+    num_batches: 10000
+  - name: spair
+    split: train
+    num_batches: 10000
+  - name: flyingthings
+    split: train
+    num_batches: 10000
+  - name: pointodyssey
+    split: test
+    num_batches: 10000
+  - name: synthetic
+    split: val
+    num_batches: 10000
+  - name: kitti2012
+    split: val  # Will be overridden to 'training' if kitti_val_use_full_training: true
+    num_batches: 10000
+  - name: kitti2015
+    split: val  # Will be overridden to 'training' if kitti_val_use_full_training: true
+    num_batches: 10000
+  - name: spair
+    split: test
+    num_batches: 10000
+  - name: pfpascal
+    split: test
+    num_batches: 10000
+  - name: pfwillow
+    split: test  # PFWillow only has test split
+    num_batches: 10000
+  - name: flyingthings
+    split: test
+    num_batches: 10000  
+  - name: tss
+    split: val
+    num_batches: 10000
+  - name: middlebury
+    split: val
+    num_batches: 10000
+
+# Data loading parameters
+batch_size: 8
+num_workers: 32  # Set to 0 for synthetic (GPU-bound), or higher for other datasets
+
+# MMD configuration preset (from mmd_config.yaml)
+mmd_preset: resnet101_features  # Options: resnet101_features (512D), dino_features (768D), general, fast, accurate
+
+# Common dataset parameters (applied to all datasets)
+dataset_params:
+  size: [512, 512]
+  downsample_flow: 32
+  max_kps: null  # null = no truncation
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: false  # Will be overridden per-dataset if needed
+  kitti_val_use_full_training: true  # If true, KITTI datasets use full training set instead of val split
+
+dataset_overrides:
+  spair:
+    datapath: './models/Datasets_CATs'
+    normalize_images: false  # SPair already normalized
+  pfpascal:
+    datapath: './models/Datasets_CATs'
+    normalize_images: false  # PF-Pascal already normalized
+  pfwillow:
+    datapath: './models/Datasets_CATs'
+    normalize_images: false  # PF-Willow already normalized
+  synthetic:
+    geometry_config_path: 'src/configs/online_synth_configs/OnlineGeometryConfig.yaml'
+    processor_config_path: 'src/configs/online_synth_configs/OnlineProcessorConfig.yaml'
+    normalize_images: false  # Synthetic already normalized
+  pointodyssey:
+    dataset_location: '/home/slow1/Data/PointOdyssey'
+    normalize_images: true
+    pointodyssey_sequence_length: 2
+    pointodyssey_num_pts_to_track: 32  # Minimum requirement; use_all_valid will get all valid trajectories
+    use_all_valid: true  # Get all valid trajectories instead of limiting to num_pts_to_track
+  kitti2012:
+    datapath: '/home/slow1/Data/correspondence/kitti'
+    normalize_images: true
+  kitti2015:
+    datapath: '/home/slow1/Data/correspondence/kitti'
+    normalize_images: true
+  flyingthings:
+    datapath: '/home/slow1/Data/FlyingThings3D_Pytorch'
+    normalize_images: true
+  tss:
+    datapath: '/home/slow1/Data/correspondence/TSS_CVPR2016'
+    normalize_images: true
+  middlebury:
+    datapath: '/home/slow1/Data/middlebury/all'
+    normalize_images: true
+
+# Output options
+output:
+  save_results: true
+  results_file: 'feature_mmd_results.csv'
+  print_pairs: true
