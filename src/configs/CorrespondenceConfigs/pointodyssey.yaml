@@ -68,12 +68,17 @@ evaluation:
   # eval_benchmarks: ['kitti2012', 'kitti2015', 'pointodyssey', 'flyingthings', 'tss', 'synthetic', 'pfpascal', 'pfwillow', 'spair']
   # eval_alphas: [0.01, 0.01, 0.01, 0.05, 0.05, 0.1, 0.1, 0.1, 0.1]
   eval_benchmarks: ['spair']
-  eval_alphas: [0.01]
+  eval_alphas: [0.1]
   thres: 'img'  # 'auto', 'img', 'bbox', 'bbox-kp'
   split_to_use_for_validation: 'test'  # 'val' or 'test'
-  val_batch_size: 2
+  val_batch_size: 8
   val_num_workers: 32
-  prefetch_factor: 6
+  prefetch_factor: 2
+  
+  # Motion-aware evaluation parameters
+  use_motion_aware: false  # If true, compute motion-aware metrics (PCK on moving keypoints only)
+  min_motion_pixels: 5.0  # Minimum motion magnitude (in pixels) for motion-aware PCK
+  zero_threshold: 0.5  # Flow magnitude threshold below which flow is considered "zero"
   
   # Benchmark dataset paths
   datapath: './models/Datasets_CATs'

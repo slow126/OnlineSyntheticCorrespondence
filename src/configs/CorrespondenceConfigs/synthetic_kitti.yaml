@@ -80,6 +80,11 @@ evaluation:
   val_num_workers: 32
   prefetch_factor: 4
   
+  # Motion-aware evaluation parameters
+  use_motion_aware: false  # If true, compute motion-aware metrics (PCK on moving keypoints only)
+  min_motion_pixels: 5.0  # Minimum motion magnitude (in pixels) for motion-aware PCK
+  zero_threshold: 0.5  # Flow magnitude threshold below which flow is considered "zero"
+  
   # Benchmark dataset paths
   datapath: './models/Datasets_CATs'
   tss_root: '/home/spencer/Data/correspondence/TSS_CVPR2016'

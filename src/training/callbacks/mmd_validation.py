@@ -6,6 +6,8 @@ to preserve exact MMD calculation logic.
 """
 
 import pytorch_lightning as pl
+import torch
+import gc
 from typing import Dict, Any
 from models.CATs_PlusPlus.utils_training.optimize_multi import validate_epoch_multi_benchmark
 
@@ -53,6 +55,11 @@ class MMDValidationCallback(pl.Callback):
         if mmd_every_n_epochs > 0:
             print(f"MMD calculation enabled for initial evaluation")
         
+        # Get motion-aware config (default True for backward compatibility)
+        use_motion_aware = self.eval_config.get('use_motion_aware', True)
+        min_motion_pixels = self.eval_config.get('min_motion_pixels', 5.0)
+        zero_threshold = self.eval_config.get('zero_threshold', 0.5)
+        
         # Perform validation using existing function (epoch=-1 for initial)
         val_results = validate_epoch_multi_benchmark(
             net=pl_module.model,
@@ -61,9 +68,9 @@ class MMDValidationCallback(pl.Callback):
             epoch=-1,  # Initial evaluation before training
             multi_evaluator=self.multi_evaluator,
             primary_benchmark=self.eval_config['eval_benchmarks'][0],
-            use_motion_aware=True,
-            min_motion_pixels=5.0,
-            zero_threshold=0.5,
+            use_motion_aware=use_motion_aware,
+            min_motion_pixels=min_motion_pixels,
+            zero_threshold=zero_threshold,
             mmd_every_n_epochs=mmd_every_n_epochs
         )
         
@@ -109,6 +116,11 @@ class MMDValidationCallback(pl.Callback):
         # Get MMD config
         mmd_every_n_epochs = self.training_config.get('mmd_every_n_epochs', 0)
         
+        # Get motion-aware config (default True for backward compatibility)
+        use_motion_aware = self.eval_config.get('use_motion_aware', True)
+        min_motion_pixels = self.eval_config.get('min_motion_pixels', 5.0)
+        zero_threshold = self.eval_config.get('zero_threshold', 0.5)
+        
         # Perform validation using existing function
         # This preserves exact MMD calculation logic
         val_results = validate_epoch_multi_benchmark(
@@ -118,9 +130,9 @@ class MMDValidationCallback(pl.Callback):
             epoch=trainer.current_epoch,
             multi_evaluator=self.multi_evaluator,
             primary_benchmark=self.eval_config['eval_benchmarks'][0],
-            use_motion_aware=True,
-            min_motion_pixels=5.0,
-            zero_threshold=0.5,
+            use_motion_aware=use_motion_aware,
+            min_motion_pixels=min_motion_pixels,
+            zero_threshold=zero_threshold,
             mmd_every_n_epochs=mmd_every_n_epochs
         )
         
