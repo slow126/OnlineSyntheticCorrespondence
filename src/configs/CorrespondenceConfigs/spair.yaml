@@ -28,13 +28,13 @@ training:
   # MMD calculation during validation
   mmd_every_n_epochs: 1  # 0 = disabled, 1 = every epoch, 2 = every other epoch, etc.
 
-  enable_debug: false
-  debug_visualization_benchmarks: None
+  enable_debug: true
+  debug_visualization_benchmarks: all
   debug_visualization_persist: false
 
   steps_per_epoch: 100
 
-  eval_initial: true
+  eval_initial: false
 
 
 # Dataset parameters
@@ -54,8 +54,10 @@ dataset:
 evaluation:
   # eval_benchmarks: [ 'flyingthings', 'tss', 'synthetic', 'pfpascal', 'pfwillow', 'spair', 'kitti2012', 'kitti2015']
   # eval_alphas: [0.01, 0.01, 0.01, 0.05, 0.05, 0.1, 0.1, 0.1]
-  eval_benchmarks: ['kitti2012', 'kitti2015', 'pointodyssey', 'flyingthings', 'tss', 'synthetic', 'pfpascal', 'pfwillow', 'spair']
-  eval_alphas: [0.01, 0.01, 0.01, 0.05, 0.05, 0.1, 0.1, 0.1, 0.1]
+  # eval_benchmarks: ['middlebury', 'kitti2012', 'kitti2015', 'pointodyssey', 'flyingthings', 'tss', 'synthetic', 'pfpascal', 'pfwillow', 'spair']
+  # eval_alphas: [0.01, 0.01, 0.01, 0.01, 0.05, 0.05, 0.1, 0.1, 0.1, 0.1]
+  eval_benchmarks: ['middlebury']
+  eval_alphas: [0.05]
   thres: 'img'  # 'auto', 'img', 'bbox', 'bbox-kp'
   split_to_use_for_validation: 'test'  # 'val' or 'test'
   val_batch_size: 2
@@ -74,6 +76,7 @@ evaluation:
   kitti_val_use_full_training: true
   pointodyssey_root: '/home/spencer/Data/PointOdyssey'
   flyingthings_root: '/home/spencer/Data/FlyingThings3D_tiny'
+  middlebury_root: '/home/spencer/Data/middlebury/all'
   
   # Validation dataset parameters (overrides for specific benchmarks)
   val_datasets:
@@ -97,6 +100,9 @@ evaluation:
     flyingthings:
       split: 'test'
       normalize_images: true
+    middlebury:
+      normalize_images: true
+      reverse_flow: false
 
 # Paths
 paths:

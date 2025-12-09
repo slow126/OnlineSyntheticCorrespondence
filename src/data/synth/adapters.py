@@ -9,6 +9,7 @@ from src.data.synth.datasets.PointOdysseyCorrespondence import PointOdysseySimpl
 from src.data.synth.datasets.KittiDataset import KittiSimpleDataset
 from src.data.synth.datasets.OnlineCorrespondenceDataset import OnlineCorrespondenceDataset
 from src.data.synth.datasets.TSSDataset import TSSSimpleDataset
+from src.data.synth.datasets.MiddleburyDataset import MiddleburySimpleDataset
 
 
 class BaseAdapter:
@@ -129,6 +130,28 @@ class TSSAdapter(BaseAdapter):
         )
 
 
+class MiddleburyAdapter(BaseAdapter):
+    name = "middlebury"
+
+    def __init__(self, datapath: str, split: str = "train", reverse_flow: bool = False, **kwargs):
+        self.dataset = MiddleburySimpleDataset(
+            root=datapath,
+            split=split,
+            reverse_flow=reverse_flow,
+        )
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx) -> CommonSample:
+        raw = self.dataset[idx]
+        return CommonSample(
+            src_img=raw.get("src_img"),
+            trg_img=raw.get("trg_img"),
+            flow_full=raw.get("flow"),
+        )
+
+
 class SyntheticAdapter(BaseAdapter):
     name = "synthetic"
     normalize_images = False
@@ -241,6 +264,7 @@ ADAPTER_REGISTRY = {
     "kitti2015": KittiAdapter,
     "synthetic": SyntheticAdapter,
     "tss": TSSAdapter,
+    "middlebury": MiddleburyAdapter,
     "pfpascal": BenchmarkAdapter,
     "pfwillow": BenchmarkAdapter,
     "spair": BenchmarkAdapter,

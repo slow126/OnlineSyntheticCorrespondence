@@ -3,8 +3,8 @@
 # These can be overridden in sweep configs if needed
 
 evaluation:
-  eval_benchmarks: ['kitti2012', 'kitti2015', 'pointodyssey', 'flyingthings', 'tss', 'synthetic', 'pfpascal', 'pfwillow', 'spair']
-  eval_alphas: [0.01, 0.01, 0.01, 0.05, 0.05, 0.1, 0.1, 0.1, 0.1]
+  eval_benchmarks: ['middlebury', 'kitti2012', 'kitti2015', 'pointodyssey', 'flyingthings', 'tss', 'synthetic', 'pfpascal', 'pfwillow', 'spair']
+  eval_alphas: [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]
   thres: 'img'  # 'auto', 'img', 'bbox', 'bbox-kp'
   split_to_use_for_validation: 'test'  # 'val' or 'test'
   val_batch_size: 8
@@ -23,6 +23,7 @@ evaluation:
   kitti_val_use_full_training: true
   pointodyssey_root: '/home/spencer/Data/PointOdyssey'
   flyingthings_root: '/home/spencer/Data/FlyingThings3D_tiny'
+  middlebury_root: '/home/spencer/Data/middlebury/all'
   
   # Validation dataset parameters (overrides for specific benchmarks)
   val_datasets:
@@ -46,3 +47,6 @@ evaluation:
     flyingthings:
       split: 'test'
       normalize_images: true
+    middlebury:
+      normalize_images: true
+      reverse_flow: false

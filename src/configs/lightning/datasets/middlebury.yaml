@@ -1,0 +1,16 @@
+# Middlebury Dataset Configuration
+# Contains only dataset-specific parameters
+# Note: Middlebury is eval-only (no training split)
+
+dataset:
+  dataset_name: 'middlebury'
+  split: 'val'  # Ignored by dataset but kept for API consistency
+  size: [512, 512]
+  downsample_flow: 32
+  max_kps: null  # null = no truncation, test all keypoints
+  dense_kps_use_all: true  # when dense flow exists, extract all valid kps (set false to sample up to max_kps)
+  verbose: false
+  debug: false
+  normalize_images: true
+  datapath: '/home/spencer/Data/middlebury/all'
+  reverse_flow: false

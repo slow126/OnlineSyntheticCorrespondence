@@ -189,6 +189,8 @@ def create_dataset_from_config(
     elif dataset_name == 'tss':
         dataset_config['thres'] = dataset_config.get('thres', 'img')
         dataset_config['reverse_flow'] = dataset_config.get('reverse_flow', False)
+    elif dataset_name == 'middlebury':
+        dataset_config['reverse_flow'] = dataset_config.get('reverse_flow', False)
     elif dataset_name == 'pointodyssey':
         dataset_config['reverse_flow'] = dataset_config.get('reverse_flow', True)
         dataset_config['thres'] = dataset_config.get('thres', 'img')

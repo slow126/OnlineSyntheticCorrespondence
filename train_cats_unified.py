@@ -316,6 +316,11 @@ def create_validation_datasets(config, device=None):
             val_dataset_config['reverse_flow'] = val_datasets_config.get('reverse_flow', False)
             val_dataset_config['thres'] = eval_config['thres']
         
+        elif benchmark == 'middlebury':
+            val_dataset_config['datapath'] = eval_config['middlebury_root']
+            val_dataset_config['reverse_flow'] = val_datasets_config.get('reverse_flow', False)
+            val_dataset_config['split'] = 'val'  # Ignored by dataset but kept for API consistency
+        
         elif benchmark == 'pointodyssey':
             val_dataset_config['dataset_location'] = eval_config['pointodyssey_root']
             val_dataset_config['pointodyssey_use_augs'] = val_datasets_config.get('pointodyssey_use_augs', False)

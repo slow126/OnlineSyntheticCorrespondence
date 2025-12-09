@@ -3,8 +3,23 @@
 
 # Datasets to compare
 datasets:
-  - name: pointodyssey
+  - name: middlebury
     split: val
+    num_batches: 10000
+  - name: pointodyssey
+    split: train
+    num_batches: 10000
+  - name: synthetic
+    split: train
+    num_batches: 10000
+  - name: spair
+    split: train
+    num_batches: 10000
+  - name: flyingthings
+    split: train
+    num_batches: 10000
+  - name: pointodyssey
+    split: test
     num_batches: 10000
   - name: synthetic
     split: val
@@ -16,10 +31,10 @@ datasets:
     split: val  # Will be overridden to 'training' if kitti_val_use_full_training: true
     num_batches: 10000
   - name: spair
-    split: val
+    split: test
     num_batches: 10000
   - name: pfpascal
-    split: val
+    split: test
     num_batches: 10000
   - name: pfwillow
     split: test  # PFWillow only has test split
@@ -29,7 +44,7 @@ datasets:
     num_batches: 10000
   - name: tss
     split: val
-    num_batches: 10000 
+    num_batches: 10000
 
 # Data loading parameters
 batch_size: 8
@@ -80,6 +95,9 @@ dataset_overrides:
     normalize_images: true
   tss:
     datapath: '/home/slow1/Data/correspondence/TSS_CVPR2016'
+    normalize_images: true
+  middlebury:
+    datapath: '/home/slow1/Data/middlebury/all'
     normalize_images: true
 
 # Output options
