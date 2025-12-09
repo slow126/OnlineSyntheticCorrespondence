@@ -274,6 +274,9 @@ def main():
         split = ds_config['split']
         num_batches = ds_config['num_batches']
         
+        # Create unique identifier combining dataset name and split
+        dataset_id = f"{dataset_name}_{split}"
+        
         # Create dataset
         dataset = create_dataset_from_config(
             dataset_name, split, common_params, dataset_overrides
@@ -293,11 +296,12 @@ def main():
         )
         
         # Stream flows directly to StreamingMMD (no accumulation!)
+        # Use dataset_id instead of dataset_name to treat splits as unique
         vector_count = stream_flows_to_mmd(
-            dataloader, num_batches, dataset_name, 
+            dataloader, num_batches, dataset_id, 
             streaming_mmd, mmd_config.backend, device
         )
-        dataset_vector_counts[dataset_name] = vector_count
+        dataset_vector_counts[dataset_id] = vector_count
     
     # Now calculate pairwise MMD (all data already streamed)
     print("\n" + "="*60)
@@ -338,11 +342,28 @@ def main():
         
         with open(results_file, 'w', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow(['dataset1', 'dataset2', 'mmd2', 'mmd', 'num_vectors1', 'num_vectors2'])
+            writer.writerow(['dataset1', 'split1', 'dataset2', 'split2', 'mmd2', 'mmd', 'num_vectors1', 'num_vectors2'])
             for result in mmd_results:
+                # Parse dataset_id format: "dataset_name_split"
+                dataset1_id = result['dataset1']
+                dataset2_id = result['dataset2']
+                
+                # Split the ID into name and split (handle edge cases)
+                if '_' in dataset1_id:
+                    dataset1_name, split1 = dataset1_id.rsplit('_', 1)
+                else:
+                    dataset1_name, split1 = dataset1_id, 'unknown'
+                
+                if '_' in dataset2_id:
+                    dataset2_name, split2 = dataset2_id.rsplit('_', 1)
+                else:
+                    dataset2_name, split2 = dataset2_id, 'unknown'
+                
                 writer.writerow([
-                    result['dataset1'],
-                    result['dataset2'],
+                    dataset1_name,
+                    split1,
+                    dataset2_name,
+                    split2,
                     result['mmd2'],
                     result['mmd'],
                     result['num_vectors1'],

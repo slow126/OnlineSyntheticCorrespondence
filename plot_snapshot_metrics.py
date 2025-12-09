@@ -54,7 +54,7 @@ def load_validation_results(snapshot_path):
 def load_pairwise_mmd_comparisons(training_dataset, csv_path='flow_mmd_results.csv'):
     """
     Load pairwise MMD² comparisons from CSV file and find all comparisons
-    involving the training dataset.
+    involving the training dataset. Uses train split for training dataset.
     
     Args:
         training_dataset: Name of the training dataset (e.g., 'synthetic', 'pointodyssey')
@@ -62,6 +62,7 @@ def load_pairwise_mmd_comparisons(training_dataset, csv_path='flow_mmd_results.c
         
     Returns:
         Dictionary mapping benchmark name -> mmd2 value for training vs benchmark comparison
+        Uses train split for training dataset to compare with benchmark eval sets
     """
     if not os.path.exists(csv_path):
         print(f"Warning: {csv_path} not found. Skipping pairwise MMD² comparisons.")
@@ -73,19 +74,52 @@ def load_pairwise_mmd_comparisons(training_dataset, csv_path='flow_mmd_results.c
     # Normalize training dataset name for matching (case-insensitive comparison)
     training_lower = str(training_dataset).lower()
     
-    # Find all rows where either dataset1 or dataset2 matches training dataset
-    for _, row in df.iterrows():
-        dataset1_lower = str(row['dataset1']).lower()
-        dataset2_lower = str(row['dataset2']).lower()
+    # Check if CSV has split columns (new format)
+    has_splits = 'split1' in df.columns and 'split2' in df.columns
+    
+    if has_splits:
+        # New format with splits: prioritize train split for training dataset
+        training_dataset_train = f"{training_lower}_train"
         
-        if dataset1_lower == training_lower:
-            # training_dataset vs dataset2
-            eval_set = row['dataset2']
-            pairwise_mmd[eval_set] = row['mmd2']
-        elif dataset2_lower == training_lower:
-            # dataset1 vs training_dataset
-            eval_set = row['dataset1']
-            pairwise_mmd[eval_set] = row['mmd2']
+        for _, row in df.iterrows():
+            dataset1 = str(row['dataset1']).lower()
+            dataset2 = str(row['dataset2']).lower()
+            split1 = str(row['split1']).lower()
+            split2 = str(row['split2']).lower()
+            
+            dataset1_id = f"{dataset1}_{split1}"
+            dataset2_id = f"{dataset2}_{split2}"
+            
+            # Match training dataset with train split
+            if dataset1_id == training_dataset_train:
+                # training_dataset_train vs dataset2_split2
+                eval_set = row['dataset2']  # Use dataset name without split for benchmark lookup
+                pairwise_mmd[eval_set] = row['mmd2']
+            elif dataset2_id == training_dataset_train:
+                # dataset1_split1 vs training_dataset_train
+                eval_set = row['dataset1']  # Use dataset name without split for benchmark lookup
+                pairwise_mmd[eval_set] = row['mmd2']
+            # Also try matching without explicit split (for backward compatibility)
+            elif dataset1 == training_lower and split1 == 'train':
+                eval_set = row['dataset2']
+                pairwise_mmd[eval_set] = row['mmd2']
+            elif dataset2 == training_lower and split2 == 'train':
+                eval_set = row['dataset1']
+                pairwise_mmd[eval_set] = row['mmd2']
+    else:
+        # Old format without splits: use exact match
+        for _, row in df.iterrows():
+            dataset1_lower = str(row['dataset1']).lower()
+            dataset2_lower = str(row['dataset2']).lower()
+            
+            if dataset1_lower == training_lower:
+                # training_dataset vs dataset2
+                eval_set = row['dataset2']
+                pairwise_mmd[eval_set] = row['mmd2']
+            elif dataset2_lower == training_lower:
+                # dataset1 vs training_dataset
+                eval_set = row['dataset1']
+                pairwise_mmd[eval_set] = row['mmd2']
     
     return pairwise_mmd
 
