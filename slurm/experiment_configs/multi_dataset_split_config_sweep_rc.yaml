@@ -88,4 +88,3 @@ sweeps:
       model.pretrained_backbone: False
     name_template: "steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"
   
-  # SKIPPED: freeze=True + pretrained=False (frozen random encoder that never trains = useless!)
