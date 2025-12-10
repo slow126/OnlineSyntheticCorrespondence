@@ -358,6 +358,12 @@ def create_validation_datasets(config, device=None):
             val_dataset_config['split'] = val_datasets_config.get('split', 'test')  # CorrespondenceDataset maps 'val' -> 'test' for FlyingThings
             val_dataset_config['reverse_flow'] = val_datasets_config.get('reverse_flow', True)
         
+        elif benchmark == 'sintel':
+            val_dataset_config['sintel_root'] = eval_config['sintel_root']
+            val_dataset_config['split'] = val_datasets_config.get('split', 'train')  # Sintel test split has no ground truth
+            val_dataset_config['pass_name'] = val_datasets_config.get('pass_name', 'clean')
+            val_dataset_config['reverse_flow'] = val_datasets_config.get('reverse_flow', True)
+        
         else:  # spair, pfpascal, pfwillow
             val_dataset_config['datapath'] = eval_config['datapath']
             val_dataset_config['thres'] = eval_config['thres']

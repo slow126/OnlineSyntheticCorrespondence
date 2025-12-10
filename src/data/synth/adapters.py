@@ -10,6 +10,11 @@ from src.data.synth.datasets.KittiDataset import KittiSimpleDataset
 from src.data.synth.datasets.OnlineCorrespondenceDataset import OnlineCorrespondenceDataset
 from src.data.synth.datasets.TSSDataset import TSSSimpleDataset
 from src.data.synth.datasets.MiddleburyDataset import MiddleburySimpleDataset
+from src.data.synth.datasets.MonkaaDataset import MonkaaSimpleDataset
+from src.data.synth.datasets.DrivingDataset import DrivingSimpleDataset
+from src.data.synth.datasets.SintelDataset import SintelSimpleDataset
+from src.data.synth.datasets.HD1KDataset import HD1KSimpleDataset
+from src.data.synth.datasets.VirtualKitti2Dataset import VirtualKitti2SimpleDataset
 
 
 class BaseAdapter:
@@ -173,6 +178,123 @@ class SyntheticAdapter(BaseAdapter):
         return self.dataset[idx]
 
 
+class MonkaaAdapter(BaseAdapter):
+    name = "monkaa"
+
+    def __init__(self, datapath: str, split: str, reverse_flow: bool = False, transforms=None, **_: Dict):
+        self.dataset = MonkaaSimpleDataset(
+            root=datapath,
+            split=split,
+            transforms=transforms,
+            reverse_flow=reverse_flow,
+        )
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx) -> CommonSample:
+        raw = self.dataset[idx]
+        return CommonSample(
+            src_img=raw.get("src_img"),
+            trg_img=raw.get("trg_img"),
+            flow_full=raw.get("flow"),
+        )
+
+
+class DrivingAdapter(BaseAdapter):
+    name = "driving"
+
+    def __init__(self, datapath: str, split: str, reverse_flow: bool = False, transforms=None, **_: Dict):
+        self.dataset = DrivingSimpleDataset(
+            root=datapath,
+            split=split,
+            transforms=transforms,
+            reverse_flow=reverse_flow,
+        )
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx) -> CommonSample:
+        raw = self.dataset[idx]
+        return CommonSample(
+            src_img=raw.get("src_img"),
+            trg_img=raw.get("trg_img"),
+            flow_full=raw.get("flow"),
+        )
+
+
+class SintelAdapter(BaseAdapter):
+    name = "sintel"
+
+    def __init__(self, sintel_root: str, split: str, pass_name: str = "clean", size=None, reverse_flow: bool = False, transforms=None, **kwargs):
+        self.dataset = SintelSimpleDataset(
+            root=sintel_root,
+            split=split,
+            pass_name=pass_name,
+            size=tuple(size) if size is not None else None,
+            transforms=transforms,
+            reverse_flow=reverse_flow,
+        )
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx) -> CommonSample:
+        raw = self.dataset[idx]
+        return CommonSample(
+            src_img=raw.get("src_img"),
+            trg_img=raw.get("trg_img"),
+            flow_full=raw.get("flow"),
+        )
+
+
+class HD1KAdapter(BaseAdapter):
+    name = "hd1k"
+
+    def __init__(self, datapath: str, split: str, reverse_flow: bool = False, transforms=None, **_: Dict):
+        self.dataset = HD1KSimpleDataset(
+            root=datapath,
+            split=split,
+            transforms=transforms,
+            reverse_flow=reverse_flow,
+        )
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx) -> CommonSample:
+        raw = self.dataset[idx]
+        return CommonSample(
+            src_img=raw.get("src_img"),
+            trg_img=raw.get("trg_img"),
+            flow_full=raw.get("flow"),
+        )
+
+
+class VirtualKitti2Adapter(BaseAdapter):
+    name = "virtualkitti2"
+
+    def __init__(self, datapath: str, split: str, camera: str = "Camera_0", reverse_flow: bool = False, **kwargs):
+        self.dataset = VirtualKitti2SimpleDataset(
+            root=datapath,
+            split=split,
+            camera=camera,
+            reverse_flow=reverse_flow,
+        )
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx) -> CommonSample:
+        raw = self.dataset[idx]
+        return CommonSample(
+            src_img=raw.get("src_img"),
+            trg_img=raw.get("trg_img"),
+            flow_full=raw.get("flow"),
+        )
+
+
 class BenchmarkAdapter(BaseAdapter):
     """PF-Pascal/Willow/SPair; flows are already feature-res in many cases."""
 
@@ -265,6 +387,11 @@ ADAPTER_REGISTRY = {
     "synthetic": SyntheticAdapter,
     "tss": TSSAdapter,
     "middlebury": MiddleburyAdapter,
+    "monkaa": MonkaaAdapter,
+    "driving": DrivingAdapter,
+    "sintel": SintelAdapter,
+    "hd1k": HD1KAdapter,
+    "virtualkitti2": VirtualKitti2Adapter,
     "pfpascal": BenchmarkAdapter,
     "pfwillow": BenchmarkAdapter,
     "spair": BenchmarkAdapter,

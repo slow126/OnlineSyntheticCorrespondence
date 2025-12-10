@@ -1,0 +1,15 @@
+dataset:
+  dataset_name: 'sintel'
+  split: 'train'
+  size: [512, 512]
+  downsample_flow: 32
+  max_kps: null  # null = no truncation
+  dense_kps_use_all: true  # use all valid kps for dense flow; set false to sample up to max_kps
+  verbose: false
+  debug: false
+  normalize_images: true
+  
+  # Sintel-specific parameters
+  sintel_root: '/home/slow1/Data'  # Torchvision appends '/Sintel' automatically
+  pass_name: 'clean'  # 'clean', 'final', or 'both'
+  reverse_flow: true

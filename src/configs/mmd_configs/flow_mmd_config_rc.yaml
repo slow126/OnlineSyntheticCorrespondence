@@ -3,6 +3,9 @@
 
 # Datasets to compare
 datasets:
+  - name: sintel
+    split: train
+    num_batches: 10000
   - name: middlebury
     split: val
     num_batches: 10000
@@ -65,6 +68,9 @@ dataset_params:
   kitti_val_use_full_training: true  # If true, KITTI datasets use full training set instead of val split
 
 dataset_overrides:
+  sintel:
+    sintel_root: '/home/slow1/Data'
+    normalize_images: true
   spair:
     datapath: './models/Datasets_CATs'
     normalize_images: false  # SPair already normalized
