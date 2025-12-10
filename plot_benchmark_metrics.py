@@ -19,6 +19,16 @@ from collections import defaultdict
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from scipy import stats
+
+# Try to import statsmodels for mixed-effects regression
+try:
+    import statsmodels.formula.api as smf
+    HAS_STATSMODELS = True
+except ImportError:
+    HAS_STATSMODELS = False
+    print("Warning: statsmodels not installed. Mixed-effects regression will be skipped.")
+    print("Install with: pip install statsmodels")
 
 # Import functions from plot_metrics.py
 from plot_metrics import (
@@ -497,6 +507,381 @@ def parse_best_performance_from_summary(summary_path):
     return best_performance
 
 
+def compute_within_benchmark_correlations(df):
+    """
+    Compute correlation between MMD² and PCK within each benchmark.
+    
+    Args:
+        df: DataFrame with columns ['mmd2', 'best_pck', 'benchmark', 'training_dataset']
+        
+    Returns:
+        DataFrame with correlation results per benchmark
+    """
+    results = []
+    
+    for benchmark in df['benchmark'].unique():
+        subset = df[df['benchmark'] == benchmark]
+        n = len(subset)
+        
+        if n >= 3:  # Need at least 3 points for meaningful correlation
+            # Check for zero variance
+            if subset['mmd2'].std() > 0 and subset['best_pck'].std() > 0:
+                r, p = stats.pearsonr(subset['mmd2'], subset['best_pck'])
+                results.append({
+                    'benchmark': benchmark,
+                    'correlation': r,
+                    'p_value': p,
+                    'n_points': n,
+                    'significant': p < 0.05
+                })
+            else:
+                results.append({
+                    'benchmark': benchmark,
+                    'correlation': np.nan,
+                    'p_value': np.nan,
+                    'n_points': n,
+                    'significant': False
+                })
+        else:
+            results.append({
+                'benchmark': benchmark,
+                'correlation': np.nan,
+                'p_value': np.nan,
+                'n_points': n,
+                'significant': False
+            })
+    
+    return pd.DataFrame(results)
+
+
+def compute_zscore_correlation(df):
+    """
+    Compute correlation using z-score normalized values within each benchmark.
+    This removes baseline difficulty differences between benchmarks.
+    
+    Args:
+        df: DataFrame with columns ['mmd2', 'best_pck', 'benchmark']
+        
+    Returns:
+        Tuple of (correlation, p_value, df_with_zscores)
+    """
+    df = df.copy()
+    
+    # Z-score normalize within each benchmark
+    def zscore(x):
+        if x.std() > 0:
+            return (x - x.mean()) / x.std()
+        return x * 0  # Return zeros if no variance
+    
+    df['pck_z'] = df.groupby('benchmark')['best_pck'].transform(zscore)
+    df['mmd_z'] = df.groupby('benchmark')['mmd2'].transform(zscore)
+    
+    # Remove any NaN values
+    df_clean = df.dropna(subset=['pck_z', 'mmd_z'])
+    
+    if len(df_clean) >= 3:
+        r, p = stats.pearsonr(df_clean['mmd_z'], df_clean['pck_z'])
+        return r, p, df
+    else:
+        return np.nan, np.nan, df
+
+
+def run_mixed_effects_regression(df):
+    """
+    Run mixed-effects regression with benchmark as random effect.
+    This controls for baseline difficulty differences between benchmarks.
+    
+    Model: best_pck ~ mmd2 + (1|benchmark)
+    
+    Args:
+        df: DataFrame with columns ['mmd2', 'best_pck', 'benchmark']
+        
+    Returns:
+        Dictionary with regression results or None if statsmodels not available
+    """
+    if not HAS_STATSMODELS:
+        return None
+    
+    df = df.copy()
+    df = df.dropna(subset=['mmd2', 'best_pck', 'benchmark'])
+    
+    if len(df) < 5:
+        return None
+    
+    try:
+        # Random intercept model: benchmark as grouping variable
+        model = smf.mixedlm("best_pck ~ mmd2", data=df, groups=df["benchmark"])
+        result = model.fit(method='lbfgs')  # Use LBFGS optimizer for stability
+        
+        return {
+            'mmd2_coef': result.fe_params.get('mmd2', np.nan),
+            'mmd2_pvalue': result.pvalues.get('mmd2', np.nan),
+            'intercept': result.fe_params.get('Intercept', np.nan),
+            'intercept_pvalue': result.pvalues.get('Intercept', np.nan),
+            'random_effect_var': result.cov_re.iloc[0, 0] if hasattr(result.cov_re, 'iloc') else np.nan,
+            'n_observations': len(df),
+            'n_groups': df['benchmark'].nunique(),
+            'converged': result.converged,
+            'llf': result.llf,  # Log-likelihood
+            'aic': result.aic,
+            'bic': result.bic,
+            'summary': str(result.summary())
+        }
+    except Exception as e:
+        print(f"  Warning: Mixed-effects regression failed: {e}")
+        return None
+
+
+def print_statistical_analysis(df, analysis_name="MMD"):
+    """
+    Print comprehensive statistical analysis results.
+    
+    Args:
+        df: DataFrame with columns ['mmd2', 'best_pck', 'benchmark', 'training_dataset']
+        analysis_name: Name of the analysis (e.g., "Flow MMD" or "Feature MMD")
+    """
+    print(f"\n{'='*70}")
+    print(f"STATISTICAL ANALYSIS: {analysis_name} vs PCK")
+    print(f"{'='*70}")
+    
+    # 1. Overall correlation (naive - for reference)
+    if len(df) >= 3:
+        r_naive, p_naive = stats.pearsonr(df['mmd2'], df['best_pck'])
+        print(f"\n1. NAIVE OVERALL CORRELATION (pooled, ignoring benchmark):")
+        print(f"   r = {r_naive:.4f}, p = {p_naive:.4f}, n = {len(df)}")
+        print(f"   ⚠️  This may be confounded by benchmark difficulty!")
+    
+    # 2. Within-benchmark correlations
+    print(f"\n2. WITHIN-BENCHMARK CORRELATIONS:")
+    print(f"   (Controls for benchmark difficulty by analyzing each benchmark separately)")
+    within_corr = compute_within_benchmark_correlations(df)
+    print(f"   {'Benchmark':<15} {'r':>8} {'p-value':>10} {'n':>5} {'Sig?':>6}")
+    print(f"   {'-'*45}")
+    for _, row in within_corr.iterrows():
+        sig_marker = '*' if row['significant'] else ''
+        r_str = f"{row['correlation']:.4f}" if not np.isnan(row['correlation']) else 'N/A'
+        p_str = f"{row['p_value']:.4f}" if not np.isnan(row['p_value']) else 'N/A'
+        print(f"   {row['benchmark']:<15} {r_str:>8} {p_str:>10} {row['n_points']:>5} {sig_marker:>6}")
+    
+    # Summary of within-benchmark
+    valid_corrs = within_corr.dropna(subset=['correlation'])
+    if len(valid_corrs) > 0:
+        mean_r = valid_corrs['correlation'].mean()
+        print(f"\n   Mean within-benchmark correlation: r = {mean_r:.4f}")
+        n_sig = valid_corrs['significant'].sum()
+        print(f"   Significant correlations: {n_sig}/{len(valid_corrs)}")
+    
+    # 3. Z-score normalized correlation
+    print(f"\n3. Z-SCORE NORMALIZED CORRELATION:")
+    print(f"   (Standardizes within each benchmark to remove difficulty differences)")
+    r_z, p_z, df_z = compute_zscore_correlation(df)
+    if not np.isnan(r_z):
+        print(f"   r = {r_z:.4f}, p = {p_z:.4f}")
+    else:
+        print(f"   Could not compute (insufficient data)")
+    
+    # 4. Mixed-effects regression
+    print(f"\n4. MIXED-EFFECTS REGRESSION:")
+    print(f"   (Model: PCK ~ MMD² + (1|benchmark) - random intercept per benchmark)")
+    me_results = run_mixed_effects_regression(df)
+    if me_results:
+        print(f"   MMD² coefficient: {me_results['mmd2_coef']:.4f}")
+        print(f"   MMD² p-value: {me_results['mmd2_pvalue']:.4f}")
+        print(f"   Interpretation: 1 unit increase in MMD² → {me_results['mmd2_coef']:.2f} change in PCK%")
+        print(f"   Random effect variance (benchmark): {me_results['random_effect_var']:.4f}")
+        print(f"   Model fit: AIC={me_results['aic']:.1f}, BIC={me_results['bic']:.1f}")
+        print(f"   Observations: {me_results['n_observations']}, Groups: {me_results['n_groups']}")
+        if me_results['mmd2_pvalue'] < 0.05:
+            print(f"   ✓ MMD² effect is statistically significant (p < 0.05)")
+        else:
+            print(f"   ✗ MMD² effect is NOT statistically significant (p >= 0.05)")
+    else:
+        if HAS_STATSMODELS:
+            print(f"   Could not fit model (insufficient data or convergence failure)")
+        else:
+            print(f"   Skipped (statsmodels not installed)")
+    
+    print(f"\n{'='*70}\n")
+    
+    return {
+        'naive_correlation': (r_naive, p_naive) if len(df) >= 3 else (np.nan, np.nan),
+        'within_benchmark': within_corr,
+        'zscore_correlation': (r_z, p_z),
+        'mixed_effects': me_results
+    }
+
+
+def save_statistical_analysis_to_file(df, output_path, analysis_name="MMD"):
+    """
+    Save statistical analysis results to a text file.
+    
+    Args:
+        df: DataFrame with analysis data
+        output_path: Path object for output directory
+        analysis_name: Name of analysis for filename
+    """
+    import io
+    from contextlib import redirect_stdout
+    
+    # Capture print output
+    f = io.StringIO()
+    with redirect_stdout(f):
+        print_statistical_analysis(df, analysis_name)
+    
+    output_text = f.getvalue()
+    
+    # Save to file
+    safe_name = analysis_name.lower().replace(' ', '_')
+    output_file = output_path / f'{safe_name}_statistical_analysis.txt'
+    with open(output_file, 'w') as file:
+        file.write(output_text)
+    
+    print(f"Saved statistical analysis to: {output_file}")
+    return output_file
+
+
+def create_faceted_scatter_plot(df, output_path, analysis_name="MMD", dataset_color_map=None):
+    """
+    Create faceted scatter plot with one panel per benchmark.
+    
+    Args:
+        df: DataFrame with columns ['mmd2', 'best_pck', 'benchmark', 'training_dataset']
+        output_path: Path object for output directory
+        analysis_name: Name for plot title and filename
+        dataset_color_map: Dictionary mapping training_dataset -> color
+    """
+    benchmarks = sorted(df['benchmark'].unique())
+    n_benchmarks = len(benchmarks)
+    
+    if n_benchmarks == 0:
+        return
+    
+    # Calculate grid size
+    n_cols = min(3, n_benchmarks)
+    n_rows = (n_benchmarks + n_cols - 1) // n_cols
+    
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5*n_cols, 4*n_rows), squeeze=False)
+    axes = axes.flatten()
+    
+    # Compute within-benchmark correlations for annotations
+    within_corr = compute_within_benchmark_correlations(df)
+    corr_dict = {row['benchmark']: row for _, row in within_corr.iterrows()}
+    
+    for idx, benchmark in enumerate(benchmarks):
+        ax = axes[idx]
+        subset = df[df['benchmark'] == benchmark]
+        
+        # Plot each training dataset with its color
+        for training_dataset in subset['training_dataset'].unique():
+            ds_subset = subset[subset['training_dataset'] == training_dataset]
+            color = dataset_color_map.get(training_dataset, 'black') if dataset_color_map else None
+            ax.scatter(ds_subset['mmd2'], ds_subset['best_pck'], 
+                      color=color, label=training_dataset,
+                      s=60, alpha=0.7, edgecolors='black', linewidth=0.5)
+        
+        # Add regression line if enough points
+        if len(subset) >= 3:
+            z = np.polyfit(subset['mmd2'], subset['best_pck'], 1)
+            p = np.poly1d(z)
+            x_line = np.linspace(subset['mmd2'].min(), subset['mmd2'].max(), 100)
+            ax.plot(x_line, p(x_line), 'r--', alpha=0.7, linewidth=2)
+        
+        # Add correlation annotation
+        corr_info = corr_dict.get(benchmark, {})
+        r = corr_info.get('correlation', np.nan)
+        p_val = corr_info.get('p_value', np.nan)
+        n = corr_info.get('n_points', len(subset))
+        
+        if not np.isnan(r):
+            sig_star = '*' if p_val < 0.05 else ''
+            ax.text(0.05, 0.95, f'r={r:.3f}{sig_star}\nn={n}', 
+                   transform=ax.transAxes, fontsize=10,
+                   verticalalignment='top', fontfamily='monospace',
+                   bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        
+        ax.set_xlabel(f'{analysis_name}²', fontsize=10)
+        ax.set_ylabel('Best PCK (%)', fontsize=10)
+        ax.set_title(benchmark.upper(), fontsize=12, fontweight='bold')
+        ax.grid(True, alpha=0.3)
+    
+    # Hide unused axes
+    for idx in range(n_benchmarks, len(axes)):
+        axes[idx].set_visible(False)
+    
+    # Add overall title
+    fig.suptitle(f'{analysis_name}² vs Best PCK - By Benchmark\n(* indicates p < 0.05)', 
+                fontsize=14, fontweight='bold', y=1.02)
+    
+    plt.tight_layout()
+    
+    # Save plot
+    safe_name = analysis_name.lower().replace(' ', '_')
+    output_file = output_path / f'{safe_name}_vs_pck_by_benchmark.png'
+    plt.savefig(output_file, dpi=150, bbox_inches='tight')
+    print(f"Saved faceted plot: {output_file}")
+    plt.close()
+
+
+def create_zscore_scatter_plot(df, output_path, analysis_name="MMD", dataset_color_map=None):
+    """
+    Create scatter plot using z-score normalized values.
+    
+    Args:
+        df: DataFrame with analysis data
+        output_path: Path object for output directory
+        analysis_name: Name for plot title and filename
+        dataset_color_map: Dictionary mapping training_dataset -> color
+    """
+    r_z, p_z, df_z = compute_zscore_correlation(df)
+    
+    if np.isnan(r_z):
+        print(f"  Skipping z-score plot (insufficient data)")
+        return
+    
+    fig, ax = plt.subplots(figsize=(10, 8))
+    
+    # Plot by training dataset
+    for training_dataset in df_z['training_dataset'].unique():
+        subset = df_z[df_z['training_dataset'] == training_dataset]
+        color = dataset_color_map.get(training_dataset, 'black') if dataset_color_map else None
+        ax.scatter(subset['mmd_z'], subset['pck_z'],
+                  color=color, label=training_dataset,
+                  s=80, alpha=0.7, edgecolors='black', linewidth=0.5)
+    
+    # Add regression line
+    df_clean = df_z.dropna(subset=['mmd_z', 'pck_z'])
+    if len(df_clean) >= 3:
+        z = np.polyfit(df_clean['mmd_z'], df_clean['pck_z'], 1)
+        p = np.poly1d(z)
+        x_line = np.linspace(df_clean['mmd_z'].min(), df_clean['mmd_z'].max(), 100)
+        ax.plot(x_line, p(x_line), 'r--', alpha=0.7, linewidth=2, label='Trend')
+    
+    # Add correlation annotation
+    ax.text(0.05, 0.95, f'r = {r_z:.4f}\np = {p_z:.4f}', 
+           transform=ax.transAxes, fontsize=12,
+           verticalalignment='top', fontfamily='monospace',
+           bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+    
+    ax.axhline(y=0, color='gray', linestyle='-', alpha=0.3)
+    ax.axvline(x=0, color='gray', linestyle='-', alpha=0.3)
+    
+    ax.set_xlabel(f'{analysis_name}² (z-scored within benchmark)', fontsize=12)
+    ax.set_ylabel('Best PCK (z-scored within benchmark)', fontsize=12)
+    ax.set_title(f'Z-Score Normalized {analysis_name}² vs PCK\n(Controls for benchmark difficulty)', 
+                fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='best', fontsize=9)
+    
+    plt.tight_layout()
+    
+    # Save plot
+    safe_name = analysis_name.lower().replace(' ', '_')
+    output_file = output_path / f'{safe_name}_vs_pck_zscore.png'
+    plt.savefig(output_file, dpi=150, bbox_inches='tight')
+    print(f"Saved z-score plot: {output_file}")
+    plt.close()
+
+
 def create_mmd_vs_pck_scatter_plot(snapshots_data, mmd_lookup, output_dir, dataset_color_map):
     """
     Create scatter plot showing training dataset MMD² vs best PCK.
@@ -556,7 +941,8 @@ def create_mmd_vs_pck_scatter_plot(snapshots_data, mmd_lookup, output_dir, datas
                     'mmd2': mmd2,
                     'best_pck': best_pck,
                     'training_dataset': training_dataset_label,  # Use formatted label for display
-                    'benchmark': benchmark
+                    'benchmark': benchmark,
+                    'snapshot_path': str(snapshot_path)  # Track which snapshot this came from
                 })
             else:
                 print(f"  Warning: MMD² not found for ({base_training_dataset}, {benchmark_lower})")
@@ -574,13 +960,26 @@ def create_mmd_vs_pck_scatter_plot(snapshots_data, mmd_lookup, output_dir, datas
         datasets_points[point['training_dataset']].append(point)
     
     # Plot each training dataset with different color
+    # Multiple snapshots with same training dataset will show as multiple points
     for training_dataset, points in datasets_points.items():
         mmd2_values = [p['mmd2'] for p in points]
         pck_values = [p['best_pck'] for p in points]
         color = dataset_color_map.get(training_dataset, 'black')
         
+        # Count how many trials we have for this dataset
+        num_trials = len(set(p.get('snapshot_path', '') for p in points if 'snapshot_path' in p))
+        if num_trials == 0:
+            num_trials = len(points)  # Fallback: use number of points
+        
+        # Use label only once per dataset (to avoid duplicate legend entries)
+        # If multiple trials, show count in label
+        if num_trials > 1:
+            label = f"{training_dataset} ({num_trials} trials)"
+        else:
+            label = training_dataset
+        
         ax.scatter(mmd2_values, pck_values, 
-                  color=color, label=training_dataset, 
+                  color=color, label=label, 
                   s=100, alpha=0.7, edgecolors='black', linewidth=1)
         
         # Add benchmark labels (optional - can be commented out if too cluttered)
@@ -590,9 +989,9 @@ def create_mmd_vs_pck_scatter_plot(snapshots_data, mmd_lookup, output_dir, datas
                        fontsize=7, alpha=0.6,
                        xytext=(5, 5), textcoords='offset points')
     
-    ax.set_xlabel('Training Dataset MMD² vs Benchmark', fontsize=12)
+    ax.set_xlabel('Training Dataset Flow MMD² vs Benchmark', fontsize=12)
     ax.set_ylabel('Best PCK (%)', fontsize=12)
-    ax.set_title('Training Dataset MMD² vs Best PCK Performance', 
+    ax.set_title('Training Dataset Flow MMD² vs Best PCK Performance', 
                 fontsize=14, fontweight='bold')
     ax.grid(True, alpha=0.3)
     ax.legend(loc='best', fontsize=9)
@@ -604,6 +1003,21 @@ def create_mmd_vs_pck_scatter_plot(snapshots_data, mmd_lookup, output_dir, datas
     plt.savefig(output_file, dpi=150, bbox_inches='tight')
     print(f"\nSaved MMD vs PCK scatter plot: {output_file}")
     plt.close()
+    
+    # Create DataFrame for statistical analysis
+    df = pd.DataFrame(data_points)
+    
+    # Run and print statistical analysis
+    print_statistical_analysis(df, "Flow MMD")
+    
+    # Save statistical analysis to file
+    save_statistical_analysis_to_file(df, output_path, "Flow MMD")
+    
+    # Create faceted plot (one panel per benchmark)
+    create_faceted_scatter_plot(df, output_path, "Flow MMD", dataset_color_map)
+    
+    # Create z-score normalized plot
+    create_zscore_scatter_plot(df, output_path, "Flow MMD", dataset_color_map)
 
 
 def create_feature_mmd_vs_pck_scatter_plot(snapshots_data, mmd_lookup, output_dir, dataset_color_map):
@@ -665,7 +1079,8 @@ def create_feature_mmd_vs_pck_scatter_plot(snapshots_data, mmd_lookup, output_di
                     'mmd2': mmd2,
                     'best_pck': best_pck,
                     'training_dataset': training_dataset_label,  # Use formatted label for display
-                    'benchmark': benchmark
+                    'benchmark': benchmark,
+                    'snapshot_path': str(snapshot_path)  # Track which snapshot this came from
                 })
             else:
                 print(f"  Warning: Feature MMD² not found for ({base_training_dataset}, {benchmark_lower})")
@@ -683,13 +1098,26 @@ def create_feature_mmd_vs_pck_scatter_plot(snapshots_data, mmd_lookup, output_di
         datasets_points[point['training_dataset']].append(point)
     
     # Plot each training dataset with different color
+    # Multiple snapshots with same training dataset will show as multiple points
     for training_dataset, points in datasets_points.items():
         mmd2_values = [p['mmd2'] for p in points]
         pck_values = [p['best_pck'] for p in points]
         color = dataset_color_map.get(training_dataset, 'black')
         
+        # Count how many trials we have for this dataset
+        num_trials = len(set(p.get('snapshot_path', '') for p in points if 'snapshot_path' in p))
+        if num_trials == 0:
+            num_trials = len(points)  # Fallback: use number of points
+        
+        # Use label only once per dataset (to avoid duplicate legend entries)
+        # If multiple trials, show count in label
+        if num_trials > 1:
+            label = f"{training_dataset} ({num_trials} trials)"
+        else:
+            label = training_dataset
+        
         ax.scatter(mmd2_values, pck_values, 
-                  color=color, label=training_dataset, 
+                  color=color, label=label, 
                   s=100, alpha=0.7, edgecolors='black', linewidth=1)
         
         # Add benchmark labels (optional - can be commented out if too cluttered)
@@ -713,6 +1141,21 @@ def create_feature_mmd_vs_pck_scatter_plot(snapshots_data, mmd_lookup, output_di
     plt.savefig(output_file, dpi=150, bbox_inches='tight')
     print(f"\nSaved Feature MMD vs PCK scatter plot: {output_file}")
     plt.close()
+    
+    # Create DataFrame for statistical analysis
+    df = pd.DataFrame(data_points)
+    
+    # Run and print statistical analysis
+    print_statistical_analysis(df, "Feature MMD")
+    
+    # Save statistical analysis to file
+    save_statistical_analysis_to_file(df, output_path, "Feature MMD")
+    
+    # Create faceted plot (one panel per benchmark)
+    create_faceted_scatter_plot(df, output_path, "Feature MMD", dataset_color_map)
+    
+    # Create z-score normalized plot
+    create_zscore_scatter_plot(df, output_path, "Feature MMD", dataset_color_map)
 
 
 def main():
