@@ -17,7 +17,7 @@ training:
   scheduler: 'step'
   step: '[70, 80, 90]'
   step_gamma: 0.5
-  steps_per_epoch: 100  # logarithmic not supported with lightning
+  steps_per_epoch: 10  # logarithmic not supported with lightning
   
   # Validation frequency control
   check_val_every_n_epoch: 5  # Run validation every 5 epochs (reduces validation overhead)

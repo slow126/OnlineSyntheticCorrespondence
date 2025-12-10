@@ -46,10 +46,22 @@ training_datasets:
       training.batch_size: 8
       training.n_threads: 0  # GPU-bound rendering
 
+  - name: "synthetic_small_zoom"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc_small_zoom.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 0  # GPU-bound rendering
+
+  - name: "synthetic_large_zoom"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc_large_zoom.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 0  # GPU-bound rendering
+
 # Output directory for generated configs
 # Relative paths starting with 'slurm/' or 'experiment_configs/' are resolved relative to project root
 # Other relative paths are resolved relative to this config file's directory
-output_dir: "/home/slow1/Projects/OnlineSyntheticCorrespondence/slurm/experiment_configs/generated"
+output_dir: "/home/slow1/Projects/OnlineSyntheticCorrespondence/slurm/experiment_configs/generated_zoom"
 
 # Sweep definitions (applied to all datasets)
 # These only affect training/model parameters, not eval config
