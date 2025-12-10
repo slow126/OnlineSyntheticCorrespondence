@@ -274,14 +274,15 @@ def main():
     # Handle steps_per_epoch limit if specified
     steps_per_epoch_config = training_config.get('steps_per_epoch', None)
     
-    # Add logarithmic steps callback if needed
+    # Check for logarithmic mode - not supported with Lightning
     if steps_per_epoch_config == 'logarithmic':
-        from src.training.callbacks.logarithmic_steps import LogarithmicStepsCallback
-        logarithmic_callback = LogarithmicStepsCallback()
-        logarithmic_callback.enabled = True
-        callbacks.append(logarithmic_callback)
-        # Start with 1 step for epoch 0 (2^0 = 1)
-        limit_train_batches = 1
+        print("\n" + "="*80)
+        print("WARNING: 'logarithmic' steps_per_epoch is not supported with train_lightning.py")
+        print("PyTorch Lightning does not support dynamically changing limit_train_batches")
+        print("between epochs. Defaulting to 100 steps per epoch instead.")
+        print("Use train_cats_unified.py if you need logarithmic step progression.")
+        print("="*80 + "\n")
+        limit_train_batches = 100
     elif steps_per_epoch_config is not None:
         # Fixed number of steps per epoch
         limit_train_batches = steps_per_epoch_config
