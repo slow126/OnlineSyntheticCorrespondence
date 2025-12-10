@@ -17,18 +17,18 @@ training:
   scheduler: 'step'
   step: '[70, 80, 90]'
   step_gamma: 0.5
-  steps_per_epoch: null
+  steps_per_epoch: 100  # logarithmic not supported with lightning
+  
+  # Validation frequency control
+  check_val_every_n_epoch: 5  # Run validation every 5 epochs (reduces validation overhead)
+  # val_check_interval: 1.0  # Alternative: run after N training steps (int) or fraction of epoch (float)
+  
   enable_debug: false
   augmentation: false  # Sintel typically doesn't use augmentation
   min_flow_length: null
   max_flow_length: null
-
-  enable_debug: false
   debug_visualization_benchmarks: all
   debug_visualization_persist: false
-
-  steps_per_epoch: 100 #logarithmic not supported with lightning
-
   eval_initial: false
 
 dataset:

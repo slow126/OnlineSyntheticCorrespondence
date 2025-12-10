@@ -289,6 +289,10 @@ def main():
     else:
         limit_train_batches = 1.0  # Use all batches
     
+    # Validation frequency options
+    check_val_every_n_epoch = training_config.get('check_val_every_n_epoch', 1)
+    val_check_interval = training_config.get('val_check_interval', 1.0)
+    
     trainer = pl.Trainer(
         max_epochs=training_config.get('epochs', 50),
         accelerator='gpu' if torch.cuda.is_available() else 'cpu',
@@ -298,8 +302,8 @@ def main():
         enable_progress_bar=True,
         enable_model_summary=False,
         num_sanity_val_steps=0,  # Skip validation sanity check
-        check_val_every_n_epoch=1,  # Check validation every epoch
-        val_check_interval=1.0,  # Check validation at end of epoch
+        check_val_every_n_epoch=check_val_every_n_epoch,  # Check validation every N epochs
+        val_check_interval=val_check_interval,  # Check validation at end of epoch (1.0) or after N steps (int)
         limit_train_batches=limit_train_batches,  # Limit training batches if specified
     )
     
