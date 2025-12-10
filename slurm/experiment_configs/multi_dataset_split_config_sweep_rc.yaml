@@ -66,10 +66,26 @@ output_dir: "/home/slow1/Projects/OnlineSyntheticCorrespondence/slurm/experiment
 # Sweep definitions (applied to all datasets)
 # These only affect training/model parameters, not eval config
 sweeps:
-  # Example: Logarithmic steps_per_epoch sweep
-  - name: "backbone_sweep"
+  # Backbone sweep - excluding freeze=True + pretrained=False (frozen random features, never learns!)
+  - name: "frozen_pretrained"
     parameters:
       training.steps_per_epoch: 100
-      model.freeze: [True, False]
-      model.pretrained_backbone: [True, False]
-    name_template: "logsteps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"
+      model.freeze: True
+      model.pretrained_backbone: True
+    name_template: "steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"
+  
+  - name: "unfrozen_pretrained"
+    parameters:
+      training.steps_per_epoch: 100
+      model.freeze: False
+      model.pretrained_backbone: True
+    name_template: "steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"
+  
+  - name: "unfrozen_scratch"
+    parameters:
+      training.steps_per_epoch: 100
+      model.freeze: False
+      model.pretrained_backbone: False
+    name_template: "steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"
+  
+  # SKIPPED: freeze=True + pretrained=False (frozen random encoder that never trains = useless!)
