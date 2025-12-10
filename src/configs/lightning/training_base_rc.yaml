@@ -19,7 +19,7 @@ training:
   scheduler: 'step'  # 'step' or 'cosine'
   step: '[70, 80, 90]'
   step_gamma: 0.5
-  steps_per_epoch: logarithmic  # null = all steps, or integer, or 'logarithmic'
+  steps_per_epoch: 100  # null = all steps, or integer. 'logarithmic' not supported with lightning
   augmentation: false
   min_flow_length: null
   max_flow_length: null

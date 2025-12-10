@@ -27,7 +27,7 @@ training:
   debug_visualization_benchmarks: all
   debug_visualization_persist: false
 
-  steps_per_epoch: 10
+  steps_per_epoch: 100 #logarithmic not supported with lightning
 
   eval_initial: false
 
@@ -49,8 +49,10 @@ dataset:
 
 
 evaluation:
-  eval_benchmarks: ['spair', 'pfpascal', 'pfwillow', 'synthetic', 'tss', 'pointodyssey', 'kitti2012', 'kitti2015']
-  eval_alphas: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+  # eval_benchmarks: ['spair', 'pfpascal', 'pfwillow', 'synthetic', 'tss', 'pointodyssey', 'kitti2012', 'kitti2015']
+  # eval_alphas: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+  eval_benchmarks: ['kitti2012']
+  eval_alphas: [0.1]
   thres: 'img'
   split_to_use_for_validation: 'test'  # Sintel uses 'test' split for validation
   val_batch_size: 8
