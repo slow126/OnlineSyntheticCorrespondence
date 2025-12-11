@@ -4,34 +4,40 @@ STATISTICAL ANALYSIS: Feature MMD vs PCK
 ======================================================================
 
 1. NAIVE OVERALL CORRELATION (pooled, ignoring benchmark):
-   r = 0.1317, p = 0.4508, n = 35
+   r = -0.1086, p = 0.0422, n = 350
    ⚠️  This may be confounded by benchmark difficulty!
 
 2. WITHIN-BENCHMARK CORRELATIONS:
    (Controls for benchmark difficulty by analyzing each benchmark separately)
    Benchmark              r    p-value     n   Sig?
    ---------------------------------------------
-   kitti2012         0.4942     0.5058     4       
-   kitti2015         0.5676     0.4324     4       
-   flyingthings      0.5735     0.4265     4       
-   tss               0.5898     0.4102     4       
-   synthetic        -0.6924     0.3076     4       
-   pfpascal          0.6077     0.3923     4       
-   pfwillow          0.6078     0.3922     4       
-   spair             0.5377     0.4623     4       
-   pointodyssey      0.5800     0.6061     3       
+   flyingthings     -0.0174     0.9208    35       
+   tss               0.2059     0.2353    35       
+   middlebury        0.0223     0.8989    35       
+   synthetic        -0.6485     0.0000    35      *
+   pfpascal          0.0472     0.7877    35       
+   pfwillow          0.0122     0.9446    35       
+   spair             0.1152     0.5101    35       
+   kitti2012         0.0406     0.8167    35       
+   kitti2015         0.1225     0.4831    35       
+   pointodyssey      0.2640     0.1254    35       
 
-   Mean within-benchmark correlation: r = 0.4295
-   Significant correlations: 0/9
+   Mean within-benchmark correlation: r = 0.0164
+   Significant correlations: 1/10
 
 3. Z-SCORE NORMALIZED CORRELATION:
    (Standardizes within each benchmark to remove difficulty differences)
-   r = 0.4237, p = 0.0112
+   r = 0.0164, p = 0.7597
 
 4. MIXED-EFFECTS REGRESSION:
    (Model: PCK ~ MMD² + (1|benchmark) - random intercept per benchmark)
-  Warning: Mixed-effects regression failed: Singular matrix
-   Could not fit model (insufficient data or convergence failure)
+   MMD² coefficient: -52.8070
+   MMD² p-value: 0.2445
+   Interpretation: 1 unit increase in MMD² → -52.81 change in PCK%
+   Random effect variance (benchmark): 608.6341
+   Model fit: AIC=nan, BIC=nan
+   Observations: 350, Groups: 10
+   ✗ MMD² effect is NOT statistically significant (p >= 0.05)
 
 ======================================================================
 

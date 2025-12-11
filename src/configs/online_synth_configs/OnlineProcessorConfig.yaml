@@ -56,5 +56,5 @@ subsample_flow: None #0.1
 subsample_during_train: false
 subsample_during_val: false
 subsample_without_trainer: false
-downsample_for_cats: true
+downsample_for_cats: false
 cats_feat_size: 32

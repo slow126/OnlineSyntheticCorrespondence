@@ -111,8 +111,9 @@ class CorrespondenceLightningModule(pl.LightningModule):
                 gpu_batch[key] = value
         
         # Ensure async transfers complete
-        if device.type == 'cuda' and any(isinstance(v, torch.Tensor) and v.device.type == 'cuda' for v in gpu_batch.values()):
-            torch.cuda.synchronize(device)
+        # NOTE: Synchronize disabled for performance - non_blocking=True handles async properly
+        # if device.type == 'cuda' and any(isinstance(v, torch.Tensor) and v.device.type == 'cuda' for v in gpu_batch.values()):
+        #     torch.cuda.synchronize(device)
         
         # Get ground truth flow
         if 'flow_downsampled' in gpu_batch:

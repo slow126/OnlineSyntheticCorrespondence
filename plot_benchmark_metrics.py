@@ -1158,6 +1158,495 @@ def create_feature_mmd_vs_pck_scatter_plot(snapshots_data, mmd_lookup, output_di
     create_zscore_scatter_plot(df, output_path, "Feature MMD", dataset_color_map)
 
 
+def create_mmd_vs_pck_errorbar_plot(snapshots_data, mmd_lookup, output_dir, dataset_color_map, mmd_type="Flow"):
+    """
+    Create error bar plot showing MMD² vs PCK with error bars for multiple configs.
+    
+    Since MMD² is a property of the dataset pair (not the model), we group all model
+    configurations trained on the same dataset and show mean PCK ± std for each
+    (training_dataset, benchmark) pair.
+    
+    Args:
+        snapshots_data: List of (training_dataset, validation_data_dict, metrics_list, snapshot_path) tuples
+        mmd_lookup: Dictionary mapping (dataset1_split1, dataset2_split2) -> mmd2 value
+        output_dir: Output directory path
+        dataset_color_map: Dictionary mapping training_dataset -> color
+        mmd_type: Type of MMD analysis ("Flow" or "Feature")
+    """
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    
+    # Collect all data points grouped by (training_dataset, benchmark)
+    # Key: (base_training_dataset, benchmark), Value: list of (mmd2, pck) tuples
+    grouped_data = defaultdict(list)
+    
+    for training_dataset_label, _, _, snapshot_path in snapshots_data:
+        summary_path = Path(snapshot_path) / 'training_summary.txt'
+        
+        # Get base training dataset name from summary (for MMD lookup)
+        base_training_dataset = parse_training_dataset_from_summary(summary_path)
+        if not base_training_dataset:
+            continue
+        
+        # Get best performance per benchmark
+        best_performance = parse_best_performance_from_summary(summary_path)
+        if not best_performance:
+            continue
+        
+        # For each benchmark, look up MMD² and store data point
+        for benchmark, best_pck in best_performance.items():
+            benchmark_lower = str(benchmark).lower()
+            
+            # Try to look up MMD² with splits
+            mmd2 = None
+            training_dataset_train = f"{base_training_dataset}_train"
+            benchmark_test = f"{benchmark_lower}_test"
+            benchmark_val = f"{benchmark_lower}_val"
+            
+            # Try test split first, then val split
+            mmd2 = mmd_lookup.get((training_dataset_train, benchmark_test))
+            if mmd2 is None:
+                mmd2 = mmd_lookup.get((training_dataset_train, benchmark_val))
+            
+            # Fall back to old format without splits
+            if mmd2 is None:
+                mmd2 = mmd_lookup.get((base_training_dataset, benchmark_lower))
+            
+            if mmd2 is not None:
+                key = (training_dataset_label, benchmark)
+                grouped_data[key].append({
+                    'mmd2': mmd2,
+                    'best_pck': best_pck,
+                    'training_dataset': training_dataset_label,
+                    'benchmark': benchmark
+                })
+    
+    if not grouped_data:
+        print(f"  Warning: No data collected for {mmd_type} MMD error bar plot")
+        return
+    
+    # Compute statistics for each group
+    plot_data = []
+    for (training_dataset, benchmark), points in grouped_data.items():
+        mmd2_values = [p['mmd2'] for p in points]
+        pck_values = [p['best_pck'] for p in points]
+        
+        # All mmd2 values should be identical (since it's a dataset property)
+        mmd2_mean = np.mean(mmd2_values)
+        
+        # Compute statistics for PCK across different model configs
+        pck_mean = np.mean(pck_values)
+        pck_std = np.std(pck_values, ddof=1) if len(pck_values) > 1 else 0
+        pck_stderr = pck_std / np.sqrt(len(pck_values)) if len(pck_values) > 1 else 0
+        
+        plot_data.append({
+            'training_dataset': training_dataset,
+            'benchmark': benchmark,
+            'mmd2': mmd2_mean,
+            'pck_mean': pck_mean,
+            'pck_std': pck_std,
+            'pck_stderr': pck_stderr,
+            'n_configs': len(pck_values)
+        })
+    
+    # Create error bar plot
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    # Group by training dataset for coloring
+    dataset_groups = defaultdict(list)
+    for data in plot_data:
+        dataset_groups[data['training_dataset']].append(data)
+    
+    # Plot each training dataset with error bars
+    for training_dataset, group_data in dataset_groups.items():
+        mmd2_vals = [d['mmd2'] for d in group_data]
+        pck_means = [d['pck_mean'] for d in group_data]
+        pck_stds = [d['pck_std'] for d in group_data]
+        
+        color = dataset_color_map.get(training_dataset, 'black')
+        
+        # Plot with error bars (using std dev)
+        ax.errorbar(mmd2_vals, pck_means, yerr=pck_stds,
+                   fmt='o', label=training_dataset,
+                   color=color, markersize=8, capsize=5, capthick=2,
+                   alpha=0.7, elinewidth=2)
+        
+        # Optionally add benchmark labels
+        for data in group_data:
+            # Only label if there are multiple configs (error bars are meaningful)
+            if data['n_configs'] > 1:
+                ax.annotate(f"{data['benchmark']}\n(n={data['n_configs']})", 
+                           (data['mmd2'], data['pck_mean']),
+                           fontsize=7, alpha=0.6,
+                           xytext=(5, 5), textcoords='offset points')
+            else:
+                ax.annotate(data['benchmark'], 
+                           (data['mmd2'], data['pck_mean']),
+                           fontsize=7, alpha=0.6,
+                           xytext=(5, 5), textcoords='offset points')
+    
+    ax.set_xlabel(f'Training Dataset {mmd_type} MMD² vs Benchmark', fontsize=12)
+    ax.set_ylabel('Best PCK (%) - Mean ± Std Dev', fontsize=12)
+    ax.set_title(f'{mmd_type} MMD² vs Best PCK Performance\n(Error bars show variation across model configurations)', 
+                fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='best', fontsize=9)
+    
+    plt.tight_layout()
+    
+    # Save plot
+    safe_name = mmd_type.lower().replace(' ', '_')
+    output_file = output_path / f'training_{safe_name}_mmd_vs_best_pck_errorbars.png'
+    plt.savefig(output_file, dpi=150, bbox_inches='tight')
+    print(f"  Saved {mmd_type} MMD error bar plot: {output_file}")
+    plt.close()
+
+
+def load_coverage_lookup(csv_path='coverage_results.csv'):
+    """
+    Load coverage data from CSV file and create a bidirectional lookup.
+    
+    Args:
+        csv_path: Path to coverage_results.csv file
+        
+    Returns:
+        Dictionary mapping (dataset1_split1, dataset2_split2) -> dict of coverage metrics
+        Works for both orderings
+    """
+    if not os.path.exists(csv_path):
+        print(f"Warning: {csv_path} not found. Cannot create coverage lookup.")
+        return {}
+    
+    coverage_lookup = {}
+    
+    try:
+        df = pd.read_csv(csv_path)
+        for _, row in df.iterrows():
+            dataset1 = str(row['dataset1']).lower()
+            dataset2 = str(row['dataset2']).lower()
+            split1 = str(row['split1']).lower()
+            split2 = str(row['split2']).lower()
+            
+            # Skip identical comparisons (same dataset AND same split)
+            if dataset1 == dataset2 and split1 == split2:
+                continue
+            
+            # Create unique identifiers with splits
+            dataset1_id = f"{dataset1}_{split1}"
+            dataset2_id = f"{dataset2}_{split2}"
+            
+            # Store coverage metrics
+            metrics = {
+                'coverage_abs': float(row['coverage_abs']),
+                'coverage_rel': float(row['coverage_rel']),
+                'rho_95': float(row['rho_95']),
+                'rho_median': float(row['rho_median']),
+                'rho_mean': float(row['rho_mean']),
+                'epsilon': float(row['epsilon']),
+            }
+            
+            # Store both orderings with split identifiers
+            coverage_lookup[(dataset1_id, dataset2_id)] = metrics
+            coverage_lookup[(dataset2_id, dataset1_id)] = metrics
+            
+            # Also store without explicit split in key for backward compatibility
+            coverage_lookup[(dataset1, dataset2)] = metrics
+            coverage_lookup[(dataset2, dataset1)] = metrics
+            
+    except Exception as e:
+        print(f"Warning: Could not load coverage lookup from {csv_path}: {e}")
+        return {}
+    
+    return coverage_lookup
+
+
+def create_coverage_vs_pck_scatter_plot(snapshots_data, coverage_lookup, output_dir, dataset_color_map, coverage_type='abs'):
+    """
+    Create scatter plot showing training dataset coverage vs best PCK.
+    
+    Args:
+        snapshots_data: List of (training_dataset, validation_data_dict, metrics_list, snapshot_path) tuples
+        coverage_lookup: Dictionary mapping (dataset1_split1, dataset2_split2) -> coverage metrics dict
+        output_dir: Output directory path
+        dataset_color_map: Dictionary mapping training_dataset -> color
+        coverage_type: 'abs' for absolute coverage or 'rel' for relative coverage
+    """
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    
+    # Determine which coverage metric to use
+    coverage_key = 'coverage_abs' if coverage_type == 'abs' else 'coverage_rel'
+    coverage_label = 'Absolute Coverage' if coverage_type == 'abs' else 'Relative Coverage'
+    
+    # Collect all data points: (coverage, best_pck, training_dataset, benchmark)
+    data_points = []
+    
+    for training_dataset_label, _, _, snapshot_path in snapshots_data:
+        summary_path = Path(snapshot_path) / 'training_summary.txt'
+        
+        # Get base training dataset name from summary (for coverage lookup)
+        base_training_dataset = parse_training_dataset_from_summary(summary_path)
+        if not base_training_dataset:
+            print(f"  Warning: Could not parse training dataset from {summary_path}")
+            continue
+        
+        # Get best performance per benchmark
+        best_performance = parse_best_performance_from_summary(summary_path)
+        if not best_performance:
+            print(f"  Warning: No best performance data found in {summary_path}")
+            continue
+        
+        # For each benchmark, look up coverage and store data point
+        for benchmark, best_pck in best_performance.items():
+            benchmark_lower = str(benchmark).lower()
+            
+            # Try to look up coverage with splits
+            coverage_metrics = None
+            training_dataset_train = f"{base_training_dataset}_train"
+            benchmark_test = f"{benchmark_lower}_test"
+            benchmark_val = f"{benchmark_lower}_val"
+            
+            # Try test split first, then val split
+            coverage_metrics = coverage_lookup.get((training_dataset_train, benchmark_test))
+            if coverage_metrics is None:
+                coverage_metrics = coverage_lookup.get((training_dataset_train, benchmark_val))
+            
+            # Fall back to old format without splits
+            if coverage_metrics is None:
+                coverage_metrics = coverage_lookup.get((base_training_dataset, benchmark_lower))
+            
+            if coverage_metrics is not None:
+                data_points.append({
+                    'coverage': coverage_metrics[coverage_key],
+                    'coverage_abs': coverage_metrics['coverage_abs'],
+                    'coverage_rel': coverage_metrics['coverage_rel'],
+                    'best_pck': best_pck,
+                    'training_dataset': training_dataset_label,
+                    'benchmark': benchmark,
+                    'snapshot_path': str(snapshot_path)
+                })
+            else:
+                print(f"  Warning: Coverage not found for ({base_training_dataset}, {benchmark_lower})")
+    
+    if not data_points:
+        print(f"Warning: No data points collected for {coverage_label} vs PCK scatter plot")
+        return
+    
+    # Create scatter plot
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    # Group points by training dataset for plotting
+    datasets_points = defaultdict(list)
+    for point in data_points:
+        datasets_points[point['training_dataset']].append(point)
+    
+    # Plot each training dataset with different color
+    for training_dataset, points in datasets_points.items():
+        coverage_values = [p['coverage'] for p in points]
+        pck_values = [p['best_pck'] for p in points]
+        color = dataset_color_map.get(training_dataset, 'black')
+        
+        # Count how many trials we have for this dataset
+        num_trials = len(set(p.get('snapshot_path', '') for p in points if 'snapshot_path' in p))
+        if num_trials == 0:
+            num_trials = len(points)
+        
+        # Use label only once per dataset
+        if num_trials > 1:
+            label = f"{training_dataset} ({num_trials} trials)"
+        else:
+            label = training_dataset
+        
+        ax.scatter(coverage_values, pck_values, 
+                  color=color, label=label, 
+                  s=100, alpha=0.7, edgecolors='black', linewidth=1)
+        
+        # Add benchmark labels
+        for point in points:
+            ax.annotate(point['benchmark'], 
+                       (point['coverage'], point['best_pck']),
+                       fontsize=7, alpha=0.6,
+                       xytext=(5, 5), textcoords='offset points')
+    
+    ax.set_xlabel(f'Training Dataset {coverage_label} of Benchmark', fontsize=12)
+    ax.set_ylabel('Best PCK (%)', fontsize=12)
+    ax.set_title(f'Training Dataset {coverage_label} vs Best PCK Performance', 
+                fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='best', fontsize=9)
+    
+    plt.tight_layout()
+    
+    # Save plot
+    coverage_suffix = 'abs' if coverage_type == 'abs' else 'rel'
+    output_file = output_path / f'training_coverage_{coverage_suffix}_vs_best_pck.png'
+    plt.savefig(output_file, dpi=150, bbox_inches='tight')
+    print(f"\nSaved {coverage_label} vs PCK scatter plot: {output_file}")
+    plt.close()
+    
+    # Create DataFrame for statistical analysis
+    df = pd.DataFrame(data_points)
+    # Rename for compatibility with existing analysis functions
+    df['mmd2'] = df['coverage']
+    
+    # Run and print statistical analysis
+    analysis_name = f"Coverage ({coverage_type.upper()})"
+    print_statistical_analysis(df, analysis_name)
+    
+    # Save statistical analysis to file
+    save_statistical_analysis_to_file(df, output_path, analysis_name)
+    
+    # Create faceted plot (one panel per benchmark)
+    create_faceted_scatter_plot(df, output_path, analysis_name, dataset_color_map)
+    
+    # Create z-score normalized plot
+    create_zscore_scatter_plot(df, output_path, analysis_name, dataset_color_map)
+
+
+def create_coverage_vs_pck_errorbar_plot(snapshots_data, coverage_lookup, output_dir, dataset_color_map, coverage_type='abs'):
+    """
+    Create error bar plot showing coverage vs PCK with error bars for multiple configs.
+    
+    Since coverage is a property of the dataset pair (not the model), we group all model
+    configurations trained on the same dataset and show mean PCK ± std for each
+    (training_dataset, benchmark) pair.
+    
+    Args:
+        snapshots_data: List of (training_dataset, validation_data_dict, metrics_list, snapshot_path) tuples
+        coverage_lookup: Dictionary mapping (dataset1_split1, dataset2_split2) -> coverage metrics dict
+        output_dir: Output directory path
+        dataset_color_map: Dictionary mapping training_dataset -> color
+        coverage_type: 'abs' for absolute coverage or 'rel' for relative coverage
+    """
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    
+    # Determine which coverage metric to use
+    coverage_key = 'coverage_abs' if coverage_type == 'abs' else 'coverage_rel'
+    coverage_label = 'Absolute Coverage' if coverage_type == 'abs' else 'Relative Coverage'
+    
+    # Collect all data points grouped by (training_dataset, benchmark)
+    grouped_data = defaultdict(list)
+    
+    for training_dataset_label, _, _, snapshot_path in snapshots_data:
+        summary_path = Path(snapshot_path) / 'training_summary.txt'
+        
+        # Get base training dataset name from summary
+        base_training_dataset = parse_training_dataset_from_summary(summary_path)
+        if not base_training_dataset:
+            continue
+        
+        # Get best performance per benchmark
+        best_performance = parse_best_performance_from_summary(summary_path)
+        if not best_performance:
+            continue
+        
+        # For each benchmark, look up coverage and store data point
+        for benchmark, best_pck in best_performance.items():
+            benchmark_lower = str(benchmark).lower()
+            
+            # Try to look up coverage with splits
+            coverage_metrics = None
+            training_dataset_train = f"{base_training_dataset}_train"
+            benchmark_test = f"{benchmark_lower}_test"
+            benchmark_val = f"{benchmark_lower}_val"
+            
+            # Try test split first, then val split
+            coverage_metrics = coverage_lookup.get((training_dataset_train, benchmark_test))
+            if coverage_metrics is None:
+                coverage_metrics = coverage_lookup.get((training_dataset_train, benchmark_val))
+            
+            # Fall back to old format without splits
+            if coverage_metrics is None:
+                coverage_metrics = coverage_lookup.get((base_training_dataset, benchmark_lower))
+            
+            if coverage_metrics is not None:
+                key = (training_dataset_label, benchmark)
+                grouped_data[key].append({
+                    'coverage': coverage_metrics[coverage_key],
+                    'best_pck': best_pck,
+                    'training_dataset': training_dataset_label,
+                    'benchmark': benchmark
+                })
+    
+    if not grouped_data:
+        print(f"  Warning: No data collected for {coverage_label} error bar plot")
+        return
+    
+    # Compute statistics for each group
+    plot_data = []
+    for (training_dataset, benchmark), points in grouped_data.items():
+        coverage_values = [p['coverage'] for p in points]
+        pck_values = [p['best_pck'] for p in points]
+        
+        # All coverage values should be identical
+        coverage_mean = np.mean(coverage_values)
+        
+        # Compute statistics for PCK across different model configs
+        pck_mean = np.mean(pck_values)
+        pck_std = np.std(pck_values, ddof=1) if len(pck_values) > 1 else 0
+        
+        plot_data.append({
+            'training_dataset': training_dataset,
+            'benchmark': benchmark,
+            'coverage': coverage_mean,
+            'pck_mean': pck_mean,
+            'pck_std': pck_std,
+            'n_configs': len(pck_values)
+        })
+    
+    # Create error bar plot
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    # Group by training dataset for coloring
+    dataset_groups = defaultdict(list)
+    for data in plot_data:
+        dataset_groups[data['training_dataset']].append(data)
+    
+    # Plot each training dataset with error bars
+    for training_dataset, group_data in dataset_groups.items():
+        coverage_vals = [d['coverage'] for d in group_data]
+        pck_means = [d['pck_mean'] for d in group_data]
+        pck_stds = [d['pck_std'] for d in group_data]
+        
+        color = dataset_color_map.get(training_dataset, 'black')
+        
+        # Plot with error bars (using std dev)
+        ax.errorbar(coverage_vals, pck_means, yerr=pck_stds,
+                   fmt='o', label=training_dataset,
+                   color=color, markersize=8, capsize=5, capthick=2,
+                   alpha=0.7, elinewidth=2)
+        
+        # Add benchmark labels
+        for data in group_data:
+            if data['n_configs'] > 1:
+                ax.annotate(f"{data['benchmark']}\n(n={data['n_configs']})", 
+                           (data['coverage'], data['pck_mean']),
+                           fontsize=7, alpha=0.6,
+                           xytext=(5, 5), textcoords='offset points')
+            else:
+                ax.annotate(data['benchmark'], 
+                           (data['coverage'], data['pck_mean']),
+                           fontsize=7, alpha=0.6,
+                           xytext=(5, 5), textcoords='offset points')
+    
+    ax.set_xlabel(f'Training Dataset {coverage_label} of Benchmark', fontsize=12)
+    ax.set_ylabel('Best PCK (%) - Mean ± Std Dev', fontsize=12)
+    ax.set_title(f'{coverage_label} vs Best PCK Performance\n(Error bars show variation across model configurations)', 
+                fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='best', fontsize=9)
+    
+    plt.tight_layout()
+    
+    # Save plot
+    coverage_suffix = 'abs' if coverage_type == 'abs' else 'rel'
+    output_file = output_path / f'training_coverage_{coverage_suffix}_vs_best_pck_errorbars.png'
+    plt.savefig(output_file, dpi=150, bbox_inches='tight')
+    print(f"  Saved {coverage_label} error bar plot: {output_file}")
+    plt.close()
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Plot benchmark metrics across multiple snapshots',
@@ -1305,6 +1794,15 @@ Examples:
             args.output_dir,
             dataset_color_map
         )
+        # Create error bar plot version
+        print("\nCreating Flow MMD vs PCK error bar plot (grouped by training dataset)...")
+        create_mmd_vs_pck_errorbar_plot(
+            snapshots_data,
+            mmd_lookup,
+            args.output_dir,
+            dataset_color_map,
+            mmd_type="Flow"
+        )
     else:
         print("  Skipping Flow MMD vs PCK scatter plot (MMD lookup not available)")
     
@@ -1318,8 +1816,61 @@ Examples:
             args.output_dir,
             dataset_color_map
         )
+        # Create error bar plot version
+        print("\nCreating Feature MMD vs PCK error bar plot (grouped by training dataset)...")
+        create_mmd_vs_pck_errorbar_plot(
+            snapshots_data,
+            feature_mmd_lookup,
+            args.output_dir,
+            dataset_color_map,
+            mmd_type="Feature"
+        )
     else:
         print("  Skipping Feature MMD vs PCK scatter plot (Feature MMD lookup not available)")
+    
+    # Load coverage lookup and create scatter plots
+    print("\nCreating Coverage vs PCK scatter plots...")
+    coverage_lookup = load_coverage_lookup('coverage_results.csv')
+    if coverage_lookup:
+        # Create plots for absolute coverage
+        print("\nCreating Absolute Coverage vs PCK scatter plot...")
+        create_coverage_vs_pck_scatter_plot(
+            snapshots_data,
+            coverage_lookup,
+            args.output_dir,
+            dataset_color_map,
+            coverage_type='abs'
+        )
+        # Create error bar plot version
+        print("\nCreating Absolute Coverage vs PCK error bar plot (grouped by training dataset)...")
+        create_coverage_vs_pck_errorbar_plot(
+            snapshots_data,
+            coverage_lookup,
+            args.output_dir,
+            dataset_color_map,
+            coverage_type='abs'
+        )
+        
+        # Create plots for relative coverage
+        print("\nCreating Relative Coverage vs PCK scatter plot...")
+        create_coverage_vs_pck_scatter_plot(
+            snapshots_data,
+            coverage_lookup,
+            args.output_dir,
+            dataset_color_map,
+            coverage_type='rel'
+        )
+        # Create error bar plot version
+        print("\nCreating Relative Coverage vs PCK error bar plot (grouped by training dataset)...")
+        create_coverage_vs_pck_errorbar_plot(
+            snapshots_data,
+            coverage_lookup,
+            args.output_dir,
+            dataset_color_map,
+            coverage_type='rel'
+        )
+    else:
+        print("  Skipping Coverage vs PCK scatter plots (coverage lookup not available)")
     
     print("\nDone!")
 

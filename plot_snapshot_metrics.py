@@ -2,8 +2,22 @@
 """
 Script to parse snapshot validation results and create plots.
 
+This script can process either a single snapshot directory or a directory containing
+multiple snapshot directories. Each snapshot's plots will be saved in its own subdirectory.
+
 Usage:
+    # Process a single snapshot
     python plot_snapshot_metrics.py <snapshot_path>
+    
+    # Process all snapshots in a directory
+    python plot_snapshot_metrics.py <directory_containing_snapshots>
+    
+    # Specify custom output directory
+    python plot_snapshot_metrics.py <snapshot_path> --output-dir <output_dir>
+
+A snapshot directory must contain:
+    - validation_results.csv: Validation metrics
+    - training_summary.txt: Training configuration info
 """
 
 import argparse
@@ -1552,49 +1566,56 @@ def create_mmd_vs_motion_pck_plots(df, training_dataset, output_dir, correlation
     print(f"Saved MMD² vs Motion-Binned PCK plots to {output_path}")
 
 
-def main():
-    parser = argparse.ArgumentParser(description='Plot validation metrics from snapshot')
-    parser.add_argument('snapshot_path', type=str, help='Path to snapshot directory')
-    parser.add_argument('--output-dir', type=str, default=None, 
-                       help='Output directory for plots (default: same as snapshot parent)')
-    parser.add_argument('--normalization', type=str, default='zscore', 
-                       choices=['zscore', 'minmax', 'none'],
-                       help='Type of normalization to use: zscore (default), minmax (0-1), or none')
-    parser.add_argument('--no-zscore', action='store_true', default=False,
-                       help='[Deprecated] Disable z-score normalization (use --normalization none instead)')
+def is_snapshot_directory(path):
+    """Check if a directory is a snapshot (contains validation_results.csv)"""
+    return os.path.isfile(os.path.join(path, 'validation_results.csv'))
+
+
+def find_snapshot_directories(root_path):
+    """Find all snapshot directories within the given root path"""
+    snapshots = []
     
-    args = parser.parse_args()
+    # Check if root_path itself is a snapshot
+    if is_snapshot_directory(root_path):
+        return [root_path]
     
-    snapshot_path = os.path.abspath(args.snapshot_path)
+    # Otherwise, look for snapshots in subdirectories
+    for item in os.listdir(root_path):
+        item_path = os.path.join(root_path, item)
+        if os.path.isdir(item_path) and is_snapshot_directory(item_path):
+            snapshots.append(item_path)
     
-    if not os.path.isdir(snapshot_path):
-        raise ValueError(f"Snapshot path does not exist: {snapshot_path}")
-    
-    print(f"Parsing snapshot: {snapshot_path}")
+    return sorted(snapshots)
+
+
+def process_single_snapshot(snapshot_path, output_dir, normalization_type):
+    """Process a single snapshot and create plots"""
+    print(f"\n{'='*80}")
+    print(f"Processing snapshot: {snapshot_path}")
+    print(f"{'='*80}")
     
     # Extract training dataset name
-    training_dataset = parse_training_dataset(snapshot_path)
-    print(f"Training dataset: {training_dataset}")
+    try:
+        training_dataset = parse_training_dataset(snapshot_path)
+        print(f"Training dataset: {training_dataset}")
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Error parsing training dataset: {e}")
+        return False
     
     # Load validation results
-    df = load_validation_results(snapshot_path)
-    print(f"Loaded {len(df)} validation records")
-    print(f"Benchmarks: {', '.join(df['benchmark'].unique())}")
+    try:
+        df = load_validation_results(snapshot_path)
+        print(f"Loaded {len(df)} validation records")
+        print(f"Benchmarks: {', '.join(df['benchmark'].unique())}")
+    except FileNotFoundError as e:
+        print(f"Error loading validation results: {e}")
+        return False
     
-    # Determine output directory
-    output_dir = args.output_dir
-    if output_dir is None:
-        output_dir = os.path.dirname(snapshot_path) if os.path.dirname(snapshot_path) else '.'
-    
+    # Create output directory for this snapshot
     os.makedirs(output_dir, exist_ok=True)
+    print(f"Output directory: {output_dir}")
     
-    # Determine normalization type (handle deprecated --no-zscore flag)
-    if args.no_zscore:
-        normalization_type = None
-        print("Warning: --no-zscore is deprecated. Use --normalization none instead.")
-    else:
-        normalization_type = args.normalization if args.normalization != 'none' else None
-    
+    # Determine normalization type
     if normalization_type == 'zscore':
         print("Using z-score normalization for PCK (baseline=epoch 0)")
     elif normalization_type == 'minmax':
@@ -1612,7 +1633,7 @@ def main():
         benchmark_stats = None
     
     # Compute correlations (needed for plot annotations)
-    print("\nComputing correlation statistics...")
+    print("Computing correlation statistics...")
     correlations = compute_correlation_stats(df, df_normalized, normalization_type)
     
     # Compute motion-binned correlations
@@ -1638,7 +1659,90 @@ def main():
     print("Creating MMD² vs motion-binned PCK plots...")
     create_mmd_vs_motion_pck_plots(df, training_dataset, output_dir, correlations=correlations)
     
-    print("Done!")
+    print(f"✓ Successfully processed snapshot: {os.path.basename(snapshot_path)}")
+    return True
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Plot validation metrics from snapshot(s)',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Process a single snapshot
+  python plot_snapshot_metrics.py /path/to/snapshot_dir
+  
+  # Process all snapshots in a directory
+  python plot_snapshot_metrics.py /path/to/snapshots_parent_dir
+  
+  # Process with custom output directory
+  python plot_snapshot_metrics.py /path/to/snapshots --output-dir /path/to/output
+        """
+    )
+    parser.add_argument('snapshot_path', type=str, 
+                       help='Path to snapshot directory or directory containing multiple snapshots')
+    parser.add_argument('--output-dir', type=str, default=None, 
+                       help='Output directory for plots (default: creates plots/ subdirectory in each snapshot)')
+    parser.add_argument('--normalization', type=str, default='zscore', 
+                       choices=['zscore', 'minmax', 'none'],
+                       help='Type of normalization to use: zscore (default), minmax (0-1), or none')
+    parser.add_argument('--no-zscore', action='store_true', default=False,
+                       help='[Deprecated] Disable z-score normalization (use --normalization none instead)')
+    
+    args = parser.parse_args()
+    
+    snapshot_path = os.path.abspath(args.snapshot_path)
+    
+    if not os.path.isdir(snapshot_path):
+        raise ValueError(f"Path does not exist: {snapshot_path}")
+    
+    # Determine normalization type (handle deprecated --no-zscore flag)
+    if args.no_zscore:
+        normalization_type = None
+        print("Warning: --no-zscore is deprecated. Use --normalization none instead.")
+    else:
+        normalization_type = args.normalization if args.normalization != 'none' else None
+    
+    # Find all snapshot directories
+    snapshots = find_snapshot_directories(snapshot_path)
+    
+    if not snapshots:
+        raise ValueError(f"No snapshot directories found in: {snapshot_path}\n"
+                        f"A snapshot directory must contain 'validation_results.csv'")
+    
+    print(f"Found {len(snapshots)} snapshot(s) to process")
+    
+    # Process each snapshot
+    successful = 0
+    failed = 0
+    
+    for snapshot in snapshots:
+        snapshot_name = os.path.basename(snapshot)
+        
+        # Determine output directory for this snapshot
+        if args.output_dir:
+            # If user specified output dir, create subdirectory for each snapshot
+            output_dir = os.path.join(args.output_dir, snapshot_name)
+        else:
+            # Default: create 'plots' subdirectory within each snapshot
+            output_dir = os.path.join(snapshot, 'plots')
+        
+        # Process the snapshot
+        success = process_single_snapshot(snapshot, output_dir, normalization_type)
+        
+        if success:
+            successful += 1
+        else:
+            failed += 1
+    
+    # Print summary
+    print(f"\n{'='*80}")
+    print(f"SUMMARY")
+    print(f"{'='*80}")
+    print(f"Total snapshots: {len(snapshots)}")
+    print(f"Successfully processed: {successful}")
+    print(f"Failed: {failed}")
+    print(f"\nDone!")
 
 
 if __name__ == '__main__':

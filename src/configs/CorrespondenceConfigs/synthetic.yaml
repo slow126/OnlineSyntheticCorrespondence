@@ -3,13 +3,13 @@
 # Model parameters
 model:
   backbone: 'resnet101'
-  freeze: false
+  freeze: true
   pretrained_backbone: true
 
 # Training parameters
 training:
   epochs: 50
-  batch_size: 2
+  batch_size: 8
   n_threads: 0  # 0 for synthetic (GPU-bound rendering)
   seed: 2021
   lr: 3e-4
@@ -35,7 +35,7 @@ training:
 
   steps_per_epoch: 100
 
-  eval_initial: true
+  eval_initial: false
 
 # Dataset parameters
 dataset:

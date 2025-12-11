@@ -1,0 +1,31 @@
+# Coreset configuration presets for different data types
+
+# Flow vectors: [x, y, dx, dy] in 4D
+flow_vectors:
+  K_max: 2000  # Reduced for faster testing (was 10000)
+  K_overflow: 1000  # Reduced for faster testing (was 5000)
+  distance: euclidean
+  device: cpu
+  is_eval: false
+  epsilon_quantile: 0.5
+  max_epsilon_samples: 50000
+
+# DINO features: 512D semantic embeddings
+dino_features:
+  K_max: 2000  # Reduced for faster testing (was 10000)
+  K_overflow: 1000  # Reduced for faster testing (was 5000)
+  distance: euclidean
+  device: cpu
+  is_eval: false
+  epsilon_quantile: 0.5
+  max_epsilon_samples: 50000
+
+# ResNet features: various dimensions
+resnet_features:
+  K_max: 2000  # Reduced for faster testing (was 10000)
+  K_overflow: 1000  # Reduced for faster testing (was 5000)
+  distance: euclidean
+  device: cpu
+  is_eval: false
+  epsilon_quantile: 0.5
+  max_epsilon_samples: 50000

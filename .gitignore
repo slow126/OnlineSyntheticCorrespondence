@@ -66,6 +66,7 @@ debug/test_outputs/
 # Datasets
 models/Datasets_CATs/
 snapshots/
+sorted_snapshots/
 
 # Dino Outputs
 models/DinoV3/extracted_features/
@@ -107,3 +108,10 @@ slurm/experiment_configs/generated/
 
 # MMD Results
 *results.csv
+
+# Benchmark Plots
+benchmark_plots/
+
+# Slurm Jobs
+slurm_jobs/
+slurm/slurm_jobs/

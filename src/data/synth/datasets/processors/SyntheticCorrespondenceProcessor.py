@@ -44,8 +44,21 @@ class SyntheticCorrespondenceProcessor:
         self.subsample_during_train = subsample_during_train
         self.subsample_during_val = subsample_during_val
         self.subsample_without_trainer = subsample_without_trainer
+        
+        # DEPRECATED: downsample_for_cats is no longer used when using CorrespondenceDataset.
+        # Downsampling is now handled uniformly in CorrespondenceDataset.collate_fn via ensure_flow_and_kps().
+        # Kept for backward compatibility with OnlineCorrespondenceDataset (old dataset class).
         self.downsample_for_cats = downsample_for_cats
         self.cats_feat_size = cats_feat_size
+        if downsample_for_cats:
+            import warnings
+            warnings.warn(
+                "downsample_for_cats is deprecated when using CorrespondenceDataset. "
+                "Downsampling is now handled automatically in the collate pipeline. "
+                "This parameter is only used with the legacy OnlineCorrespondenceDataset.",
+                DeprecationWarning,
+                stacklevel=2
+            )
 
         self.use_worley_sampler = use_worley_sampler
         self.use_grf_sampler = use_grf_sampler
@@ -307,7 +320,7 @@ class SyntheticCorrespondenceProcessor:
             stage = 'Non-Trainer'
         
         do_subsample = (self.subsample_during_train and stage == 'train') or (self.subsample_during_val and stage == 'val') or (self.subsample_without_trainer and stage == 'Non-Trainer')
-        if self.subsample_flow is not None and do_subsample and not self.downsample_for_cats:
+        if self.subsample_flow is not None and do_subsample:
             # randomly keep an approximate percentage of flow
             # also ensure there are at least a few points preserved for each pair
             valid = flow.isfinite().all(1)
@@ -322,16 +335,9 @@ class SyntheticCorrespondenceProcessor:
             mask = mask.bool().unsqueeze(1).expand_as(flow)
             flow[mask] = torch.inf
 
-        # Apply CATS downsampling if enabled
-        if self.downsample_for_cats:
-            flow = self.downsample_flow(flow, self.cats_feat_size)
-
+        # NOTE: Downsampling is now handled by CorrespondenceDataset.collate_fn
+        # via ensure_flow_and_kps(). No need to downsample here.
         post_batch['flow'] = flow
-        # Keep an explicit alias so callers that expect both full-res and
-        # downsampled flows can find the feature-grid version.
-        if self.downsample_for_cats:
-            post_batch['flow_downsampled'] = flow
-
         post_batch['flow_full'] = full_flow
         return post_batch
 
