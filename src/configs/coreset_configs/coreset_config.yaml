@@ -2,7 +2,7 @@
 
 # Flow vectors: [x, y, dx, dy] in 4D
 flow_vectors:
-  K_max: 5000  # Reduced for faster testing (was 10000)
+  K_max: 7000  # Reduced for faster testing (was 10000)
   K_overflow: 1000  # Reduced for faster testing (was 5000)
   distance: euclidean
   device: cpu
@@ -12,7 +12,7 @@ flow_vectors:
 
 # DINO features: 512D semantic embeddings
 dino_features:
-  K_max: 5000  # Reduced for faster testing (was 10000)
+  K_max: 7000  # Reduced for faster testing (was 10000)
   K_overflow: 1000  # Reduced for faster testing (was 5000)
   distance: euclidean
   device: cpu
@@ -22,7 +22,7 @@ dino_features:
 
 # ResNet features: various dimensions
 resnet_features:
-  K_max: 5000  # Reduced for faster testing (was 10000)
+  K_max: 7000  # Reduced for faster testing (was 10000)
   K_overflow: 1000  # Reduced for faster testing (was 5000)
   distance: euclidean
   device: cpu

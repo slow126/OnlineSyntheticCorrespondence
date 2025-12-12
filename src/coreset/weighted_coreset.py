@@ -269,11 +269,60 @@ class WeightedCoreset:
             
             self._kmeans_initialized = True
         
-        # Incremental update: use partial_fit on buffer points only
-        # This is the key optimization - we don't need to refit all points
+        # Incremental update: use partial_fit with both existing centers and buffer points
+        # CRITICAL: Include existing centers (replicated by counts) to prevent large batches
+        # from shifting centers too much when there's already significant existing mass.
+        # This ensures the existing mass is represented during the incremental update.
+        
+        # Prepare points for partial_fit: include existing centers replicated by counts
+        points_for_update = []
+        
+        if self.centers is not None and len(self.centers) > 0:
+            # Replicate existing centers proportionally to their counts
+            # This ensures existing mass is represented during partial_fit, preventing
+            # large batches from shifting centers too much.
+            # 
+            # Strategy: Replicate each center based on its count, but scale total replication
+            # to be roughly comparable to buffer_size. This balances existing mass with new data.
+            max_reps_per_center = 200  # Cap per center to avoid memory issues
+            total_existing_mass = self.counts.sum()
+            
+            # Calculate replication: scale so total replicated points is similar to buffer_size
+            # This ensures existing mass is represented but doesn't completely dominate
+            if total_existing_mass > 0 and buffer_size > 0:
+                # Target total replication: match buffer size (or cap at reasonable limit)
+                target_total_reps = min(buffer_size, 50000)  # Cap at 50k to avoid memory issues
+                # Scale factor to achieve target total replication
+                scale_factor = target_total_reps / total_existing_mass
+            else:
+                scale_factor = 1.0
+            
+            for center, count in zip(self.centers, self.counts):
+                # Replicate based on count, scaled to balance with buffer
+                n_reps = min(
+                    max_reps_per_center,
+                    max(1, int(count * scale_factor))
+                )
+                points_for_update.append(np.tile(center[None, :], (n_reps, 1)))
+        
+        # Add buffer points
+        points_for_update.append(buffer_points)
+        
+        # Combine all points for incremental update
+        if len(points_for_update) > 1:
+            all_update_points = np.vstack(points_for_update)
+        else:
+            all_update_points = points_for_update[0]
+        
+        # Shuffle to mix existing centers and new points
+        n_points = len(all_update_points)
+        shuffle_idx = np.random.permutation(n_points)
+        all_update_points = all_update_points[shuffle_idx]
+        
+        # Use partial_fit on combined points (existing centers + buffer)
         batch_size = self._kmeans.batch_size
-        for i in range(0, buffer_size, batch_size):
-            batch = buffer_points[i:i+batch_size]
+        for i in range(0, n_points, batch_size):
+            batch = all_update_points[i:i+batch_size]
             self._kmeans.partial_fit(batch)
         
         # Get updated centers

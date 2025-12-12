@@ -1,0 +1,191 @@
+# Example configuration for building coresets from datasets
+#
+# Usage:
+#   python scripts/build_coresets.py --config src/configs/coreset_configs/build_datasets.yaml
+
+# Coreset configuration
+coreset:
+  preset: flow_vectors  # or dino_features, resnet_features
+  # Alternatively, specify parameters directly:
+  # K_max: 10000
+  # K_overflow: 5000
+  # distance: euclidean
+  # device: cpu
+
+# Reference to coreset config file (optional)
+coreset_config_file: src/configs/coreset_configs/coreset_config.yaml
+
+# DataLoader settings
+batch_size: 32
+num_workers: 4
+# Optional per-batch subsampling to control very dense batches
+subsample:
+  disabled: true      # disable subsampling entirely
+  fraction: 0.1       # keep 10% when dense (ignored if disabled: true)
+  threshold: 5000000     # only subsample if batch > threshold vectors (ignored if disabled: true)
+
+# Common dataset parameters
+dataset_params:
+  size: [512, 512]
+  downsample_flow: 32
+  max_kps: null  # null = no truncation
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: false  # Will be overridden per-dataset if needed
+  kitti_val_use_full_training: true  # If true, KITTI datasets use full training set instead of val split
+
+# Dataset-specific overrides
+dataset_overrides:
+  sintel:
+    sintel_root: '/home/spencer/Data'  # Torchvision appends '/Sintel' automatically
+    normalize_images: true
+  spair:
+    datapath: './models/Datasets_CATs'
+    normalize_images: false  # SPair already normalized
+  pfpascal:
+    datapath: './models/Datasets_CATs'
+    normalize_images: false  # PF-Pascal already normalized
+  pfwillow:
+    datapath: './models/Datasets_CATs'
+    normalize_images: false  # PF-Willow already normalized
+  synthetic:
+    geometry_config_path: 'src/configs/online_synth_configs/OnlineGeometryConfig.yaml'
+    processor_config_path: 'src/configs/online_synth_configs/OnlineProcessorConfig.yaml'
+    normalize_images: false  # Synthetic already normalized
+    device: 'cuda'  # IMPORTANT: Use GPU for rendering
+  pointodyssey:
+    dataset_location: '/home/spencer/Data/PointOdyssey'
+    normalize_images: true
+    pointodyssey_sequence_length: 2
+    pointodyssey_num_pts_to_track: 32  # Minimum requirement; use_all_valid will get all valid trajectories
+    use_all_valid: true  # Get all valid trajectories instead of limiting to num_pts_to_track
+  kitti2012:
+    datapath: '/home/spencer/Data/correspondence/kitti'
+    normalize_images: true
+  kitti2015:
+    datapath: '/home/spencer/Data/correspondence/kitti'
+    normalize_images: true
+  flyingthings:
+    datapath: '/home/spencer/Data/FlyingThings3D_tiny'
+    normalize_images: true
+  tss:
+    datapath: '/home/spencer/Data/correspondence/TSS_CVPR2016'
+    normalize_images: true
+  middlebury:
+    datapath: '/home/spencer/Data/middlebury/all'
+    normalize_images: true
+
+# Datasets to process
+# Note: Set num_batches: null (or omit it) to process the complete dataset.
+#       Set num_batches: <number> to limit processing for testing.
+datasets:
+  #########################################################
+  # Training datasets
+  #########################################################
+  # Example: Training dataset (no epsilon)
+  # Set num_batches: null to process complete dataset
+  - name: synthetic
+    split: train
+    representation: flow
+    num_batches: 100  # Set to null for complete dataset
+    is_eval: false
+    output: coresets/synthetic_train_flow.pt
+  
+  - name: sintel
+    split: train
+    representation: flow
+    num_batches: 100
+    is_eval: false
+    output: coresets/sintel_train_flow.pt
+  
+  - name: spair
+    split: train
+    representation: flow
+    num_batches: 100
+    is_eval: false
+    output: coresets/spair_train_flow.pt
+  
+  - name: flyingthings
+    split: train
+    representation: flow
+    num_batches: 100
+    is_eval: false
+    output: coresets/flyingthings_train_flow.pt
+  
+  - name: pointodyssey
+    split: train
+    representation: flow
+    num_batches: 100
+    is_eval: false
+    output: coresets/pointodyssey_train_flow.pt
+  
+
+  #########################################################
+  # Eval datasets
+  #########################################################
+
+    # Example: KITTI eval (compute epsilon for flow)
+  - name: kitti2015
+    split: val
+    representation: flow
+    num_batches: 100
+    is_eval: true
+    output: coresets/kitti_val_flow.pt
+
+  - name: kitti2012
+    split: val
+    representation: flow
+    num_batches: 100
+    is_eval: true
+    output: coresets/kitti2012_val_flow.pt
+
+  # Example: Eval dataset (compute epsilon)
+  - name: spair
+    split: test
+    representation: flow
+    num_batches: 100
+    is_eval: true
+    output: coresets/spair_val_flow.pt
+
+  - name: pfpascal
+    split: test
+    representation: flow
+    num_batches: 100
+    is_eval: true
+    output: coresets/pfpascal_val_flow.pt
+
+  - name: pfwillow
+    split: test
+    representation: flow
+    num_batches: 100
+    is_eval: true
+    output: coresets/pfwillow_val_flow.pt
+  
+  - name: pointodyssey
+    split: test
+    representation: flow
+    num_batches: 100
+    is_eval: true
+    output: coresets/pointodyssey_val_flow.pt
+  
+  - name: flyingthings
+    split: test
+    representation: flow
+    num_batches: 100
+    is_eval: true
+    output: coresets/flyingthings_val_flow.pt
+  
+  - name: tss
+    split: val
+    representation: flow
+    num_batches: 100
+    is_eval: true
+    output: coresets/tss_val_flow.pt
+  
+  - name: middlebury
+    split: val
+    representation: flow
+    num_batches: 100
+    is_eval: true
+    output: coresets/middlebury_val_flow.pt

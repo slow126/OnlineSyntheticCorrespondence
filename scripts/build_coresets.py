@@ -148,6 +148,10 @@ def main():
         '--subsample-threshold', type=int, default=None,
         help='If a batch has more vectors than this, subsample (overrides config)'
     )
+    parser.add_argument(
+        '--disable-subsample', action='store_true',
+        help='Disable subsampling entirely (overrides config and other subsample flags)'
+    )
     args = parser.parse_args()
     
     # Load config
@@ -197,8 +201,22 @@ def main():
     
     # Subsample settings: from CLI if provided, else from config
     subsample_cfg = config.get('subsample', {})
-    subsample_fraction = args.subsample_fraction if args.subsample_fraction is not None else subsample_cfg.get('fraction', 1.0)
-    subsample_threshold = args.subsample_threshold if args.subsample_threshold is not None else subsample_cfg.get('threshold', 0)
+    
+    # Check if subsampling is disabled (CLI flag takes precedence over config)
+    if args.disable_subsample:
+        # Disable subsampling entirely
+        subsample_fraction = 1.0
+        subsample_threshold = 0
+        print("Subsampling: DISABLED (--disable-subsample flag set)")
+    elif subsample_cfg.get('disabled', False):
+        # Disable subsampling from config
+        subsample_fraction = 1.0
+        subsample_threshold = 0
+        print("Subsampling: DISABLED (disabled: true in config)")
+    else:
+        subsample_fraction = args.subsample_fraction if args.subsample_fraction is not None else subsample_cfg.get('fraction', 1.0)
+        subsample_threshold = args.subsample_threshold if args.subsample_threshold is not None else subsample_cfg.get('threshold', 0)
+        print(f"Subsampling: fraction={subsample_fraction}, threshold={subsample_threshold}")
 
     # Determine if we need a feature encoder (for representation != flow)
     needs_encoder = any(ds.get('representation', 'flow') != 'flow' for ds in datasets_config)
