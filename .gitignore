@@ -111,7 +111,11 @@ slurm/experiment_configs/generated/
 
 # Benchmark Plots
 benchmark_plots/
+plots3d/
 
 # Slurm Jobs
 slurm_jobs/
 slurm/slurm_jobs/
+
+# Coresets
+coresets/

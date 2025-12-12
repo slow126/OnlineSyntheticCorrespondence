@@ -1,39 +1,33 @@
 """
-Evaluate coverage metrics between train and eval coresets.
-
-This script loads precomputed coresets and computes coverage metrics,
-using epsilon scales saved in the eval coreset.
+Evaluate soft k-NN recall/precision metrics between train and eval coresets.
 
 Usage:
-    # Use saved epsilon from eval coreset
     python scripts/eval_coverage.py \
         --train coresets/synthetic_train_flow.pt \
         --eval coresets/kitti_val_flow.pt \
-        --output coverage_results.json
-    
-    # Override epsilon
-    python scripts/eval_coverage.py \
-        --train coresets/synthetic_train_flow.pt \
-        --eval coresets/kitti_val_flow.pt \
-        --epsilon 5.0 \
-        --output coverage_results.json
+        --output coverage_results.json \
+        --k 5 --bandwidth-scale 1.0 --M-train 100 --M-eval 20
 """
 
 import argparse
 import json
-import numpy as np
 from pathlib import Path
 
 # Add src to path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.coreset import WeightedCoreset, coverage_by_train, extraneous_mass_fraction
+from src.coreset import (
+    WeightedCoreset,
+    codebook_from_coreset,
+    recall_train_covers_eval_soft,
+    precision_train_wrt_eval_soft,
+)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Evaluate coverage between train and eval coresets'
+        description='Evaluate soft k-NN coverage between train and eval coresets'
     )
     parser.add_argument(
         '--train', type=str, required=True,
@@ -44,12 +38,33 @@ def main():
         help='Path to eval coreset (.pt file)'
     )
     parser.add_argument(
-        '--epsilon', type=float, default=None,
-        help='Override epsilon (default: use saved epsilon from eval coreset)'
+        '--k', type=int, default=5,
+        help='Number of neighbors for soft k-NN (default: 5)'
     )
     parser.add_argument(
-        '--min-count', type=int, default=0,
-        help='Minimum count for absolute coverage (default: 0)'
+        '--bandwidth', type=float, default=None,
+        help='Bandwidth for kernel (default: inferred from distances)'
+    )
+    parser.add_argument(
+        '--bandwidth-scale', type=float, default=1.0,
+        help='Scale factor applied to inferred bandwidth (default: 1.0)'
+    )
+    parser.add_argument(
+        '--M-train', type=float, default=100.0,
+        help='Saturation threshold for recall (default: 100.0)'
+    )
+    parser.add_argument(
+        '--M-eval', type=float, default=20.0,
+        help='Saturation threshold for precision (default: 20.0)'
+    )
+    parser.add_argument(
+        '--kernel', type=str, default='gaussian',
+        choices=['gaussian', 'inverse'],
+        help='Kernel type for weighting neighbors (default: gaussian)'
+    )
+    parser.add_argument(
+        '--batch-size', type=int, default=1024,
+        help='Batch size for distance computation (default: 1024)'
     )
     parser.add_argument(
         '--output', type=str, default='coverage_results.json',
@@ -60,7 +75,7 @@ def main():
         help='Print detailed results'
     )
     args = parser.parse_args()
-    
+
     # Load coresets
     print("="*60)
     print("LOADING CORESETS")
@@ -69,114 +84,87 @@ def main():
     train_coreset = WeightedCoreset.load(args.train)
     print(f"  Centers: {len(train_coreset.get_centers())}")
     print(f"  Total samples: {train_coreset.total_samples}")
-    
+
     print(f"\nEval: {args.eval}")
     eval_coreset = WeightedCoreset.load(args.eval)
     print(f"  Centers: {len(eval_coreset.get_centers())}")
     print(f"  Total samples: {eval_coreset.total_samples}")
-    
-    train_centers = train_coreset.get_centers()
-    train_counts = train_coreset.get_counts()
-    eval_centers = eval_coreset.get_centers()
-    eval_counts = eval_coreset.get_counts()
-    
-    # Get epsilon scales
-    if args.epsilon is not None:
-        # User override
-        epsilon_scales = {
-            'eps_manual': args.epsilon,
-        }
-        print(f"\nUsing manual epsilon: {args.epsilon:.4f}")
-    else:
-        # Use saved epsilon from eval coreset
-        epsilon_scales = eval_coreset.get_epsilon_scales()
-        if epsilon_scales is None:
-            raise ValueError(
-                "Eval coreset does not have saved epsilon scales. "
-                "Either rebuild with is_eval=True or use --epsilon flag."
-            )
-        print(f"\nUsing epsilon scales from eval coreset:")
-        print(f"  eps_base: {epsilon_scales.get('eps_base', 'N/A')}")
-        print(f"  eps_2x: {epsilon_scales.get('eps_2x', 'N/A')}")
-        print(f"  eps_4x: {epsilon_scales.get('eps_4x', 'N/A')}")
-    
-    # Compute metrics for each epsilon scale
+
+    train_cb = codebook_from_coreset(train_coreset)
+    eval_cb = codebook_from_coreset(eval_coreset)
+
+    # Compute metrics
     print("\n" + "="*60)
     print("COMPUTING COVERAGE METRICS")
     print("="*60)
-    
+
+    recall = recall_train_covers_eval_soft(
+        train_cb,
+        eval_cb,
+        k=args.k,
+        bandwidth=args.bandwidth,
+        bandwidth_scale=args.bandwidth_scale,
+        M_train=args.M_train,
+        kernel=args.kernel,
+        batch_size=args.batch_size,
+    )
+    precision = precision_train_wrt_eval_soft(
+        train_cb,
+        eval_cb,
+        k=args.k,
+        bandwidth=args.bandwidth,
+        bandwidth_scale=args.bandwidth_scale,
+        M_eval=args.M_eval,
+        kernel=args.kernel,
+        batch_size=args.batch_size,
+    )
+    outside = 1.0 - precision
+
+    if args.verbose:
+        print(f"  Recall (train → eval):    {recall:.2%}")
+        print(f"  Precision (train w.r.t.): {precision:.2%}")
+        print(f"  Outside mass:             {outside:.2%}")
+
     all_results = {
         'train_file': args.train,
         'eval_file': args.eval,
-        'train_centers': len(train_centers),
-        'eval_centers': len(eval_centers),
+        'train_centers': len(train_cb.centroids),
+        'eval_centers': len(eval_cb.centroids),
         'train_total_samples': int(train_coreset.total_samples),
         'eval_total_samples': int(eval_coreset.total_samples),
-        'min_count': args.min_count,
-        'metrics_by_epsilon': {}
+        'k': args.k,
+        'bandwidth': args.bandwidth,
+        'bandwidth_scale': args.bandwidth_scale,
+        'M_train': args.M_train,
+        'M_eval': args.M_eval,
+        'kernel': args.kernel,
+        'metrics': {
+            'recall': recall,
+            'precision': precision,
+            'outside': outside,
+        },
     }
-    
-    for eps_name, eps_value in epsilon_scales.items():
-        if not isinstance(eps_value, (int, float)):
-            continue
-        
-        print(f"\n{eps_name}: epsilon = {eps_value:.4f}")
-        print("-" * 40)
-        
-        # Train → Eval coverage
-        coverage = coverage_by_train(
-            train_centers, train_counts, eval_centers,
-            epsilon=eps_value, min_count=args.min_count
-        )
-        
-        print(f"  Coverage (train → eval):")
-        print(f"    Relative:  {coverage['coverage_rel']:.2%}")
-        print(f"    Absolute:  {coverage['coverage_abs']:.2%}")
-        print(f"    ρ_95:      {coverage['rho_95']:.4f}")
-        print(f"    ρ_median:  {coverage['rho_median']:.4f}")
-        print(f"    ρ_mean:    {coverage['rho_mean']:.4f}")
-        
-        # Train extraneous mass w.r.t. eval
-        extran = extraneous_mass_fraction(
-            train_centers, train_counts, eval_centers,
-            epsilon=eps_value
-        )
-        
-        print(f"  Extraneous mass (train w.r.t. eval):")
-        print(f"    Mass fraction:    {extran['extraneous_mass_frac']:.2%}")
-        print(f"    Centers fraction: {extran['extraneous_centers_frac']:.2%}")
-        
-        # Store results
-        all_results['metrics_by_epsilon'][eps_name] = {
-            'epsilon': eps_value,
-            'coverage': coverage,
-            'extraneous_mass': extran,
-        }
-    
+
     # Save results
     print("\n" + "="*60)
     print(f"SAVING RESULTS TO: {args.output}")
     print("="*60)
-    
+
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     with open(args.output, 'w') as f:
         json.dump(all_results, f, indent=2)
-    
+
     print("Done!")
-    
+
     # Print summary
     print("\n" + "="*60)
     print("SUMMARY")
     print("="*60)
-    
-    if 'eps_base' in all_results['metrics_by_epsilon']:
-        base_metrics = all_results['metrics_by_epsilon']['eps_base']
-        print(f"At eps_base = {base_metrics['epsilon']:.4f}:")
-        print(f"  Coverage (rel): {base_metrics['coverage']['coverage_rel']:.2%}")
-        print(f"  Coverage (abs): {base_metrics['coverage']['coverage_abs']:.2%}")
-        print(f"  Extraneous mass: {base_metrics['extraneous_mass']['extraneous_mass_frac']:.2%}")
+    print(f"Recall: {recall:.2%}")
+    print(f"Precision: {precision:.2%}")
+    print(f"Outside: {outside:.2%}")
 
 
 if __name__ == "__main__":

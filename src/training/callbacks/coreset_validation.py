@@ -7,7 +7,6 @@ using precomputed eval coresets, similar to MMDValidationCallback.
 
 import pytorch_lightning as pl
 import torch
-import numpy as np
 from typing import Dict, Any, Optional
 from pathlib import Path
 
@@ -15,7 +14,12 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
-from src.coreset import WeightedCoreset, coverage_by_train, extraneous_mass_fraction
+from src.coreset import (
+    WeightedCoreset,
+    codebook_from_coreset,
+    recall_train_covers_eval_soft,
+    precision_train_wrt_eval_soft,
+)
 from src.coreset.validation import extract_flow_vectors_from_batch
 
 
@@ -42,7 +46,12 @@ class CoresetValidationCallback(pl.Callback):
         config: Dict[str, Any],
         coreset_every_n_epochs: int = 5,
         coreset_k_max: int = 5000,
-        coreset_min_count: int = 100,
+        coreset_k_nn: int = 5,
+        coreset_bandwidth: Optional[float] = None,
+        coreset_bandwidth_scale: float = 1.0,
+        coreset_M_train: float = 100.0,
+        coreset_M_eval: float = 20.0,
+        coreset_kernel: str = "gaussian",
         precomputed_coresets: Optional[Dict[str, str]] = None,
     ):
         """
@@ -52,14 +61,24 @@ class CoresetValidationCallback(pl.Callback):
             config: Full training config dict
             coreset_every_n_epochs: Compute coverage every N epochs (0 = disabled)
             coreset_k_max: Size of prediction coreset
-            coreset_min_count: Minimum count for absolute coverage
+            coreset_k_nn: k for soft k-NN metrics
+            coreset_bandwidth: Optional bandwidth (None = inferred)
+            coreset_bandwidth_scale: Scale factor applied to inferred bandwidth
+            coreset_M_train: Saturation threshold for recall
+            coreset_M_eval: Saturation threshold for precision
+            coreset_kernel: Kernel type ('gaussian' or 'inverse')
             precomputed_coresets: Dict of {benchmark: coreset_file_path}
         """
         super().__init__()
         self.config = config
         self.coreset_every_n_epochs = coreset_every_n_epochs
         self.coreset_k_max = coreset_k_max
-        self.coreset_min_count = coreset_min_count
+        self.coreset_k_nn = coreset_k_nn
+        self.coreset_bandwidth = coreset_bandwidth
+        self.coreset_bandwidth_scale = coreset_bandwidth_scale
+        self.coreset_M_train = coreset_M_train
+        self.coreset_M_eval = coreset_M_eval
+        self.coreset_kernel = coreset_kernel
         self.precomputed_coresets = precomputed_coresets or {}
         
         # Load precomputed coresets
@@ -165,7 +184,7 @@ class CoresetValidationCallback(pl.Callback):
         benchmark: str
     ) -> Dict[str, float]:
         """
-        Compute bidirectional coverage metrics.
+        Compute bidirectional soft k-NN coverage metrics.
         
         Args:
             pred_coreset: Coreset built from predictions
@@ -175,44 +194,45 @@ class CoresetValidationCallback(pl.Callback):
         Returns:
             Dict of metric names to values
         """
-        pred_centers = pred_coreset.get_centers()
-        pred_counts = pred_coreset.get_counts()
-        eval_centers = eval_coreset.get_centers()
-        eval_counts = eval_coreset.get_counts()
-        
-        # Get epsilon scales from eval coreset
-        epsilon_scales = eval_coreset.get_epsilon_scales()
-        if epsilon_scales is None:
-            print(f"Warning: Eval coreset for {benchmark} has no epsilon scales")
-            return {}
-        
-        metrics = {}
-        
-        # For each epsilon scale
-        for eps_name, eps_value in epsilon_scales.items():
-            if not eps_name.startswith('eps_'):
-                continue
-            
-            # Labels → Predictions: How well do predictions cover labels?
-            coverage_labels_by_preds = coverage_by_train(
-                pred_centers, pred_counts, eval_centers,
-                epsilon=eps_value, min_count=self.coreset_min_count
-            )
-            
-            # Predictions → Labels: Extraneous predictions
-            extran_preds = extraneous_mass_fraction(
-                pred_centers, pred_counts, eval_centers,
-                epsilon=eps_value
-            )
-            
-            # Store metrics with descriptive names
-            prefix = eps_name  # e.g., 'eps_base', 'eps_2x'
-            metrics[f'coverage_labels_by_preds_{prefix}_rel'] = coverage_labels_by_preds['coverage_rel']
-            metrics[f'coverage_labels_by_preds_{prefix}_abs'] = coverage_labels_by_preds['coverage_abs']
-            metrics[f'rho_95_labels_to_preds_{prefix}'] = coverage_labels_by_preds['rho_95']
-            metrics[f'extraneous_pred_mass_{prefix}'] = extran_preds['extraneous_mass_frac']
-        
-        return metrics
+        pred_cb = codebook_from_coreset(pred_coreset)
+        eval_cb = codebook_from_coreset(eval_coreset)
+
+        recall = recall_train_covers_eval_soft(
+            pred_cb,
+            eval_cb,
+            k=self.coreset_k_nn,
+            bandwidth=self.coreset_bandwidth,
+            bandwidth_scale=self.coreset_bandwidth_scale,
+            M_train=self.coreset_M_train,
+            kernel=self.coreset_kernel,
+        )
+        recall_labels_cover_pred = recall_train_covers_eval_soft(
+            eval_cb,
+            pred_cb,
+            k=self.coreset_k_nn,
+            bandwidth=self.coreset_bandwidth,
+            bandwidth_scale=self.coreset_bandwidth_scale,
+            M_train=self.coreset_M_eval,
+            kernel=self.coreset_kernel,
+        )
+        pred_precision = precision_train_wrt_eval_soft(
+            pred_cb,
+            eval_cb,
+            k=self.coreset_k_nn,
+            bandwidth=self.coreset_bandwidth,
+            bandwidth_scale=self.coreset_bandwidth_scale,
+            M_eval=self.coreset_M_eval,
+            kernel=self.coreset_kernel,
+        )
+        outside = 1.0 - pred_precision
+
+        return {
+            'recall_pred_covers_labels': recall,
+            'precision_pred_wrt_labels': pred_precision,
+            'outside_pred_mass': outside,
+            # symmetric direction for reference
+            'recall_labels_cover_pred': recall_labels_cover_pred,
+        }
     
     def on_validation_epoch_start(self, trainer: pl.Trainer, pl_module: pl.LightningModule):
         """Called at the start of validation epoch."""
@@ -268,7 +288,7 @@ class CoresetValidationCallback(pl.Callback):
             # Print summary
             print(f"\n  {benchmark} coverage metrics:")
             for metric_name, metric_value in metrics.items():
-                if 'coverage' in metric_name or 'extraneous' in metric_name:
+                if metric_name.startswith(('recall', 'precision', 'outside')):
                     print(f"    {metric_name}: {metric_value:.2%}")
                 else:
                     print(f"    {metric_name}: {metric_value:.4f}")

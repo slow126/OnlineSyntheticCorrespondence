@@ -58,6 +58,12 @@ training_datasets:
       training.batch_size: 8
       training.n_threads: 0  # GPU-bound rendering
 
+  - name: "synthetic_random_flipping"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc_random_flipping.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 0  # GPU-bound rendering
+
 # Output directory for generated configs
 # Relative paths starting with 'slurm/' or 'experiment_configs/' are resolved relative to project root
 # Other relative paths are resolved relative to this config file's directory

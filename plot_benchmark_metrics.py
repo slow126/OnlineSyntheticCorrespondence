@@ -554,32 +554,128 @@ def compute_within_benchmark_correlations(df):
     return pd.DataFrame(results)
 
 
-def compute_zscore_correlation(df):
+def detect_outliers_iqr(series, multiplier=1.5):
     """
-    Compute correlation using z-score normalized values within each benchmark.
-    This removes baseline difficulty differences between benchmarks.
+    Detect outliers using the Interquartile Range (IQR) method.
+    
+    Args:
+        series: pandas Series of values
+        multiplier: IQR multiplier (default 1.5, use 3.0 for more extreme outliers)
+        
+    Returns:
+        Boolean Series indicating which values are outliers
+    """
+    Q1 = series.quantile(0.25)
+    Q3 = series.quantile(0.75)
+    IQR = Q3 - Q1
+    
+    if IQR == 0:
+        # No variance, no outliers
+        return pd.Series([False] * len(series), index=series.index)
+    
+    lower_bound = Q1 - multiplier * IQR
+    upper_bound = Q3 + multiplier * IQR
+    
+    return (series < lower_bound) | (series > upper_bound)
+
+
+def filter_outliers_by_benchmark(df, columns=['best_pck', 'mmd2'], multiplier=1.5):
+    """
+    Filter outliers within each benchmark using IQR method.
+    
+    Args:
+        df: DataFrame with columns to check for outliers
+        columns: List of column names to check for outliers
+        multiplier: IQR multiplier for outlier detection
+        
+    Returns:
+        DataFrame with outliers removed, and info about removed outliers
+    """
+    df = df.copy()
+    original_len = len(df)
+    
+    # Track which rows are outliers
+    is_outlier = pd.Series([False] * len(df), index=df.index)
+    
+    for benchmark in df['benchmark'].unique():
+        bench_mask = df['benchmark'] == benchmark
+        bench_data = df[bench_mask]
+        
+        # Check each column for outliers
+        for col in columns:
+            if col in bench_data.columns:
+                col_outliers = detect_outliers_iqr(bench_data[col], multiplier=multiplier)
+                is_outlier[bench_data.index[col_outliers]] = True
+    
+    # Remove outliers
+    df_filtered = df[~is_outlier].copy()
+    
+    n_removed = original_len - len(df_filtered)
+    if n_removed > 0:
+        print(f"  Removed {n_removed} outlier(s) using IQR method (multiplier={multiplier})")
+        # Print which benchmarks had outliers removed
+        removed_data = df[is_outlier]
+        if len(removed_data) > 0:
+            for benchmark in removed_data['benchmark'].unique():
+                bench_removed = removed_data[removed_data['benchmark'] == benchmark]
+                print(f"    {benchmark}: removed {len(bench_removed)} point(s)")
+    
+    return df_filtered
+
+
+def compute_zscore_correlation(df, robust=False, filter_outliers=True, outlier_multiplier=1.5):
+    """
+    Compute correlation using z-score normalized PCK within each benchmark.
+    Only PCK is z-scored; the other metric (MMD/coverage) remains in original scale.
+    This removes baseline difficulty differences between benchmarks for PCK.
     
     Args:
         df: DataFrame with columns ['mmd2', 'best_pck', 'benchmark']
+        robust: If True, use robust z-score (median/MAD) which is less sensitive to outliers.
+                If False, use standard z-score (mean/std).
+        filter_outliers: If True, remove outliers using IQR method before computing z-scores.
+        outlier_multiplier: IQR multiplier for outlier detection (default 1.5, use 3.0 for more extreme)
         
     Returns:
         Tuple of (correlation, p_value, df_with_zscores)
+        Note: df will have 'pck_z' (z-scored PCK) and 'mmd_z' (original mmd2/coverage values)
     """
     df = df.copy()
     
-    # Z-score normalize within each benchmark
-    def zscore(x):
-        if x.std() > 0:
-            return (x - x.mean()) / x.std()
-        return x * 0  # Return zeros if no variance
+    # Filter outliers if requested
+    if filter_outliers:
+        df = filter_outliers_by_benchmark(df, columns=['best_pck', 'mmd2'], multiplier=outlier_multiplier)
     
-    df['pck_z'] = df.groupby('benchmark')['best_pck'].transform(zscore)
-    df['mmd_z'] = df.groupby('benchmark')['mmd2'].transform(zscore)
+    if robust:
+        # Robust z-score using median and MAD (Median Absolute Deviation)
+        # MAD is scaled by 1.4826 to make it comparable to std for normal distributions
+        def robust_zscore(x):
+            median = x.median()
+            mad = (x - median).abs().median()
+            # Scale MAD to be comparable to standard deviation
+            mad_scaled = mad * 1.4826 if mad > 0 else 1.0
+            if mad_scaled > 0:
+                return (x - median) / mad_scaled
+            return x * 0  # Return zeros if no variance
+        zscore_func = robust_zscore
+    else:
+        # Standard z-score using mean and std
+        def standard_zscore(x):
+            if x.std() > 0:
+                return (x - x.mean()) / x.std()
+            return x * 0  # Return zeros if no variance
+        zscore_func = standard_zscore
+    
+    # Only z-score PCK, keep the other metric (mmd2/coverage) in original scale
+    df['pck_z'] = df.groupby('benchmark')['best_pck'].transform(zscore_func)
+    # Keep original metric for x-axis (not z-scored)
+    df['mmd_z'] = df['mmd2']  # Keep original scale
     
     # Remove any NaN values
     df_clean = df.dropna(subset=['pck_z', 'mmd_z'])
     
     if len(df_clean) >= 3:
+        # Correlation: original metric (x) vs z-scored PCK (y)
         r, p = stats.pearsonr(df_clean['mmd_z'], df_clean['pck_z'])
         return r, p, df
     else:
@@ -673,8 +769,10 @@ def print_statistical_analysis(df, analysis_name="MMD"):
     
     # 3. Z-score normalized correlation
     print(f"\n3. Z-SCORE NORMALIZED CORRELATION:")
-    print(f"   (Standardizes within each benchmark to remove difficulty differences)")
-    r_z, p_z, df_z = compute_zscore_correlation(df)
+    print(f"   (Z-scores PCK within each benchmark to remove difficulty differences)")
+    print(f"   (Other metric remains in original scale)")
+    print(f"   (Filtering outliers using IQR method before computing z-scores)")
+    r_z, p_z, df_z = compute_zscore_correlation(df, robust=False, filter_outliers=True, outlier_multiplier=1.5)
     if not np.isnan(r_z):
         print(f"   r = {r_z:.4f}, p = {p_z:.4f}")
     else:
@@ -824,7 +922,9 @@ def create_faceted_scatter_plot(df, output_path, analysis_name="MMD", dataset_co
 
 def create_zscore_scatter_plot(df, output_path, analysis_name="MMD", dataset_color_map=None):
     """
-    Create scatter plot using z-score normalized values.
+    Create scatter plot with z-score normalized PCK (y-axis) and original metric (x-axis).
+    Only PCK is z-scored within each benchmark; the other metric remains in original scale.
+    Filters outliers using IQR method before computing z-scores.
     
     Args:
         df: DataFrame with analysis data
@@ -832,7 +932,7 @@ def create_zscore_scatter_plot(df, output_path, analysis_name="MMD", dataset_col
         analysis_name: Name for plot title and filename
         dataset_color_map: Dictionary mapping training_dataset -> color
     """
-    r_z, p_z, df_z = compute_zscore_correlation(df)
+    r_z, p_z, df_z = compute_zscore_correlation(df, robust=False, filter_outliers=True, outlier_multiplier=1.5)
     
     if np.isnan(r_z):
         print(f"  Skipping z-score plot (insufficient data)")
@@ -865,9 +965,9 @@ def create_zscore_scatter_plot(df, output_path, analysis_name="MMD", dataset_col
     ax.axhline(y=0, color='gray', linestyle='-', alpha=0.3)
     ax.axvline(x=0, color='gray', linestyle='-', alpha=0.3)
     
-    ax.set_xlabel(f'{analysis_name}² (z-scored within benchmark)', fontsize=12)
+    ax.set_xlabel(f'{analysis_name}² (original scale)', fontsize=12)
     ax.set_ylabel('Best PCK (z-scored within benchmark)', fontsize=12)
-    ax.set_title(f'Z-Score Normalized {analysis_name}² vs PCK\n(Controls for benchmark difficulty)', 
+    ax.set_title(f'{analysis_name}² vs Z-Score Normalized PCK\n(PCK normalized to control for benchmark difficulty, outliers filtered)', 
                 fontsize=14, fontweight='bold')
     ax.grid(True, alpha=0.3)
     ax.legend(loc='best', fontsize=9)
@@ -1302,16 +1402,18 @@ def create_mmd_vs_pck_errorbar_plot(snapshots_data, mmd_lookup, output_dir, data
     plt.close()
 
 
-def load_coverage_lookup(csv_path='coverage_results.csv'):
+def load_coverage_lookup(csv_path='coverage_results.csv', representation_filter=None):
     """
-    Load coverage data from CSV file and create a bidirectional lookup.
+    Load coverage data from CSV file and create a normalized lookup.
+    Automatically detects train vs eval/test/val splits and normalizes to train -> eval direction.
     
     Args:
         csv_path: Path to coverage_results.csv file
+        representation_filter: Optional filter for representation type
         
     Returns:
-        Dictionary mapping (dataset1_split1, dataset2_split2) -> dict of coverage metrics
-        Works for both orderings
+        Dictionary mapping (train_dataset_split, eval_dataset_split) -> dict of coverage metrics
+        Always normalized so train is first, eval is second
     """
     if not os.path.exists(csv_path):
         print(f"Warning: {csv_path} not found. Cannot create coverage lookup.")
@@ -1319,39 +1421,112 @@ def load_coverage_lookup(csv_path='coverage_results.csv'):
     
     coverage_lookup = {}
     
+    # Define split categories
+    train_splits = {"train", "training"}
+    eval_splits = {"val", "test", "validation", "eval"}
+    
     try:
         df = pd.read_csv(csv_path)
         for _, row in df.iterrows():
+            # Some CSVs (e.g., flow) don't include a representation column.
+            # Treat missing/empty representation as the requested filter (if provided)
+            # so that flow/resnet CSVs both load correctly.
+            rep = str(row.get('representation', '')).lower()
+            if (not rep or rep == 'nan') and representation_filter:
+                rep = representation_filter.lower()
+            if representation_filter and rep != representation_filter.lower():
+                continue
+
             dataset1 = str(row['dataset1']).lower()
             dataset2 = str(row['dataset2']).lower()
-            split1 = str(row['split1']).lower()
-            split2 = str(row['split2']).lower()
+            split1 = str(row.get('split1', '')).lower()
+            split2 = str(row.get('split2', '')).lower()
             
             # Skip identical comparisons (same dataset AND same split)
             if dataset1 == dataset2 and split1 == split2:
                 continue
             
-            # Create unique identifiers with splits
-            dataset1_id = f"{dataset1}_{split1}"
-            dataset2_id = f"{dataset2}_{split2}"
+            # Determine which is train and which is eval
+            is_split1_train = split1 in train_splits
+            is_split2_train = split2 in train_splits
+            is_split1_eval = split1 in eval_splits
+            is_split2_eval = split2 in eval_splits
             
+            # Normalize to train -> eval direction
+            if is_split1_train and is_split2_eval:
+                # Already in correct direction: dataset1 (train) -> dataset2 (eval)
+                train_dataset = dataset1
+                train_split = split1
+                eval_dataset = dataset2
+                eval_split = split2
+            elif is_split2_train and is_split1_eval:
+                # Reversed: swap them
+                train_dataset = dataset2
+                train_split = split2
+                eval_dataset = dataset1
+                eval_split = split1
+            elif is_split1_train and not is_split2_eval:
+                # dataset1 is train, dataset2 might not have explicit eval split
+                # Assume dataset2 is eval
+                train_dataset = dataset1
+                train_split = split1
+                eval_dataset = dataset2
+                eval_split = split2 if split2 else 'unknown'
+            elif is_split2_train and not is_split1_eval:
+                # dataset2 is train, dataset1 might not have explicit eval split
+                # Swap them
+                train_dataset = dataset2
+                train_split = split2
+                eval_dataset = dataset1
+                eval_split = split1 if split1 else 'unknown'
+            else:
+                # Neither is clearly train/eval, try to infer from dataset names
+                # Common pattern: training datasets often have "train" in name or are synthetic
+                # For now, assume dataset1 -> dataset2 and store both directions
+                train_dataset = dataset1
+                train_split = split1 if split1 else 'train'
+                eval_dataset = dataset2
+                eval_split = split2 if split2 else 'unknown'
+            
+            # Create unique identifiers with splits
+            train_id = f"{train_dataset}_{train_split}" if train_split else train_dataset
+            eval_id = f"{eval_dataset}_{eval_split}" if eval_split else eval_dataset
+            
+            # Handle both legacy and new column names
+            coverage_abs_val = row.get('coverage_abs', np.nan)
+            coverage_rel_val = row.get('coverage_rel', np.nan)
+            recall_val = row.get('recall', np.nan)
+            precision_val = row.get('precision', np.nan)
+            outside_val = row.get('outside', np.nan)
+
+            if pd.isna(coverage_abs_val) and not pd.isna(recall_val):
+                coverage_abs_val = recall_val
+            if pd.isna(coverage_rel_val) and not pd.isna(recall_val):
+                coverage_rel_val = recall_val
+            if pd.isna(recall_val) and not pd.isna(coverage_abs_val):
+                recall_val = coverage_abs_val
+            if pd.isna(precision_val) and not pd.isna(outside_val):
+                precision_val = 1.0 - outside_val
+
             # Store coverage metrics
             metrics = {
-                'coverage_abs': float(row['coverage_abs']),
-                'coverage_rel': float(row['coverage_rel']),
-                'rho_95': float(row['rho_95']),
-                'rho_median': float(row['rho_median']),
-                'rho_mean': float(row['rho_mean']),
-                'epsilon': float(row['epsilon']),
+                'coverage_abs': float(coverage_abs_val),
+                'coverage_rel': float(coverage_rel_val),
+                'rho_95': float(row.get('rho_95', 0.0)),
+                'rho_median': float(row.get('rho_median', 0.0)),
+                'rho_mean': float(row.get('rho_mean', 0.0)),
+                'epsilon': float(row.get('epsilon', 0.0)),
+                'recall': float(recall_val) if not pd.isna(recall_val) else np.nan,
+                'precision': float(precision_val) if not pd.isna(precision_val) else (float(row.get('precision', np.nan)) if 'precision' in row else np.nan),
+                'outside': float(outside_val) if not pd.isna(outside_val) else (float(row.get('outside', np.nan)) if 'outside' in row else np.nan),
+                'representation': rep,
             }
             
-            # Store both orderings with split identifiers
-            coverage_lookup[(dataset1_id, dataset2_id)] = metrics
-            coverage_lookup[(dataset2_id, dataset1_id)] = metrics
+            # Store normalized direction: train -> eval
+            coverage_lookup[(train_id, eval_id)] = metrics
             
             # Also store without explicit split in key for backward compatibility
-            coverage_lookup[(dataset1, dataset2)] = metrics
-            coverage_lookup[(dataset2, dataset1)] = metrics
+            coverage_lookup[(train_dataset, eval_dataset)] = metrics
             
     except Exception as e:
         print(f"Warning: Could not load coverage lookup from {csv_path}: {e}")
@@ -1360,23 +1535,25 @@ def load_coverage_lookup(csv_path='coverage_results.csv'):
     return coverage_lookup
 
 
-def create_coverage_vs_pck_scatter_plot(snapshots_data, coverage_lookup, output_dir, dataset_color_map, coverage_type='abs'):
+def create_coverage_vs_pck_scatter_plot(
+    snapshots_data,
+    coverage_lookup,
+    output_dir,
+    dataset_color_map,
+    score_key='recall',
+    score_label='Recall',
+    coverage_tag=None,
+):
     """
-    Create scatter plot showing training dataset coverage vs best PCK.
-    
-    Args:
-        snapshots_data: List of (training_dataset, validation_data_dict, metrics_list, snapshot_path) tuples
-        coverage_lookup: Dictionary mapping (dataset1_split1, dataset2_split2) -> coverage metrics dict
-        output_dir: Output directory path
-        dataset_color_map: Dictionary mapping training_dataset -> color
-        coverage_type: 'abs' for absolute coverage or 'rel' for relative coverage
+    Create scatter plot showing training dataset recall/precision vs best PCK.
     """
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     
     # Determine which coverage metric to use
-    coverage_key = 'coverage_abs' if coverage_type == 'abs' else 'coverage_rel'
-    coverage_label = 'Absolute Coverage' if coverage_type == 'abs' else 'Relative Coverage'
+    coverage_label = score_label
+    if coverage_tag:
+        coverage_label = f"{coverage_label} ({coverage_tag})"
     
     # Collect all data points: (coverage, best_pck, training_dataset, benchmark)
     data_points = []
@@ -1401,6 +1578,7 @@ def create_coverage_vs_pck_scatter_plot(snapshots_data, coverage_lookup, output_
             benchmark_lower = str(benchmark).lower()
             
             # Try to look up coverage with splits
+            # The lookup is now normalized to always be train -> eval
             coverage_metrics = None
             training_dataset_train = f"{base_training_dataset}_train"
             benchmark_test = f"{benchmark_lower}_test"
@@ -1415,11 +1593,9 @@ def create_coverage_vs_pck_scatter_plot(snapshots_data, coverage_lookup, output_
             if coverage_metrics is None:
                 coverage_metrics = coverage_lookup.get((base_training_dataset, benchmark_lower))
             
-            if coverage_metrics is not None:
+            if coverage_metrics is not None and score_key in coverage_metrics and not pd.isna(coverage_metrics[score_key]):
                 data_points.append({
-                    'coverage': coverage_metrics[coverage_key],
-                    'coverage_abs': coverage_metrics['coverage_abs'],
-                    'coverage_rel': coverage_metrics['coverage_rel'],
+                    'coverage': coverage_metrics[score_key],
                     'best_pck': best_pck,
                     'training_dataset': training_dataset_label,
                     'benchmark': benchmark,
@@ -1478,8 +1654,8 @@ def create_coverage_vs_pck_scatter_plot(snapshots_data, coverage_lookup, output_
     plt.tight_layout()
     
     # Save plot
-    coverage_suffix = 'abs' if coverage_type == 'abs' else 'rel'
-    output_file = output_path / f'training_coverage_{coverage_suffix}_vs_best_pck.png'
+    tag_suffix = f"_{coverage_tag}" if coverage_tag else ""
+    output_file = output_path / f'training_{score_key}{tag_suffix}_vs_best_pck.png'
     plt.savefig(output_file, dpi=150, bbox_inches='tight')
     print(f"\nSaved {coverage_label} vs PCK scatter plot: {output_file}")
     plt.close()
@@ -1489,8 +1665,10 @@ def create_coverage_vs_pck_scatter_plot(snapshots_data, coverage_lookup, output_
     # Rename for compatibility with existing analysis functions
     df['mmd2'] = df['coverage']
     
+    # Tag-aware analysis name so flow/resnet (and others) don't overwrite files
+    analysis_name = f"{score_label} {coverage_tag}" if coverage_tag else f"{score_label}"
+    
     # Run and print statistical analysis
-    analysis_name = f"Coverage ({coverage_type.upper()})"
     print_statistical_analysis(df, analysis_name)
     
     # Save statistical analysis to file
@@ -1503,7 +1681,15 @@ def create_coverage_vs_pck_scatter_plot(snapshots_data, coverage_lookup, output_
     create_zscore_scatter_plot(df, output_path, analysis_name, dataset_color_map)
 
 
-def create_coverage_vs_pck_errorbar_plot(snapshots_data, coverage_lookup, output_dir, dataset_color_map, coverage_type='abs'):
+def create_coverage_vs_pck_errorbar_plot(
+    snapshots_data,
+    coverage_lookup,
+    output_dir,
+    dataset_color_map,
+    score_key='recall',
+    score_label='Recall',
+    coverage_tag=None,
+):
     """
     Create error bar plot showing coverage vs PCK with error bars for multiple configs.
     
@@ -1516,14 +1702,15 @@ def create_coverage_vs_pck_errorbar_plot(snapshots_data, coverage_lookup, output
         coverage_lookup: Dictionary mapping (dataset1_split1, dataset2_split2) -> coverage metrics dict
         output_dir: Output directory path
         dataset_color_map: Dictionary mapping training_dataset -> color
-        coverage_type: 'abs' for absolute coverage or 'rel' for relative coverage
+        score_key: which metric to plot ('recall', 'precision', etc.)
     """
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     
     # Determine which coverage metric to use
-    coverage_key = 'coverage_abs' if coverage_type == 'abs' else 'coverage_rel'
-    coverage_label = 'Absolute Coverage' if coverage_type == 'abs' else 'Relative Coverage'
+    coverage_label = score_label
+    if coverage_tag:
+        coverage_label = f"{coverage_label} ({coverage_tag})"
     
     # Collect all data points grouped by (training_dataset, benchmark)
     grouped_data = defaultdict(list)
@@ -1559,11 +1746,18 @@ def create_coverage_vs_pck_errorbar_plot(snapshots_data, coverage_lookup, output
             # Fall back to old format without splits
             if coverage_metrics is None:
                 coverage_metrics = coverage_lookup.get((base_training_dataset, benchmark_lower))
+            # As a last resort, try reverse direction to detect swapped roles in CSVs
+            if coverage_metrics is None:
+                coverage_metrics = coverage_lookup.get((benchmark_test, training_dataset_train))
+            if coverage_metrics is None:
+                coverage_metrics = coverage_lookup.get((benchmark_val, training_dataset_train))
+            if coverage_metrics is None:
+                coverage_metrics = coverage_lookup.get((benchmark_lower, base_training_dataset))
             
-            if coverage_metrics is not None:
+            if coverage_metrics is not None and score_key in coverage_metrics and not pd.isna(coverage_metrics[score_key]):
                 key = (training_dataset_label, benchmark)
                 grouped_data[key].append({
-                    'coverage': coverage_metrics[coverage_key],
+                    'coverage': coverage_metrics[score_key],
                     'best_pck': best_pck,
                     'training_dataset': training_dataset_label,
                     'benchmark': benchmark
@@ -1640,8 +1834,8 @@ def create_coverage_vs_pck_errorbar_plot(snapshots_data, coverage_lookup, output
     plt.tight_layout()
     
     # Save plot
-    coverage_suffix = 'abs' if coverage_type == 'abs' else 'rel'
-    output_file = output_path / f'training_coverage_{coverage_suffix}_vs_best_pck_errorbars.png'
+    tag_suffix = f"_{coverage_tag}" if coverage_tag else ""
+    output_file = output_path / f'training_{score_key}{tag_suffix}_vs_best_pck_errorbars.png'
     plt.savefig(output_file, dpi=150, bbox_inches='tight')
     print(f"  Saved {coverage_label} error bar plot: {output_file}")
     plt.close()
@@ -1683,6 +1877,19 @@ Examples:
         type=str,
         default='./benchmark_plots/',
         help='Output directory for plots (default: ./benchmark_plots/)'
+    )
+    parser.add_argument(
+        '--coverage-csv',
+        type=str,
+        default='coverage_results.csv',
+        help='Coverage CSV to load (default: coverage_results.csv)'
+    )
+    parser.add_argument(
+        '--coverage-representation',
+        type=str,
+        default=None,
+        help='If provided, filter coverage rows by representation (e.g., flow, resnet). '
+             'If omitted, the script will attempt to load both flow and resnet coverage CSVs if present.'
     )
     
     parser.add_argument(
@@ -1830,48 +2037,70 @@ Examples:
     
     # Load coverage lookup and create scatter plots
     print("\nCreating Coverage vs PCK scatter plots...")
-    coverage_lookup = load_coverage_lookup('coverage_results.csv')
-    if coverage_lookup:
-        # Create plots for absolute coverage
-        print("\nCreating Absolute Coverage vs PCK scatter plot...")
-        create_coverage_vs_pck_scatter_plot(
-            snapshots_data,
-            coverage_lookup,
-            args.output_dir,
-            dataset_color_map,
-            coverage_type='abs'
-        )
-        # Create error bar plot version
-        print("\nCreating Absolute Coverage vs PCK error bar plot (grouped by training dataset)...")
-        create_coverage_vs_pck_errorbar_plot(
-            snapshots_data,
-            coverage_lookup,
-            args.output_dir,
-            dataset_color_map,
-            coverage_type='abs'
-        )
-        
-        # Create plots for relative coverage
-        print("\nCreating Relative Coverage vs PCK scatter plot...")
-        create_coverage_vs_pck_scatter_plot(
-            snapshots_data,
-            coverage_lookup,
-            args.output_dir,
-            dataset_color_map,
-            coverage_type='rel'
-        )
-        # Create error bar plot version
-        print("\nCreating Relative Coverage vs PCK error bar plot (grouped by training dataset)...")
-        create_coverage_vs_pck_errorbar_plot(
-            snapshots_data,
-            coverage_lookup,
-            args.output_dir,
-            dataset_color_map,
-            coverage_type='rel'
-        )
+    coverage_sources = []
+    # Always attempt flow and resnet defaults if present
+    for path, rep in [('coverage_results.csv', 'flow'), ('coverage_resnet_results.csv', 'resnet')]:
+        if os.path.exists(path):
+            coverage_sources.append((path, rep))
+    # Include user-provided CSV if different
+    if args.coverage_csv and os.path.exists(args.coverage_csv) and args.coverage_csv not in [c[0] for c in coverage_sources]:
+        coverage_sources.append((args.coverage_csv, args.coverage_representation))
+
+    if not coverage_sources:
+        print("  Skipping Coverage vs PCK scatter plots (no coverage CSVs found)")
     else:
-        print("  Skipping Coverage vs PCK scatter plots (coverage lookup not available)")
-    
+        for cov_path, cov_rep in coverage_sources:
+            print(f"\nCreating Coverage vs PCK scatter plots from {cov_path} (rep={cov_rep})...")
+            coverage_lookup = load_coverage_lookup(cov_path, representation_filter=cov_rep)
+            if not coverage_lookup:
+                print(f"  Skipping {cov_path}: coverage lookup empty")
+                continue
+            tag = cov_rep or Path(cov_path).stem
+
+            # Recall plots
+            print("\nCreating Recall vs PCK scatter plot...")
+            create_coverage_vs_pck_scatter_plot(
+                snapshots_data,
+                coverage_lookup,
+                args.output_dir,
+                dataset_color_map,
+                score_key='recall',
+                score_label='Recall',
+                coverage_tag=tag
+            )
+            print("\nCreating Recall vs PCK error bar plot (grouped by training dataset)...")
+            create_coverage_vs_pck_errorbar_plot(
+                snapshots_data,
+                coverage_lookup,
+                args.output_dir,
+                dataset_color_map,
+                score_key='recall',
+                score_label='Recall',
+                coverage_tag=tag
+            )
+
+            # Precision plots
+            print("\nCreating Precision vs PCK scatter plot...")
+            create_coverage_vs_pck_scatter_plot(
+                snapshots_data,
+                coverage_lookup,
+                args.output_dir,
+                dataset_color_map,
+                score_key='precision',
+                score_label='Precision',
+                coverage_tag=tag
+            )
+            print("\nCreating Precision vs PCK error bar plot (grouped by training dataset)...")
+            create_coverage_vs_pck_errorbar_plot(
+                snapshots_data,
+                coverage_lookup,
+                args.output_dir,
+                dataset_color_map,
+                score_key='precision',
+                score_label='Precision',
+                coverage_tag=tag
+            )
+
     print("\nDone!")
 
 

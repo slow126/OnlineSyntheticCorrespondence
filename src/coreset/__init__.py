@@ -9,9 +9,12 @@ from .config import CoresetConfig, load_config_from_yaml, save_config_to_yaml
 from .weighted_coreset import WeightedCoreset
 from .metrics import (
     estimate_epsilon_from_eval,
-    coverage_by_train,
-    extraneous_mass_fraction,
     compute_nn_distances,
+    DatasetCodebook,
+    codebook_from_coreset,
+    recall_train_covers_eval_soft,
+    precision_train_wrt_eval_soft,
+    outside_mass_fraction_soft,
 )
 
 __all__ = [
@@ -20,7 +23,10 @@ __all__ = [
     'save_config_to_yaml',
     'WeightedCoreset',
     'estimate_epsilon_from_eval',
-    'coverage_by_train',
-    'extraneous_mass_fraction',
     'compute_nn_distances',
+    'DatasetCodebook',
+    'codebook_from_coreset',
+    'recall_train_covers_eval_soft',
+    'precision_train_wrt_eval_soft',
+    'outside_mass_fraction_soft',
 ]

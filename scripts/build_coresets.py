@@ -4,8 +4,15 @@ Build and save coresets for datasets.
 This script streams through datasets and builds weighted coresets,
 saving them to disk for later use in coverage analysis or validation.
 
+The coreset construction uses optimized incremental MiniBatchKMeans:
+- Uses partial_fit() for true streaming updates (no need to hold all data in memory)
+- Warm-starts with existing centers for efficient incremental learning
+- Handles weighted centers properly by reassigning all points after updates
+
 Usage:
     python scripts/build_coresets.py --config configs/coreset_configs/build_datasets.yaml
+
+To process complete datasets, set num_batches: null in the config (or omit it).
 """
 
 import argparse
@@ -24,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.coreset import CoresetConfig, WeightedCoreset, load_config_from_yaml
 from src.coreset.validation import extract_flow_vectors_from_batch
 from src.data.synth.datasets.CorrespondenceDataset import CorrespondenceDataset
+from src.mmd.encoders import BaseFeatureEncoder, ResNet101Encoder
 
 
 def create_dataset_from_config(
@@ -83,6 +91,43 @@ def create_dataset_from_config(
     return dataset
 
 
+def create_encoder(encoder_name: str, device: torch.device) -> BaseFeatureEncoder:
+    """Create feature encoder by name."""
+    if encoder_name == 'resnet101':
+        return ResNet101Encoder(device=device)
+    else:
+        raise ValueError(f"Unknown encoder: {encoder_name}. Supported: 'resnet101'")
+
+
+def extract_features_from_batch(
+    batch: dict,
+    encoder: BaseFeatureEncoder,
+) -> np.ndarray:
+    """
+    Extract flattened features [N, C] from a batch using the provided encoder.
+    
+    Looks for common image keys in the batch.
+    """
+    if encoder is None:
+        raise ValueError("Encoder must be provided for feature extraction.")
+
+    # Find image tensor
+    if 'src_img' in batch:
+        img = batch['src_img']
+    elif 'source' in batch:
+        img = batch['source']
+    elif 'image0' in batch:
+        img = batch['image0']
+    else:
+        raise ValueError(f"Could not find source image in batch. Available keys: {batch.keys()}")
+
+    if not isinstance(img, torch.Tensor):
+        img = torch.tensor(img)
+
+    feats = encoder.extract_features(img)  # [N, C] (flattened)
+    return feats.cpu().numpy().astype(np.float32)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Build and save weighted coresets for datasets'
@@ -90,6 +135,18 @@ def main():
     parser.add_argument(
         '--config', type=str, required=True,
         help='Path to config YAML file'
+    )
+    parser.add_argument(
+        '--encoder', type=str, default=None,
+        help='Feature encoder to use for representation!=flow (overrides config, default: resnet101)'
+    )
+    parser.add_argument(
+        '--subsample-fraction', type=float, default=None,
+        help='Uniform subsample fraction for very dense batches (overrides config)'
+    )
+    parser.add_argument(
+        '--subsample-threshold', type=int, default=None,
+        help='If a batch has more vectors than this, subsample (overrides config)'
     )
     args = parser.parse_args()
     
@@ -102,6 +159,7 @@ def main():
     datasets_config = config['datasets']
     batch_size = config.get('batch_size', 32)
     num_workers = config.get('num_workers', 4)
+    encoder_name = args.encoder if args.encoder is not None else config.get('encoder', 'resnet101')
     common_params = config.get('dataset_params', {})
     dataset_overrides = config.get('dataset_overrides', {})
     
@@ -137,12 +195,27 @@ def main():
     print(f"Distance: {coreset_config.distance}")
     print(f"Device: {coreset_config.device}")
     
+    # Subsample settings: from CLI if provided, else from config
+    subsample_cfg = config.get('subsample', {})
+    subsample_fraction = args.subsample_fraction if args.subsample_fraction is not None else subsample_cfg.get('fraction', 1.0)
+    subsample_threshold = args.subsample_threshold if args.subsample_threshold is not None else subsample_cfg.get('threshold', 0)
+
+    # Determine if we need a feature encoder (for representation != flow)
+    needs_encoder = any(ds.get('representation', 'flow') != 'flow' for ds in datasets_config)
+    encoder = None
+    encoder_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if needs_encoder:
+        encoder = create_encoder(encoder_name, encoder_device)
+
     # Process each dataset
     total_datasets = len(datasets_config)
     
     for ds_idx, ds_config in enumerate(datasets_config, 1):
         dataset_name = ds_config['name']
         split = ds_config['split']
+        representation = ds_config.get('representation', 'flow')
+        # num_batches: None = process all batches (complete dataset)
+        # Set to a number to limit processing for testing
         num_batches = ds_config.get('num_batches', None)
         is_eval = ds_config.get('is_eval', False)
         output_path = ds_config['output']
@@ -151,7 +224,11 @@ def main():
         print(f"DATASET {ds_idx}/{total_datasets}: {dataset_name} ({split})")
         print("="*60)
         print(f"Is eval: {is_eval}")
-        print(f"Num batches: {num_batches if num_batches else 'all'}")
+        if num_batches is None:
+            print(f"Num batches: ALL (complete dataset)")
+        else:
+            print(f"Num batches: {num_batches} (limited for testing)")
+        print(f"Representation: {representation}")
         print(f"Output: {output_path}")
         
         start_time = time.time()
@@ -208,10 +285,25 @@ def main():
             if num_batches is not None and batches_processed >= num_batches:
                 break
             
-            # Extract flow vectors
-            vectors = extract_flow_vectors_from_batch(batch)
+            # Extract vectors based on representation
+            if representation == 'flow':
+                vectors = extract_flow_vectors_from_batch(batch)
+            elif representation == 'resnet':
+                vectors = extract_features_from_batch(batch, encoder)
+            else:
+                raise ValueError(f"Unknown representation '{representation}'. Supported: flow, resnet.")
             
             if vectors is not None and len(vectors) > 0:
+                # Uniform subsample if batch is very dense
+                if len(vectors) > subsample_threshold and subsample_fraction < 1.0:
+                    n_keep = max(
+                        subsample_threshold,
+                        int(len(vectors) * subsample_fraction)
+                    )
+                    if n_keep < len(vectors):
+                        idx = np.random.choice(len(vectors), size=n_keep, replace=False)
+                        vectors = vectors[idx]
+
                 coreset.update(vectors)
                 total_vectors += len(vectors)
             

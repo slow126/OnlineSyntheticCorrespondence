@@ -6,7 +6,12 @@ import numpy as np
 import torch
 from typing import Dict, List, Optional, Any
 from .weighted_coreset import WeightedCoreset
-from .metrics import coverage_by_train, extraneous_mass_fraction
+from .metrics import (
+    codebook_from_coreset,
+    recall_train_covers_eval_soft,
+    precision_train_wrt_eval_soft,
+    outside_mass_fraction_soft,
+)
 
 
 def extract_flow_vectors_from_batch(batch: Dict[str, Any]) -> Optional[np.ndarray]:
@@ -134,54 +139,67 @@ def build_coreset_from_dataloader(
 def compute_bidirectional_coverage(
     train_coreset: WeightedCoreset,
     eval_coreset: WeightedCoreset,
-    min_count: int = 0
+    k: int = 5,
+    bandwidth: Optional[float] = None,
+    bandwidth_scale: float = 1.0,
+    M_train: float = 100.0,
+    M_eval: float = 20.0,
+    kernel: str = "gaussian",
+    batch_size: int = 1024,
+    eps: float = 1e-12,
 ) -> Dict[str, Dict[str, float]]:
     """
-    Compute bidirectional coverage metrics between train and eval.
+    Compute bidirectional soft k-NN coverage metrics between train and eval.
     
     Args:
         train_coreset: Training dataset coreset
-        eval_coreset: Evaluation dataset coreset (should have epsilon_scales)
-        min_count: Minimum count for absolute coverage
+        eval_coreset: Evaluation dataset coreset
+        k: Number of neighbors for soft k-NN
+        bandwidth: Optional bandwidth; if None, inferred from distances
+        bandwidth_scale: Multiplier applied to inferred bandwidth
+        M_train: Saturation threshold for recall (train mass)
+        M_eval: Saturation threshold for precision (eval mass)
+        kernel: Kernel type ('gaussian' or 'inverse')
+        batch_size: Batch size for distance computations
+        eps: Numerical stability epsilon
     
     Returns:
         Dict with two sub-dicts:
-            'train_to_eval': How well train covers eval
-            'eval_to_train': How well eval covers train (extraneous mass)
+            'train_to_eval': Recall/precision/outside for train covering eval
+            'eval_to_train': Recall/precision/outside for eval covering train
     """
-    train_centers = train_coreset.get_centers()
-    train_counts = train_coreset.get_counts()
-    eval_centers = eval_coreset.get_centers()
-    eval_counts = eval_coreset.get_counts()
-    
-    # Get epsilon from eval coreset
-    epsilon_scales = eval_coreset.get_epsilon_scales()
-    if epsilon_scales is None:
-        raise ValueError("Eval coreset must have epsilon_scales. Set is_eval=True when building.")
-    
-    results = {}
-    
-    # For each epsilon scale, compute metrics
-    for eps_name, eps_value in epsilon_scales.items():
-        if not eps_name.startswith('eps_'):
-            continue
-        
-        # Train → Eval coverage
-        coverage = coverage_by_train(
-            train_centers, train_counts, eval_centers,
-            epsilon=eps_value, min_count=min_count
+    train_cb = codebook_from_coreset(train_coreset)
+    eval_cb = codebook_from_coreset(eval_coreset)
+
+    def _metrics(a_cb, b_cb):
+        recall = recall_train_covers_eval_soft(
+            a_cb, b_cb,
+            k=k,
+            bandwidth=bandwidth,
+            bandwidth_scale=bandwidth_scale,
+            M_train=M_train,
+            eps=eps,
+            kernel=kernel,
+            batch_size=batch_size,
         )
-        
-        # Eval → Train extraneous mass (train centers far from eval)
-        extran = extraneous_mass_fraction(
-            train_centers, train_counts, eval_centers,
-            epsilon=eps_value
+        precision = precision_train_wrt_eval_soft(
+            a_cb, b_cb,
+            k=k,
+            bandwidth=bandwidth,
+            bandwidth_scale=bandwidth_scale,
+            M_eval=M_eval,
+            eps=eps,
+            kernel=kernel,
+            batch_size=batch_size,
         )
-        
-        results[eps_name] = {
-            'epsilon': eps_value,
-            **{f'coverage_{k}': v for k, v in coverage.items() if k != 'epsilon'},
-            **{f'extraneous_{k}': v for k, v in extran.items() if k != 'epsilon'},
+        outside = 1.0 - precision
+        return {
+            'recall': recall,
+            'precision': precision,
+            'outside': outside,
         }
-    
-    return results
+
+    return {
+        'train_to_eval': _metrics(train_cb, eval_cb),
+        'eval_to_train': _metrics(eval_cb, train_cb),
+    }

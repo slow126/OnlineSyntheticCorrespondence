@@ -7,14 +7,18 @@ Run with: pytest src/coreset/test_coreset.py -v
 import pytest
 import numpy as np
 import tempfile
+import torch
 from pathlib import Path
 
 from .weighted_coreset import WeightedCoreset
 from .metrics import (
     estimate_epsilon_from_eval,
-    coverage_by_train,
-    extraneous_mass_fraction,
     compute_nn_distances,
+    DatasetCodebook,
+    codebook_from_coreset,
+    recall_train_covers_eval_soft,
+    precision_train_wrt_eval_soft,
+    outside_mass_fraction_soft,
 )
 from .config import CoresetConfig, load_config_from_yaml, save_config_to_yaml
 
@@ -159,61 +163,29 @@ class TestMetrics:
         assert epsilon_scales['eps_base'] > 0
         # For a regular grid, median NN distance should be ~1.0
         assert epsilon_scales['eps_base'] == pytest.approx(1.0, rel=0.1)
-    
-    def test_coverage_by_train(self):
-        """Test coverage metric."""
-        # Train covers a square [0, 10] x [0, 10]
-        train_centers = np.random.rand(100, 2).astype(np.float32) * 10
-        train_counts = np.ones(100, dtype=np.float32)
-        
-        # Eval is inside the square
-        eval_centers = np.random.rand(50, 2).astype(np.float32) * 8 + 1  # [1, 9] x [1, 9]
-        
-        coverage = coverage_by_train(
-            train_centers, train_counts, eval_centers,
-            epsilon=2.0, min_count=0
-        )
-        
-        assert 'coverage_rel' in coverage
-        assert 0 <= coverage['coverage_rel'] <= 1
-        # Most eval points should be covered with epsilon=2.0
-        assert coverage['coverage_rel'] > 0.5
-    
-    def test_coverage_perfect(self):
-        """Test perfect coverage case."""
-        # Train and eval are the same
-        centers = np.random.randn(50, 3).astype(np.float32)
-        counts = np.ones(50, dtype=np.float32)
-        
-        coverage = coverage_by_train(
-            centers, counts, centers,
-            epsilon=0.01, min_count=0
-        )
-        
-        assert coverage['coverage_rel'] == pytest.approx(1.0)
-        assert coverage['rho_mean'] == pytest.approx(0.0, abs=1e-5)
-    
-    def test_extraneous_mass(self):
-        """Test extraneous mass metric."""
-        # Train has some points far from eval
-        train_centers = np.vstack([
-            np.random.randn(50, 2),  # Near origin
-            np.random.randn(50, 2) + 100,  # Far away
-        ]).astype(np.float32)
-        train_counts = np.ones(100, dtype=np.float32)
-        
-        # Eval is near origin
-        eval_centers = np.random.randn(50, 2).astype(np.float32)
-        
-        extran = extraneous_mass_fraction(
-            train_centers, train_counts, eval_centers,
-            epsilon=10.0
-        )
-        
-        assert 'extraneous_mass_frac' in extran
-        assert 0 <= extran['extraneous_mass_frac'] <= 1
-        # About half of train mass should be extraneous
-        assert extran['extraneous_mass_frac'] > 0.3
+
+    def test_soft_knn_metrics(self):
+        """Test soft k-NN precision/recall metrics."""
+        torch.manual_seed(0)
+        centers = torch.randn(10, 3)
+        counts = torch.ones(10)
+        cb = DatasetCodebook(centroids=centers, counts=counts)
+
+        r = recall_train_covers_eval_soft(cb, cb, M_train=0.5, k=3)
+        p = precision_train_wrt_eval_soft(cb, cb, M_eval=0.5, k=3)
+        assert r == pytest.approx(1.0, rel=1e-3)
+        assert p == pytest.approx(1.0, rel=1e-3)
+
+        # Shift eval far away -> low recall/precision with a fixed small bandwidth
+        far_centers = centers + 100.0
+        far_cb = DatasetCodebook(centroids=far_centers, counts=counts)
+        r_far = recall_train_covers_eval_soft(cb, far_cb, M_train=1.0, k=3, bandwidth=1.0)
+        p_far = precision_train_wrt_eval_soft(cb, far_cb, M_eval=1.0, k=3, bandwidth=1.0)
+        assert r_far < 0.05
+        assert p_far < 0.05
+
+        out = outside_mass_fraction_soft(cb, far_cb, M_eval=1.0, k=3, bandwidth=1.0)
+        assert out == pytest.approx(1.0 - p_far, rel=1e-6)
 
 
 class TestIntegration:
@@ -233,30 +205,17 @@ class TestIntegration:
         eval_coreset.update(eval_data)
         eval_coreset.finalize()
         
-        # Get components
-        train_centers = train_coreset.get_centers()
-        train_counts = train_coreset.get_counts()
-        eval_centers = eval_coreset.get_centers()
-        epsilon_scales = eval_coreset.get_epsilon_scales()
-        
-        assert epsilon_scales is not None
-        eps = epsilon_scales['eps_base']
-        
-        # Compute coverage
-        coverage = coverage_by_train(
-            train_centers, train_counts, eval_centers,
-            epsilon=eps, min_count=0
-        )
-        
-        # Compute extraneous mass
-        extran = extraneous_mass_fraction(
-            train_centers, train_counts, eval_centers,
-            epsilon=eps
-        )
-        
-        # Sanity checks
-        assert 0 <= coverage['coverage_rel'] <= 1
-        assert 0 <= extran['extraneous_mass_frac'] <= 1
+        # Convert to codebooks
+        train_cb = codebook_from_coreset(train_coreset)
+        eval_cb = codebook_from_coreset(eval_coreset)
+
+        recall = recall_train_covers_eval_soft(train_cb, eval_cb, k=5, M_train=50.0)
+        precision = precision_train_wrt_eval_soft(train_cb, eval_cb, k=5, M_eval=10.0)
+        outside = outside_mass_fraction_soft(train_cb, eval_cb, k=5, M_eval=10.0)
+
+        assert 0 <= recall <= 1
+        assert 0 <= precision <= 1
+        assert outside == pytest.approx(1.0 - precision, rel=1e-6)
 
 
 if __name__ == '__main__':

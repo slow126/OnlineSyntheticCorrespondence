@@ -1,7 +1,9 @@
 """
-Weighted coreset construction using streaming expand-then-collapse.
+Weighted coreset construction using streaming incremental k-means.
 
-Uses sklearn KMeans with sample_weight for weighted k-means clustering.
+Uses sklearn MiniBatchKMeans with incremental partial_fit() for efficient
+streaming updates. Handles weighted centers by warm-starting with existing
+centers and using incremental updates.
 """
 
 import numpy as np
@@ -13,23 +15,29 @@ from pathlib import Path
 
 class WeightedCoreset:
     """
-    Streaming weighted coreset using expand-then-collapse pattern.
+    Streaming weighted coreset using incremental MiniBatchKMeans.
     
     Maintains a bounded set of representative centers with counts,
     compressing large datasets into K_max cluster centers.
     
-    Algorithm:
-        1. Expand: accumulate new points in buffer
-        2. When buffer + centers > K_max + K_overflow, collapse:
-           - Combine centers (weighted by counts) + buffer (weight=1 each)
-           - Run weighted k-means to reduce to K_max centers
-           - Update counts based on cluster assignments
-        3. Repeat for each batch
-        4. On finalize: final collapse + compute epsilon if is_eval
+    Algorithm (optimized):
+        1. Accumulate new points in buffer
+        2. When buffer reaches threshold or we have existing centers:
+           - Use existing centers to warm-start MiniBatchKMeans
+           - Use partial_fit() to incrementally update with buffer points
+           - Handle weighted centers by replicating them proportionally
+        3. Repeat for each batch (incremental updates)
+        4. On finalize: final incremental update + compute epsilon if is_eval
+    
+    Key optimizations:
+        - Uses partial_fit() instead of fit_predict() for true streaming
+        - Warm-starts with existing centers (no need to re-cluster from scratch)
+        - Handles weighted points by replication or weighted initialization
+        - More memory efficient (doesn't need to hold all points in memory)
     
     Attributes:
         K_max: Maximum number of centers
-        K_overflow: Buffer size before triggering collapse
+        K_overflow: Buffer size before triggering incremental update
         distance: Distance metric ('euclidean', 'cosine')
         device: Device for computation
         is_eval: If True, compute epsilon scales on finalize
@@ -86,10 +94,14 @@ class WeightedCoreset:
         self.buffer = []  # List of arrays to accumulate
         self.total_samples = 0
         self.dimension: Optional[int] = None
+        
+        # MiniBatchKMeans instance for incremental updates
+        self._kmeans: Optional[MiniBatchKMeans] = None
+        self._kmeans_initialized = False
     
     def update(self, X_batch: np.ndarray):
         """
-        Add a batch of points. Collapse if buffer exceeds threshold.
+        Add a batch of points. Incrementally update k-means if needed.
         
         Args:
             X_batch: (B, D) array of vectors to add
@@ -114,22 +126,37 @@ class WeightedCoreset:
         self.buffer.append(X_batch)
         self.total_samples += len(X_batch)
         
-        # Check if we need to collapse
+        # Check if we need to do an incremental update
         buffer_size = sum(len(b) for b in self.buffer)
-        if self.centers is not None:
-            buffer_size += len(self.centers)
+        current_centers_size = len(self.centers) if self.centers is not None else 0
         
-        if buffer_size >= self.K_max + self.K_overflow:
-            self._collapse()
+        # Trigger incremental update if:
+        # 1. Buffer is large enough (K_overflow threshold)
+        # 2. We have centers and buffer combined exceeds threshold
+        # 3. We don't have centers yet but buffer is substantial
+        should_update = False
+        if current_centers_size > 0:
+            # If we have centers, update when buffer + centers exceeds threshold
+            if buffer_size + current_centers_size >= self.K_max + self.K_overflow:
+                should_update = True
+        else:
+            # If no centers yet, initialize when buffer reaches K_max
+            if buffer_size >= self.K_max:
+                should_update = True
+        
+        if should_update:
+            self._incremental_update()
     
     def finalize(self):
         """
-        Final collapse if buffer not empty, compute epsilon if is_eval.
+        Final incremental update if buffer not empty, compute epsilon if is_eval.
         """
-        # Final collapse if needed
-        if len(self.buffer) > 0 or self.centers is None:
-            if len(self.buffer) > 0 or self.total_samples > 0:
-                self._collapse()
+        # Final incremental update if needed
+        if len(self.buffer) > 0:
+            self._incremental_update()
+        elif self.centers is None and self.total_samples > 0:
+            # Edge case: we have samples but no centers yet
+            self._incremental_update()
         
         # For eval coresets, compute epsilon scales from the centers
         if self.is_eval and self.epsilon_scales is None and self.centers is not None:
@@ -144,52 +171,209 @@ class WeightedCoreset:
             print(f"  eps_2x: {self.epsilon_scales['eps_2x']:.4f}")
             print(f"  eps_4x: {self.epsilon_scales['eps_4x']:.4f}")
     
-    def _collapse(self):
+    def _incremental_update(self):
         """
-        Weighted k-means to reduce to K_max centers.
+        Incrementally update k-means using partial_fit().
+        
+        Optimized approach:
+        1. Warm-start with existing centers if available
+        2. Use partial_fit() to incrementally update with buffer points only
+        3. Recompute counts by assigning all weighted points to new centers
         """
-        # Combine centers + buffer
-        if self.centers is not None:
-            all_points = np.vstack([self.centers] + self.buffer)
-            all_weights = np.concatenate([
-                self.counts,
-                np.ones(sum(len(b) for b in self.buffer), dtype=np.float32)
-            ])
-        else:
-            if len(self.buffer) == 0:
-                return
-            all_points = np.vstack(self.buffer)
-            all_weights = np.ones(len(all_points), dtype=np.float32)
+        if len(self.buffer) == 0:
+            return
         
-        # Weighted k-means
-        n_clusters = min(self.K_max, len(all_points))
+        # Combine all buffer batches
+        buffer_points = np.vstack(self.buffer) if len(self.buffer) > 1 else self.buffer[0]
+        buffer_size = len(buffer_points)
         
-        if n_clusters < len(all_points):
-            # Use MiniBatchKMeans for speed with large datasets
-            kmeans = MiniBatchKMeans(
+        # Determine number of clusters
+        current_centers_size = len(self.centers) if self.centers is not None else 0
+        n_clusters = min(self.K_max, max(current_centers_size, min(self.K_max, buffer_size)))
+        
+        if n_clusters == 0:
+            self.buffer = []
+            return
+        
+        # Initialize or update MiniBatchKMeans
+        needs_reinit = (
+            not self._kmeans_initialized or 
+            self._kmeans is None or
+            self._kmeans.n_clusters != n_clusters
+        )
+        
+        if needs_reinit:
+            batch_size = min(2048, max(100, buffer_size // 10))
+            
+            self._kmeans = MiniBatchKMeans(
                 n_clusters=n_clusters,
                 random_state=self.random_state,
-                batch_size=min(2048, len(all_points) // 4),  # Process in chunks
+                batch_size=batch_size,
                 max_iter=100,
-                n_init=3,
-                reassignment_ratio=0.01,  # Less reassignment for speed
+                n_init=1,  # Faster initialization
+                reassignment_ratio=0.01,
+                max_no_improvement=10,
+                verbose=0,
             )
-            labels = kmeans.fit_predict(all_points)
             
-            # New centers and counts (still use weights for counting)
-            self.centers = kmeans.cluster_centers_.astype(np.float32)
-            self.counts = np.bincount(
-                labels,
-                weights=all_weights,
-                minlength=n_clusters
-            ).astype(np.float32)
+            # Warm-start with existing centers if available
+            if self.centers is not None and len(self.centers) > 0:
+                if len(self.centers) <= n_clusters:
+                    # Use all existing centers, pad if needed
+                    if len(self.centers) < n_clusters:
+                        n_pad = n_clusters - len(self.centers)
+                        pad_indices = np.random.choice(
+                            buffer_size, size=min(n_pad, buffer_size), replace=False
+                        )
+                        init_centers = np.vstack([self.centers, buffer_points[pad_indices]])
+                    else:
+                        init_centers = self.centers
+                else:
+                    # Select top centers by count
+                    top_indices = np.argsort(self.counts)[-n_clusters:]
+                    init_centers = self.centers[top_indices]
+                
+                self._kmeans.cluster_centers_ = init_centers.astype(np.float32)
+            else:
+                # Initialize with k-means++ on sample of buffer
+                # CRITICAL: n_clusters cannot exceed available samples
+                # Use at least n_clusters samples, but cap at reasonable limit for efficiency
+                # If buffer_size is large, use more samples (up to 2*n_clusters or buffer_size)
+                max_sample_size = min(buffer_size, max(n_clusters, min(2000, 2 * n_clusters)))
+                sample_size = max_sample_size
+                
+                # Ensure n_clusters doesn't exceed sample_size (safety check)
+                if n_clusters > sample_size:
+                    # Adjust n_clusters to not exceed sample_size
+                    n_clusters = sample_size
+                    # Recreate MiniBatchKMeans with corrected n_clusters
+                    self._kmeans = MiniBatchKMeans(
+                        n_clusters=n_clusters,
+                        random_state=self.random_state,
+                        batch_size=batch_size,
+                        max_iter=100,
+                        n_init=1,
+                        reassignment_ratio=0.01,
+                        max_no_improvement=10,
+                        verbose=0,
+                    )
+                
+                # Use all buffer points if sample_size >= buffer_size, otherwise sample
+                if sample_size >= buffer_size:
+                    sample_points = buffer_points
+                else:
+                    sample_indices = np.random.choice(buffer_size, size=sample_size, replace=False)
+                    sample_points = buffer_points[sample_indices]
+                
+                self._kmeans.fit(sample_points)
+            
+            self._kmeans_initialized = True
+        
+        # Incremental update: use partial_fit on buffer points only
+        # This is the key optimization - we don't need to refit all points
+        batch_size = self._kmeans.batch_size
+        for i in range(0, buffer_size, batch_size):
+            batch = buffer_points[i:i+batch_size]
+            self._kmeans.partial_fit(batch)
+        
+        # Get updated centers
+        new_centers = self._kmeans.cluster_centers_.astype(np.float32)
+        
+        # Recompute counts by assigning all weighted points to new centers
+        # We need to account for:
+        # 1. Existing centers with their counts (weighted)
+        # 2. Buffer points (weight=1 each)
+        
+        # Build list of all points with their weights
+        all_points_list = []
+        all_weights_list = []
+        
+        # Add existing centers with their counts as weights
+        if self.centers is not None and len(self.centers) > 0:
+            all_points_list.append(self.centers)
+            all_weights_list.append(self.counts)
+        
+        # Add buffer points (weight=1 each)
+        all_points_list.append(buffer_points)
+        all_weights_list.append(np.ones(buffer_size, dtype=np.float32))
+        
+        # Combine
+        if len(all_points_list) > 1:
+            all_points = np.vstack(all_points_list)
+            all_weights = np.concatenate(all_weights_list)
         else:
-            # Not enough points to cluster, just use all points
-            self.centers = all_points.astype(np.float32)
-            self.counts = all_weights.astype(np.float32)
+            all_points = all_points_list[0]
+            all_weights = all_weights_list[0]
+        
+        # Assign all points to new centers and compute weighted counts
+        labels = self._kmeans.predict(all_points)
+        self.counts = np.bincount(
+            labels,
+            weights=all_weights,
+            minlength=len(new_centers)
+        ).astype(np.float32)
+        
+        # Update centers
+        self.centers = new_centers
+        
+        # If we have more centers than K_max, collapse further
+        if len(self.centers) > self.K_max:
+            self._collapse_to_kmax()
         
         # Clear buffer
         self.buffer = []
+    
+    def _collapse_to_kmax(self):
+        """
+        Collapse centers to exactly K_max using a final k-means step.
+        Called when we have more than K_max centers.
+        """
+        if len(self.centers) <= self.K_max:
+            return
+        
+        # Use existing centers weighted by counts to reduce to K_max
+        # Replicate centers based on counts for weighted k-means
+        max_reps = 50
+        replicated_points = []
+        replicated_weights = []
+        
+        for center, count in zip(self.centers, self.counts):
+            n_reps = min(max_reps, max(1, int(count)))
+            replicated_points.append(np.tile(center[None, :], (n_reps, 1)))
+            replicated_weights.extend([count / n_reps] * n_reps)
+        
+        all_points = np.vstack(replicated_points)
+        all_weights = np.array(replicated_weights, dtype=np.float32)
+        
+        # Final k-means to reduce to K_max
+        kmeans_final = MiniBatchKMeans(
+            n_clusters=self.K_max,
+            random_state=self.random_state,
+            batch_size=min(2048, len(all_points) // 4),
+            max_iter=100,
+            n_init=3,
+            reassignment_ratio=0.01,
+            verbose=0,
+        )
+        
+        # Warm-start with top K_max centers by count
+        top_indices = np.argsort(self.counts)[-self.K_max:]
+        kmeans_final.cluster_centers_ = self.centers[top_indices].astype(np.float32)
+        
+        # Fit on all replicated points
+        labels = kmeans_final.fit_predict(all_points)
+        
+        # Update centers and counts
+        self.centers = kmeans_final.cluster_centers_.astype(np.float32)
+        self.counts = np.bincount(
+            labels,
+            weights=all_weights,
+            minlength=self.K_max
+        ).astype(np.float32)
+        
+        # Reset kmeans for next incremental update
+        self._kmeans = None
+        self._kmeans_initialized = False
     
     def get_centers(self) -> np.ndarray:
         """Return centers of shape (K, D)."""
