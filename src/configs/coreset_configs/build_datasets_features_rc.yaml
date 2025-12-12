@@ -91,35 +91,35 @@ datasets:
   - name: synthetic
     split: train
     representation: resnet
-    num_batches: 100  # Set to null for complete dataset
+    num_batches: 1000  # Set to null for complete dataset
     is_eval: false
     output: coresets/synthetic_train_resnet.pt
   
   - name: sintel
     split: train
     representation: resnet
-    num_batches: 100
+    num_batches: 1000
     is_eval: false
     output: coresets/sintel_train_resnet.pt
   
   - name: spair
     split: train
     representation: resnet
-    num_batches: 100
+    num_batches: 1000
     is_eval: false
     output: coresets/spair_train_resnet.pt
   
   - name: flyingthings
     split: train
     representation: resnet
-    num_batches: 100
+    num_batches: 1000
     is_eval: false
     output: coresets/flyingthings_train_resnet.pt
   
   - name: pointodyssey
     split: train
     representation: resnet
-    num_batches: 100
+    num_batches: 1000 
     is_eval: false
     output: coresets/pointodyssey_train_resnet.pt
   
@@ -132,14 +132,14 @@ datasets:
   - name: kitti2015
     split: val
     representation: resnet
-    num_batches: 100
+    num_batches: 1000
     is_eval: true
     output: coresets/kitti_val_resnet.pt
 
   - name: kitti2012
     split: val
     representation: resnet
-    num_batches: 100
+    num_batches: 1000
     is_eval: true
     output: coresets/kitti2012_val_resnet.pt
 
@@ -147,48 +147,48 @@ datasets:
   - name: spair
     split: test
     representation: resnet
-    num_batches: 100
+    num_batches: 1000
     is_eval: true
     output: coresets/spair_val_resnet.pt
 
   - name: pfpascal
     split: test
     representation: resnet
-    num_batches: 100
+    num_batches: 1000
     is_eval: true
     output: coresets/pfpascal_val_resnet.pt
 
   - name: pfwillow
     split: test
     representation: resnet
-    num_batches: 100
+    num_batches: 1000
     is_eval: true
     output: coresets/pfwillow_val_resnet.pt
   
   - name: pointodyssey
     split: test
     representation: resnet
-    num_batches: 100
+    num_batches: 1000
     is_eval: true
     output: coresets/pointodyssey_val_resnet.pt
   
   - name: flyingthings
     split: test
     representation: resnet
-    num_batches: 100
+    num_batches: 1000
     is_eval: true
     output: coresets/flyingthings_val_resnet.pt
   
   - name: tss
     split: val
     representation: resnet
-    num_batches: 100
+    num_batches: 1000
     is_eval: true
     output: coresets/tss_val_resnet.pt
   
   - name: middlebury
     split: val
     representation: resnet
-    num_batches: 100
+    num_batches: 1000
     is_eval: true
     output: coresets/middlebury_val_resnet.pt
