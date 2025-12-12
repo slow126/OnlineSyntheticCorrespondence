@@ -41,7 +41,7 @@ dataset_params:
 # Dataset-specific overrides
 dataset_overrides:
   sintel:
-    sintel_root: '/home/spencer/Data'  # Torchvision appends '/Sintel' automatically
+    sintel_root: '/home/slow1/Data'  # Torchvision appends '/Sintel' automatically
     normalize_images: true
   spair:
     datapath: './models/Datasets_CATs'
@@ -58,25 +58,25 @@ dataset_overrides:
     normalize_images: false  # Synthetic already normalized
     device: 'cuda'  # IMPORTANT: Use GPU for rendering
   pointodyssey:
-    dataset_location: '/home/spencer/Data/PointOdyssey'
+    dataset_location: '/home/slow1/Data/PointOdyssey'
     normalize_images: true
     pointodyssey_sequence_length: 2
     pointodyssey_num_pts_to_track: 32  # Minimum requirement; use_all_valid will get all valid trajectories
     use_all_valid: true  # Get all valid trajectories instead of limiting to num_pts_to_track
   kitti2012:
-    datapath: '/home/spencer/Data/correspondence/kitti'
+    datapath: '/home/slow1/Data/correspondence/kitti'
     normalize_images: true
   kitti2015:
-    datapath: '/home/spencer/Data/correspondence/kitti'
+    datapath: '/home/slow1/Data/correspondence/kitti'
     normalize_images: true
   flyingthings:
-    datapath: '/home/spencer/Data/FlyingThings3D_tiny'
+    datapath: '/home/slow1/Data/FlyingThings3D_Pytorch'
     normalize_images: true
   tss:
-    datapath: '/home/spencer/Data/correspondence/TSS_CVPR2016'
+    datapath: '/home/slow1/Data/correspondence/TSS_CVPR2016'
     normalize_images: true
   middlebury:
-    datapath: '/home/spencer/Data/middlebury/all'
+    datapath: '/home/slow1/Data/middlebury/all'
     normalize_images: true
 
 # Datasets to process
