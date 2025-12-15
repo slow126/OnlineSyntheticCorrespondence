@@ -69,11 +69,15 @@ def load_coverage_lookup(csv_path='coverage_results.csv'):
         with open(csv_path, 'r') as f:
             reader = csv.DictReader(f)
             for row in reader:
-                # Parse dataset names and splits
-                train_dataset = row.get('dataset1', '').strip()
-                train_split = row.get('split1', '').strip()
-                eval_dataset = row.get('dataset2', '').strip()
-                eval_split = row.get('split2', '').strip()
+                # Parse dataset names and splits (normalize to lowercase for consistent matching)
+                train_dataset = str(row.get('dataset1', '')).strip().lower()
+                train_split = str(row.get('split1', '')).strip().lower()
+                eval_dataset = str(row.get('dataset2', '')).strip().lower()
+                eval_split = str(row.get('split2', '')).strip().lower()
+                
+                # Skip rows with empty dataset names
+                if not train_dataset or not eval_dataset:
+                    continue
                 
                 train_id = f"{train_dataset}_{train_split}" if train_split else train_dataset
                 eval_id = f"{eval_dataset}_{eval_split}" if eval_split else eval_dataset
@@ -100,6 +104,14 @@ def load_coverage_lookup(csv_path='coverage_results.csv'):
                     }
     except Exception as e:
         print(f"Error loading coverage CSV {csv_path}: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    # Debug: print sample of loaded keys
+    if coverage_lookup:
+        print(f"  Loaded {len(coverage_lookup)} coverage entries from {csv_path}")
+        sample_keys = list(coverage_lookup.keys())[:3]
+        print(f"  Sample keys (first 3): {sample_keys}")
     
     return coverage_lookup
 
@@ -164,14 +176,12 @@ def collect_3d_data_points(snapshots_data, flow_coverage_lookup, resnet_coverage
                 resnet_metrics = resnet_coverage_lookup.get((base_training_dataset, benchmark_lower))
                 resnet_key_used = (base_training_dataset, benchmark_lower)
             
-            # Debug output
+            # Track missing metrics for summary (no per-item warnings)
             if debug:
                 if not flow_metrics:
                     missing_flow[flow_key_used] += 1
-                    print(f"  Missing flow coverage for: {flow_key_used} (train={base_training_dataset}, bench={benchmark_lower})")
                 if not resnet_metrics:
                     missing_resnet[resnet_key_used] += 1
-                    print(f"  Missing resnet coverage for: {resnet_key_used} (train={base_training_dataset}, bench={benchmark_lower})")
             
             # Only add if we have both coverage values
             if (flow_metrics and 'recall' in flow_metrics and not pd.isna(flow_metrics['recall']) and
@@ -186,18 +196,18 @@ def collect_3d_data_points(snapshots_data, flow_coverage_lookup, resnet_coverage
                 })
     
     if debug and (missing_flow or missing_resnet):
-        print(f"\nDebug: Missing flow coverage keys (top 10):")
+        print(f"\nDebug: Missing flow recall keys (top 10):")
         for key, count in sorted(missing_flow.items(), key=lambda x: x[1], reverse=True)[:10]:
             print(f"  {key}: {count} times")
-        print(f"\nDebug: Missing resnet coverage keys (top 10):")
+        print(f"\nDebug: Missing resnet recall keys (top 10):")
         for key, count in sorted(missing_resnet.items(), key=lambda x: x[1], reverse=True)[:10]:
             print(f"  {key}: {count} times")
         
         # Show sample of available keys
-        print(f"\nDebug: Sample of available flow coverage keys (first 5):")
+        print(f"\nDebug: Sample of available flow recall keys (first 5):")
         for key in list(flow_coverage_lookup.keys())[:5]:
             print(f"  {key}")
-        print(f"\nDebug: Sample of available resnet coverage keys (first 5):")
+        print(f"\nDebug: Sample of available resnet recall keys (first 5):")
         for key in list(resnet_coverage_lookup.keys())[:5]:
             print(f"  {key}")
     
@@ -923,7 +933,7 @@ def collect_all_predictors_data_points(snapshots_data, flow_mmd_lookup, feature_
     return data_points
 
 
-def compare_predictors_with_mixed_effects(df, output_path=None):
+def compare_predictors_with_mixed_effects(df, output_path=None, create_plots=True):
     """
     Compare all predictors using multiple mixed-effects regression models.
     
@@ -1113,8 +1123,20 @@ def compare_predictors_with_mixed_effects(df, output_path=None):
                 'predictors': full_results,
                 'aic': aic,
                 'bic': bic,
-                'converged': result_full.converged
+                'converged': result_full.converged,
+                'df_scaled': df_scaled,
+                'predictors_to_scale': predictors_to_scale
             }
+            
+            # Create visualizations if requested
+            if create_plots and output_path:
+                print("\nCreating model fit diagnostic plots...")
+                visualize_model_fit(
+                    result_full,
+                    df_scaled,
+                    output_path,
+                    predictors_to_scale
+                )
     except Exception as e:
         print(f"Error fitting full model: {e}")
         import traceback
@@ -1201,27 +1223,374 @@ def compare_predictors_with_mixed_effects(df, output_path=None):
             f.write("PREDICTOR COMPARISON ANALYSIS\n")
             f.write("="*80 + "\n\n")
             f.write(f"Data: {len(df)} observations across {df['benchmark'].nunique()} benchmarks\n")
-            f.write(f"Benchmarks: {', '.join(sorted(df['benchmark'].unique()))}\n\n")
+            f.write(f"Benchmarks: {', '.join(sorted(df['benchmark'].unique()))}\n")
+            
+            # Write individual predictor models section
+            f.write(f"\n{'='*80}\n")
+            f.write("1. INDIVIDUAL PREDICTOR MODELS\n")
+            f.write(f"{'='*80}\n")
+            f.write(f"{'Predictor':<20} {'Std Coef':>12} {'p-value':>12} {'AIC':>10} {'BIC':>10}\n")
+            f.write(f"{'-'*70}\n")
+            
+            for predictor in predictors:
+                if results.get(predictor) and results[predictor] is not None:
+                    model_data = results[predictor]
+                    if model_data.get('converged', False):
+                        coef = model_data['std_coef']
+                        pval = model_data['pvalue']
+                        aic = model_data['aic']
+                        bic = model_data['bic']
+                        sig_marker = '*' if model_data.get('significant', False) else ''
+                        aic_str = f"{aic:.1f}" if not np.isnan(aic) else "N/A"
+                        bic_str = f"{bic:.1f}" if not np.isnan(bic) else "N/A"
+                        f.write(f"{predictor:<20} {coef:>12.4f} {pval:>12.4f}{sig_marker:>1} {aic_str:>10} {bic_str:>10}\n")
+                    else:
+                        f.write(f"{predictor:<20} {'NO CONV':>12} {'NO CONV':>12} {'NO CONV':>10} {'NO CONV':>10}\n")
+                else:
+                    f.write(f"{predictor:<20} {'ERROR':>12} {'ERROR':>12} {'ERROR':>10} {'ERROR':>10}\n")
+            
+            # Write full model section
+            f.write(f"\n{'='*80}\n")
+            f.write("2. FULL MODEL (All predictors together)\n")
+            f.write(f"{'='*80}\n")
+            
+            if results.get('full_model') and results['full_model'] is not None:
+                predictor_names = {
+                    'flow_mmd': 'Flow MMD',
+                    'feature_mmd': 'Feature MMD',
+                    'flow_recall': 'Flow Recall',
+                    'resnet_recall': 'ResNet Recall',
+                    'flow_precision': 'Flow Precision',
+                    'resnet_precision': 'ResNet Precision'
+                }
+                formula_display = " + ".join([predictor_names.get(p, p) for p in predictors_to_scale])
+                f.write(f"Model: PCK ~ {formula_display} + (1|benchmark)\n")
+                f.write(f"\n{'Predictor':<20} {'Std Coef':>12} {'p-value':>12} {'Significant':>12}\n")
+                f.write(f"{'-'*60}\n")
+                
+                for predictor in predictors_to_scale:
+                    if predictor in results['full_model']['predictors']:
+                        data = results['full_model']['predictors'][predictor]
+                        coef = data['std_coef']
+                        pval = data['pvalue']
+                        sig = data['significant']
+                        sig_marker = '*' if sig else ''
+                        f.write(f"{predictor:<20} {coef:>12.4f} {pval:>12.4f}{sig_marker:>1} {'Yes' if sig else 'No':>12}\n")
+                
+                f.write(f"\nModel fit:\n")
+                f.write(f"  Converged: {results['full_model']['converged']}\n")
+                aic = results['full_model']['aic']
+                bic = results['full_model'].get('bic', np.nan)
+                aic_str = f"{aic:.1f}" if not np.isnan(aic) else "N/A"
+                bic_str = f"{bic:.1f}" if not np.isnan(bic) else "N/A"
+                f.write(f"  AIC: {aic_str}\n")
+                f.write(f"  BIC: {bic_str}\n")
+                if results['full_model'].get('result'):
+                    result_full = results['full_model']['result']
+                    llf_str = f"{result_full.llf:.2f}" if hasattr(result_full, 'llf') and not np.isnan(result_full.llf) else "N/A"
+                    f.write(f"  Log-likelihood: {llf_str}\n")
+                    if hasattr(result_full, 'cov_re') and hasattr(result_full.cov_re, 'iloc'):
+                        f.write(f"  Random effect variance (benchmark): {result_full.cov_re.iloc[0, 0]:.4f}\n")
+            else:
+                f.write("Full model did not converge or encountered an error.\n")
+            
+            # Write model comparison section
+            f.write(f"\n{'='*80}\n")
+            f.write("3. MODEL COMPARISON (Lower AIC/BIC is better)\n")
+            f.write(f"{'='*80}\n")
             
             if valid_models:
-                f.write("Best individual predictor: " + valid_models[0][0] + "\n")
-                f.write(f"  Standardized coefficient: {valid_models[0][1]['std_coef']:.4f}\n")
-                f.write(f"  p-value: {valid_models[0][1]['pvalue']:.4f}\n")
-                aic_val = valid_models[0][1]['aic']
-                f.write(f"  AIC: {aic_val:.1f}\n\n" if not np.isnan(aic_val) else "  AIC: N/A\n\n")
+                f.write(f"{'Model':<25} {'AIC':>10} {'BIC':>10} {'ΔAIC vs Best':>15}\n")
+                f.write(f"{'-'*60}\n")
+                
+                best_aic = valid_models[0][1]['aic']
+                for name, model_data in valid_models:
+                    delta_aic = model_data['aic'] - best_aic
+                    aic_str = f"{model_data['aic']:.1f}" if not np.isnan(model_data['aic']) else "N/A"
+                    bic_str = f"{model_data['bic']:.1f}" if not np.isnan(model_data['bic']) else "N/A"
+                    delta_str = f"{delta_aic:.1f}" if not np.isnan(delta_aic) else "N/A"
+                    f.write(f"{name:<25} {aic_str:>10} {bic_str:>10} {delta_str:>15}\n")
+                
+                if results.get('full_model') and not np.isnan(results['full_model'].get('aic', np.nan)):
+                    delta_aic_full = results['full_model']['aic'] - best_aic
+                    aic_str = f"{results['full_model']['aic']:.1f}" if not np.isnan(results['full_model']['aic']) else "N/A"
+                    bic_str = f"{results['full_model']['bic']:.1f}" if not np.isnan(results['full_model'].get('bic', np.nan)) else "N/A"
+                    delta_str = f"{delta_aic_full:.1f}" if not np.isnan(delta_aic_full) else "N/A"
+                    f.write(f"{'Full model (all predictors)':<25} {aic_str:>10} {bic_str:>10} {delta_str:>15}\n")
             
+            # Write summary and recommendations section
+            f.write(f"\n{'='*80}\n")
+            f.write("4. SUMMARY & RECOMMENDATIONS\n")
+            f.write(f"{'='*80}\n")
+            
+            if valid_models:
+                best_predictor = valid_models[0][0]
+                best_model = valid_models[0][1]
+                f.write(f"\nBest individual predictor: {best_predictor}\n")
+                f.write(f"  Standardized coefficient: {best_model['std_coef']:.4f}\n")
+                f.write(f"  p-value: {best_model['pvalue']:.4f}\n")
+                f.write(f"  {'✓ Statistically significant' if best_model['significant'] else '✗ Not statistically significant'}\n")
+            
+            # Check if full model is better
+            if results.get('full_model') and not np.isnan(results['full_model'].get('aic', np.nan)):
+                full_aic = results['full_model']['aic']
+                if valid_models and not np.isnan(best_aic) and full_aic < best_aic:
+                    f.write(f"\n✓ Full model (AIC={full_aic:.1f}) is better than best individual model (AIC={best_aic:.1f})\n")
+                    f.write(f"  → Multiple predictors together improve prediction\n")
+                    
+                    # Show which predictors remain significant in full model
+                    sig_in_full = [p for p, data in results['full_model']['predictors'].items() if data['significant']]
+                    if sig_in_full:
+                        f.write(f"  Significant predictors in full model: {', '.join(sig_in_full)}\n")
+                elif valid_models and not np.isnan(best_aic):
+                    f.write(f"\n✗ Full model (AIC={full_aic:.1f}) is NOT better than best individual model (AIC={best_aic:.1f})\n")
+                    f.write(f"  → Single predictor is sufficient\n")
+            
+            # Compare standardized coefficients in full model
             if results.get('full_model'):
-                f.write("Full model results:\n")
-                for pred in results['full_model']['predictors'].keys():
-                    data = results['full_model']['predictors'][pred]
-                    f.write(f"  {pred}: coef={data['std_coef']:.4f}, p={data['pvalue']:.4f}, "
-                           f"significant={'Yes' if data['significant'] else 'No'}\n")
-                aic_val = results['full_model']['aic']
-                f.write(f"  AIC: {aic_val:.1f}\n" if not np.isnan(aic_val) else "  AIC: N/A\n")
+                f.write(f"\nRelative importance (standardized coefficients in full model):\n")
+                pred_importance = [(p, abs(data['std_coef'])) for p, data in results['full_model']['predictors'].items()]
+                pred_importance.sort(key=lambda x: x[1], reverse=True)
+                for i, (pred, abs_coef) in enumerate(pred_importance, 1):
+                    coef = results['full_model']['predictors'][pred]['std_coef']
+                    sig = results['full_model']['predictors'][pred]['significant']
+                    sig_marker = '*' if sig else ''
+                    f.write(f"  {i}. {pred:<20} {coef:>8.4f}{sig_marker:>1}\n")
+            
+            f.write(f"\n{'='*80}\n")
         
         print(f"Saved predictor comparison summary to: {output_file}")
     
     return results
+
+
+def visualize_model_fit(result_full, df_scaled, output_path, predictors_to_scale):
+    """
+    Create diagnostic plots for the mixed-effects model.
+    
+    Creates:
+    1. Predicted vs Observed PCK
+    2. Residuals vs Fitted values
+    3. Q-Q plot of residuals
+    4. Random effects (benchmark intercepts) visualization
+    
+    Args:
+        result_full: Fitted mixed-effects model result
+        df_scaled: DataFrame with standardized predictors
+        output_path: Path to save plots
+        predictors_to_scale: List of predictor names
+    """
+    if result_full is None or not result_full.converged:
+        print("Warning: Cannot visualize model - model did not converge or is None")
+        return
+    
+    # Get predictions and residuals
+    predicted = result_full.fittedvalues
+    observed = df_scaled['pck'].values
+    residuals = result_full.resid
+    
+    # Get random effects (benchmark intercepts)
+    # Try multiple methods to extract random effects
+    benchmark_names = sorted(df_scaled['benchmark'].unique())
+    benchmark_intercepts = None
+    
+    # Method 1: Try to get from result_full.random_effects
+    try:
+        if hasattr(result_full, 'random_effects'):
+            re = result_full.random_effects
+            # Handle different formats
+            if isinstance(re, dict):
+                # Dict format: {group_name: value or array}
+                extracted = {}
+                for bm in benchmark_names:
+                    if bm in re:
+                        val = re[bm]
+                        if isinstance(val, (list, np.ndarray)):
+                            extracted[bm] = val[0] if len(val) > 0 else 0
+                        elif isinstance(val, (int, float, np.number)):
+                            extracted[bm] = val
+                        else:
+                            extracted[bm] = 0
+                    else:
+                        extracted[bm] = 0
+                if any(v != 0 for v in extracted.values()):
+                    benchmark_intercepts = [extracted[bm] for bm in benchmark_names]
+            elif hasattr(re, 'iloc') or hasattr(re, '__getitem__'):
+                # DataFrame or Series format
+                extracted = {}
+                for bm in benchmark_names:
+                    try:
+                        val = re[bm] if bm in re.index else (re.iloc[0] if hasattr(re, 'iloc') else 0)
+                        if isinstance(val, (list, np.ndarray)):
+                            extracted[bm] = val[0] if len(val) > 0 else 0
+                        else:
+                            extracted[bm] = float(val) if not pd.isna(val) else 0
+                    except:
+                        extracted[bm] = 0
+                if any(v != 0 for v in extracted.values()):
+                    benchmark_intercepts = [extracted[bm] for bm in benchmark_names]
+    except Exception as e:
+        pass  # Will try method 2
+    
+    # Method 2: Compute manually from residuals and group means
+    if benchmark_intercepts is None:
+        try:
+            # Get overall intercept
+            overall_intercept = result_full.fe_params.get('Intercept', 0)
+            
+            # For each benchmark, compute mean residual (which approximates random effect)
+            benchmark_intercepts = []
+            for bm in benchmark_names:
+                bm_mask = df_scaled['benchmark'] == bm
+                bm_residuals = residuals[bm_mask]
+                # Mean residual for this benchmark (approximates random effect)
+                bm_random_effect = np.mean(bm_residuals) if len(bm_residuals) > 0 else 0
+                benchmark_intercepts.append(bm_random_effect)
+        except Exception as e:
+            # Fallback: compute from observed - predicted means
+            try:
+                benchmark_intercepts = []
+                for bm in benchmark_names:
+                    bm_mask = df_scaled['benchmark'] == bm
+                    bm_observed = observed[bm_mask]
+                    bm_predicted = predicted[bm_mask]
+                    if len(bm_observed) > 0:
+                        bm_re = np.mean(bm_observed) - np.mean(bm_predicted)
+                    else:
+                        bm_re = 0
+                    benchmark_intercepts.append(bm_re)
+            except:
+                benchmark_intercepts = [0] * len(benchmark_names)
+    
+    # Final fallback: ensure we have valid data
+    if benchmark_intercepts is None or len(benchmark_intercepts) != len(benchmark_names):
+        # Compute from observed - predicted means (most reliable method)
+        benchmark_intercepts = []
+        for bm in benchmark_names:
+            bm_mask = df_scaled['benchmark'] == bm
+            bm_observed = observed[bm_mask]
+            bm_predicted = predicted[bm_mask]
+            if len(bm_observed) > 0:
+                # Random effect = mean(observed) - mean(predicted) for this benchmark
+                # This shows how much each benchmark deviates from the model's predictions
+                bm_re = np.mean(bm_observed) - np.mean(bm_predicted)
+            else:
+                bm_re = 0
+            benchmark_intercepts.append(bm_re)
+    
+    # Create figure with subplots
+    fig = plt.figure(figsize=(16, 12))
+    
+    # 1. Predicted vs Observed
+    ax1 = plt.subplot(2, 3, 1)
+    ax1.scatter(observed, predicted, alpha=0.6, s=50, edgecolors='black', linewidth=0.5)
+    
+    # Add perfect prediction line
+    min_val = min(observed.min(), predicted.min())
+    max_val = max(observed.max(), predicted.max())
+    ax1.plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=2, label='Perfect prediction')
+    
+    # Calculate R²
+    ss_res = np.sum((observed - predicted) ** 2)
+    ss_tot = np.sum((observed - np.mean(observed)) ** 2)
+    r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+    
+    ax1.set_xlabel('Observed PCK', fontsize=11)
+    ax1.set_ylabel('Predicted PCK', fontsize=11)
+    ax1.set_title(f'Predicted vs Observed PCK\nR² = {r_squared:.3f}', fontsize=12, fontweight='bold')
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+    
+    # 2. Residuals vs Fitted
+    ax2 = plt.subplot(2, 3, 2)
+    ax2.scatter(predicted, residuals, alpha=0.6, s=50, edgecolors='black', linewidth=0.5)
+    ax2.axhline(y=0, color='r', linestyle='--', linewidth=2)
+    ax2.set_xlabel('Fitted Values (Predicted PCK)', fontsize=11)
+    ax2.set_ylabel('Residuals', fontsize=11)
+    ax2.set_title('Residuals vs Fitted Values', fontsize=12, fontweight='bold')
+    ax2.grid(True, alpha=0.3)
+    
+    # 3. Q-Q plot of residuals
+    ax3 = plt.subplot(2, 3, 3)
+    stats.probplot(residuals, dist="norm", plot=ax3)
+    ax3.set_title('Q-Q Plot of Residuals\n(Normality Check)', fontsize=12, fontweight='bold')
+    ax3.grid(True, alpha=0.3)
+    
+    # 4. Random effects (benchmark intercepts)
+    ax4 = plt.subplot(2, 3, 4)
+    
+    # benchmark_intercepts should already be computed by this point
+    # Sort for better visualization
+    sorted_indices = np.argsort(benchmark_intercepts)
+    sorted_benchmarks = [benchmark_names[i] for i in sorted_indices]
+    sorted_intercepts = [benchmark_intercepts[i] for i in sorted_indices]
+    
+    # Only plot if we have non-zero values
+    if len(sorted_intercepts) > 0 and not all(abs(x) < 1e-10 for x in sorted_intercepts):
+        colors = plt.cm.RdYlGn_r(np.linspace(0.2, 0.8, len(sorted_intercepts)))
+        bars = ax4.barh(range(len(sorted_benchmarks)), sorted_intercepts, color=colors, edgecolor='black', linewidth=0.5)
+        ax4.axvline(x=0, color='black', linestyle='-', linewidth=1)
+        ax4.set_yticks(range(len(sorted_benchmarks)))
+        ax4.set_yticklabels(sorted_benchmarks, fontsize=9)
+        ax4.set_xlabel('Random Effect (Benchmark Intercept)', fontsize=11)
+        ax4.set_title('Random Effects by Benchmark\n(Deviation from Overall Intercept)', fontsize=12, fontweight='bold')
+        ax4.grid(True, alpha=0.3, axis='x')
+        
+        # Add value labels on bars
+        for i, (bar, val) in enumerate(zip(bars, sorted_intercepts)):
+            if abs(val) > 0.1:  # Only label if significant
+                ax4.text(val, i, f' {val:.1f}', va='center', fontsize=8)
+    else:
+        ax4.text(0.5, 0.5, 'Random effects could not be extracted\n(All values are zero or unavailable)', 
+                ha='center', va='center', transform=ax4.transAxes, fontsize=10)
+        ax4.set_title('Random Effects by Benchmark\n(Data Unavailable)', fontsize=12, fontweight='bold')
+    
+    # 5. Residuals distribution
+    ax5 = plt.subplot(2, 3, 5)
+    ax5.hist(residuals, bins=20, edgecolor='black', alpha=0.7, color='steelblue')
+    ax5.axvline(x=0, color='r', linestyle='--', linewidth=2)
+    ax5.set_xlabel('Residuals', fontsize=11)
+    ax5.set_ylabel('Frequency', fontsize=11)
+    ax5.set_title('Distribution of Residuals', fontsize=12, fontweight='bold')
+    ax5.grid(True, alpha=0.3, axis='y')
+    
+    # Add statistics
+    mean_residual = np.mean(residuals)
+    std_residual = np.std(residuals)
+    ax5.text(0.05, 0.95, f'Mean: {mean_residual:.2f}\nStd: {std_residual:.2f}',
+             transform=ax5.transAxes, verticalalignment='top',
+             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+    
+    # 6. Observed PCK by benchmark (with model predictions)
+    ax6 = plt.subplot(2, 3, 6)
+    benchmarks = sorted(df_scaled['benchmark'].unique())
+    benchmark_observed_means = [df_scaled[df_scaled['benchmark'] == bm]['pck'].mean() for bm in benchmarks]
+    benchmark_predicted_means = [predicted[df_scaled['benchmark'] == bm].mean() for bm in benchmarks]
+    
+    x_pos = np.arange(len(benchmarks))
+    width = 0.35
+    
+    ax6.bar(x_pos - width/2, benchmark_observed_means, width, label='Observed Mean', 
+           alpha=0.7, color='steelblue', edgecolor='black', linewidth=0.5)
+    ax6.bar(x_pos + width/2, benchmark_predicted_means, width, label='Predicted Mean',
+           alpha=0.7, color='coral', edgecolor='black', linewidth=0.5)
+    
+    ax6.set_xlabel('Benchmark', fontsize=11)
+    ax6.set_ylabel('Mean PCK', fontsize=11)
+    ax6.set_title('Observed vs Predicted Mean PCK\nby Benchmark', fontsize=12, fontweight='bold')
+    ax6.set_xticks(x_pos)
+    ax6.set_xticklabels(benchmarks, rotation=45, ha='right', fontsize=8)
+    ax6.legend()
+    ax6.grid(True, alpha=0.3, axis='y')
+    
+    plt.suptitle('Mixed-Effects Model Diagnostic Plots', fontsize=14, fontweight='bold', y=0.995)
+    plt.tight_layout(rect=[0, 0, 1, 0.99])
+    
+    # Save
+    output_file = output_path / 'model_fit_diagnostics.png'
+    plt.savefig(output_file, dpi=150, bbox_inches='tight')
+    print(f"Saved model fit diagnostics to: {output_file}")
+    plt.close()
 
 
 def main():
@@ -1401,7 +1770,7 @@ def main():
         
         if len(all_predictors_data) >= 10:
             df_all = pd.DataFrame(all_predictors_data)
-            compare_predictors_with_mixed_effects(df_all, output_path=output_path)
+            compare_predictors_with_mixed_effects(df_all, output_path=output_path, create_plots=True)
         else:
             print(f"\nWarning: Only {len(all_predictors_data)} data points with all four predictors.")
             print("  Need at least 10 points for reliable comparison.")

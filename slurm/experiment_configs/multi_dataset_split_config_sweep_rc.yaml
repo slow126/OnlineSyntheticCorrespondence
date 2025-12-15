@@ -67,7 +67,7 @@ training_datasets:
 # Output directory for generated configs
 # Relative paths starting with 'slurm/' or 'experiment_configs/' are resolved relative to project root
 # Other relative paths are resolved relative to this config file's directory
-output_dir: "/home/slow1/Projects/OnlineSyntheticCorrespondence/slurm/experiment_configs/generated_zoom"
+output_dir: "/home/slow1/Projects/OnlineSyntheticCorrespondence/slurm/experiment_configs/generated_2"
 
 # Sweep definitions (applied to all datasets)
 # These only affect training/model parameters, not eval config
