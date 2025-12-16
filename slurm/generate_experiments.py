@@ -39,6 +39,17 @@ def get_memory_for_dataset(train_dataset: str, config: Dict[str, Any]) -> str:
     
     # Datasets that need large memory
     large_memory_datasets = ['flyingthings', 'pointodyssey']
+    
+    # Handle mixed datasets (format: "dataset1+dataset2" or "mixed")
+    if '+' in train_dataset:
+        # Check if any sub-dataset needs large memory
+        sub_datasets = train_dataset.split('+')
+        needs_large = any(ds in large_memory_datasets for ds in sub_datasets)
+        return mem_large if needs_large else mem_default
+    elif train_dataset == 'mixed':
+        # Unknown mixed dataset - use large memory to be safe
+        return mem_large
+    
     return mem_large if train_dataset in large_memory_datasets else mem_default
 
 
@@ -62,7 +73,16 @@ def generate_slurm_script(
     """
     # Determine memory requirement from config
     config = yaml.safe_load(open(config_path, 'r'))
-    train_dataset = config['dataset']['dataset_name']
+    dataset_config = config['dataset']
+    
+    # Handle mixed datasets
+    is_mixed = dataset_config.get('mixed', False) or 'datasets' in dataset_config
+    if is_mixed:
+        datasets_list = dataset_config.get('datasets', [])
+        train_dataset = '+'.join(datasets_list) if datasets_list else 'mixed'
+    else:
+        train_dataset = dataset_config.get('dataset_name', 'unknown')
+    
     memory = get_memory_for_dataset(train_dataset, machine_config)
     
     slurm_config = machine_config.get('slurm', {})
@@ -193,7 +213,16 @@ def main():
     for i, (config_path, exp_name) in enumerate(configs, 1):
         # Load config to get dataset info
         config = yaml.safe_load(open(config_path, 'r'))
-        train_dataset = config['dataset']['dataset_name']
+        dataset_config = config['dataset']
+        
+        # Handle mixed datasets
+        is_mixed = dataset_config.get('mixed', False) or 'datasets' in dataset_config
+        if is_mixed:
+            datasets_list = dataset_config.get('datasets', [])
+            train_dataset = '+'.join(datasets_list) if datasets_list else 'mixed'
+        else:
+            train_dataset = dataset_config.get('dataset_name', 'unknown')
+        
         memory = get_memory_for_dataset(train_dataset, machine_config)
         
         print(f"[{i}/{len(configs)}] {exp_name}")
