@@ -624,9 +624,21 @@ def main():
             download.download_dataset(eval_config['datapath'], benchmark)
     
     # Download training dataset if it's a standard benchmark dataset
-    train_dataset_name = dataset_config['dataset_name']
-    if train_dataset_name in standard_benchmarks:
-        download.download_dataset(eval_config['datapath'], train_dataset_name)
+    # Handle mixed datasets
+    is_mixed = dataset_config.get('mixed', False) or 'datasets' in dataset_config
+    if is_mixed:
+        # For mixed datasets, download each sub-dataset if needed
+        datasets_list = dataset_config.get('datasets', [])
+        for ds_name in datasets_list:
+            if ds_name in standard_benchmarks:
+                download.download_dataset(eval_config['datapath'], ds_name)
+        train_dataset_name = '+'.join(datasets_list) if datasets_list else 'mixed'
+        has_synthetic = 'synthetic' in datasets_list
+    else:
+        train_dataset_name = dataset_config.get('dataset_name', 'unknown')
+        if train_dataset_name in standard_benchmarks:
+            download.download_dataset(eval_config['datapath'], train_dataset_name)
+        has_synthetic = train_dataset_name == 'synthetic'
     
     # Create training dataset
     train_dataset = create_training_dataset(config, device=device)
@@ -636,7 +648,7 @@ def main():
     n_threads = training_config.get('n_threads', 0)
     
     # Use num_workers=0 for synthetic dataset (GPU-bound rendering)
-    train_num_workers = 0 if train_dataset_name == 'synthetic' else n_threads
+    train_num_workers = 0 if has_synthetic else n_threads
     
     train_dataloader = DataLoader(
         train_dataset,

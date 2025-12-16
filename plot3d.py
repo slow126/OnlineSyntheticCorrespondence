@@ -898,7 +898,7 @@ def collect_all_predictors_data_points(snapshots_data, flow_mmd_lookup, feature_
             # Get flow precision
             flow_precision = flow_metrics.get('precision', np.nan) if flow_metrics else np.nan
             
-            # Only add if we have all required metrics (MMD and recall are required, precision is optional)
+            # Only add if we have all required metrics (MMD and recall are required, precision optional)
             if (flow_mmd is not None and feature_mmd is not None and 
                 not pd.isna(flow_recall) and not pd.isna(resnet_recall)):
                 data_points.append({
@@ -954,7 +954,7 @@ def compare_predictors_with_mixed_effects(df, output_path=None, create_plots=Tru
         return None
     
     df = df.copy()
-    # Required predictors
+    # Required predictors (histogram_coverage is optional)
     required_predictors = ['flow_mmd', 'feature_mmd', 'flow_recall', 'resnet_recall', 'pck', 'benchmark']
     df = df.dropna(subset=required_predictors)
     

@@ -11,6 +11,8 @@ Usage:
 import argparse
 import csv
 from pathlib import Path
+import numpy as np
+
 
 # Add src to path
 import sys
@@ -22,6 +24,19 @@ from src.coreset import (
     recall_train_covers_eval_soft,
     precision_train_wrt_eval_soft,
 )
+
+
+def _effective_num_clusters(counts: np.ndarray, eps: float = 1e-12) -> float:
+    """
+    Compute effective number of clusters (exp of entropy of normalized counts).
+    Higher = mass spread across many clusters; lower = few dominant clusters.
+    """
+    total = counts.sum()
+    if total <= 0:
+        return 0.0
+    p = counts / total
+    entropy = -np.sum(p * np.log(p + eps))
+    return float(np.exp(entropy))
 
 
 def parse_coreset_filename(filepath, suffix: str):
@@ -81,6 +96,10 @@ def load_coreset_files(coresets_dir, representation: str):
         if counts.sum() == 0:
             print(f"    ⚠️  WARNING: Coreset has zero total count! Skipping...")
             continue
+
+        # Diagnostic: effective number of clusters (exp of entropy of weights)
+        n_eff = _effective_num_clusters(counts)
+        print(f"    N_eff: {n_eff:.1f} (of {len(centers)} centers)")
         
         coresets.append({
             'path': str(filepath),

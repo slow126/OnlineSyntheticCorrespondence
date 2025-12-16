@@ -72,7 +72,13 @@ class SummaryCallback(pl.Callback):
         
         epoch = trainer.current_epoch
         epochs = self.training_config.get('epochs', 50)
-        train_dataset_name = self.dataset_config['dataset_name']
+        # Handle mixed datasets
+        is_mixed = self.dataset_config.get('mixed', False) or 'datasets' in self.dataset_config
+        if is_mixed:
+            datasets_list = self.dataset_config.get('datasets', [])
+            train_dataset_name = '+'.join(datasets_list) if datasets_list else 'mixed'
+        else:
+            train_dataset_name = self.dataset_config.get('dataset_name', 'unknown')
         batch_size = self.training_config['batch_size']
         lr = self.training_config.get('lr', 3e-4)
         

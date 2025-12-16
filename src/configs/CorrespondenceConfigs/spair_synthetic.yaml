@@ -33,7 +33,7 @@ training:
   debug_visualization_benchmarks: ['spair', 'synthetic']
   debug_visualization_persist: false
 
-  eval_initial: false
+  eval_initial: true
 
 # Dataset parameters - Mixed dataset configuration
 dataset:
