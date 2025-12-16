@@ -994,6 +994,68 @@ def compare_predictors_with_mixed_effects(df, output_path=None, create_plots=Tru
     predictors_to_scale = [p for p in predictors if p in df.columns]
     df_scaled[[f'{p}_std' for p in predictors_to_scale]] = scaler.fit_transform(df[predictors_to_scale])
     
+    # 0. Collinearity analysis (correlation matrix)
+    print(f"\n{'='*80}")
+    print("0. COLLINEARITY ANALYSIS (Predictor Correlations)")
+    print(f"{'='*80}")
+    print("Computing pairwise correlations between predictors...")
+    print("(Using original scale, not standardized)")
+    print("\n⚠️  High correlations (|r| > 0.7) may indicate collinearity issues")
+    print("   This can make coefficients unstable in the full model.\n")
+    
+    # Initialize correlation matrix variable
+    corr_matrix_for_save = None
+    high_corr_pairs = []
+    
+    # Compute correlation matrix for predictors (using original scale)
+    predictor_data = df[predictors_to_scale].dropna()
+    if len(predictor_data) > 0:
+        corr_matrix = predictor_data.corr()
+        
+        # Display correlation matrix
+        print(f"{'Predictor':<20}", end="")
+        for p in predictors_to_scale:
+            # Truncate long names for display
+            display_name = p.replace('_', ' ')[:12]
+            print(f"{display_name:>12}", end="")
+        print()
+        print(f"{'-'*80}")
+        
+        for i, p1 in enumerate(predictors_to_scale):
+            display_name1 = p1.replace('_', ' ')[:18]
+            print(f"{display_name1:<20}", end="")
+            for j, p2 in enumerate(predictors_to_scale):
+                if i <= j:
+                    corr_val = corr_matrix.loc[p1, p2]
+                    if i == j:
+                        print(f"{'1.0000':>12}", end="")
+                    else:
+                        print(f"{corr_val:>12.4f}", end="")
+                        # Flag high correlations
+                        if abs(corr_val) > 0.7:
+                            high_corr_pairs.append((p1, p2, corr_val))
+                else:
+                    print(f"{'':>12}", end="")
+            print()
+        
+        # Report high correlations
+        if high_corr_pairs:
+            print(f"\n⚠️  HIGH CORRELATIONS DETECTED (|r| > 0.7):")
+            for p1, p2, corr_val in sorted(high_corr_pairs, key=lambda x: abs(x[2]), reverse=True):
+                print(f"   {p1} <-> {p2}: r = {corr_val:.4f}")
+            print(f"\n   Interpretation:")
+            print(f"   - These predictors share substantial variance")
+            print(f"   - Coefficients in full model may be less stable")
+            print(f"   - Consider if both are needed or if one is redundant")
+        else:
+            print(f"\n✓ No high correlations detected (all |r| ≤ 0.7)")
+            print(f"   Collinearity is not a major concern")
+        
+        # Store correlation matrix for saving to file
+        corr_matrix_for_save = corr_matrix
+    else:
+        print("Warning: Could not compute correlations (insufficient data)")
+    
     results = {}
     
     # 1. Individual predictor models
@@ -1224,6 +1286,54 @@ def compare_predictors_with_mixed_effects(df, output_path=None, create_plots=Tru
             f.write("="*80 + "\n\n")
             f.write(f"Data: {len(df)} observations across {df['benchmark'].nunique()} benchmarks\n")
             f.write(f"Benchmarks: {', '.join(sorted(df['benchmark'].unique()))}\n")
+            
+            # Write collinearity analysis section
+            f.write(f"\n{'='*80}\n")
+            f.write("0. COLLINEARITY ANALYSIS (Predictor Correlations)\n")
+            f.write(f"{'='*80}\n")
+            f.write("Pairwise correlations between predictors (using original scale):\n")
+            f.write("⚠️  High correlations (|r| > 0.7) may indicate collinearity issues\n\n")
+            
+            if corr_matrix_for_save is not None:
+                # Write correlation matrix
+                f.write(f"{'Predictor':<20}")
+                for p in predictors_to_scale:
+                    display_name = p.replace('_', ' ')[:12]
+                    f.write(f"{display_name:>12}")
+                f.write("\n")
+                f.write(f"{'-'*80}\n")
+                
+                high_corr_pairs_file = []
+                for i, p1 in enumerate(predictors_to_scale):
+                    display_name1 = p1.replace('_', ' ')[:18]
+                    f.write(f"{display_name1:<20}")
+                    for j, p2 in enumerate(predictors_to_scale):
+                        if i <= j:
+                            corr_val = corr_matrix_for_save.loc[p1, p2]
+                            if i == j:
+                                f.write(f"{'1.0000':>12}")
+                            else:
+                                f.write(f"{corr_val:>12.4f}")
+                                if abs(corr_val) > 0.7:
+                                    high_corr_pairs_file.append((p1, p2, corr_val))
+                        else:
+                            f.write(f"{'':>12}")
+                    f.write("\n")
+                
+                # Report high correlations
+                if high_corr_pairs_file:
+                    f.write(f"\n⚠️  HIGH CORRELATIONS DETECTED (|r| > 0.7):\n")
+                    for p1, p2, corr_val in sorted(high_corr_pairs_file, key=lambda x: abs(x[2]), reverse=True):
+                        f.write(f"   {p1} <-> {p2}: r = {corr_val:.4f}\n")
+                    f.write(f"\n   Interpretation:\n")
+                    f.write(f"   - These predictors share substantial variance\n")
+                    f.write(f"   - Coefficients in full model may be less stable\n")
+                    f.write(f"   - Consider if both are needed or if one is redundant\n")
+                else:
+                    f.write(f"\n✓ No high correlations detected (all |r| ≤ 0.7)\n")
+                    f.write(f"   Collinearity is not a major concern\n")
+            else:
+                f.write("Warning: Could not compute correlations (insufficient data)\n")
             
             # Write individual predictor models section
             f.write(f"\n{'='*80}\n")

@@ -115,11 +115,21 @@ class CorrespondenceLightningModule(pl.LightningModule):
         # if device.type == 'cuda' and any(isinstance(v, torch.Tensor) and v.device.type == 'cuda' for v in gpu_batch.values()):
         #     torch.cuda.synchronize(device)
         
-        # Get ground truth flow
-        if 'flow_downsampled' in gpu_batch:
-            flow_gt_key = 'flow_downsampled'
-        else:
+        # Determine which flow to use based on model type
+        # CATs outputs downsampled flow (32x32), RAFT/FlowFormer output full-resolution flow
+        model_type = self.model_config.get('type', 'cats').lower()
+        
+        if model_type in ['raft', 'flowformer']:
+            # RAFT/FlowFormer: use full-resolution flow
             flow_gt_key = 'flow'
+            if 'flow' not in gpu_batch:
+                raise ValueError(f"Model type '{model_type}' requires full-resolution flow, but 'flow' not found in batch")
+        else:
+            # CATs: use downsampled flow if available, otherwise full-resolution
+            if 'flow_downsampled' in gpu_batch:
+                flow_gt_key = 'flow_downsampled'
+            else:
+                flow_gt_key = 'flow'
         
         # Apply flow filtering if specified (only during training)
         if self.flow_filter is not None and flow_gt_key in gpu_batch:
@@ -129,6 +139,26 @@ class CorrespondenceLightningModule(pl.LightningModule):
         
         # Forward pass
         pred_flow = self.model(gpu_batch['trg_img'], gpu_batch['src_img'])
+        
+        # Ensure pred_flow and flow_gt have matching spatial dimensions
+        # (in case of slight mismatches, interpolate pred_flow to match flow_gt)
+        if pred_flow.shape[-2:] != flow_gt.shape[-2:]:
+            import torch.nn.functional as F
+            # Store original size for scaling
+            orig_h, orig_w = pred_flow.shape[-2:]
+            target_h, target_w = flow_gt.shape[-2:]
+            
+            # Interpolate pred_flow to match flow_gt spatial dimensions
+            pred_flow = F.interpolate(
+                pred_flow, 
+                size=(target_h, target_w), 
+                mode='bilinear', 
+                align_corners=False
+            )
+            # Scale flow values by the interpolation factor
+            scale_h = target_h / orig_h
+            scale_w = target_w / orig_w
+            pred_flow = pred_flow * torch.tensor([scale_w, scale_h], device=pred_flow.device).view(1, 2, 1, 1)
         
         # Compute loss
         loss = EPE(pred_flow, flow_gt)

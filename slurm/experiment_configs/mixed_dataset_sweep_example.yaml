@@ -1,0 +1,52 @@
+# Example Sweep Configuration for Mixed Datasets
+# This demonstrates how to use the mixed dataset (spair+synthetic) in sweeps
+#
+# The config generator fully supports mixed datasets:
+# - Mixed dataset configs can be used just like single dataset configs
+# - You can override mixed dataset parameters using dot notation (e.g., dataset.percentages)
+# - The generator will merge training_base, eval_base, and dataset configs correctly
+# - Mixed datasets with synthetic require n_threads=0 (GPU-bound rendering)
+
+# Project root directory (required for resolving relative paths)
+project_root: "/home/slow1/Projects/OnlineSyntheticCorrespondence"
+
+# Base configs (shared across all datasets)
+training_base: "src/configs/lightning/training_base_rc.yaml"
+eval_base: "src/configs/lightning/eval_base_rc.yaml"
+
+# Define training datasets to sweep across
+# Mixed datasets can be used just like single datasets
+training_datasets:
+  - name: "spair_synthetic"
+    dataset_config: "src/configs/lightning/datasets/spair_synthetic_rc.yaml"
+    overrides:
+      # Mixed dataset with synthetic requires n_threads=0 (GPU-bound rendering)
+      training.batch_size: 8
+      training.n_threads: 0  # Required for mixed datasets containing synthetic
+      
+  # You can also create variations with different percentages
+  - name: "spair_synthetic_70_30"
+    dataset_config: "src/configs/lightning/datasets/spair_synthetic_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 0
+      # Override percentages: 70% spair, 30% synthetic
+      dataset.percentages: [0.7, 0.3]
+
+# Output directory for generated configs
+output_dir: "slurm/experiment_configs/generated_mixed"
+
+# Sweep definitions (applied to all datasets)
+sweeps:
+
+
+  # Example: Freeze backbone sweep (more practical than percentage sweep)
+  - name: "freeze_sweep"
+    parameters:
+      training.steps_per_epoch: 100
+      model.freeze: [True, False]
+      model.pretrained_backbone: [True, False]
+    name_template: "steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"
+  
+  # Note: To sweep percentages, you can create separate dataset configs with different percentages
+  # and add them as separate entries in training_datasets (see spair_synthetic_70_30 example above)

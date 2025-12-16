@@ -12,6 +12,14 @@ The split config format is recommended for sweeps because:
 - Training parameter sweeps don't affect eval config
 - Eval config changes don't affect training config
 - Dataset configs only contain dataset-specific parameters
+
+Mixed Datasets:
+- Mixed datasets (using MixedCorrespondenceDataset) are fully supported
+- Mixed dataset configs should have 'mixed: true' and 'datasets' list
+- You can override mixed dataset parameters using dot notation:
+  - dataset.percentages: [0.7, 0.3]  # Change mixing ratios
+  - dataset.datasets: ['spair', 'synthetic']  # Change datasets (rarely needed)
+  - dataset.dataset_overrides.spair.normalize_images: false  # Override sub-dataset params
 """
 
 import os

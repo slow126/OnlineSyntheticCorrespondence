@@ -42,6 +42,103 @@ from models.CATs_PlusPlus.utils_training.eval_instance import MultiBenchmarkEval
 import models.CATs_PlusPlus.data.download as download
 from models.CATs_PlusPlus.utils_training.utils import load_checkpoint
 
+# Import model wrappers - import lazily to avoid path conflicts
+# We'll import them in create_model() when needed
+RAFTWrapper = None
+FlowFormerWrapper = None
+
+
+def create_model(model_config, paths_config):
+    """
+    Create model based on config.
+    
+    Args:
+        model_config: Model configuration dictionary
+        paths_config: Paths configuration dictionary (for pretrained paths)
+        
+    Returns:
+        Model instance
+    """
+    import sys
+    from pathlib import Path
+    
+    model_type = model_config.get('type', 'cats').lower()
+    
+    if model_type == 'cats':
+        # CATs++ model (existing)
+        pretrained_backbone = model_config.get('pretrained_backbone', True)
+        if not pretrained_backbone:
+            print('='*60)
+            print('TRAINING FROM SCRATCH (pretrained_backbone=False)')
+            print('='*60)
+        else:
+            print(f'Using pretrained backbone: {pretrained_backbone}')
+        
+        model = CATsImproved(
+            backbone=model_config.get('backbone', 'resnet101'),
+            freeze=model_config.get('freeze', True),
+            pretrained_backbone=pretrained_backbone
+        )
+        
+        # Count parameters (excluding backbone for CATs)
+        def count_parameters(model):
+            return sum(p.numel() for name, p in model.named_parameters() 
+                      if p.requires_grad and 'backbone' not in name)
+        
+    elif model_type == 'raft':
+        # RAFT model
+        print("Initializing RAFT model...")
+        # Import RAFT wrapper only when needed to avoid path conflicts
+        models_path = Path(__file__).parent / "models"
+        raft_path = models_path / "RAFT"
+        if str(raft_path) not in sys.path:
+            sys.path.insert(0, str(raft_path))
+        from raft_wrapper import RAFTWrapper
+        
+        pretrained_path = paths_config.get('pretrained', model_config.get('pretrained_path', None))
+        
+        model = RAFTWrapper(
+            small=model_config.get('small', False),
+            iters=model_config.get('iters', 12),
+            alternate_corr=model_config.get('alternate_corr', False),
+            mixed_precision=model_config.get('mixed_precision', False),
+            dropout=model_config.get('dropout', 0.0),
+            pretrained_path=pretrained_path,
+        )
+        
+        # Count all trainable parameters for RAFT
+        def count_parameters(model):
+            return sum(p.numel() for p in model.parameters() if p.requires_grad)
+        
+    elif model_type == 'flowformer':
+        # FlowFormer model
+        print("Initializing FlowFormer model...")
+        # Import FlowFormer wrapper only when needed to avoid path conflicts
+        models_path = Path(__file__).parent / "models"
+        flowformer_path = models_path / "FlowFormer-Official"
+        if str(flowformer_path) not in sys.path:
+            sys.path.insert(0, str(flowformer_path))
+        from flowformer_wrapper import FlowFormerWrapper
+        
+        pretrained_path = paths_config.get('pretrained', model_config.get('pretrained_path', None))
+        
+        model = FlowFormerWrapper(
+            pretrain=model_config.get('pretrain', True),
+            iters=model_config.get('iters', 12),
+            pretrained_path=pretrained_path,
+        )
+        
+        # Count all trainable parameters for FlowFormer
+        def count_parameters(model):
+            return sum(p.numel() for p in model.parameters() if p.requires_grad)
+        
+    else:
+        raise ValueError(f"Unknown model type: {model_type}. Supported types: 'cats', 'raft', 'flowformer'")
+    
+    print(f'The number of trainable parameters: {count_parameters(model)}')
+    
+    return model
+
 
 def main():
     """Main training function."""
@@ -101,37 +198,22 @@ def main():
             download.download_dataset(eval_config['datapath'], benchmark)
     
     # Download training dataset if it's a standard benchmark dataset
-    train_dataset_name = dataset_config['dataset_name']
-    if train_dataset_name in standard_benchmarks:
-        download.download_dataset(eval_config['datapath'], train_dataset_name)
+    # Handle mixed datasets
+    is_mixed = dataset_config.get('mixed', False) or 'datasets' in dataset_config
+    if is_mixed:
+        # For mixed datasets, check each sub-dataset
+        datasets_list = dataset_config.get('datasets', [])
+        for dataset_name in datasets_list:
+            if dataset_name in standard_benchmarks:
+                download.download_dataset(eval_config['datapath'], dataset_name)
+    else:
+        train_dataset_name = dataset_config.get('dataset_name')
+        if train_dataset_name and train_dataset_name in standard_benchmarks:
+            download.download_dataset(eval_config['datapath'], train_dataset_name)
     
     # Initialize model
     print("Initializing model...")
-    if model_config.get('freeze', True):
-        print('Backbone frozen!')
-    
-    # Support pretrained_backbone=False for from-scratch training
-    # This is critical for testing from-scratch training strength
-    pretrained_backbone = model_config.get('pretrained_backbone', True)
-    if not pretrained_backbone:
-        print('='*60)
-        print('TRAINING FROM SCRATCH (pretrained_backbone=False)')
-        print('='*60)
-    else:
-        print(f'Using pretrained backbone: {pretrained_backbone}')
-    
-    model = CATsImproved(
-        backbone=model_config.get('backbone', 'resnet101'),
-        freeze=model_config.get('freeze', True),
-        pretrained_backbone=pretrained_backbone
-    )
-    
-    # Count parameters
-    def count_parameters(model):
-        return sum(p.numel() for name, p in model.named_parameters() 
-                  if p.requires_grad and 'backbone' not in name)
-    
-    print(f'The number of trainable parameters: {count_parameters(model)}')
+    model = create_model(model_config, paths_config)
     
     # Handle pretrained checkpoint loading for finetuning
     pretrained_path = paths_config.get('pretrained', None)
@@ -186,11 +268,14 @@ def main():
     )
     
     # Load pretrained checkpoint if specified (for finetuning)
-    # Note: We load manually to preserve optimizer/scheduler state loading logic
-    # and to handle best performance tracking from checkpoint
-    if pretrained_path:
+    # Note: For CATs, we use load_checkpoint to preserve optimizer/scheduler state
+    # For RAFT/FlowFormer, pretrained weights are already loaded in create_model
+    model_type = model_config.get('type', 'cats').lower()
+    pretrained_checkpoint_data = None
+    
+    if pretrained_path and model_type == 'cats':
         print(f"\n{'='*60}")
-        print("FINETUNING MODE")
+        print("FINETUNING MODE (CATs)")
         print(f"{'='*60}")
         print(f"Loading checkpoint from: {pretrained_path}")
         
@@ -215,7 +300,6 @@ def main():
             checkpoint = torch.load(pretrained_path, map_location='cpu')
             
             # Pass best performance tracking to checkpoint callback
-            # This will be done after callbacks are created
             pretrained_checkpoint_data = {}
             if 'best_val_per_benchmark' in checkpoint:
                 pretrained_checkpoint_data['best_val_per_benchmark'] = checkpoint['best_val_per_benchmark']
@@ -228,6 +312,12 @@ def main():
                 pretrained_checkpoint_data['best_avg_epoch'] = checkpoint.get('best_avg_epoch', 0)
                 print(f"Loaded best average PCK: {checkpoint['best_avg_pck']:.2f}% (epoch {pretrained_checkpoint_data['best_avg_epoch']})")
         
+        print(f"{'='*60}\n")
+    elif pretrained_path and model_type in ['raft', 'flowformer']:
+        print(f"\n{'='*60}")
+        print(f"FINETUNING MODE ({model_type.upper()})")
+        print(f"{'='*60}")
+        print(f"Pretrained weights already loaded in model initialization")
         print(f"{'='*60}\n")
     
     # Create data module
@@ -247,15 +337,7 @@ def main():
         callbacks.append(VisualizationCallback(config))
     
     # Checkpoint callback (with pretrained checkpoint data if finetuning)
-    pretrained_checkpoint_data = None
-    if pretrained_path and os.path.isfile(pretrained_path):
-        checkpoint = torch.load(pretrained_path, map_location='cpu')
-        pretrained_checkpoint_data = {
-            'best_val_per_benchmark': checkpoint.get('best_val_per_benchmark', {}),
-            'best_epoch_per_benchmark': checkpoint.get('best_epoch_per_benchmark', {}),
-            'best_avg_pck': checkpoint.get('best_avg_pck', 0.0),
-            'best_avg_epoch': checkpoint.get('best_avg_epoch', 0),
-        }
+    # pretrained_checkpoint_data is set above for CATs models
     callbacks.append(CheckpointCallback(save_path, config, pretrained_checkpoint_data))
     
     # Summary callback

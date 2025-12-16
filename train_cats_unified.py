@@ -30,6 +30,7 @@ import models.CATs_PlusPlus.data.download as download
 from models.CATs_PlusPlus.utils_training.eval_instance import MultiBenchmarkEvaluator
 from models.CATs_PlusPlus.utils_training.optimize_multi import validate_epoch_multi_benchmark
 from src.data.synth.datasets.CorrespondenceDataset import CorrespondenceDataset
+from src.data.synth.datasets.MixedCorrespondenceDataset import MixedCorrespondenceDataset
 from src.data.synth.datasets.visualizers import CorrespondenceVisualizer
 try:
     from src.data.synth.datasets.cats_flow_visualizers import CATSFlowVisualizer
@@ -237,30 +238,93 @@ def load_config(config_path):
 
 
 def create_training_dataset(config, device=None):
-    """Create training dataset using CorrespondenceDataset"""
+    """Create training dataset using CorrespondenceDataset or MixedCorrespondenceDataset"""
     dataset_config = config['dataset'].copy()
-    dataset_name = dataset_config.pop('dataset_name')
     
-    # Handle max_kps: null -> None
-    if 'max_kps' in dataset_config and dataset_config['max_kps'] is None:
-        dataset_config['max_kps'] = None
+    # Check if this is a mixed dataset configuration
+    is_mixed = dataset_config.get('mixed', False) or 'datasets' in dataset_config
     
-    # Handle size tuple
-    if 'size' in dataset_config and isinstance(dataset_config['size'], list):
-        dataset_config['size'] = tuple(dataset_config['size'])
-    
-    # Handle verbose/debug from training config if not in dataset config
-    if 'verbose' not in dataset_config:
-        dataset_config['verbose'] = config['training'].get('enable_debug', False)
-    if 'debug' not in dataset_config:
-        dataset_config['debug'] = config['training'].get('enable_debug', False)
-    
-    # NOTE: Don't set device in dataset config - collate_fn keeps tensors on CPU
-    # to avoid CUDA re-initialization errors with multiprocessing. Training loop handles GPU.
-    
-    print(f"Creating training dataset: {dataset_name}")
-    dataset = CorrespondenceDataset(dataset_name, **dataset_config)
-    return dataset
+    if is_mixed:
+        # Mixed dataset configuration
+        datasets_list = dataset_config.pop('datasets', [])
+        percentages = dataset_config.pop('percentages', [])
+        dataset_overrides = dataset_config.pop('dataset_overrides', {})
+        epoch_size = dataset_config.pop('epoch_size', None)
+        seed = dataset_config.pop('seed', None)
+        
+        if len(datasets_list) != len(percentages):
+            raise ValueError(f"Number of datasets ({len(datasets_list)}) must match number of percentages ({len(percentages)})")
+        
+        # Common parameters (applied to all datasets unless overridden)
+        common_params = dataset_config.copy()
+        
+        # Handle common parameters
+        if 'max_kps' in common_params and common_params['max_kps'] is None:
+            common_params['max_kps'] = None
+        if 'size' in common_params and isinstance(common_params['size'], list):
+            common_params['size'] = tuple(common_params['size'])
+        
+        # Handle verbose/debug from training config if not in dataset config
+        if 'verbose' not in common_params:
+            common_params['verbose'] = config['training'].get('enable_debug', False)
+        if 'debug' not in common_params:
+            common_params['debug'] = config['training'].get('enable_debug', False)
+        
+        # Create individual datasets
+        created_datasets = []
+        for dataset_name in datasets_list:
+            # Start with common parameters
+            ds_config = common_params.copy()
+            
+            # Apply dataset-specific overrides
+            if dataset_name in dataset_overrides:
+                ds_config.update(dataset_overrides[dataset_name])
+            
+            # Handle max_kps: null -> None
+            if 'max_kps' in ds_config and ds_config['max_kps'] is None:
+                ds_config['max_kps'] = None
+            
+            # Handle size tuple
+            if 'size' in ds_config and isinstance(ds_config['size'], list):
+                ds_config['size'] = tuple(ds_config['size'])
+            
+            print(f"Creating sub-dataset: {dataset_name}")
+            sub_dataset = CorrespondenceDataset(dataset_name, **ds_config)
+            created_datasets.append(sub_dataset)
+        
+        # Create mixed dataset
+        print(f"Creating mixed dataset with {len(created_datasets)} datasets")
+        mixed_dataset = MixedCorrespondenceDataset(
+            datasets=created_datasets,
+            percentages=percentages,
+            epoch_size=epoch_size,
+            seed=seed,
+        )
+        return mixed_dataset
+    else:
+        # Single dataset configuration (backward compatible)
+        dataset_name = dataset_config.pop('dataset_name')
+        
+        # Handle max_kps: null -> None
+        if 'max_kps' in dataset_config and dataset_config['max_kps'] is None:
+            dataset_config['max_kps'] = None
+        
+        # Handle size tuple
+        if 'size' in dataset_config and isinstance(dataset_config['size'], list):
+            dataset_config['size'] = tuple(dataset_config['size'])
+        
+        # Handle verbose/debug from training config if not in dataset config
+        if 'verbose' not in dataset_config:
+            dataset_config['verbose'] = config['training'].get('enable_debug', False)
+        if 'debug' not in dataset_config:
+            dataset_config['debug'] = config['training'].get('enable_debug', False)
+        
+        # NOTE: Don't set device in dataset config - collate_fn keeps tensors on CPU
+        # to avoid CUDA re-initialization errors with multiprocessing. Training loop handles GPU.
+        
+        print(f"Creating training dataset: {dataset_name}")
+        dataset = CorrespondenceDataset(dataset_name, **dataset_config)
+        return dataset
 
 
 def create_validation_datasets(config, device=None):
@@ -293,10 +357,28 @@ def create_validation_datasets(config, device=None):
         # Get benchmark-specific overrides from config
         val_datasets_config = eval_config.get('val_datasets', {}).get(benchmark, {})
         # Allow per-benchmark normalization override (falls back to adapter defaults if None)
-        val_dataset_config['normalize_images'] = val_datasets_config.get(
-            'normalize_images',
-            None if benchmark != config['dataset']['dataset_name'] else config['dataset'].get('normalize_images', None)
-        )
+        # Handle mixed datasets - check if benchmark matches any sub-dataset
+        dataset_config = config['dataset']
+        is_mixed = dataset_config.get('mixed', False) or 'datasets' in dataset_config
+        if is_mixed:
+            # For mixed datasets, check if benchmark is in the datasets list
+            datasets_list = dataset_config.get('datasets', [])
+            train_dataset_matches = benchmark in datasets_list
+            # Get normalization from dataset_overrides if benchmark is a training dataset
+            if train_dataset_matches and benchmark in dataset_config.get('dataset_overrides', {}):
+                val_dataset_config['normalize_images'] = val_datasets_config.get(
+                    'normalize_images',
+                    dataset_config['dataset_overrides'][benchmark].get('normalize_images', None)
+                )
+            else:
+                val_dataset_config['normalize_images'] = val_datasets_config.get('normalize_images', None)
+        else:
+            # Single dataset - use existing logic
+            train_dataset_name = dataset_config.get('dataset_name', '')
+            val_dataset_config['normalize_images'] = val_datasets_config.get(
+                'normalize_images',
+                None if benchmark != train_dataset_name else dataset_config.get('normalize_images', None)
+            )
         
         # Add benchmark-specific parameters based on dataset type
         if benchmark == 'synthetic':

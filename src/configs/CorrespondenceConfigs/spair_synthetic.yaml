@@ -1,0 +1,121 @@
+# Training Configuration for Mixed SPair + Synthetic Dataset
+
+# Model parameters
+model:
+  backbone: 'resnet101'
+  freeze: true
+  pretrained_backbone: true
+
+# Training parameters
+training:
+  epochs: 50
+  batch_size: 8
+  n_threads: 0  # 0 for mixed dataset with synthetic (GPU-bound rendering)
+  seed: 2021
+  lr: 3e-4
+  lr_backbone: 3e-6
+  weight_decay: 0.05
+  momentum: 0.9
+  scheduler: 'step'  # 'step' or 'cosine'
+  step: '[70, 80, 90]'
+  step_gamma: 0.5
+  steps_per_epoch: 100
+  augmentation: true
+  
+  # Flow filtering (training only)
+  min_flow_length: null
+  max_flow_length: null
+  
+  # MMD calculation during validation
+  mmd_every_n_epochs: 1  # 0 = disabled, 1 = every epoch, 2 = every other epoch, etc.
+
+  enable_debug: True
+  debug_visualization_benchmarks: ['spair', 'synthetic']
+  debug_visualization_persist: false
+
+  eval_initial: false
+
+# Dataset parameters - Mixed dataset configuration
+dataset:
+  mixed: true
+  datasets: ['spair', 'synthetic']
+  percentages: [0.5, 0.5]  # 50% SPair, 50% Synthetic
+  
+  # Common parameters (applied to all datasets unless overridden)
+  split: 'train'
+  size: [512, 512]
+  downsample_flow: 32
+  max_kps: null  # null = no truncation, test all keypoints
+  dense_kps_use_all: true  # when dense flow exists, extract all valid kps (set false to sample up to max_kps)
+  verbose: false
+  debug: false
+  
+  # Optional: epoch_size (if None, uses sum of all dataset lengths)
+  epoch_size: null
+  
+  # Optional: seed for reproducibility in sampling
+  seed: null
+  
+  # Dataset-specific overrides
+  dataset_overrides:
+    spair:
+      datapath: './models/Datasets_CATs'
+      normalize_images: false  # SPair is already normalized
+    synthetic:
+      geometry_config_path: 'src/configs/online_synth_configs/OnlineGeometryConfig.yaml'
+      processor_config_path: 'src/configs/online_synth_configs/OnlineProcessorConfig.yaml'
+      opengl_device_index: null  # null = auto-detect
+      normalize_images: false  # Synthetic already normalized by processor
+      geometry_config_overrides: null
+
+# Evaluation parameters
+evaluation:
+  eval_benchmarks: ['kitti2012', 'kitti2015', 'pointodyssey', 'flyingthings', 'tss', 'synthetic', 'pfpascal', 'pfwillow', 'spair']
+  eval_alphas: [0.01, 0.01, 0.01, 0.05, 0.05, 0.1, 0.1, 0.1, 0.1]
+  thres: 'img'  # 'auto', 'img', 'bbox', 'bbox-kp'
+  split_to_use_for_validation: 'test'  # 'val' or 'test'
+  val_batch_size: 2
+  val_num_workers: 32
+  prefetch_factor: 6
+  
+  # Motion-aware evaluation parameters
+  use_motion_aware: false  # If true, compute motion-aware metrics (PCK on moving keypoints only)
+  min_motion_pixels: 5.0  # Minimum motion magnitude (in pixels) for motion-aware PCK
+  zero_threshold: 0.5  # Flow magnitude threshold below which flow is considered "zero"
+  
+  # Benchmark dataset paths
+  datapath: './models/Datasets_CATs'
+  tss_root: '/home/spencer/Data/correspondence/TSS_CVPR2016'
+  kitti_root: '/home/spencer/Data/correspondence/kitti'
+  kitti_val_use_full_training: true
+  pointodyssey_root: '/home/spencer/Data/PointOdyssey'
+  flyingthings_root: '/home/spencer/Data/FlyingThings3D_tiny'
+  
+  # Validation dataset parameters (overrides for specific benchmarks)
+  val_datasets:
+    synthetic:
+      geometry_config_path: 'src/configs/online_synth_configs/OnlineGeometryConfig_Val.yaml'
+      processor_config_path: 'src/configs/online_synth_configs/OnlineProcessorConfig.yaml'
+      normalize_images: false
+    pointodyssey:
+      pointodyssey_sequence_length: 4
+      pointodyssey_num_pts_to_track: 32  # Minimum requirement; use_all_valid will get all valid trajectories
+      use_all_valid: true  # Get all valid trajectories instead of limiting to num_pts_to_track
+      val_sequence_fraction: 1.0
+      normalize_images: true
+      split: 'test'
+    kitti2012:
+      split: 'val'  # or 'training' if kitti_val_use_full_training is true
+      normalize_images: true
+    kitti2015:
+      split: 'val'
+      normalize_images: true
+    flyingthings:
+      split: 'test'
+      normalize_images: true
+
+# Paths
+paths:
+  snapshots: './snapshots'
+  pretrained: null  # Path to pretrained model or null
+  start_epoch: 0  # -1 for new training, or epoch number to resume

@@ -66,7 +66,7 @@ def ensure_flow_and_kps(
     sample: CommonSample,
     dataset_name: str,
     max_kps: Optional[int],
-    downsample_feat_size: int,
+    downsample_feat_size: Optional[int],
     prefer_all_dense: bool,
 ) -> CommonSample:
     # If we only have feature flow and native keypoints, build full flow from kps
@@ -93,9 +93,13 @@ def ensure_flow_and_kps(
     if sample.flow_full is not None:
         sample.flow_full = prepare_invalids(sample.flow_full, dataset_name)
 
-    # Downsample flow once
+    # Downsample flow once (only if downsample_feat_size is provided)
     if sample.flow_feat is None and sample.flow_full is not None:
-        sample.flow_feat = downsample_flow(sample.flow_full, feat_size=downsample_feat_size)
+        if downsample_feat_size is not None:
+            sample.flow_feat = downsample_flow(sample.flow_full, feat_size=downsample_feat_size)
+        else:
+            # If no downsampling requested, use full-resolution flow
+            sample.flow_feat = sample.flow_full
     if sample.flow_feat is not None:
         sample.flow_feat = _flow_make_finite(sample.flow_feat)
 
