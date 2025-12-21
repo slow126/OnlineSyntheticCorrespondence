@@ -415,6 +415,7 @@ def create_validation_datasets(config, device=None):
             val_dataset_config['thres'] = eval_config['thres']
             val_dataset_config['use_all_valid'] = val_datasets_config.get('use_all_valid', True)
             val_dataset_config['pointodyssey_disable_motion_filter'] = val_datasets_config.get('pointodyssey_disable_motion_filter', val_datasets_config.get('disable_motion_filter', False))
+            val_dataset_config['val_sequence_fraction'] = val_datasets_config.get('val_sequence_fraction', None)
             # Note: max_pts is deprecated - use max_kps instead (or set to null for no truncation)
             # For backward compatibility, still check max_pts but prefer max_kps
             max_kps_val = val_datasets_config.get('max_kps', val_datasets_config.get('max_pts', None))
@@ -459,6 +460,22 @@ def create_validation_datasets(config, device=None):
         
         # Create dataset using CorrespondenceDataset - it handles all the parameter mapping
         dataset = CorrespondenceDataset(benchmark, **val_dataset_config)
+        
+        # Subsample FlyingThings dataset if val_dataset_fraction is specified
+        original_collate_fn = dataset.collate_fn  # Save collate_fn before wrapping
+        if benchmark == 'flyingthings':
+            val_dataset_fraction = val_datasets_config.get('val_dataset_fraction', None)
+            if val_dataset_fraction is not None and val_dataset_fraction < 1.0:
+                from torch.utils.data import Subset
+                dataset_size = len(dataset)
+                subset_size = int(dataset_size * val_dataset_fraction)
+                # Use first N samples for consistent validation
+                indices = list(range(subset_size))
+                subset_dataset = Subset(dataset, indices)
+                # Preserve collate_fn on the Subset wrapper
+                subset_dataset.collate_fn = original_collate_fn
+                dataset = subset_dataset
+                print(f"  Subsampled FlyingThings: {dataset_size} -> {subset_size} samples (fraction: {val_dataset_fraction})")
         
         # Create dataloader
         # Use num_workers=0 for synthetic dataset (GPU-bound rendering, can't use multiprocessing)

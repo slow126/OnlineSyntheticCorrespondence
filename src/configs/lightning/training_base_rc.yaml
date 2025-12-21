@@ -30,7 +30,7 @@ training:
   max_flow_length: null
   
   # MMD calculation during validation
-  mmd_every_n_epochs: 1  # 0 = disabled, 1 = every epoch, 2 = every other epoch, etc.
+  mmd_every_n_epochs: 0  # 0 = disabled, 1 = every epoch, 2 = every other epoch, etc.
 
   enable_debug: false
   debug_visualization_benchmarks: None

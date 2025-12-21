@@ -1,0 +1,57 @@
+Rows: 48
+Predictors: flow_recall_logit, flow_precision_logit, resnet_recall_logit, resnet_precision_logit, flow_mmd, feature_mmd
+Target: auc_normalized
+
+OLS:
+                            OLS Regression Results                            
+==============================================================================
+Dep. Variable:         auc_normalized   R-squared:                       0.610
+Model:                            OLS   Adj. R-squared:                  0.553
+Method:                 Least Squares   F-statistic:                     10.71
+Date:                Fri, 19 Dec 2025   Prob (F-statistic):           3.88e-07
+Time:                        23:15:34   Log-Likelihood:                -191.93
+No. Observations:                  48   AIC:                             397.9
+Df Residuals:                      41   BIC:                             411.0
+Df Model:                           6                                         
+Covariance Type:            nonrobust                                         
+==========================================================================================
+                             coef    std err          t      P>|t|      [0.025      0.975]
+------------------------------------------------------------------------------------------
+Intercept                 66.6900     10.144      6.575      0.000      46.204      87.176
+flow_recall_logit         12.0314      2.541      4.735      0.000       6.900      17.163
+flow_precision_logit       4.6458      2.936      1.583      0.121      -1.283      10.574
+resnet_recall_logit        6.4347      9.538      0.675      0.504     -12.827      25.696
+resnet_precision_logit     0.1041      5.929      0.018      0.986     -11.869      12.077
+flow_mmd                  56.8552     18.041      3.152      0.003      20.422      93.289
+feature_mmd             -339.5070     63.142     -5.377      0.000    -467.025    -211.989
+==============================================================================
+Omnibus:                        3.704   Durbin-Watson:                   2.106
+Prob(Omnibus):                  0.157   Jarque-Bera (JB):                2.043
+Skew:                          -0.240   Prob(JB):                        0.360
+Kurtosis:                       2.110   Cond. No.                         105.
+==============================================================================
+
+Notes:
+[1] Standard Errors assume that the covariance matrix of the errors is correctly specified.
+
+MixedLM (random intercept by benchmark):
+                Mixed Linear Model Regression Results
+======================================================================
+Model:                MixedLM    Dependent Variable:    auc_normalized
+No. Observations:     48         Method:                ML            
+No. Groups:           8          Scale:                 16.9866       
+Min. group size:      6          Log-Likelihood:        -153.7520     
+Max. group size:      6          Converged:             Yes           
+Mean group size:      6.0                                             
+----------------------------------------------------------------------
+                        Coef.   Std.Err.   z    P>|z|  [0.025   0.975]
+----------------------------------------------------------------------
+Intercept                45.989    6.620  6.947 0.000   33.014  58.964
+flow_recall_logit         4.248    1.194  3.559 0.000    1.909   6.588
+flow_precision_logit      0.567    1.434  0.395 0.693   -2.244   3.378
+resnet_recall_logit      10.978    3.979  2.759 0.006    3.180  18.776
+resnet_precision_logit  -10.216    6.133 -1.666 0.096  -22.237   1.805
+flow_mmd                  9.246    7.052  1.311 0.190   -4.576  23.068
+feature_mmd            -202.875   73.303 -2.768 0.006 -346.546 -59.204
+Group Var               231.528   32.302                              
+======================================================================

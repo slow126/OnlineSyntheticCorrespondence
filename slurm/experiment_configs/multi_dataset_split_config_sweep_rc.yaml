@@ -64,6 +64,63 @@ training_datasets:
       training.batch_size: 8
       training.n_threads: 0  # GPU-bound rendering
 
+  # Mixed datasets with 70-30 splits (70% real dataset, 30% synthetic)
+  - name: "spair_synthetic_70_30"
+    dataset_config: "src/configs/lightning/datasets/spair_synthetic_70_30_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 0  # Mixed datasets with synthetic need num_workers=0
+
+  # Mixed datasets with 50-50 splits
+  - name: "spair_synthetic_50_50"
+    dataset_config: "src/configs/lightning/datasets/spair_synthetic_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 0  # Mixed datasets with synthetic need num_workers=0
+
+  # Mixed datasets with 30-70 splits (30% real dataset, 70% synthetic)
+  - name: "spair_synthetic_30_70"
+    dataset_config: "src/configs/lightning/datasets/spair_synthetic_30_70_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 0  # Mixed datasets with synthetic need num_workers=0
+
+  - name: "pointodyssey_synthetic_70_30"
+    dataset_config: "src/configs/lightning/datasets/pointodyssey_synthetic_70_30_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 0  # Mixed datasets with synthetic need num_workers=0
+
+  - name: "pointodyssey_synthetic_30_70"
+    dataset_config: "src/configs/lightning/datasets/pointodyssey_synthetic_30_70_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 0  # Mixed datasets with synthetic need num_workers=0
+
+  - name: "flyingthings_synthetic_70_30"
+    dataset_config: "src/configs/lightning/datasets/flyingthings_synthetic_70_30_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 0  # Mixed datasets with synthetic need num_workers=0
+
+  - name: "flyingthings_synthetic_30_70"
+    dataset_config: "src/configs/lightning/datasets/flyingthings_synthetic_30_70_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 0  # Mixed datasets with synthetic need num_workers=0
+
+  - name: "sintel_synthetic_70_30"
+    dataset_config: "src/configs/lightning/datasets/sintel_synthetic_70_30_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 0  # Mixed datasets with synthetic need num_workers=0
+
+  - name: "sintel_synthetic_30_70"
+    dataset_config: "src/configs/lightning/datasets/sintel_synthetic_30_70_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 0  # Mixed datasets with synthetic need num_workers=0
+
 # Output directory for generated configs
 # Relative paths starting with 'slurm/' or 'experiment_configs/' are resolved relative to project root
 # Other relative paths are resolved relative to this config file's directory
@@ -72,25 +129,11 @@ output_dir: "/home/slow1/Projects/OnlineSyntheticCorrespondence/slurm/experiment
 # Sweep definitions (applied to all datasets)
 # These only affect training/model parameters, not eval config
 sweeps:
-  # Backbone sweep - excluding freeze=True + pretrained=False (frozen random features, never learns!)
-  - name: "frozen_pretrained"
+  # Backbone sweep across pretrained/freeze combinations
+  - name: "encoder_grid"
     parameters:
       training.steps_per_epoch: 100
-      model.freeze: True
-      model.pretrained_backbone: True
-    name_template: "steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"
-  
-  - name: "unfrozen_pretrained"
-    parameters:
-      training.steps_per_epoch: 100
-      model.freeze: False
-      model.pretrained_backbone: True
-    name_template: "steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"
-  
-  - name: "unfrozen_scratch"
-    parameters:
-      training.steps_per_epoch: 100
-      model.freeze: False
-      model.pretrained_backbone: False
+      model.pretrained_backbone: [True, False]
+      model.freeze: [True, False]
     name_template: "steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"
   

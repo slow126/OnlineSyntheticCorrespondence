@@ -1,0 +1,78 @@
+# Configuration for building feature coresets from mixed datasets
+#
+# Usage:
+#   python scripts/build_coresets.py --config src/configs/coreset_configs/build_mixed_datasets_features.yaml
+
+# Coreset configuration
+coreset:
+  preset: dino_features  # or dino_features, flow_vectors
+  # Alternatively, specify parameters directly:
+  # K_max: 10000
+  # K_overflow: 5000
+  # distance: euclidean
+  # device: cpu
+
+# Reference to coreset config file (optional)
+coreset_config_file: src/configs/coreset_configs/coreset_config.yaml
+
+# DataLoader settings
+batch_size: 4
+num_workers: 4
+# Optional per-batch subsampling to control very dense batches
+subsample:
+  use_subsample: false
+  fraction: 0.1       # keep 10% when dense
+  threshold: 5000000     # only subsample if batch > threshold vectors
+
+# Feature encoder
+encoder: dino
+
+# Common dataset parameters
+dataset_params:
+  size: [512, 512]
+  downsample_flow: 32
+  max_kps: null  # null = no truncation
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: false  # Will be overridden per-dataset if needed
+  kitti_val_use_full_training: true  # If true, KITTI datasets use full training set instead of val split
+
+# Dataset-specific overrides
+dataset_overrides:
+  spair:
+    datapath: './models/Datasets_CATs'
+    normalize_images: false  # SPair already normalized
+  synthetic:
+    geometry_config_path: 'src/configs/online_synth_configs/OnlineGeometryConfig.yaml'
+    processor_config_path: 'src/configs/online_synth_configs/OnlineProcessorConfig.yaml'
+    normalize_images: false  # Synthetic already normalized
+    device: 'cuda'  # IMPORTANT: Use GPU for rendering
+
+# Mixed datasets to process
+# Note: Set num_batches: null (or omit it) to process the complete dataset.
+#       Set num_batches: <number> to limit processing for testing.
+datasets:
+  #########################################################
+  # Mixed Training datasets (50/50 split)
+  #########################################################
+  - mixed: true
+    datasets: ['spair', 'synthetic']
+    percentages: [0.5, 0.5]
+    split: train
+    representation: dino
+    num_batches: 100  # Set to null for complete dataset
+    is_eval: false
+    output: coresets/spair_synthetic_50_50_train_dino.pt
+  
+  #########################################################
+  # Mixed Training datasets (70/30 split)
+  #########################################################
+  - mixed: true
+    datasets: ['spair', 'synthetic']
+    percentages: [0.7, 0.3]
+    split: train
+    representation: dino
+    num_batches: 100  # Set to null for complete dataset
+    is_eval: false
+    output: coresets/spair_synthetic_70_30_train_dino.pt

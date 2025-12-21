@@ -1,0 +1,54 @@
+================================================================================
+MIXED-EFFECTS REGRESSION ANALYSIS (not_pretrained_unfrozen)
+================================================================================
+
+Data: 336 observations across 8 benchmarks
+Benchmarks: flyingthings, kitti2012, middlebury, pfpascal, pfwillow, pointodyssey, spair, tss
+Training dataset types: Mixed (70/30), SPair, Synthetic, flyingthings, pointodyssey, sintel
+
+--------------------------------------------------------------------------------
+Model 1: PCK ~ flow_recall + (1|benchmark)
+--------------------------------------------------------------------------------
+Flow recall coefficient: 11.5160
+Flow recall p-value: 0.0233
+Intercept: 28.6672
+AIC: 2879.58, BIC: 2891.03
+Significant: Yes
+
+--------------------------------------------------------------------------------
+Model 2: PCK ~ training_dataset_type + (1|benchmark)
+--------------------------------------------------------------------------------
+Dataset type coefficients (relative to reference):
+  C(training_dataset_type)[T.SPair]: -27.2013 (p=0.0000)
+  C(training_dataset_type)[T.Synthetic]: 2.0959 (p=0.5002)
+  C(training_dataset_type)[T.flyingthings]: 12.5000 (p=0.0002)
+  C(training_dataset_type)[T.pointodyssey]: 5.8437 (p=0.0842)
+  C(training_dataset_type)[T.sintel]: 9.8821 (p=0.0035)
+Intercept: 31.9138
+AIC: 2635.28, BIC: 2662.00
+
+--------------------------------------------------------------------------------
+Model 3: PCK ~ flow_recall + training_dataset_type + flow_recall:training_dataset_type + (1|benchmark)
+--------------------------------------------------------------------------------
+Coefficients:
+  Intercept: -10.5281 (p=0.5503)
+  C(training_dataset_type)[T.SPair]: -14.0586 (p=0.4605)
+  C(training_dataset_type)[T.Synthetic]: -17.6808 (p=0.2759)
+  C(training_dataset_type)[T.flyingthings]: 6.2030 (p=0.6957)
+  C(training_dataset_type)[T.pointodyssey]: 41.1277 (p=0.0100)*
+  C(training_dataset_type)[T.sintel]: 36.7554 (p=0.0200)*
+  flow_recall: 87.6520 (p=0.0076)*
+  flow_recall:C(training_dataset_type)[T.SPair]: 21.6261 (p=0.6741)
+  flow_recall:C(training_dataset_type)[T.Synthetic]: 27.4504 (p=0.3959)
+  flow_recall:C(training_dataset_type)[T.flyingthings]: 41.1827 (p=0.2098)
+  flow_recall:C(training_dataset_type)[T.pointodyssey]: 36.2235 (p=0.3167)
+  flow_recall:C(training_dataset_type)[T.sintel]: -22.9622 (p=0.4738)
+AIC: 2525.25, BIC: 2574.87
+
+--------------------------------------------------------------------------------
+Model 4: PCK ~ resnet_recall + (1|benchmark) [unfrozen models only]
+--------------------------------------------------------------------------------
+ResNet recall coefficient: 76.5452
+ResNet recall p-value: 0.0000
+AIC: 2853.32, BIC: 2864.77
+Significant: Yes

@@ -58,6 +58,14 @@ def load_snapshots(snapshot_dirs):
     all_metrics = set()
     
     for snapshot_dir in snapshot_dirs:
+        snapshot_path = Path(snapshot_dir)
+        summary_path = snapshot_path / 'training_summary.txt'
+        
+        # Skip snapshots without training summary
+        if not summary_path.exists():
+            print(f"  Skipping {snapshot_dir}: training_summary.txt not found")
+            continue
+        
         print(f"  Parsing: {snapshot_dir}")
         training_dataset, validation_data, metrics = parse_snapshot_directory(snapshot_dir)
         if validation_data:
@@ -436,6 +444,7 @@ def parse_training_dataset_from_summary(summary_path):
         
     Returns:
         Base training dataset name (string) or None if not found
+        For mixed datasets, converts "+" to "_" for consistency with CSV lookups
     """
     if not os.path.exists(summary_path):
         return None
@@ -445,7 +454,11 @@ def parse_training_dataset_from_summary(summary_path):
             for line in f:
                 if line.startswith('Train dataset:'):
                     dataset = line.split('Train dataset:')[1].strip()
-                    return dataset.lower()  # Normalize to lowercase for lookup
+                    dataset = dataset.lower()  # Normalize to lowercase for lookup
+                    # Convert "+" to "_" for mixed datasets (e.g., "spair+synthetic" -> "spair_synthetic")
+                    # This ensures consistency with CSV lookup formats
+                    dataset = dataset.replace('+', '_')
+                    return dataset
     except Exception as e:
         print(f"Warning: Could not parse training dataset from {summary_path}: {e}")
         return None
@@ -1005,13 +1018,13 @@ def create_mmd_vs_pck_scatter_plot(snapshots_data, mmd_lookup, output_dir, datas
         # Get base training dataset name from summary (for MMD lookup)
         base_training_dataset = parse_training_dataset_from_summary(summary_path)
         if not base_training_dataset:
-            print(f"  Warning: Could not parse training dataset from {summary_path}")
+            print(f"  Skipping {snapshot_path}: Could not parse training dataset from summary")
             continue
         
         # Get best performance per benchmark
         best_performance = parse_best_performance_from_summary(summary_path)
         if not best_performance:
-            print(f"  Warning: No best performance data found in {summary_path}")
+            print(f"  Skipping {snapshot_path}: No best performance data found in summary")
             continue
         
         # For each benchmark, look up MMD² and store data point
@@ -1143,13 +1156,13 @@ def create_feature_mmd_vs_pck_scatter_plot(snapshots_data, mmd_lookup, output_di
         # Get base training dataset name from summary (for MMD lookup)
         base_training_dataset = parse_training_dataset_from_summary(summary_path)
         if not base_training_dataset:
-            print(f"  Warning: Could not parse training dataset from {summary_path}")
+            print(f"  Skipping {snapshot_path}: Could not parse training dataset from summary")
             continue
         
         # Get best performance per benchmark
         best_performance = parse_best_performance_from_summary(summary_path)
         if not best_performance:
-            print(f"  Warning: No best performance data found in {summary_path}")
+            print(f"  Skipping {snapshot_path}: No best performance data found in summary")
             continue
         
         # For each benchmark, look up MMD² and store data point
@@ -1564,13 +1577,13 @@ def create_coverage_vs_pck_scatter_plot(
         # Get base training dataset name from summary (for coverage lookup)
         base_training_dataset = parse_training_dataset_from_summary(summary_path)
         if not base_training_dataset:
-            print(f"  Warning: Could not parse training dataset from {summary_path}")
+            print(f"  Skipping {snapshot_path}: Could not parse training dataset from summary")
             continue
         
         # Get best performance per benchmark
         best_performance = parse_best_performance_from_summary(summary_path)
         if not best_performance:
-            print(f"  Warning: No best performance data found in {summary_path}")
+            print(f"  Skipping {snapshot_path}: No best performance data found in summary")
             continue
         
         # For each benchmark, look up coverage and store data point

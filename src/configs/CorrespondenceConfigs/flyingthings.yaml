@@ -66,7 +66,11 @@ evaluation:
       pointodyssey_sequence_length: 4
       pointodyssey_num_pts_to_track: 32  # Minimum requirement; use_all_valid will get all valid trajectories
       use_all_valid: true  # Get all valid trajectories instead of limiting to num_pts_to_track
-      val_sequence_fraction: 1.0
+      val_sequence_fraction: 0.2
+    flyingthings:
+      split: 'test'
+      normalize_images: true
+      val_dataset_fraction: 0.2  # Use only 20% of FlyingThings for faster validation
 
 paths:
   snapshots: './snapshots'

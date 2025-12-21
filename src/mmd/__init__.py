@@ -35,7 +35,7 @@ from .validation import (
 )
 
 # Feature encoders
-from .encoders import BaseFeatureEncoder, ResNet101Encoder
+from .encoders import BaseFeatureEncoder, ResNet101Encoder, DinoV3Encoder
 
 __all__ = [
     # NumPy classes
@@ -65,5 +65,5 @@ __all__ = [
     # Feature encoders
     'BaseFeatureEncoder',
     'ResNet101Encoder',
+    'DinoV3Encoder',
 ]
-

@@ -48,24 +48,10 @@ output_dir: "slurm/experiment_configs/generated"
 # Sweep definitions (applied to all datasets)
 # These only affect training/model parameters, not eval config
 sweeps:
-  # Example: Learning rate sweep with from-scratch training option
-  - name: "lr_sweep"
+  # Backbone sweep across pretrained/freeze combinations
+  - name: "encoder_grid"
     parameters:
-      training.lr: [1e-4, 3e-4, 1e-3]
-      training.lr_backbone: [1e-6, 3e-6]
-      model.pretrained_backbone: [True, False]  # Test from-scratch vs pretrained
-    name_template: "lr{training.lr}_lrbackbone{training.lr_backbone}_pretrained{model.pretrained_backbone}"
-
-  # Example: Freeze backbone sweep
-  - name: "freeze_sweep"
-    parameters:
+      training.steps_per_epoch: 100
+      model.pretrained_backbone: [True, False]
       model.freeze: [True, False]
-      model.pretrained_backbone: [True, False]
-    name_template: "freeze{model.freeze}_pretrained{model.pretrained_backbone}"
-
-  # Example: Logarithmic steps_per_epoch sweep
-  - name: "logarithmic_steps_sweep"
-    parameters:
-      training.steps_per_epoch: ['logarithmic']  # Base 2 progression: 2^epoch, capped at 2048
-      model.pretrained_backbone: [True, False]
-    name_template: "logsteps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}"
+    name_template: "steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"

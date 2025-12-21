@@ -1,0 +1,16 @@
+================================================================================
+PAIRWISE COMPARISONS: Training Dataset Types (not_pretrained_frozen)
+================================================================================
+
+Data: 80 observations across 8 benchmarks
+
+Reference level: Mixed (70/30)
+
+Comparison                                   Coefficient         p-value  Significant
+----------------------------------------------------------------------------------
+Mixed (70/30) vs Synthetic                       -5.6713          0.0017          Yes
+Mixed (70/30) vs flyingthings                     8.2425          0.0000          Yes
+Mixed (70/30) vs pointodyssey                    -0.1638          0.9277           No
+Mixed (70/30) vs sintel                           7.0075          0.0001          Yes
+
+Model AIC: 523.69, BIC: 537.98

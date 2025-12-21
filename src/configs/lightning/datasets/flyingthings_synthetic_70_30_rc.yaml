@@ -1,0 +1,35 @@
+# Mixed FlyingThings + Synthetic Dataset Configuration (70-30 split)
+# Contains only dataset-specific parameters
+
+dataset:
+  mixed: true
+  datasets: ['flyingthings', 'synthetic']
+  percentages: [0.7, 0.3]  # 70% FlyingThings, 30% Synthetic
+  
+  # Common parameters (applied to all datasets unless overridden)
+  split: 'train'
+  size: [512, 512]
+  downsample_flow: 32
+  max_kps: null  # null = no truncation, test all keypoints
+  dense_kps_use_all: true  # when dense flow exists, extract all valid kps (set false to sample up to max_kps)
+  verbose: false
+  debug: false
+  
+  # Optional: epoch_size (if None, uses sum of all dataset lengths)
+  epoch_size: null
+  
+  # Optional: seed for reproducibility in sampling
+  seed: 42
+  
+  # Dataset-specific overrides
+  dataset_overrides:
+    flyingthings:
+      datapath: '/home/slow1/Data/FlyingThings3D_Pytorch'
+      reverse_flow: true
+      normalize_images: true
+    synthetic:
+      geometry_config_path: 'src/configs/online_synth_configs/OnlineGeometryConfig.yaml'
+      processor_config_path: 'src/configs/online_synth_configs/OnlineProcessorConfig.yaml'
+      opengl_device_index: null  # null = auto-detect
+      normalize_images: false  # Synthetic already normalized by processor
+      geometry_config_overrides: null

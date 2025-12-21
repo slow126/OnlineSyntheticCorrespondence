@@ -109,3 +109,50 @@ class ResNet101Encoder(BaseFeatureEncoder):
     def feature_dim(self) -> int:
         """Return the feature dimension (512 for ResNet101 layer 2)."""
         return self._feature_dim
+
+
+class DinoV3Encoder(BaseFeatureEncoder):
+    """DINOv3 encoder extracting spatial features."""
+
+    def __init__(
+        self,
+        device: Optional[torch.device] = None,
+        model_name: str = "facebook/dinov3-vit7b16-pretrain-lvd1689m",
+        resize_size: int = 512,
+    ):
+        super().__init__()
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device
+        self.model_name = model_name
+        self.resize_size = resize_size
+
+        # Import locally to avoid transformers dependency for non-DINO runs.
+        from models.DinoV3.DinoV3 import DinoV3
+
+        self.dino = DinoV3(pretrained_model_name=model_name, resize_size=resize_size)
+        try:
+            self.dino.model.to(self.device)
+        except Exception:
+            pass
+
+        if hasattr(self.dino.model, "config") and hasattr(self.dino.model.config, "hidden_size"):
+            self._feature_dim = int(self.dino.model.config.hidden_size)
+        else:
+            self._feature_dim = 768
+
+        print(f"Initialized DinoV3Encoder on device: {device}")
+        print(f"Feature dimension: {self._feature_dim}")
+
+    def extract_features(self, img: torch.Tensor) -> torch.Tensor:
+        img = img.to(self.device)
+        with torch.no_grad():
+            feats = self.dino.get_spatial_features(img)  # [B, N, C]
+        if feats.dim() == 3:
+            bsz, n_tokens, dim = feats.shape
+            feats = feats.reshape(bsz * n_tokens, dim)
+        return feats
+
+    @property
+    def feature_dim(self) -> int:
+        return self._feature_dim

@@ -20,6 +20,7 @@ import yaml
 import numpy as np
 import torch
 from pathlib import Path
+from typing import Optional
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import time
@@ -31,14 +32,16 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.coreset import CoresetConfig, WeightedCoreset, load_config_from_yaml
 from src.coreset.validation import extract_flow_vectors_from_batch
 from src.data.synth.datasets.CorrespondenceDataset import CorrespondenceDataset
-from src.mmd.encoders import BaseFeatureEncoder, ResNet101Encoder
+from src.data.synth.datasets.MixedCorrespondenceDataset import MixedCorrespondenceDataset
+from src.mmd.encoders import BaseFeatureEncoder, ResNet101Encoder, DinoV3Encoder
 
 
 def create_dataset_from_config(
     dataset_name: str,
     split: str,
     common_params: dict,
-    dataset_overrides: dict
+    dataset_overrides: dict,
+    entry_overrides: Optional[dict] = None
 ) -> CorrespondenceDataset:
     """
     Create a CorrespondenceDataset from config parameters.
@@ -51,6 +54,8 @@ def create_dataset_from_config(
     # Apply dataset-specific overrides
     if dataset_name in dataset_overrides:
         dataset_config.update(dataset_overrides[dataset_name])
+    if entry_overrides:
+        dataset_config.update(entry_overrides)
     
     # Handle size tuple
     if 'size' in dataset_config and isinstance(dataset_config['size'], list):
@@ -91,12 +96,96 @@ def create_dataset_from_config(
     return dataset
 
 
+def create_mixed_dataset_from_config(
+    datasets_list: list,
+    percentages: list,
+    split: str,
+    common_params: dict,
+    dataset_overrides: dict,
+    epoch_size: Optional[int] = None,
+    seed: Optional[int] = None
+) -> MixedCorrespondenceDataset:
+    """
+    Create a MixedCorrespondenceDataset from config parameters.
+    
+    Args:
+        datasets_list: List of dataset names to mix
+        percentages: List of percentages for each dataset
+        split: Split to use for all datasets
+        common_params: Common parameters applied to all datasets
+        dataset_overrides: Dataset-specific overrides
+        epoch_size: Optional fixed epoch size
+        seed: Optional random seed
+    """
+    if len(datasets_list) != len(percentages):
+        raise ValueError(f"Number of datasets ({len(datasets_list)}) must match number of percentages ({len(percentages)})")
+    
+    created_datasets = []
+    
+    for dataset_name in datasets_list:
+        # Start with common parameters
+        ds_config = common_params.copy()
+        
+        # Apply dataset-specific overrides
+        if dataset_name in dataset_overrides:
+            ds_config.update(dataset_overrides[dataset_name])
+        
+        # Handle size tuple
+        if 'size' in ds_config and isinstance(ds_config['size'], list):
+            ds_config['size'] = tuple(ds_config['size'])
+        
+        # Set split
+        ds_config['split'] = split
+        
+        # Handle max_kps: null -> None
+        if 'max_kps' in ds_config and ds_config['max_kps'] is None:
+            ds_config['max_kps'] = None
+        
+        # Add dataset-specific parameters based on dataset type
+        if dataset_name == 'synthetic':
+            pass  # Synthetic-specific params already in overrides
+        elif dataset_name == 'tss':
+            ds_config['thres'] = ds_config.get('thres', 'img')
+            ds_config['reverse_flow'] = ds_config.get('reverse_flow', False)
+        elif dataset_name == 'middlebury':
+            ds_config['reverse_flow'] = ds_config.get('reverse_flow', False)
+        elif dataset_name == 'pointodyssey':
+            ds_config['reverse_flow'] = ds_config.get('reverse_flow', True)
+            ds_config['thres'] = ds_config.get('thres', 'img')
+        elif dataset_name in ['kitti2012', 'kitti2015']:
+            ds_config['reverse_flow'] = ds_config.get('reverse_flow', False)
+            ds_config['thres'] = ds_config.get('thres', 'img')
+            kitti_val_use_full_training = ds_config.get('kitti_val_use_full_training', False)
+            if kitti_val_use_full_training and ds_config.get('split') == 'val':
+                ds_config['split'] = 'training'
+        elif dataset_name == 'flyingthings':
+            ds_config['reverse_flow'] = ds_config.get('reverse_flow', True)
+        elif dataset_name in ['spair', 'pfpascal', 'pfwillow']:
+            pass  # datapath already set in overrides
+        
+        print(f"Creating sub-dataset: {dataset_name} (split: {split})")
+        sub_dataset = CorrespondenceDataset(dataset_name, **ds_config)
+        created_datasets.append(sub_dataset)
+    
+    # Create mixed dataset
+    print(f"Creating mixed dataset with {len(created_datasets)} datasets")
+    mixed_dataset = MixedCorrespondenceDataset(
+        datasets=created_datasets,
+        percentages=percentages,
+        epoch_size=epoch_size,
+        seed=seed,
+    )
+    return mixed_dataset
+
+
 def create_encoder(encoder_name: str, device: torch.device) -> BaseFeatureEncoder:
     """Create feature encoder by name."""
     if encoder_name == 'resnet101':
         return ResNet101Encoder(device=device)
+    if encoder_name == 'dino':
+        return DinoV3Encoder(device=device)
     else:
-        raise ValueError(f"Unknown encoder: {encoder_name}. Supported: 'resnet101'")
+        raise ValueError(f"Unknown encoder: {encoder_name}. Supported: 'resnet101', 'dino'")
 
 
 def extract_features_from_batch(
@@ -229,18 +318,48 @@ def main():
     total_datasets = len(datasets_config)
     
     for ds_idx, ds_config in enumerate(datasets_config, 1):
-        dataset_name = ds_config['name']
-        split = ds_config['split']
-        representation = ds_config.get('representation', 'flow')
-        # num_batches: None = process all batches (complete dataset)
-        # Set to a number to limit processing for testing
-        num_batches = ds_config.get('num_batches', None)
-        is_eval = ds_config.get('is_eval', False)
-        output_path = ds_config['output']
+        # Check if this is a mixed dataset configuration
+        is_mixed = ds_config.get('mixed', False) or 'datasets' in ds_config
+        
+        if is_mixed:
+            # Mixed dataset configuration
+            datasets_list = ds_config.get('datasets', [])
+            percentages = ds_config.get('percentages', [])
+            split = ds_config['split']
+            representation = ds_config.get('representation', 'flow')
+            num_batches = ds_config.get('num_batches', None)
+            is_eval = ds_config.get('is_eval', False)
+            output_path = ds_config['output']
+            epoch_size = ds_config.get('epoch_size', None)
+            seed = ds_config.get('seed', None)
+            
+            # Create display name for mixed dataset
+            if len(percentages) == 2 and len(datasets_list) == 2:
+                pct1 = int(percentages[0] * 100)
+                pct2 = int(percentages[1] * 100)
+                dataset_name = f"{datasets_list[0]}_{datasets_list[1]}_{pct1}_{pct2}"
+            else:
+                dataset_name = "+".join(datasets_list)
+        else:
+            # Single dataset configuration
+            dataset_label = ds_config['name']
+            dataset_name = ds_config.get('dataset_name', dataset_label)
+            split = ds_config['split']
+            representation = ds_config.get('representation', 'flow')
+            num_batches = ds_config.get('num_batches', None)
+            is_eval = ds_config.get('is_eval', False)
+            output_path = ds_config['output']
+            entry_overrides = ds_config.get('overrides', None)
         
         print("\n" + "="*60)
-        print(f"DATASET {ds_idx}/{total_datasets}: {dataset_name} ({split})")
+        if is_mixed:
+            label = dataset_name
+        else:
+            label = dataset_label
+        print(f"DATASET {ds_idx}/{total_datasets}: {label} ({split})")
         print("="*60)
+        if is_mixed:
+            print(f"Mixed dataset: {datasets_list} with percentages {percentages}")
         print(f"Is eval: {is_eval}")
         if num_batches is None:
             print(f"Num batches: ALL (complete dataset)")
@@ -254,14 +373,24 @@ def main():
         # Create dataset
         print(f"  Creating dataset object...")
         dataset_start = time.time()
-        dataset = create_dataset_from_config(
-            dataset_name, split, common_params, dataset_overrides
-        )
+        if is_mixed:
+            dataset = create_mixed_dataset_from_config(
+                datasets_list, percentages, split, common_params, dataset_overrides,
+                epoch_size=epoch_size, seed=seed
+            )
+        else:
+            dataset = create_dataset_from_config(
+                dataset_name, split, common_params, dataset_overrides, entry_overrides
+            )
         print(f"  ✓ Dataset created in {time.time() - dataset_start:.1f}s")
         
         # Create dataloader
-        # Use num_workers=0 for synthetic (GPU-bound rendering)
-        workers = 0 if dataset_name == 'synthetic' else num_workers
+        # Use num_workers=0 for synthetic or mixed datasets containing synthetic
+        if is_mixed:
+            has_synthetic = 'synthetic' in datasets_list
+            workers = 0 if has_synthetic else num_workers
+        else:
+            workers = 0 if dataset_name == 'synthetic' else num_workers
         
         print(f"  Creating dataloader (workers={workers})...")
         dataloader_start = time.time()
@@ -294,7 +423,7 @@ def main():
         pbar = tqdm(
             enumerate(dataloader),
             total=num_batches if num_batches else len(dataloader),
-            desc=f"Processing {dataset_name}",
+            desc=f"Processing {label}",
             unit="batch",
             ncols=100
         )
@@ -306,10 +435,12 @@ def main():
             # Extract vectors based on representation
             if representation == 'flow':
                 vectors = extract_flow_vectors_from_batch(batch)
-            elif representation == 'resnet':
+            elif representation in ('resnet', 'dino'):
                 vectors = extract_features_from_batch(batch, encoder)
             else:
-                raise ValueError(f"Unknown representation '{representation}'. Supported: flow, resnet.")
+                raise ValueError(
+                    f"Unknown representation '{representation}'. Supported: flow, resnet, dino."
+                )
             
             if vectors is not None and len(vectors) > 0:
                 # Uniform subsample if batch is very dense

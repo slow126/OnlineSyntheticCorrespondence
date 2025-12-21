@@ -90,6 +90,63 @@ datasets:
     num_batches: 100  # Set to null for complete dataset
     is_eval: false
     output: coresets/synthetic_train_flow.pt
+
+  - name: synthetic_small_zoom
+    dataset_name: synthetic
+    split: train
+    representation: flow
+    num_batches: 100
+    is_eval: false
+    overrides:
+      geometry_config_overrides:
+        angle_sampler:
+          x_components:
+            loc: 0
+            scale: 0.01
+          y_components:
+            loc: 0
+            scale: 0.01
+        scale_sampler:
+          abs_components:
+            scale: 0.2
+          rel_components:
+            loc: -0.1
+            scale: 0.2
+    output: coresets/synthetic_small_zoom_train_flow.pt
+
+  - name: synthetic_large_zoom
+    dataset_name: synthetic
+    split: train
+    representation: flow
+    num_batches: 100
+    is_eval: false
+    overrides:
+      geometry_config_overrides:
+        angle_sampler:
+          x_components:
+            loc: 0
+            scale: 0.01
+          y_components:
+            loc: 0
+            scale: 0.01
+        scale_sampler:
+          abs_components:
+            scale: 0.5
+          rel_components:
+            loc: -0.35
+            scale: 0.5
+    output: coresets/synthetic_large_zoom_train_flow.pt
+
+  - name: synthetic_random_flipping
+    dataset_name: synthetic
+    split: train
+    representation: flow
+    num_batches: 100
+    is_eval: false
+    overrides:
+      geometry_config_overrides:
+        random_flip: 0.5
+    output: coresets/synthetic_random_flipping_train_flow.pt
   
   - name: sintel
     split: train

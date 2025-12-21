@@ -15,6 +15,63 @@ datasets:
   - name: synthetic
     split: train
     num_batches: 10000
+  - name: synthetic_small_zoom
+    dataset_name: synthetic
+    split: train
+    num_batches: 10000
+    overrides:
+      geometry_config_overrides:
+        angle_sampler:
+          x_components:
+            loc: 0
+            scale: 0.01
+          y_components:
+            loc: 0
+            scale: 0.01
+        scale_sampler:
+          abs_components:
+            scale: 0.2
+          rel_components:
+            loc: -0.1
+            scale: 0.2
+  - name: synthetic_large_zoom
+    dataset_name: synthetic
+    split: train
+    num_batches: 10000
+    overrides:
+      geometry_config_overrides:
+        angle_sampler:
+          x_components:
+            loc: 0
+            scale: 0.01
+          y_components:
+            loc: 0
+            scale: 0.01
+        scale_sampler:
+          abs_components:
+            scale: 0.5
+          rel_components:
+            loc: -0.35
+            scale: 0.5
+  - name: synthetic_random_flipping
+    dataset_name: synthetic
+    split: train
+    num_batches: 10000
+    overrides:
+      geometry_config_overrides:
+        random_flip: 0.5
+  - name: spair_synthetic_50_50
+    mixed: true
+    datasets: ['spair', 'synthetic']
+    percentages: [0.5, 0.5]
+    split: train
+    num_batches: 10000
+  - name: spair_synthetic_70_30
+    mixed: true
+    datasets: ['spair', 'synthetic']
+    percentages: [0.7, 0.3]
+    split: train
+    num_batches: 10000
   - name: spair
     split: train
     num_batches: 10000

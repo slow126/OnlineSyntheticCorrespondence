@@ -1,0 +1,170 @@
+# Flow MMD Comparison Configuration
+# Calculate MMD between flow features from different datasets
+
+# Datasets to compare
+datasets:
+  - name: sintel
+    split: train
+    num_batches: 5
+  - name: pointodyssey
+    split: train
+    num_batches: 5
+  - name: synthetic
+    split: train
+    num_batches: 5
+  - name: synthetic_small_zoom
+    dataset_name: synthetic
+    split: train
+    num_batches: 5
+    overrides:
+      geometry_config_overrides:
+        angle_sampler:
+          x_components:
+            loc: 0
+            scale: 0.01
+          y_components:
+            loc: 0
+            scale: 0.01
+        scale_sampler:
+          abs_components:
+            scale: 0.2
+          rel_components:
+            loc: -0.1
+            scale: 0.2
+  - name: synthetic_large_zoom
+    dataset_name: synthetic
+    split: train
+    num_batches: 5
+    overrides:
+      geometry_config_overrides:
+        angle_sampler:
+          x_components:
+            loc: 0
+            scale: 0.01
+          y_components:
+            loc: 0
+            scale: 0.01
+        scale_sampler:
+          abs_components:
+            scale: 0.5
+          rel_components:
+            loc: -0.35
+            scale: 0.5
+  - name: synthetic_random_flipping
+    dataset_name: synthetic
+    split: train
+    num_batches: 5
+    overrides:
+      geometry_config_overrides:
+        random_flip: 0.5
+  - name: spair_synthetic_50_50
+    mixed: true
+    datasets: ['spair', 'synthetic']
+    percentages: [0.5, 0.5]
+    split: train
+    num_batches: 5
+  - name: spair_synthetic_70_30
+    mixed: true
+    datasets: ['spair', 'synthetic']
+    percentages: [0.7, 0.3]
+    split: train
+    num_batches: 5
+  - name: spair
+    split: train
+    num_batches: 5
+  - name: flyingthings
+    split: train
+    num_batches: 5
+  - name: pointodyssey
+    split: test
+    num_batches: 5
+  - name: synthetic
+    split: val
+    num_batches: 5
+  - name: kitti2012
+    split: val  # Will be overridden to 'training' if kitti_val_use_full_training: true
+    num_batches: 5
+  - name: kitti2015
+    split: val  # Will be overridden to 'training' if kitti_val_use_full_training: true
+    num_batches: 5
+  - name: spair
+    split: test
+    num_batches: 5
+  - name: pfpascal
+    split: test
+    num_batches: 5
+  - name: pfwillow
+    split: test  # PFWillow only has test split
+    num_batches: 5
+  - name: flyingthings
+    split: test
+    num_batches: 5
+  - name: tss
+    split: val
+    num_batches: 5
+  - name: middlebury
+    split: val
+    num_batches: 5
+
+# Data loading parameters
+batch_size: 2
+num_workers: 16  # Set to 0 for synthetic (GPU-bound), or higher for other datasets
+
+# MMD configuration preset (from mmd_config.yaml)
+mmd_preset: flow_vectors  # Options: flow_vectors (4D), flow_features (32D), general, fast, accurate
+
+# Common dataset parameters (applied to all datasets)
+dataset_params:
+  size: [512, 512]
+  downsample_flow: 32
+  max_kps: null  # null = no truncation
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: false  # Will be overridden per-dataset if needed
+  kitti_val_use_full_training: true  # If true, KITTI datasets use full training set instead of val split
+
+dataset_overrides:
+  sintel:
+    sintel_root: '/home/spencer/Data'  # Torchvision appends '/Sintel' automatically
+    normalize_images: true
+  spair:
+    datapath: './models/Datasets_CATs'
+    normalize_images: false  # SPair already normalized
+  pfpascal:
+    datapath: './models/Datasets_CATs'
+    normalize_images: false  # PF-Pascal already normalized
+  pfwillow:
+    datapath: './models/Datasets_CATs'
+    normalize_images: false  # PF-Willow already normalized
+  synthetic:
+    geometry_config_path: 'src/configs/online_synth_configs/OnlineGeometryConfig.yaml'
+    processor_config_path: 'src/configs/online_synth_configs/OnlineProcessorConfig.yaml'
+    normalize_images: false  # Synthetic already normalized
+  pointodyssey:
+    dataset_location: '/home/spencer/Data/PointOdyssey'
+    normalize_images: true
+    pointodyssey_sequence_length: 2
+    pointodyssey_num_pts_to_track: 32  # Minimum requirement; use_all_valid will get all valid trajectories
+    use_all_valid: true  # Get all valid trajectories instead of limiting to num_pts_to_track
+  kitti2012:
+    datapath: '/home/spencer/Data/correspondence/kitti'
+    normalize_images: true
+  kitti2015:
+    datapath: '/home/spencer/Data/correspondence/kitti'
+    normalize_images: true
+  flyingthings:
+    datapath: '/home/spencer/Data/FlyingThings3D_tiny'
+    normalize_images: true
+  tss:
+    datapath: '/home/spencer/Data/correspondence/TSS_CVPR2016'
+    normalize_images: true
+  middlebury:
+    datapath: '/home/spencer/Data/middlebury/all'
+    normalize_images: true
+
+# Output options
+output:
+  save_results: true
+  results_file: 'flow_mmd_results_fast.csv'
+  print_pairs: true

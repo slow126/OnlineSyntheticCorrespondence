@@ -1,0 +1,15 @@
+================================================================================
+LABEL VS FEATURE ANALYSIS: COVERAGE [not_pretrained]
+================================================================================
+Data: 416 observations across 8 benchmarks
+Label metric: Flow recall (label coverage)
+Feature metric: ResNet recall (feature coverage)
+
+Model: PCK ~ label_z + feature_z + (1|benchmark)
+Label coef (std): 9.7259 (p=0.0000)
+Feature coef (std): 13.2742 (p=0.0000)
+AIC: 3407.65  BIC: 3427.80
+
+Drop-one comparisons (same data):
+  AIC without label: 3517.11 (delta=109.46)
+  AIC without feature: 3485.03 (delta=77.39)

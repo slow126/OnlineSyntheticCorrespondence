@@ -202,6 +202,11 @@ def format_training_dataset_label(summary_info):
     
     dataset = summary_info.get('dataset', 'Unknown')
     
+    # Handle mixed datasets: convert "+" to "_" for display consistency
+    # e.g., "spair+synthetic" -> "spair_synthetic"
+    if '+' in dataset:
+        dataset = dataset.replace('+', '_')
+    
     # Abbreviate PointOdyssey to PtOd
     if 'pointodyssey' in dataset.lower():
         dataset = dataset.replace('pointodyssey', 'PtOd').replace('PointOdyssey', 'PtOd')
@@ -230,6 +235,8 @@ def parse_directory_name(directory_name):
     
     Directory names follow pattern like:
     pointodyssey_stride1_sequence_length16_freezeFalse_eval...
+    spair_synthetic_70_30_pretrainedTrue_freezeFalse_eval...
+    spair_synthetic_pretrainedTrue_freezeFalse_eval...
     
     Args:
         directory_name: Name of the directory
@@ -240,10 +247,44 @@ def parse_directory_name(directory_name):
     import re
     result = {}
     
-    # Extract dataset name (first part before underscore)
-    parts = directory_name.split('_')
-    if parts:
-        result['dataset'] = parts[0]
+    # Known parameter keywords that indicate end of dataset name
+    param_keywords = ['stride', 'sequence_length', 'freeze', 'pretrained', 'eval']
+    
+    # Check for mixed dataset pattern: dataset1_dataset2 or dataset1_dataset2_X_Y
+    # Pattern 1: dataset1_dataset2_X_Y (with percentages)
+    mixed_with_percent_match = re.match(r'^([a-zA-Z]+)_([a-zA-Z]+)_(\d+)_(\d+)(?:_|$)', directory_name)
+    if mixed_with_percent_match:
+        dataset1 = mixed_with_percent_match.group(1)
+        dataset2 = mixed_with_percent_match.group(2)
+        percent1 = mixed_with_percent_match.group(3)
+        percent2 = mixed_with_percent_match.group(4)
+        result['dataset'] = f"{dataset1}_{dataset2}_{percent1}_{percent2}"
+    else:
+        # Pattern 2: dataset1_dataset2 (without percentages, assumed 50/50)
+        # Check if we have two words before hitting a parameter keyword
+        parts = directory_name.split('_')
+        if len(parts) >= 2:
+            # Check if first two parts look like dataset names (not numbers, not parameter keywords)
+            part1 = parts[0].lower()
+            part2 = parts[1].lower()
+            
+            # Check if part2 is a parameter keyword or number
+            is_part2_param = (part2 in param_keywords or 
+                            part2.startswith('stride') or 
+                            part2.startswith('sequence') or
+                            part2.startswith('freeze') or
+                            part2.startswith('pretrained') or
+                            part2.isdigit())
+            
+            if not is_part2_param:
+                # Likely a mixed dataset: dataset1_dataset2
+                result['dataset'] = f"{parts[0]}_{parts[1]}"
+            else:
+                # Single dataset
+                result['dataset'] = parts[0]
+        else:
+            # Single word dataset name
+            result['dataset'] = parts[0] if parts else directory_name
     
     # Extract stride (stride{value})
     stride_match = re.search(r'stride(\d+)', directory_name)
@@ -561,32 +602,49 @@ def collect_snapshot_directories(args):
         else:
             print(f"Scanning directory: {snapshots_dir_path}")
             found_count = 0
-            # Find all subdirectories that look like snapshots
-            # (contain validation_results.csv or training_summary.txt)
-            for subdir in sorted(snapshots_dir_path.iterdir()):
-                if subdir.is_dir():
-                    has_csv = (subdir / 'validation_results.csv').exists()
-                    has_summary = (subdir / 'training_summary.txt').exists()
-                    
-                    # Check if it looks like a snapshot directory
-                    if has_csv or has_summary:
-                        snapshot_dirs.append(str(subdir))
-                        found_count += 1
-                        print(f"  Found snapshot: {subdir.name} (has_csv={has_csv}, has_summary={has_summary})")
-                    # Also check for zero_train_step
-                    elif subdir.name == 'zero_train_step' and not args.zero_train_step:
-                        # Auto-detect zero_train_step if not specified
-                        if (subdir / 'validation_results.csv').exists():
-                            snapshot_dirs.append(str(subdir))
-                            found_count += 1
-                            print(f"  Found zero_train_step: {subdir.name}")
-                    else:
-                        # Debug: show what we're skipping
-                        print(f"  Skipping: {subdir.name} (no validation_results.csv or training_summary.txt)")
+            
+            def is_snapshot_directory(path):
+                """Check if a directory looks like a snapshot directory."""
+                has_csv = (path / 'validation_results.csv').exists()
+                has_summary = (path / 'training_summary.txt').exists()
+                return has_csv or has_summary
+            
+            def find_snapshots_recursive(root_path, max_depth=3, current_depth=0):
+                """Recursively find snapshot directories."""
+                found = []
+                if current_depth >= max_depth:
+                    return found
+                
+                try:
+                    for subdir in sorted(root_path.iterdir()):
+                        if subdir.is_dir():
+                            # Check if this directory is a snapshot
+                            if is_snapshot_directory(subdir):
+                                found.append(str(subdir))
+                                print(f"  Found snapshot: {subdir} (depth={current_depth})")
+                            # Also check for zero_train_step
+                            elif subdir.name == 'zero_train_step' and not args.zero_train_step:
+                                if (subdir / 'validation_results.csv').exists():
+                                    found.append(str(subdir))
+                                    print(f"  Found zero_train_step: {subdir}")
+                            else:
+                                # Recursively search deeper
+                                found.extend(find_snapshots_recursive(subdir, max_depth, current_depth + 1))
+                except PermissionError:
+                    pass  # Skip directories we can't access
+                
+                return found
+            
+            # Search recursively
+            found_snapshots = find_snapshots_recursive(snapshots_dir_path)
+            snapshot_dirs.extend(found_snapshots)
+            found_count = len(found_snapshots)
             
             if found_count == 0:
                 print(f"  No snapshot directories found in {snapshots_dir_path}")
                 print(f"  Looking for subdirectories containing 'validation_results.csv' or 'training_summary.txt'")
+            else:
+                print(f"  Found {found_count} snapshot directory(ies)")
     
     # Method 3: Read from stdin (for piping)
     if not sys.stdin.isatty():  # Check if stdin is not a terminal (i.e., piped)

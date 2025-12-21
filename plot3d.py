@@ -53,11 +53,15 @@ def load_coverage_lookup(csv_path='coverage_results.csv'):
     """
     Load coverage metrics from CSV file.
     
+    Supports both single datasets (e.g., 'spair', 'synthetic') and mixed datasets
+    (e.g., 'spair_synthetic_50_50', 'spair_synthetic_70_30').
+    
     Args:
         csv_path: Path to coverage CSV file
         
     Returns:
         Dictionary mapping (train_dataset_split, eval_dataset_split) -> coverage_metrics dict
+        Also includes mappings without explicit splits for backward compatibility
     """
     coverage_lookup = {}
     
@@ -70,6 +74,7 @@ def load_coverage_lookup(csv_path='coverage_results.csv'):
             reader = csv.DictReader(f)
             for row in reader:
                 # Parse dataset names and splits (normalize to lowercase for consistent matching)
+                # Handles both single datasets (e.g., 'spair') and mixed datasets (e.g., 'spair_synthetic_50_50')
                 train_dataset = str(row.get('dataset1', '')).strip().lower()
                 train_split = str(row.get('split1', '')).strip().lower()
                 eval_dataset = str(row.get('dataset2', '')).strip().lower()
@@ -132,19 +137,26 @@ def collect_3d_data_points(snapshots_data, flow_coverage_lookup, resnet_coverage
     for training_dataset_label, _, _, snapshot_path in snapshots_data:
         summary_path = Path(snapshot_path) / 'training_summary.txt'
         
+        # Skip if summary file doesn't exist (shouldn't happen since we filter above, but be safe)
         if not summary_path.exists():
+            if debug:
+                print(f"  Skipping {snapshot_path}: training_summary.txt not found")
             continue
         
         # Get base training dataset name
+        # parse_training_dataset_from_summary already handles mixed datasets by converting '+' to '_'
+        # (e.g., "spair+synthetic" -> "spair_synthetic")
         base_training_dataset = parse_training_dataset_from_summary(summary_path)
         if not base_training_dataset:
             if debug:
-                print(f"  Warning: Could not parse training dataset from {summary_path}")
+                print(f"  Skipping {snapshot_path}: Could not parse training dataset from summary")
             continue
         
         # Get best performance per benchmark
         best_performance = parse_best_performance_from_summary(summary_path)
         if not best_performance:
+            if debug:
+                print(f"  Skipping {snapshot_path}: No best performance data found in summary")
             continue
         
         # For each benchmark, look up both flow and resnet coverage
@@ -542,19 +554,26 @@ def collect_precision_data_points(snapshots_data, flow_coverage_lookup, resnet_c
     for training_dataset_label, _, _, snapshot_path in snapshots_data:
         summary_path = Path(snapshot_path) / 'training_summary.txt'
         
+        # Skip if summary file doesn't exist (shouldn't happen since we filter above, but be safe)
         if not summary_path.exists():
+            if debug:
+                print(f"  Skipping {snapshot_path}: training_summary.txt not found")
             continue
         
         # Get base training dataset name
+        # parse_training_dataset_from_summary already handles mixed datasets by converting '+' to '_'
+        # (e.g., "spair+synthetic" -> "spair_synthetic")
         base_training_dataset = parse_training_dataset_from_summary(summary_path)
         if not base_training_dataset:
             if debug:
-                print(f"  Warning: Could not parse training dataset from {summary_path}")
+                print(f"  Skipping {snapshot_path}: Could not parse training dataset from summary")
             continue
         
         # Get best performance per benchmark
         best_performance = parse_best_performance_from_summary(summary_path)
         if not best_performance:
+            if debug:
+                print(f"  Skipping {snapshot_path}: No best performance data found in summary")
             continue
         
         # For each benchmark, look up both flow and resnet precision
@@ -690,19 +709,26 @@ def collect_mmd_data_points(snapshots_data, flow_mmd_lookup, feature_mmd_lookup,
     for training_dataset_label, _, _, snapshot_path in snapshots_data:
         summary_path = Path(snapshot_path) / 'training_summary.txt'
         
+        # Skip if summary file doesn't exist (shouldn't happen since we filter above, but be safe)
         if not summary_path.exists():
+            if debug:
+                print(f"  Skipping {snapshot_path}: training_summary.txt not found")
             continue
         
         # Get base training dataset name
+        # parse_training_dataset_from_summary already handles mixed datasets by converting '+' to '_'
+        # (e.g., "spair+synthetic" -> "spair_synthetic")
         base_training_dataset = parse_training_dataset_from_summary(summary_path)
         if not base_training_dataset:
             if debug:
-                print(f"  Warning: Could not parse training dataset from {summary_path}")
+                print(f"  Skipping {snapshot_path}: Could not parse training dataset from summary")
             continue
         
         # Get best performance per benchmark
         best_performance = parse_best_performance_from_summary(summary_path)
         if not best_performance:
+            if debug:
+                print(f"  Skipping {snapshot_path}: No best performance data found in summary")
             continue
         
         # For each benchmark, look up both flow and feature MMD
@@ -1740,28 +1766,66 @@ def main():
         print(f"Error: Snapshots directory does not exist: {args.snapshots_dir}")
         return
     
-    # Collect snapshot directories
+    # Collect snapshot directories (recursively search nested directories)
     snapshot_dirs = []
-    for item in snapshots_dir_path.iterdir():
-        if item.is_dir():
-            # Check if it looks like a snapshot directory (has training_summary.txt)
-            if (item / 'training_summary.txt').exists():
-                snapshot_dirs.append(str(item))
+    
+    def find_snapshot_directories(root_path, max_depth=3, current_depth=0):
+        """Recursively find directories containing training_summary.txt."""
+        found = []
+        if current_depth >= max_depth:
+            return found
+        
+        try:
+            for item in root_path.iterdir():
+                if item.is_dir():
+                    # Check if this directory is a snapshot (has training_summary.txt)
+                    if (item / 'training_summary.txt').exists():
+                        found.append(str(item))
+                    else:
+                        # Recursively search deeper
+                        found.extend(find_snapshot_directories(item, max_depth, current_depth + 1))
+        except PermissionError:
+            pass  # Skip directories we can't access
+        
+        return found
+    
+    snapshot_dirs = find_snapshot_directories(snapshots_dir_path)
     
     if not snapshot_dirs:
         print(f"Error: No snapshot directories found in {args.snapshots_dir}")
-        print("  (Looking for directories containing training_summary.txt)")
+        print("  (Looking for directories containing training_summary.txt, searched recursively)")
         return
     
     print(f"Found {len(snapshot_dirs)} snapshot directories")
     
     snapshots_data = []
+    skipped_count = 0
     for snapshot_dir in snapshot_dirs:
+        # Check if required files exist before parsing
+        snapshot_path = Path(snapshot_dir)
+        summary_path = snapshot_path / 'training_summary.txt'
+        csv_path = snapshot_path / 'validation_results.csv'
+        
+        if not summary_path.exists():
+            print(f"  Skipping {snapshot_path.name}: training_summary.txt not found")
+            skipped_count += 1
+            continue
+        
+        if not csv_path.exists():
+            print(f"  Skipping {snapshot_path.name}: validation_results.csv not found")
+            skipped_count += 1
+            continue
+        
         training_dataset, validation_data, metrics = parse_snapshot_directory(snapshot_dir)
         if validation_data:
             snapshots_data.append((training_dataset, validation_data, metrics, snapshot_dir))
+        else:
+            print(f"  Skipping {snapshot_path.name}: No validation data found")
+            skipped_count += 1
     
     print(f"Loaded {len(snapshots_data)} snapshots")
+    if skipped_count > 0:
+        print(f"Skipped {skipped_count} snapshots (missing files or no validation data)")
     
     # Load coverage data
     print("\nLoading coverage data...")

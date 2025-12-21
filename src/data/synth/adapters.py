@@ -72,6 +72,7 @@ class PointOdysseyAdapter(BaseAdapter):
             thres=kwargs.get("thres", "img"),
             use_all_valid=kwargs.get("use_all_valid", False),
             disable_motion_filter=kwargs.get("pointodyssey_disable_motion_filter", False),
+            val_sequence_fraction=kwargs.get("val_sequence_fraction", None),
         )
 
     def __len__(self):

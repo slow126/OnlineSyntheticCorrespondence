@@ -27,7 +27,7 @@ training:
   max_flow_length: null
 
   # MMD calculation during validation
-  mmd_every_n_epochs: 1  # 0 = disabled, 1 = every epoch, 2 = every other epoch, etc.
+  mmd_every_n_epochs: 0  # 0 = disabled, 1 = every epoch, 2 = every other epoch, etc.
 
   enable_debug: true
   debug_visualization_benchmarks: all
@@ -82,7 +82,7 @@ evaluation:
       pointodyssey_sequence_length: 4
       pointodyssey_num_pts_to_track: 32  # Minimum requirement; use_all_valid will get all valid trajectories
       use_all_valid: true  # Get all valid trajectories instead of limiting to num_pts_to_track
-      val_sequence_fraction: 1.0
+      val_sequence_fraction: 0.2
       normalize_images: true
     kitti2012:
       split: 'val'  # or 'training' if kitti_val_use_full_training is true
@@ -93,6 +93,7 @@ evaluation:
     flyingthings:
       split: 'test'
       normalize_images: true
+      val_dataset_fraction: 0.2  # Use only 20% of FlyingThings for faster validation
 
 # Paths
 paths:

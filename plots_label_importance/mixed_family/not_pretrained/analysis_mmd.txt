@@ -1,0 +1,16 @@
+================================================================================
+LABEL VS FEATURE ANALYSIS: MMD [not_pretrained]
+================================================================================
+Data: 240 observations across 10 benchmarks
+Label metric: Flow MMD (quality: -MMD)
+Feature metric: Feature MMD (quality: -MMD)
+Lower MMD is better; analysis uses -MMD as quality.
+
+Model: PCK ~ label_z + feature_z + (1|benchmark)
+Label coef (std): 161.7948 (p=0.0000)
+Feature coef (std): 0.8772 (p=0.4125)
+AIC: 1904.18  BIC: 1921.58
+
+Drop-one comparisons (same data):
+  AIC without label: 1902.85 (delta=-1.33)
+  AIC without feature: 2098.06 (delta=193.89)

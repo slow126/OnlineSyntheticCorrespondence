@@ -1,0 +1,83 @@
+LEAKAGE-FREE SUMMARY
+================================================================================
+Rows: 240
+Runs: 24
+Benchmarks (10): flyingthings, kitti2012, kitti2015, middlebury, pfpascal, pfwillow, pointodyssey, spair, synthetic, tss
+Train datasets (11): flyingthings, pointodyssey, sintel, spair, spair_synthetic, spair_synthetic_50_50, spair_synthetic_70_30, synthetic, synthetic_large_zoom, synthetic_random_flipping, synthetic_small_zoom
+
+Encoder config counts (pretrained, freeze):
+  True/True: 240 rows
+
+Target: auc_normalized
+Predictors: flow_recall_logit, flow_precision_logit, resnet_recall_logit, resnet_precision_logit, flow_mmd, feature_mmd
+
+Overall predictor signal (pairwise correlations):
+  flow_recall_logit: Pearson=0.240, Spearman=0.192
+  flow_precision_logit: Pearson=0.178, Spearman=0.205
+  resnet_recall_logit: Pearson=0.214, Spearman=0.216
+  resnet_precision_logit: Pearson=-0.053, Spearman=0.150
+  flow_mmd: Pearson=0.149, Spearman=0.079
+  feature_mmd: Pearson=-0.482, Spearman=-0.495
+
+Standardized OLS (all data):
+  N=176
+  R2=0.519
+  flow_recall_logit: +0.805 (p=2.78e-14)
+  flow_precision_logit: +0.420 (p=4.92e-10)
+  resnet_recall_logit: +0.168 (p=0.0207)
+  resnet_precision_logit: +0.048 (p=0.444)
+  flow_mmd: +0.517 (p=2.38e-07)
+  feature_mmd: -0.427 (p=4.59e-11)
+
+Encoder-config-specific signal (standardized OLS):
+  pretrained=True, freeze=True: n=176
+    flow_recall_logit: +0.805 (p=2.78e-14)
+    flow_precision_logit: +0.420 (p=4.92e-10)
+    resnet_recall_logit: +0.168 (p=0.0207)
+    resnet_precision_logit: +0.048 (p=0.444)
+    flow_mmd: +0.517 (p=2.38e-07)
+    feature_mmd: -0.427 (p=4.59e-11)
+
+Prediction validation (LOBO):
+  Overall: MAE=18.87, RMSE=23.13, Pearson=0.164, Spearman=0.194
+  Best by Spearman: kitti2012 (0.73), flyingthings (0.65), pfpascal (0.58)
+  Worst by Spearman: tss (0.28), pointodyssey (0.43), pfwillow (0.47)
+  Rank@benchmark (mean): top1=0.38, top3=0.75, regret=0.92, spearman=0.66
+  Families: flow={kitti2012,kitti2015,middlebury,flyingthings,pointodyssey} semantic={spair,pfpascal,pfwillow,tss} (synthetic excluded)
+  Rank@benchmark (flow family): top1=0.50, top3=0.50, regret=0.60, spearman=0.72
+  Rank@benchmark (semantic family): top1=0.25, top3=1.00, regret=1.24, spearman=0.60
+  Baseline selectors (overall):
+    flow_recall_logit: top1=0.00, top3=0.00, regret=24.03, spearman=-0.28
+    resnet_recall_logit: top1=0.00, top3=0.12, regret=10.23, spearman=0.46
+    flow_mmd: top1=0.00, top3=0.20, regret=12.97, spearman=-0.05
+    feature_mmd: top1=0.30, top3=0.50, regret=6.06, spearman=0.68
+    always_flyingthings: top1=0.30, top3=0.60, regret=3.58, spearman=n/a
+    always_best_avg: top1=0.50, top3=1.00, regret=7.06, spearman=n/a
+  Baseline selectors (families):
+    flow_recall_logit (flow family): top1=0.00, top3=0.00, regret=24.33, spearman=-0.44
+    feature_mmd (semantic family): top1=0.00, top3=0.25, regret=10.41, spearman=0.56
+Prediction validation (LOBO, MixedLM):
+  Overall: MAE=17.93, RMSE=24.88, Pearson=0.069, Spearman=0.236
+  Best by Spearman: flyingthings (0.80), pfpascal (0.75), pfwillow (0.68)
+  Worst by Spearman: pointodyssey (0.35), middlebury (0.41), tss (0.45)
+
+Prediction validation (LOTO):
+  Overall: MAE=15.91, RMSE=20.28, Pearson=0.485, Spearman=0.477
+  Best by Spearman: synthetic_random_flipping (0.88), spair_synthetic_50_50 (0.86), flyingthings (0.74)
+  Worst by Spearman: spair (-0.07), pointodyssey (0.50), spair_synthetic_70_30 (0.55)
+Prediction validation (LOTO, MixedLM):
+  Overall: MAE=7.43, RMSE=9.20, Pearson=0.881, Spearman=0.859
+  Best by Spearman: spair_synthetic_50_50 (1.00), spair_synthetic_70_30 (0.98), pointodyssey (0.94)
+  Worst by Spearman: synthetic_small_zoom (0.72), synthetic (0.74), synthetic_large_zoom (0.79)
+
+Within-benchmark slope consistency (standardized OLS):
+  flow_recall_logit: +3 / -5 across benchmarks
+  flow_precision_logit: +7 / -1 across benchmarks
+  resnet_recall_logit: +4 / -4 across benchmarks
+  resnet_precision_logit: +8 / -0 across benchmarks
+  flow_mmd: +2 / -6 across benchmarks
+  feature_mmd: +1 / -7 across benchmarks
+
+Takeaways (auto-generated):
+  - Strongest standardized predictors: flow_recall_logit (+0.81 std), flow_mmd (+0.52 std).
+  - Negative predictors (higher -> lower target): feature_mmd (-0.43 std).

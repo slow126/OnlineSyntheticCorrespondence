@@ -1,0 +1,75 @@
+# Unified experiment pipeline configuration (local paths).
+# Run with: python scripts/run_experiment_pipeline.py --config src/configs/pipeline/leakage_free_pipeline_local.yaml
+
+pipeline:
+  python: python3
+  workdir: .
+  dry_run: false
+
+steps:
+  build_coresets:
+    enabled: true
+    configs:
+      - src/configs/coreset_configs/build_datasets_flow.yaml
+      - src/configs/coreset_configs/build_datasets_features.yaml
+      - src/configs/coreset_configs/build_mixed_datasets_flow.yaml
+      - src/configs/coreset_configs/build_mixed_datasets_features.yaml
+
+  calculate_coverage:
+    enabled: true
+    runs:
+      - name: flow
+        args:
+          coresets_dir: coresets
+          representation: flow
+          output: coverage_results.csv
+          emit_direction: train_to_eval
+      - name: resnet
+        args:
+          coresets_dir: coresets
+          representation: resnet
+          output: coverage_resnet_results.csv
+          emit_direction: train_to_eval
+
+  mmd:
+    enabled: true
+    configs:
+      flow: src/configs/mmd_configs/flow_mmd_config.yaml
+      feature: src/configs/mmd_configs/feature_mmd_config.yaml
+
+  leakage_free_eval:
+    enabled: true
+    args:
+      snapshots_dir:
+        - snapshots
+      output_dir: analysis/leakage_free_local
+      mode: auc
+      metric: pck
+      auc_steps: 5000
+      coverage_csv: coverage_results.csv
+      coverage_resnet_csv: coverage_resnet_results.csv
+      flow_mmd_csv: flow_mmd_results.csv
+      feature_mmd_csv: feature_mmd_results.csv
+      relative_target_baseline: spair
+      logit_coverage: true
+      per_encoder: true
+      run_summary: true
+
+  select_checkpoints:
+    enabled: true
+    args:
+      snapshots_dir:
+        - snapshots
+      output: analysis/selected_checkpoints_local.csv
+      metric: pck
+      select: auc
+      auc_steps: 5000
+      auc_pad: true
+
+  summarize:
+    enabled: true
+    args:
+      auc_table: analysis/leakage_free_local/auc_with_features.csv
+      output_file: analysis/leakage_free_local/summary_report.txt
+      predictors: flow_recall_logit,flow_precision_logit,resnet_recall_logit,resnet_precision_logit,flow_mmd,feature_mmd
+      target: auc_delta

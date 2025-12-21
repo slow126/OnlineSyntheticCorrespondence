@@ -57,7 +57,8 @@ class PointOdysseySimpleDataset(torch.utils.data.Dataset):
                  reverse_flow: bool = True,
                  thres: str = 'img',
                  use_all_valid: bool = False,
-                 disable_motion_filter: bool = False):
+                 disable_motion_filter: bool = False,
+                 val_sequence_fraction: Optional[float] = None):
         """
         Initialize the PointOdyssey flow dataset.
         
@@ -81,6 +82,8 @@ class PointOdysseySimpleDataset(torch.utils.data.Dataset):
             disable_motion_filter: If True, disables motion filtering (velocity/acceleration/jerk checks).
                                   Useful for correspondence tasks where you only need valid correspondences
                                   between frames, not smooth trajectories (default: False)
+            val_sequence_fraction: Fraction of sequence frames to use for validation (e.g., 0.2 for 20%).
+                                  Only applies to val/test splits. None uses full sequences (default: None)
         """
         # Check if the dataset has the expected structure (with train/val/test subdirs)
         expected_dset_path = os.path.join(dataset_location, dset)
@@ -113,6 +116,7 @@ class PointOdysseySimpleDataset(torch.utils.data.Dataset):
             verbose=verbose,
             use_all_valid=use_all_valid,
             disable_motion_filter=disable_motion_filter,
+            val_sequence_fraction=val_sequence_fraction,
         )
         
         self.S = S

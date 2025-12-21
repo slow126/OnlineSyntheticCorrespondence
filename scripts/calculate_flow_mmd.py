@@ -10,6 +10,7 @@ This script:
 """
 
 import argparse
+import sys
 import os
 import yaml
 import numpy as np
@@ -18,7 +19,11 @@ from torch.utils.data import DataLoader
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from src.data.synth.datasets.CorrespondenceDataset import CorrespondenceDataset
+from src.data.synth.datasets.MixedCorrespondenceDataset import MixedCorrespondenceDataset
 from src.mmd import load_config_from_yaml, StreamingMMD, StreamingMMDTorch, mmd2_rff
 
 
@@ -150,7 +155,8 @@ def create_dataset_from_config(
     dataset_name: str,
     split: str,
     common_params: dict,
-    dataset_overrides: dict
+    dataset_overrides: dict,
+    entry_overrides: dict = None
 ) -> CorrespondenceDataset:
     """
     Create a CorrespondenceDataset from config parameters.
@@ -170,6 +176,8 @@ def create_dataset_from_config(
     # Apply dataset-specific overrides
     if dataset_name in dataset_overrides:
         dataset_config.update(dataset_overrides[dataset_name])
+    if entry_overrides:
+        dataset_config.update(entry_overrides)
     
     # Handle size tuple
     if 'size' in dataset_config and isinstance(dataset_config['size'], list):
@@ -208,6 +216,56 @@ def create_dataset_from_config(
     print(f"Creating dataset: {dataset_name} (split: {split})")
     dataset = CorrespondenceDataset(dataset_name, **dataset_config)
     return dataset
+
+
+def create_mixed_dataset_from_config(
+    datasets_list: list,
+    percentages: list,
+    split: str,
+    common_params: dict,
+    dataset_overrides: dict,
+    epoch_size: int = None,
+    seed: int = None
+) -> MixedCorrespondenceDataset:
+    if len(datasets_list) != len(percentages):
+        raise ValueError(f"Number of datasets ({len(datasets_list)}) must match number of percentages ({len(percentages)})")
+    created_datasets = []
+    for dataset_name in datasets_list:
+        ds_config = common_params.copy()
+        if dataset_name in dataset_overrides:
+            ds_config.update(dataset_overrides[dataset_name])
+        if 'size' in ds_config and isinstance(ds_config['size'], list):
+            ds_config['size'] = tuple(ds_config['size'])
+        ds_config['split'] = split
+        if 'max_kps' in ds_config and ds_config['max_kps'] is None:
+            ds_config['max_kps'] = None
+        if dataset_name == 'tss':
+            ds_config['thres'] = ds_config.get('thres', 'img')
+            ds_config['reverse_flow'] = ds_config.get('reverse_flow', False)
+        elif dataset_name == 'middlebury':
+            ds_config['reverse_flow'] = ds_config.get('reverse_flow', False)
+        elif dataset_name == 'pointodyssey':
+            ds_config['reverse_flow'] = ds_config.get('reverse_flow', True)
+            ds_config['thres'] = ds_config.get('thres', 'img')
+        elif dataset_name in ['kitti2012', 'kitti2015']:
+            ds_config['reverse_flow'] = ds_config.get('reverse_flow', False)
+            ds_config['thres'] = ds_config.get('thres', 'img')
+            kitti_val_use_full_training = ds_config.get('kitti_val_use_full_training', False)
+            if kitti_val_use_full_training and ds_config.get('split') == 'val':
+                ds_config['split'] = 'training'
+        elif dataset_name == 'flyingthings':
+            ds_config['reverse_flow'] = ds_config.get('reverse_flow', True)
+        print(f"Creating sub-dataset: {dataset_name} (split: {split})")
+        sub_dataset = CorrespondenceDataset(dataset_name, **ds_config)
+        created_datasets.append(sub_dataset)
+    print(f"Creating mixed dataset with {len(created_datasets)} datasets")
+    mixed_dataset = MixedCorrespondenceDataset(
+        datasets=created_datasets,
+        percentages=percentages,
+        epoch_size=epoch_size,
+        seed=seed,
+    )
+    return mixed_dataset
 
 
 def main():
@@ -272,21 +330,42 @@ def main():
     dataset_vector_counts = {}
     
     for ds_config in datasets_config:
-        dataset_name = ds_config['name']
+        is_mixed = ds_config.get('mixed', False) or 'datasets' in ds_config
         split = ds_config['split']
         num_batches = ds_config['num_batches']
-        
-        # Create unique identifier combining dataset name and split
-        dataset_id = f"{dataset_name}_{split}"
-        
-        # Create dataset
-        dataset = create_dataset_from_config(
-            dataset_name, split, common_params, dataset_overrides
-        )
-        
-        # Create dataloader
-        # Use num_workers=0 for synthetic (GPU-bound rendering)
-        workers = 0 if dataset_name == 'synthetic' else num_workers
+        entry_overrides = ds_config.get('overrides', None)
+
+        if is_mixed:
+            datasets_list = ds_config.get('datasets', [])
+            percentages = ds_config.get('percentages', [])
+            label = ds_config.get('name')
+            if not label:
+                if len(percentages) == 2 and len(datasets_list) == 2:
+                    pct1 = int(percentages[0] * 100)
+                    pct2 = int(percentages[1] * 100)
+                    label = f"{datasets_list[0]}_{datasets_list[1]}_{pct1}_{pct2}"
+                else:
+                    label = "+".join(datasets_list)
+            dataset_id = f"{label}_{split}"
+            dataset = create_mixed_dataset_from_config(
+                datasets_list,
+                percentages,
+                split,
+                common_params,
+                dataset_overrides,
+                epoch_size=ds_config.get('epoch_size', None),
+                seed=ds_config.get('seed', None),
+            )
+            has_synthetic = 'synthetic' in datasets_list
+            workers = 0 if has_synthetic else num_workers
+        else:
+            label = ds_config['name']
+            dataset_name = ds_config.get('dataset_name', label)
+            dataset_id = f"{label}_{split}"
+            dataset = create_dataset_from_config(
+                dataset_name, split, common_params, dataset_overrides, entry_overrides
+            )
+            workers = 0 if dataset_name == 'synthetic' else num_workers
         
         dataloader = DataLoader(
             dataset,
@@ -300,7 +379,7 @@ def main():
         # Stream flows directly to StreamingMMD (no accumulation!)
         # Use dataset_id instead of dataset_name to treat splits as unique
         vector_count = stream_flows_to_mmd(
-            dataloader, num_batches, dataset_id, 
+            dataloader, num_batches, dataset_id,
             streaming_mmd, mmd_config.backend, device
         )
         dataset_vector_counts[dataset_id] = vector_count
@@ -380,4 +459,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

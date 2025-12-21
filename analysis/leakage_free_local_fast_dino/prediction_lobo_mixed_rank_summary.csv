@@ -1,0 +1,10 @@
+benchmark,n_options,top1,top3,regret,spearman,true_best_option,pred_best_option,pred_top3_options
+flyingthings,10,1.0,1.0,0.0,0.9393939393939394,flyingthings,flyingthings,"flyingthings,sintel,spair_synthetic_70_30"
+kitti2012,10,1.0,1.0,0.0,0.8909090909090909,sintel,sintel,"sintel,flyingthings,spair_synthetic_70_30"
+middlebury,10,0.0,1.0,0.7474600000000002,0.9272727272727272,pointodyssey,sintel,"sintel,flyingthings,pointodyssey"
+pfpascal,10,0.0,1.0,1.464990000000002,0.7090909090909091,spair_synthetic_50_50,spair_synthetic_70_30,"spair_synthetic_70_30,spair_synthetic_50_50,flyingthings"
+pfwillow,10,0.0,1.0,1.6922233333333363,0.7333333333333333,spair_synthetic_50_50,spair_synthetic_70_30,"spair_synthetic_70_30,spair_synthetic_50_50,pointodyssey"
+pointodyssey,10,1.0,1.0,0.0,0.6727272727272727,sintel,sintel,"sintel,pointodyssey,synthetic_small_zoom"
+spair,10,0.0,1.0,1.1709433333333328,0.6606060606060606,spair_synthetic_70_30,spair,"spair,spair_synthetic_70_30,spair_synthetic_50_50"
+tss,10,0.0,0.0,1.939662222222223,0.5515151515151515,flyingthings,spair_synthetic_70_30,"spair_synthetic_70_30,spair_synthetic_50_50,flyingthings"
+__overall__,80,0.375,0.875,0.8769098611111118,0.7606060606060606,n/a,n/a,

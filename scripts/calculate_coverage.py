@@ -44,16 +44,24 @@ def parse_coreset_filename(filepath, suffix: str):
     Parse coreset filename to extract dataset name and split.
     
     Expected format: {dataset}_{split}_{suffix}.pt
-    Example: synthetic_train_flow.pt -> (synthetic, train)
+    Examples:
+        - synthetic_train_flow.pt -> (synthetic, train)
+        - spair_synthetic_50_50_train_flow.pt -> (spair_synthetic_50_50, train)
+        - spair_synthetic_70_30_train_flow.pt -> (spair_synthetic_70_30, train)
+    
+    Supports mixed dataset names with underscores (e.g., spair_synthetic_50_50).
+    The parser splits by the last underscore to separate dataset from split.
     """
     stem = Path(filepath).stem  # Remove .pt extension
     
-    # Remove suffix if present
+    # Remove suffix if present (e.g., "_flow" or "_resnet")
     suffix_token = f"_{suffix}"
     if stem.endswith(suffix_token):
         stem = stem[: -len(suffix_token)]
     
     # Split by last underscore to separate dataset from split
+    # This works for both single datasets (e.g., "synthetic_train") 
+    # and mixed datasets (e.g., "spair_synthetic_50_50_train")
     parts = stem.rsplit('_', 1)
     if len(parts) == 2:
         dataset, split = parts
@@ -235,10 +243,12 @@ def compute_pairwise_metrics(
             print(f"  Recall: {recall:.2%}, Precision: {precision:.2%}, Outside: {outside:.2%}")
             
             # Additional debug for zero recall
-            if recall < 0.01 and train_info['dataset'].lower() == 'spair':
-                print(f"  ⚠️  WARNING: Very low recall for SPair! This might indicate:")
-                print(f"     - SPair coreset might be too small or empty")
-                print(f"     - Distances between SPair and eval might be very large")
+            # Check if dataset name contains 'spair' (handles both single and mixed datasets)
+            dataset_lower = train_info['dataset'].lower()
+            if recall < 0.01 and 'spair' in dataset_lower:
+                print(f"  ⚠️  WARNING: Very low recall for {train_info['dataset']}! This might indicate:")
+                print(f"     - Coreset might be too small or empty")
+                print(f"     - Distances between training and eval datasets might be very large")
                 print(f"     - Bandwidth might be too small (try increasing --bandwidth-scale)")
                 print(f"     - Adaptive mass might be setting M_train too high")
     
