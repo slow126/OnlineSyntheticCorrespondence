@@ -130,8 +130,8 @@ def main():
     parser.add_argument(
         "--predictors",
         default=(
-            "flow_recall_logit,flow_precision_logit,"
-            "resnet_recall_logit,resnet_precision_logit,"
+            "flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,"
+            "resnet_train_to_eval_coverage_logit,resnet_eval_to_train_coverage_logit,"
             "flow_mmd,feature_mmd"
         ),
         help="Comma-separated predictors.",
@@ -143,7 +143,7 @@ def main():
     )
     parser.add_argument(
         "--random-slopes",
-        default="flow_recall_logit,flow_mmd",
+        default="flow_train_to_eval_coverage_logit,flow_mmd",
         help="Comma-separated predictors to use as random slopes.",
     )
     parser.add_argument(

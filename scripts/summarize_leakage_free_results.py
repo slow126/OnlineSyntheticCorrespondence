@@ -51,7 +51,7 @@ def _spearman(x, y):
     return _pearson(rx, ry)
 
 
-def _fit_standardized_ols(df, predictors, target):
+def _fit_standardized_model(df, predictors, target, model="ols", ridge_alpha=1.0):
     df_sub = df[predictors + [target]].dropna().copy()
     if df_sub.empty:
         return None
@@ -59,6 +59,21 @@ def _fit_standardized_ols(df, predictors, target):
     for col in predictors:
         df_sub[f"{col}_z"] = _zscore(df_sub[col])
     z_cols = [f"{c}_z" for c in predictors]
+
+    if model == "ridge":
+        X = df_sub[z_cols].to_numpy(dtype=float)
+        y = df_sub[f"{target}_z"].to_numpy(dtype=float)
+        X = np.column_stack([np.ones(len(X)), X])
+        penalty = np.eye(X.shape[1])
+        penalty[0, 0] = 0.0
+        coef = np.linalg.solve(X.T @ X + float(ridge_alpha) * penalty, X.T @ y)
+        params = {"Intercept": coef[0]}
+        for name, value in zip(predictors, coef[1:]):
+            params[name] = value
+        y_pred = X.dot(coef)
+        denom = np.sum((y - np.mean(y)) ** 2)
+        r2 = 1.0 - (np.sum((y - y_pred) ** 2) / denom if denom != 0 else np.nan)
+        return {"params": params, "pvalues": None, "n": len(df_sub), "r2": r2}
 
     if not HAS_STATSMODELS:
         X = df_sub[z_cols].to_numpy(dtype=float)
@@ -81,6 +96,28 @@ def _format_coef(name, coef, pval):
     if pval is None or np.isnan(pval):
         return f"{name}: {coef:+.3f}"
     return f"{name}: {coef:+.3f} (p={pval:.3g})"
+
+
+def _filter_predictors(df, predictors):
+    present = [p for p in predictors if p in df.columns]
+    missing = [p for p in predictors if p not in df.columns]
+    all_nan = [p for p in present if df[p].isna().all()]
+    remaining = [p for p in present if p not in all_nan]
+    constant = [p for p in remaining if df[p].nunique(dropna=True) < 2]
+    filtered = [p for p in remaining if p not in constant]
+    redundant = []
+    for prefix in ("flow", "resnet", "dino"):
+        cov = f"{prefix}_eval_to_train_coverage"
+        outside = f"{prefix}_outside_mass"
+        cov_logit = f"{cov}_logit"
+        outside_logit = f"{outside}_logit"
+        if cov in filtered and outside in filtered:
+            redundant.append(outside)
+        if cov_logit in filtered and outside_logit in filtered:
+            redundant.append(outside_logit)
+    if redundant:
+        filtered = [p for p in filtered if p not in redundant]
+    return filtered, missing, all_nan, constant, redundant
 
 
 def summarize_predictions(summary_df, label_col, top_n=3):
@@ -135,6 +172,16 @@ def _rank_family_summary(df, benchmarks):
     }
 
 
+def _select_baseline_selector(df, candidates):
+    if df is None or df.empty:
+        return None, None
+    for name in candidates:
+        sub = df[df["selector"] == name]
+        if not sub.empty:
+            return name, sub
+    return None, None
+
+
 def main():
     parser = argparse.ArgumentParser(description="Summarize leakage-free outputs.")
     parser.add_argument(
@@ -173,6 +220,11 @@ def main():
         help="LOTO summary CSV.",
     )
     parser.add_argument(
+        "--loto-rank-summary",
+        default="analysis/leakage_free/prediction_loto_rank_summary.csv",
+        help="LOTO ranking summary CSV.",
+    )
+    parser.add_argument(
         "--loto-mixed-summary",
         default="analysis/leakage_free/prediction_loto_mixed_summary.csv",
         help="LOTO MixedLM summary CSV.",
@@ -183,10 +235,27 @@ def main():
         help="Target column name.",
     )
     parser.add_argument(
+        "--prediction-target",
+        default=None,
+        help="Target used for LOBO/LOTO predictions (optional).",
+    )
+    parser.add_argument(
+        "--linear-model",
+        choices=["ols", "ridge"],
+        default="ols",
+        help="Linear model for summary (default: ols).",
+    )
+    parser.add_argument(
+        "--ridge-alpha",
+        type=float,
+        default=1.0,
+        help="Ridge penalty strength when linear-model=ridge.",
+    )
+    parser.add_argument(
         "--predictors",
         default=(
-            "flow_recall_logit,flow_precision_logit,"
-            "resnet_recall_logit,resnet_precision_logit,"
+            "flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,"
+            "resnet_train_to_eval_coverage_logit,resnet_eval_to_train_coverage_logit,"
             "flow_mmd,feature_mmd"
         ),
         help="Comma-separated predictor columns.",
@@ -215,9 +284,22 @@ def main():
 
     df = pd.read_csv(auc_path)
     predictors = [p.strip() for p in args.predictors.split(",") if p.strip()]
+    predictors, missing, all_nan, constant, redundant = _filter_predictors(df, predictors)
 
     if args.target not in df.columns:
         out_lines.append(f"Target '{args.target}' not found in {auc_path}")
+        Path(args.output_file).write_text("\n".join(out_lines))
+        return
+    if missing:
+        out_lines.append(f"Dropped missing predictors: {', '.join(missing)}")
+    if all_nan:
+        out_lines.append(f"Dropped NaN-only predictors: {', '.join(all_nan)}")
+    if constant:
+        out_lines.append(f"Dropped constant predictors: {', '.join(constant)}")
+    if redundant:
+        out_lines.append(f"Dropped redundant predictors: {', '.join(redundant)}")
+    if not predictors:
+        out_lines.append("No valid predictors remain after filtering.")
         Path(args.output_file).write_text("\n".join(out_lines))
         return
 
@@ -241,9 +323,16 @@ def main():
         out_lines.append("Encoder config counts (pretrained, freeze):")
         for (pre, frz), group in df.groupby(["pretrained", "freeze"], dropna=False):
             out_lines.append(f"  {pre}/{frz}: {len(group)} rows")
+    if "encoder_config" in df.columns:
+        out_lines.append("")
+        out_lines.append("Encoder config counts (FF/FT/TF/TT):")
+        for name, group in df.groupby("encoder_config", dropna=False):
+            out_lines.append(f"  {name}: {len(group)} rows")
 
     out_lines.append("")
     out_lines.append(f"Target: {args.target}")
+    if args.prediction_target and args.prediction_target != args.target:
+        out_lines.append(f"Prediction target: {args.prediction_target}")
     out_lines.append(f"Predictors: {', '.join(predictors)}")
 
     out_lines.append("")
@@ -258,8 +347,15 @@ def main():
         out_lines.append(f"  {pred}: Pearson={pear:.3f}, Spearman={spear:.3f}")
 
     out_lines.append("")
-    out_lines.append("Standardized OLS (all data):")
-    model = _fit_standardized_ols(df, predictors, args.target)
+    model_label = "OLS" if args.linear_model == "ols" else f"Ridge (alpha={args.ridge_alpha})"
+    out_lines.append(f"Standardized {model_label} (all data):")
+    model = _fit_standardized_model(
+        df,
+        predictors,
+        args.target,
+        model=args.linear_model,
+        ridge_alpha=args.ridge_alpha,
+    )
     if model is None:
         out_lines.append("  Not enough complete rows to fit model.")
     else:
@@ -275,11 +371,17 @@ def main():
 
     if "pretrained" in df.columns and "freeze" in df.columns:
         out_lines.append("")
-        out_lines.append("Encoder-config-specific signal (standardized OLS):")
+        out_lines.append(f"Encoder-config-specific signal (standardized {model_label}):")
         config_models = {}
         for (pre, frz), group in df.groupby(["pretrained", "freeze"], dropna=False):
             label = f"pretrained={pre}, freeze={frz}"
-            model = _fit_standardized_ols(group, predictors, args.target)
+            model = _fit_standardized_model(
+                group,
+                predictors,
+                args.target,
+                model=args.linear_model,
+                ridge_alpha=args.ridge_alpha,
+            )
             if model is None or model["n"] < len(predictors) + 5:
                 out_lines.append(f"  {label}: insufficient rows (n={0 if model is None else model['n']})")
                 continue
@@ -293,14 +395,31 @@ def main():
                 out_lines.append("    " + _format_coef(pred, coef, pval))
 
         if (False, False) in config_models and (True, True) in config_models:
-            a = config_models[(False, False)]["params"].get("resnet_recall_logit", np.nan)
-            b = config_models[(True, True)]["params"].get("resnet_recall_logit", np.nan)
-            if not np.isnan(a) and not np.isnan(b):
-                out_lines.append("")
-                out_lines.append(
-                    "ResNet recall effect (standardized) comparison: "
-                    f"not-pretrained+unfrozen={a:+.3f}, pretrained+frozen={b:+.3f}"
-                )
+            compare_candidates = [
+                "resnet_train_to_eval_mean_dist",
+                "resnet_eval_to_train_mean_dist",
+                "resnet_train_to_eval_coverage_logit",
+                "resnet_eval_to_train_coverage_logit",
+                "resnet_train_to_eval_coverage",
+                "resnet_eval_to_train_coverage",
+            ]
+            compare_name = None
+            for name in compare_candidates:
+                if (
+                    name in config_models[(False, False)]["params"]
+                    and name in config_models[(True, True)]["params"]
+                ):
+                    compare_name = name
+                    break
+            if compare_name:
+                a = config_models[(False, False)]["params"].get(compare_name, np.nan)
+                b = config_models[(True, True)]["params"].get(compare_name, np.nan)
+                if not np.isnan(a) and not np.isnan(b):
+                    out_lines.append("")
+                    out_lines.append(
+                        f"ResNet predictor comparison ({compare_name}): "
+                        f"not-pretrained+unfrozen={a:+.3f}, pretrained+frozen={b:+.3f}"
+                    )
 
     out_lines.append("")
     out_lines.append("Prediction validation (LOBO):")
@@ -344,9 +463,15 @@ def main():
             if not baseline_overall.empty:
                 out_lines.append("  Baseline selectors (overall):")
                 baseline_order = [
-                    "flow_recall_logit",
-                    "resnet_recall_logit",
-                    "dino_recall_logit",
+                    "flow_train_to_eval_mean_dist",
+                    "flow_eval_to_train_mean_dist",
+                    "resnet_train_to_eval_mean_dist",
+                    "resnet_eval_to_train_mean_dist",
+                    "dino_train_to_eval_mean_dist",
+                    "dino_eval_to_train_mean_dist",
+                    "flow_train_to_eval_coverage_logit",
+                    "resnet_train_to_eval_coverage_logit",
+                    "dino_train_to_eval_coverage_logit",
                     "flow_mmd",
                     "feature_mmd",
                     "dino_mmd",
@@ -362,24 +487,35 @@ def main():
                     )
 
             baseline_per_benchmark = baseline_df[baseline_df["benchmark"] != "__overall__"]
-            flow_baseline = baseline_per_benchmark[
-                baseline_per_benchmark["selector"] == "flow_recall_logit"
-            ]
-            semantic_baseline = baseline_per_benchmark[
-                baseline_per_benchmark["selector"] == "feature_mmd"
-            ]
+            flow_name, flow_baseline = _select_baseline_selector(
+                baseline_per_benchmark,
+                ["flow_train_to_eval_mean_dist", "flow_mmd", "flow_eval_to_train_mean_dist"],
+            )
+            semantic_name, semantic_baseline = _select_baseline_selector(
+                baseline_per_benchmark,
+                [
+                    "feature_mmd",
+                    "dino_mmd",
+                    "resnet_train_to_eval_mean_dist",
+                    "dino_train_to_eval_mean_dist",
+                    "dino_eval_to_train_mean_dist",
+                    "resnet_eval_to_train_mean_dist",
+                ],
+            )
             flow_base_summary = _rank_family_summary(flow_baseline, flow_family)
             semantic_base_summary = _rank_family_summary(semantic_baseline, semantic_family)
             if flow_base_summary or semantic_base_summary:
                 out_lines.append("  Baseline selectors (families):")
             if flow_base_summary:
                 out_lines.append(
-                    "    " + _format_rank_metrics("flow_recall_logit (flow family)", flow_base_summary)
+                    "    "
+                    + _format_rank_metrics(f"{flow_name} (flow family)", flow_base_summary)
                 )
-            if semantic_base_summary:
-                out_lines.append(
-                    "    " + _format_rank_metrics("feature_mmd (semantic family)", semantic_base_summary)
-                )
+        if semantic_base_summary:
+            out_lines.append(
+                "    " + _format_rank_metrics(f"{semantic_name} (semantic family)", semantic_base_summary)
+            )
+
 
     lobo_mixed_path = Path(args.lobo_mixed_summary)
     if lobo_mixed_path.exists():
@@ -396,6 +532,18 @@ def main():
         out_lines.extend("  " + line for line in summarize_predictions(loto_df, group_col))
     else:
         out_lines.append(f"  Missing: {loto_path}")
+
+    loto_rank_path = Path(args.loto_rank_summary)
+    if loto_rank_path.exists():
+        loto_rank_df = pd.read_csv(loto_rank_path)
+        overall = loto_rank_df[loto_rank_df["benchmark"] == "__overall__"]
+        if not overall.empty:
+            row = overall.iloc[0]
+            out_lines.append(
+                "  Rank@benchmark (LOTO mean): "
+                f"top1={row['top1']:.2f}, top3={row['top3']:.2f}, "
+                f"regret={row['regret']:.2f}, spearman={row['spearman']:.2f}"
+            )
 
     loto_mixed_path = Path(args.loto_mixed_summary)
     if loto_mixed_path.exists():

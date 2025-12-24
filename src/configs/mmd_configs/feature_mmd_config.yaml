@@ -8,17 +8,17 @@ encoder: resnet101  # Options: resnet101, dino (future)
 datasets:
   - name: sintel
     split: train
-    num_batches: 10000
+    num_batches: 100
   - name: pointodyssey
     split: train
-    num_batches: 10
+    num_batches: 100
   - name: synthetic
     split: train
-    num_batches: 10
+    num_batches: 100
   - name: synthetic_small_zoom
     dataset_name: synthetic
     split: train
-    num_batches: 10
+    num_batches: 100
     overrides:
       geometry_config_overrides:
         angle_sampler:
@@ -37,7 +37,7 @@ datasets:
   - name: synthetic_large_zoom
     dataset_name: synthetic
     split: train
-    num_batches: 10
+    num_batches: 100
     overrides:
       geometry_config_overrides:
         angle_sampler:
@@ -56,7 +56,7 @@ datasets:
   - name: synthetic_random_flipping
     dataset_name: synthetic
     split: train
-    num_batches: 10
+    num_batches: 100
     overrides:
       geometry_config_overrides:
         random_flip: 0.5
@@ -65,52 +65,52 @@ datasets:
     datasets: ['spair', 'synthetic']
     percentages: [0.5, 0.5]
     split: train
-    num_batches: 10
+    num_batches: 100
   - name: spair_synthetic_70_30
     mixed: true
     datasets: ['spair', 'synthetic']
     percentages: [0.7, 0.3]
     split: train
-    num_batches: 10
+    num_batches: 100
   - name: spair
     split: train
-    num_batches: 10
+    num_batches: 100
   - name: flyingthings
     split: train
-    num_batches: 10
+    num_batches: 100
   - name: pointodyssey
     split: test
-    num_batches: 10
+    num_batches: 100
   - name: synthetic
     split: val
-    num_batches: 10
+    num_batches: 100
   - name: kitti2012
     split: val  # Will be overridden to 'training' if kitti_val_use_full_training: true
-    num_batches: 10
+    num_batches: 100
   - name: kitti2015
     split: val  # Will be overridden to 'training' if kitti_val_use_full_training: true
-    num_batches: 10
+    num_batches: 100
   - name: spair
     split: test
-    num_batches: 10
+    num_batches: 100
   - name: pfpascal
     split: test
-    num_batches: 10
+    num_batches: 100
   - name: pfwillow
     split: test  # PFWillow only has test split
-    num_batches: 10
+    num_batches: 100
   - name: flyingthings
     split: test
-    num_batches: 10
+    num_batches: 100
   - name: tss
     split: val
-    num_batches: 10
+    num_batches: 100
   - name: middlebury
     split: val
-    num_batches: 10
+    num_batches: 100
 
 # Data loading parameters
-batch_size: 8
+batch_size: 16
 num_workers: 32  # Set to 0 for synthetic (GPU-bound), or higher for other datasets
 
 # MMD configuration preset (from mmd_config.yaml)

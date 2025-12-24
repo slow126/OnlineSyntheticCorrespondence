@@ -16,7 +16,7 @@ coreset:
 coreset_config_file: src/configs/coreset_configs/coreset_config.yaml
 
 # DataLoader settings
-batch_size: 32
+batch_size: 16
 num_workers: 4
 # Optional per-batch subsampling to control very dense batches
 subsample:
@@ -87,7 +87,7 @@ datasets:
   - name: synthetic
     split: train
     representation: flow
-    num_batches: 100  # Set to null for complete dataset
+    num_batches: 100 # Set to null for complete dataset
     is_eval: false
     output: coresets/synthetic_train_flow.pt
 

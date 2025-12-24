@@ -1,0 +1,72 @@
+LEAKAGE-FREE SUMMARY
+================================================================================
+Rows: 720
+Runs: 72
+Benchmarks (10): flyingthings, kitti2012, kitti2015, middlebury, pfpascal, pfwillow, pointodyssey, spair, synthetic, tss
+Train datasets (10): flyingthings, pointodyssey, sintel, spair, spair_synthetic, spair_synthetic_70_30, synthetic, synthetic_large_zoom, synthetic_random_flipping, synthetic_small_zoom
+
+Encoder config counts (pretrained, freeze):
+  False/False: 240 rows
+  True/False: 240 rows
+  True/True: 240 rows
+
+Encoder config counts (FF/FT/TF/TT):
+  FF: 240 rows
+  TF: 240 rows
+  TT: 240 rows
+
+Target: auc_delta
+Predictors: flow_train_to_eval_coverage_logit, flow_eval_to_train_coverage_logit, resnet_train_to_eval_coverage_logit, resnet_eval_to_train_coverage_logit, flow_mmd, feature_mmd
+
+Overall predictor signal (pairwise correlations):
+  flow_train_to_eval_coverage_logit: Pearson=0.073, Spearman=0.081
+  flow_eval_to_train_coverage_logit: Pearson=0.124, Spearman=0.093
+  resnet_train_to_eval_coverage_logit: Pearson=0.136, Spearman=0.131
+  resnet_eval_to_train_coverage_logit: Pearson=0.124, Spearman=0.191
+  flow_mmd: Pearson=0.115, Spearman=0.005
+  feature_mmd: Pearson=-0.358, Spearman=-0.409
+
+Standardized OLS (all data):
+  N=504
+  R2=0.232
+  flow_train_to_eval_coverage_logit: +0.389 (p=3.47e-08)
+  flow_eval_to_train_coverage_logit: +0.358 (p=1.03e-06)
+  resnet_train_to_eval_coverage_logit: -0.089 (p=0.308)
+  resnet_eval_to_train_coverage_logit: +0.106 (p=0.106)
+  flow_mmd: +0.385 (p=1.53e-09)
+  feature_mmd: -0.313 (p=1.12e-05)
+
+Encoder-config-specific signal (standardized OLS):
+  pretrained=False, freeze=False: n=168
+    flow_train_to_eval_coverage_logit: +0.638 (p=9.67e-10)
+    flow_eval_to_train_coverage_logit: +0.452 (p=1.8e-05)
+    resnet_train_to_eval_coverage_logit: -0.161 (p=0.197)
+    resnet_eval_to_train_coverage_logit: -0.058 (p=0.532)
+    flow_mmd: +0.621 (p=6.05e-11)
+    feature_mmd: -0.502 (p=1.31e-06)
+  pretrained=True, freeze=False: n=168
+    flow_train_to_eval_coverage_logit: +0.315 (p=0.00893)
+    flow_eval_to_train_coverage_logit: +0.535 (p=2.82e-05)
+    resnet_train_to_eval_coverage_logit: -0.184 (p=0.223)
+    resnet_eval_to_train_coverage_logit: +0.220 (p=0.0536)
+    flow_mmd: +0.341 (p=0.00178)
+    feature_mmd: -0.279 (p=0.0227)
+  pretrained=True, freeze=True: n=168
+    flow_train_to_eval_coverage_logit: +0.273 (p=0.0227)
+    flow_eval_to_train_coverage_logit: +0.264 (p=0.034)
+    resnet_train_to_eval_coverage_logit: +0.073 (p=0.627)
+    resnet_eval_to_train_coverage_logit: +0.383 (p=0.000834)
+    flow_mmd: +0.262 (p=0.0151)
+    feature_mmd: -0.218 (p=0.0727)
+
+ResNet predictor comparison (resnet_train_to_eval_coverage_logit): not-pretrained+unfrozen=-0.161, pretrained+frozen=+0.073
+
+Prediction validation (LOBO):
+  Missing: analysis/leakage_free/prediction_lobo_summary.csv
+
+Prediction validation (LOTO):
+  Missing: analysis/leakage_free/prediction_loto_summary.csv
+
+Takeaways (auto-generated):
+  - Strongest standardized predictors: resnet_eval_to_train_coverage_logit (+0.38 std), flow_train_to_eval_coverage_logit (+0.27 std).
+  - Negative predictors (higher -> lower target): feature_mmd (-0.22 std).

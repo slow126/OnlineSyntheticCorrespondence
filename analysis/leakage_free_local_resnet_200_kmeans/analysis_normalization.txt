@@ -1,0 +1,5 @@
+benchmark_normalize_predictors: none
+benchmark_normalize_target: none
+benchmark_normalize_scope: report_only
+cv_normalize_predictors_by_benchmark: none
+cv_normalize_predictors_by_encoder: none

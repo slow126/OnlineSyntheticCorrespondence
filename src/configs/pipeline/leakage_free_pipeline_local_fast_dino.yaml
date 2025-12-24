@@ -73,5 +73,5 @@ steps:
     args:
       auc_table: analysis/leakage_free_local_fast_dino/auc_with_features.csv
       output_file: analysis/leakage_free_local_fast_dino/summary_report.txt
-      predictors: flow_recall_logit,flow_precision_logit,dino_recall_logit,dino_precision_logit,flow_mmd,dino_mmd
+      predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,flow_mmd,dino_mmd
       target: auc_delta

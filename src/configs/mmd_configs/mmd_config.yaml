@@ -38,9 +38,9 @@ flow_vectors:
 # ============================================================================
 # DINO Features Configuration
 # ============================================================================
-# For comparing DINO semantic features (typically 768-dimensional for DINOv2 base)
+# For comparing DINO semantic features (4096-dimensional for DINOv3 ViT-7B)
 dino_features:
-  input_dim: 768
+  input_dim: 4096
   sigmas: [0.5, 1.0, 2.0]  # Multi-scale RBF bandwidths
   features_per_sigma: 512  # Higher features for high-dimensional inputs
   seed: 42
@@ -142,4 +142,3 @@ mmd:
   backend: numpy
   device: null
   unbiased: false
-

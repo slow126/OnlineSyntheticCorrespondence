@@ -236,11 +236,17 @@ def compute_pairwise_metrics(
                 'recall': recall,
                 'precision': precision,
                 'outside': outside,
+                'train_to_eval_coverage': recall,
+                'eval_to_train_coverage': precision,
             }
             
             results.append(result)
             
-            print(f"  Recall: {recall:.2%}, Precision: {precision:.2%}, Outside: {outside:.2%}")
+            print(
+                f"  Train->Eval coverage: {recall:.2%}, "
+                f"Eval->Train coverage: {precision:.2%}, "
+                f"Outside: {outside:.2%}"
+            )
             
             # Additional debug for zero recall
             # Check if dataset name contains 'spair' (handles both single and mixed datasets)
@@ -267,7 +273,8 @@ def save_results_to_csv(results, output_file):
     fieldnames = [
         'dataset1', 'split1', 'dataset2', 'split2', 'representation',
         'k', 'bandwidth', 'bandwidth_scale', 'kernel', 'M_train', 'M_eval',
-        'recall', 'precision', 'outside'
+        'recall', 'precision', 'outside',
+        'train_to_eval_coverage', 'eval_to_train_coverage'
     ]
     
     with open(output_file, 'w', newline='') as f:

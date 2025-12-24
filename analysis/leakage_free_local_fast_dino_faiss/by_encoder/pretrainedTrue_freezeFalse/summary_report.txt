@@ -1,0 +1,137 @@
+LEAKAGE-FREE SUMMARY
+================================================================================
+Rows: 240
+Runs: 24
+Benchmarks (10): flyingthings, kitti2012, kitti2015, middlebury, pfpascal, pfwillow, pointodyssey, spair, synthetic, tss
+Train datasets (10): flyingthings, pointodyssey, sintel, spair, spair_synthetic, spair_synthetic_70_30, synthetic, synthetic_large_zoom, synthetic_random_flipping, synthetic_small_zoom
+
+Encoder config counts (pretrained, freeze):
+  True/False: 240 rows
+
+Encoder config counts (FF/FT/TF/TT):
+  TF: 240 rows
+
+Target: auc_delta_rank
+Predictors: flow_train_to_eval_coverage_logit, flow_eval_to_train_coverage_logit, flow_train_to_eval_mean_dist_over_radius_eval, flow_train_to_eval_median_dist_over_radius_eval, flow_train_to_eval_p90_dist_over_radius_eval, flow_eval_to_train_mean_dist_over_radius_train, flow_eval_to_train_median_dist_over_radius_train, flow_eval_to_train_p90_dist_over_radius_train, flow_mean_dist_asymmetry, dino_train_to_eval_coverage_logit, dino_eval_to_train_coverage_logit, dino_train_to_eval_mean_dist_over_radius_eval, dino_train_to_eval_median_dist_over_radius_eval, dino_train_to_eval_p90_dist_over_radius_eval, dino_eval_to_train_mean_dist_over_radius_train, dino_eval_to_train_median_dist_over_radius_train, dino_eval_to_train_p90_dist_over_radius_train, dino_mean_dist_asymmetry, flow_mmd, dino_mmd
+
+Overall predictor signal (pairwise correlations):
+  flow_train_to_eval_coverage_logit: Pearson=-0.007, Spearman=-0.113
+  flow_eval_to_train_coverage_logit: Pearson=0.099, Spearman=0.098
+  flow_train_to_eval_mean_dist_over_radius_eval: Pearson=-0.236, Spearman=-0.112
+  flow_train_to_eval_median_dist_over_radius_eval: Pearson=-0.255, Spearman=-0.118
+  flow_train_to_eval_p90_dist_over_radius_eval: Pearson=-0.224, Spearman=-0.116
+  flow_eval_to_train_mean_dist_over_radius_train: Pearson=-0.133, Spearman=0.119
+  flow_eval_to_train_median_dist_over_radius_train: Pearson=-0.149, Spearman=0.071
+  flow_eval_to_train_p90_dist_over_radius_train: Pearson=-0.121, Spearman=0.140
+  flow_mean_dist_asymmetry: Pearson=-0.009, Spearman=0.117
+  dino_train_to_eval_coverage_logit: Pearson=0.153, Spearman=-0.008
+  dino_eval_to_train_coverage_logit: Pearson=-0.043, Spearman=-0.046
+  dino_train_to_eval_mean_dist_over_radius_eval: Pearson=-0.057, Spearman=-0.037
+  dino_train_to_eval_median_dist_over_radius_eval: Pearson=-0.061, Spearman=-0.026
+  dino_train_to_eval_p90_dist_over_radius_eval: Pearson=-0.054, Spearman=-0.051
+  dino_eval_to_train_mean_dist_over_radius_train: Pearson=-0.213, Spearman=0.021
+  dino_eval_to_train_median_dist_over_radius_train: Pearson=-0.214, Spearman=-0.008
+  dino_eval_to_train_p90_dist_over_radius_train: Pearson=-0.205, Spearman=0.010
+  dino_mean_dist_asymmetry: Pearson=-0.163, Spearman=-0.160
+  flow_mmd: Pearson=-0.195, Spearman=-0.205
+  dino_mmd: Pearson=-0.203, Spearman=-0.381
+
+Standardized Ridge (alpha=1.0) (all data):
+  N=180
+  R2=0.250
+  flow_train_to_eval_coverage_logit: -0.405
+  flow_eval_to_train_coverage_logit: -0.048
+  flow_train_to_eval_mean_dist_over_radius_eval: +0.251
+  flow_train_to_eval_median_dist_over_radius_eval: -1.048
+  flow_train_to_eval_p90_dist_over_radius_eval: +0.538
+  flow_eval_to_train_mean_dist_over_radius_train: -0.109
+  flow_eval_to_train_median_dist_over_radius_train: -0.313
+  flow_eval_to_train_p90_dist_over_radius_train: -0.016
+  flow_mean_dist_asymmetry: +0.042
+  dino_train_to_eval_coverage_logit: -0.147
+  dino_eval_to_train_coverage_logit: -0.385
+  dino_train_to_eval_mean_dist_over_radius_eval: -0.307
+  dino_train_to_eval_median_dist_over_radius_eval: -0.657
+  dino_train_to_eval_p90_dist_over_radius_eval: +0.561
+  dino_eval_to_train_mean_dist_over_radius_train: -0.176
+  dino_eval_to_train_median_dist_over_radius_train: -0.012
+  dino_eval_to_train_p90_dist_over_radius_train: +0.152
+  dino_mean_dist_asymmetry: -0.222
+  flow_mmd: +0.022
+  dino_mmd: -0.142
+
+Encoder-config-specific signal (standardized Ridge (alpha=1.0)):
+  pretrained=True, freeze=False: n=180
+    flow_train_to_eval_coverage_logit: -0.405
+    flow_eval_to_train_coverage_logit: -0.048
+    flow_train_to_eval_mean_dist_over_radius_eval: +0.251
+    flow_train_to_eval_median_dist_over_radius_eval: -1.048
+    flow_train_to_eval_p90_dist_over_radius_eval: +0.538
+    flow_eval_to_train_mean_dist_over_radius_train: -0.109
+    flow_eval_to_train_median_dist_over_radius_train: -0.313
+    flow_eval_to_train_p90_dist_over_radius_train: -0.016
+    flow_mean_dist_asymmetry: +0.042
+    dino_train_to_eval_coverage_logit: -0.147
+    dino_eval_to_train_coverage_logit: -0.385
+    dino_train_to_eval_mean_dist_over_radius_eval: -0.307
+    dino_train_to_eval_median_dist_over_radius_eval: -0.657
+    dino_train_to_eval_p90_dist_over_radius_eval: +0.561
+    dino_eval_to_train_mean_dist_over_radius_train: -0.176
+    dino_eval_to_train_median_dist_over_radius_train: -0.012
+    dino_eval_to_train_p90_dist_over_radius_train: +0.152
+    dino_mean_dist_asymmetry: -0.222
+    flow_mmd: +0.022
+    dino_mmd: -0.142
+
+Prediction validation (LOBO):
+  Overall: MAE=4.00, RMSE=5.05, Pearson=0.592, Spearman=0.609
+  Best by Spearman: tss (0.74), flyingthings (0.70), kitti2012 (0.69)
+  Worst by Spearman: middlebury (0.49), pointodyssey (0.51), spair (0.52)
+  Rank@benchmark (mean): top1=0.11, top3=1.00, regret=3.35, spearman=0.75
+  Families: flow={kitti2012,kitti2015,middlebury,flyingthings,pointodyssey} semantic={spair,pfpascal,pfwillow,tss} (synthetic excluded)
+  Rank@benchmark (flow family): top1=0.00, top3=1.00, regret=4.70, spearman=0.78
+  Rank@benchmark (semantic family): top1=0.25, top3=1.00, regret=1.67, spearman=0.71
+  Baseline selectors (overall):
+    flow_train_to_eval_mean_dist: top1=0.11, top3=0.22, regret=9.52, spearman=0.47
+    flow_eval_to_train_mean_dist: top1=0.11, top3=0.33, regret=10.07, spearman=0.04
+    dino_train_to_eval_mean_dist: top1=0.22, top3=0.22, regret=9.41, spearman=0.17
+    dino_eval_to_train_mean_dist: top1=0.33, top3=0.56, regret=6.96, spearman=0.18
+    flow_mmd: top1=0.20, top3=0.30, regret=7.18, spearman=0.35
+    dino_mmd: top1=0.30, top3=0.60, regret=5.17, spearman=0.47
+    always_flyingthings: top1=0.10, top3=0.50, regret=6.70, spearman=n/a
+    always_best_avg: top1=0.50, top3=0.90, regret=2.60, spearman=n/a
+  Baseline selectors (families):
+    flow_train_to_eval_mean_dist (flow family): top1=0.20, top3=0.40, regret=8.00, spearman=0.72
+    dino_mmd (semantic family): top1=0.75, top3=1.00, regret=0.33, spearman=0.66
+
+Prediction validation (LOTO):
+  Overall: MAE=5.15, RMSE=6.24, Pearson=0.356, Spearman=0.357
+  Best by Spearman: flyingthings (0.55), synthetic_small_zoom (0.44), spair (0.34)
+  Worst by Spearman: pointodyssey (-0.04), sintel (-0.02), synthetic (0.01)
+  Rank@benchmark (LOTO mean): top1=0.11, top3=0.44, regret=7.56, spearman=0.46
+
+Within-benchmark slope consistency (standardized OLS):
+  flow_train_to_eval_coverage_logit: +2 / -7 across benchmarks
+  flow_eval_to_train_coverage_logit: +6 / -3 across benchmarks
+  flow_train_to_eval_mean_dist_over_radius_eval: +1 / -8 across benchmarks
+  flow_train_to_eval_median_dist_over_radius_eval: +1 / -8 across benchmarks
+  flow_train_to_eval_p90_dist_over_radius_eval: +1 / -8 across benchmarks
+  flow_eval_to_train_mean_dist_over_radius_train: +1 / -8 across benchmarks
+  flow_eval_to_train_median_dist_over_radius_train: +1 / -8 across benchmarks
+  flow_eval_to_train_p90_dist_over_radius_train: +1 / -8 across benchmarks
+  flow_mean_dist_asymmetry: +3 / -6 across benchmarks
+  dino_train_to_eval_coverage_logit: +7 / -2 across benchmarks
+  dino_eval_to_train_coverage_logit: +2 / -6 across benchmarks
+  dino_train_to_eval_mean_dist_over_radius_eval: +6 / -3 across benchmarks
+  dino_train_to_eval_median_dist_over_radius_eval: +6 / -3 across benchmarks
+  dino_train_to_eval_p90_dist_over_radius_eval: +3 / -6 across benchmarks
+  dino_eval_to_train_mean_dist_over_radius_train: +1 / -8 across benchmarks
+  dino_eval_to_train_median_dist_over_radius_train: +1 / -8 across benchmarks
+  dino_eval_to_train_p90_dist_over_radius_train: +1 / -8 across benchmarks
+  dino_mean_dist_asymmetry: +2 / -7 across benchmarks
+  flow_mmd: +1 / -8 across benchmarks
+  dino_mmd: +1 / -8 across benchmarks
+
+Takeaways (auto-generated):
+  - Strongest standardized predictors: flow_train_to_eval_median_dist_over_radius_eval (-1.05 std), dino_train_to_eval_median_dist_over_radius_eval (-0.66 std).
+  - Negative predictors (higher -> lower target): flow_train_to_eval_median_dist_over_radius_eval (-1.05 std), dino_train_to_eval_median_dist_over_radius_eval (-0.66 std).

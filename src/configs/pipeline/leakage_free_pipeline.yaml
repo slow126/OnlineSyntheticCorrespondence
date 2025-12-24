@@ -71,5 +71,5 @@ steps:
     args:
       auc_table: analysis/leakage_free/auc_with_features.csv
       output_file: analysis/leakage_free/summary_report.txt
-      predictors: flow_recall_logit,flow_precision_logit,resnet_recall_logit,resnet_precision_logit,flow_mmd,feature_mmd
+      predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,resnet_train_to_eval_coverage_logit,resnet_eval_to_train_coverage_logit,flow_mmd,feature_mmd
       target: auc_delta

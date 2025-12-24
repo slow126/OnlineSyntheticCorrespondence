@@ -1,0 +1,17 @@
+Benchmark: flyingthings
+Options: 8
+True best (max): flyingthings
+Pred best (max): flyingthings (top1=1)
+Pred best (min): spair (top1=0)
+Spearman(pred, true): 0.7952
+Spearman(-pred, true): -0.7952
+
+option,true_mean,pred_mean,true_rank_desc,pred_rank_desc,pred_rank_asc
+flyingthings,21.000000,14.945732,1,1,8
+sintel,18.000000,12.654290,2,2,7
+synthetic_large_zoom,8.500000,11.624744,4,3,6
+synthetic_small_zoom,8.500000,11.399130,4,4,5
+synthetic,7.000000,10.814883,6,5,4
+pointodyssey,10.000000,9.696112,3,6,3
+synthetic_random_flipping,2.000000,8.569398,8,7,2
+spair,7.000000,5.974933,6,8,1

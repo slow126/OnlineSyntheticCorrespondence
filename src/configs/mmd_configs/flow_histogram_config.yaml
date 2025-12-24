@@ -5,52 +5,52 @@
 datasets:
   - name: sintel
     split: train
-    num_batches: 10
+    num_batches: 100
   - name: pointodyssey
     split: train
-    num_batches: 10
+    num_batches: 100
   - name: synthetic
     split: train
-    num_batches: 10
+    num_batches: 100
   - name: spair
     split: train
-    num_batches: 10
+    num_batches: 100
   - name: flyingthings
     split: train
-    num_batches: 10
+    num_batches: 100
   - name: pointodyssey
     split: test
-    num_batches: 10
+    num_batches: 100
   - name: synthetic
     split: val
-    num_batches: 10
+    num_batches: 100
   - name: kitti2012
     split: val
-    num_batches: 10
+    num_batches: 100
   - name: kitti2015
     split: val
-    num_batches: 10
+    num_batches: 100
   - name: spair
     split: test
-    num_batches: 10
+    num_batches: 100
   - name: pfpascal
     split: test
-    num_batches: 10
+    num_batches: 100
   - name: pfwillow
     split: test
-    num_batches: 10
+    num_batches: 100
   - name: flyingthings
     split: test
-    num_batches: 10
+    num_batches: 100
   - name: tss
     split: val
-    num_batches: 10
+    num_batches: 100
   - name: middlebury
     split: val
-    num_batches: 10
+    num_batches: 100
 
 # Data loading parameters
-batch_size: 2
+batch_size: 16
 num_workers: 16
 
 # Histogram parameters

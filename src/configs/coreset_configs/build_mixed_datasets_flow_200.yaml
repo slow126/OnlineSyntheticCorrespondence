@@ -1,0 +1,54 @@
+coreset:
+  preset: flow_vectors
+coreset_config_file: src/configs/coreset_configs/coreset_config.yaml
+batch_size: 16
+num_workers: 4
+subsample:
+  use_subsample: false
+  fraction: 0.1
+  threshold: 5000000
+dataset_params:
+  size:
+  - 512
+  - 512
+  downsample_flow: 32
+  max_kps: null
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: false
+  kitti_val_use_full_training: true
+dataset_overrides:
+  spair:
+    datapath: ./models/Datasets_CATs
+    normalize_images: false
+  synthetic:
+    geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
+    processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
+    normalize_images: false
+    device: cuda
+datasets:
+- mixed: true
+  datasets:
+  - spair
+  - synthetic
+  percentages:
+  - 0.5
+  - 0.5
+  split: train
+  representation: flow
+  num_batches: 200
+  is_eval: false
+  output: coresets/spair_synthetic_50_50_train_flow.pt
+- mixed: true
+  datasets:
+  - spair
+  - synthetic
+  percentages:
+  - 0.7
+  - 0.3
+  split: train
+  representation: flow
+  num_batches: 200
+  is_eval: false
+  output: coresets/spair_synthetic_70_30_train_flow.pt

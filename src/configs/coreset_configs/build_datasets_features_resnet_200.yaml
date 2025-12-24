@@ -1,0 +1,198 @@
+coreset:
+  preset: resnet_features
+coreset_config_file: src/configs/coreset_configs/coreset_config.yaml
+encoder: resnet101
+batch_size: 16
+num_workers: 4
+subsample:
+  fraction: 0.5
+  threshold: 5000000
+dataset_params:
+  size:
+  - 512
+  - 512
+  downsample_flow: 32
+  max_kps: null
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: false
+  kitti_val_use_full_training: true
+dataset_overrides:
+  sintel:
+    sintel_root: /home/spencer/Data
+    normalize_images: true
+  spair:
+    datapath: ./models/Datasets_CATs
+    normalize_images: false
+  pfpascal:
+    datapath: ./models/Datasets_CATs
+    normalize_images: false
+  pfwillow:
+    datapath: ./models/Datasets_CATs
+    normalize_images: false
+  synthetic:
+    geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
+    processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
+    normalize_images: false
+    device: cuda
+  pointodyssey:
+    dataset_location: /home/spencer/Data/PointOdyssey
+    normalize_images: true
+    pointodyssey_sequence_length: 2
+    pointodyssey_num_pts_to_track: 32
+    use_all_valid: true
+  kitti2012:
+    datapath: /home/spencer/Data/correspondence/kitti
+    normalize_images: true
+  kitti2015:
+    datapath: /home/spencer/Data/correspondence/kitti
+    normalize_images: true
+  flyingthings:
+    datapath: /home/spencer/Data/FlyingThings3D_tiny
+    normalize_images: true
+  tss:
+    datapath: /home/spencer/Data/correspondence/TSS_CVPR2016
+    normalize_images: true
+  middlebury:
+    datapath: /home/spencer/Data/middlebury/all
+    normalize_images: true
+datasets:
+- name: synthetic
+  split: train
+  representation: resnet
+  num_batches: 200
+  is_eval: false
+  output: coresets/synthetic_train_resnet.pt
+- name: synthetic_small_zoom
+  dataset_name: synthetic
+  split: train
+  representation: resnet
+  num_batches: 200
+  is_eval: false
+  overrides:
+    geometry_config_overrides:
+      angle_sampler:
+        x_components:
+          loc: 0
+          scale: 0.01
+        y_components:
+          loc: 0
+          scale: 0.01
+      scale_sampler:
+        abs_components:
+          scale: 0.2
+        rel_components:
+          loc: -0.1
+          scale: 0.2
+  output: coresets/synthetic_small_zoom_train_resnet.pt
+- name: synthetic_large_zoom
+  dataset_name: synthetic
+  split: train
+  representation: resnet
+  num_batches: 200
+  is_eval: false
+  overrides:
+    geometry_config_overrides:
+      angle_sampler:
+        x_components:
+          loc: 0
+          scale: 0.01
+        y_components:
+          loc: 0
+          scale: 0.01
+      scale_sampler:
+        abs_components:
+          scale: 0.5
+        rel_components:
+          loc: -0.35
+          scale: 0.5
+  output: coresets/synthetic_large_zoom_train_resnet.pt
+- name: synthetic_random_flipping
+  dataset_name: synthetic
+  split: train
+  representation: resnet
+  num_batches: 200
+  is_eval: false
+  overrides:
+    geometry_config_overrides:
+      random_flip: 0.5
+  output: coresets/synthetic_random_flipping_train_resnet.pt
+- name: sintel
+  split: train
+  representation: resnet
+  num_batches: 200
+  is_eval: false
+  output: coresets/sintel_train_resnet.pt
+- name: spair
+  split: train
+  representation: resnet
+  num_batches: 200
+  is_eval: false
+  output: coresets/spair_train_resnet.pt
+- name: flyingthings
+  split: train
+  representation: resnet
+  num_batches: 200
+  is_eval: false
+  output: coresets/flyingthings_train_resnet.pt
+- name: pointodyssey
+  split: train
+  representation: resnet
+  num_batches: 200
+  is_eval: false
+  output: coresets/pointodyssey_train_resnet.pt
+- name: kitti2015
+  split: val
+  representation: resnet
+  num_batches: 200
+  is_eval: true
+  output: coresets/kitti_val_resnet.pt
+- name: kitti2012
+  split: val
+  representation: resnet
+  num_batches: 200
+  is_eval: true
+  output: coresets/kitti2012_val_resnet.pt
+- name: spair
+  split: test
+  representation: resnet
+  num_batches: 200
+  is_eval: true
+  output: coresets/spair_val_resnet.pt
+- name: pfpascal
+  split: test
+  representation: resnet
+  num_batches: 200
+  is_eval: true
+  output: coresets/pfpascal_val_resnet.pt
+- name: pfwillow
+  split: test
+  representation: resnet
+  num_batches: 200
+  is_eval: true
+  output: coresets/pfwillow_val_resnet.pt
+- name: pointodyssey
+  split: test
+  representation: resnet
+  num_batches: 200
+  is_eval: true
+  output: coresets/pointodyssey_val_resnet.pt
+- name: flyingthings
+  split: test
+  representation: resnet
+  num_batches: 200
+  is_eval: true
+  output: coresets/flyingthings_val_resnet.pt
+- name: tss
+  split: val
+  representation: resnet
+  num_batches: 200
+  is_eval: true
+  output: coresets/tss_val_resnet.pt
+- name: middlebury
+  split: val
+  representation: resnet
+  num_batches: 200
+  is_eval: true
+  output: coresets/middlebury_val_resnet.pt

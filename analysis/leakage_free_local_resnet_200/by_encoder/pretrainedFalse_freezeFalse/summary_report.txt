@@ -1,0 +1,81 @@
+LEAKAGE-FREE SUMMARY
+================================================================================
+Rows: 240
+Runs: 24
+Benchmarks (10): flyingthings, kitti2012, kitti2015, middlebury, pfpascal, pfwillow, pointodyssey, spair, synthetic, tss
+Train datasets (11): flyingthings, pointodyssey, sintel, spair, spair_synthetic, spair_synthetic_50_50, spair_synthetic_70_30, synthetic, synthetic_large_zoom, synthetic_random_flipping, synthetic_small_zoom
+
+Encoder config counts (pretrained, freeze):
+  False/False: 240 rows
+
+Target: auc_delta
+Predictors: flow_train_to_eval_coverage_logit, flow_eval_to_train_coverage_logit, resnet_train_to_eval_coverage_logit, resnet_eval_to_train_coverage_logit, flow_mmd, feature_mmd
+
+Overall predictor signal (pairwise correlations):
+  flow_train_to_eval_coverage_logit: Pearson=-0.089, Spearman=-0.038
+  flow_eval_to_train_coverage_logit: Pearson=0.370, Spearman=0.445
+  resnet_train_to_eval_coverage_logit: Pearson=0.357, Spearman=0.490
+  resnet_eval_to_train_coverage_logit: Pearson=-0.071, Spearman=-0.139
+  flow_mmd: Pearson=-0.008, Spearman=-0.268
+  feature_mmd: Pearson=-0.423, Spearman=-0.466
+
+Standardized OLS (all data):
+  N=176
+  R2=0.234
+  flow_train_to_eval_coverage_logit: +0.061 (p=0.732)
+  flow_eval_to_train_coverage_logit: +0.235 (p=0.0413)
+  resnet_train_to_eval_coverage_logit: +0.217 (p=0.275)
+  resnet_eval_to_train_coverage_logit: -0.000 (p=0.998)
+  flow_mmd: -0.126 (p=0.353)
+  feature_mmd: -0.176 (p=0.33)
+
+Encoder-config-specific signal (standardized OLS):
+  pretrained=False, freeze=False: n=176
+    flow_train_to_eval_coverage_logit: +0.061 (p=0.732)
+    flow_eval_to_train_coverage_logit: +0.235 (p=0.0413)
+    resnet_train_to_eval_coverage_logit: +0.217 (p=0.275)
+    resnet_eval_to_train_coverage_logit: -0.000 (p=0.998)
+    flow_mmd: -0.126 (p=0.353)
+    feature_mmd: -0.176 (p=0.33)
+
+Prediction validation (LOBO):
+  Overall: MAE=17.71, RMSE=22.47, Pearson=0.229, Spearman=0.404
+  Best by Spearman: flyingthings (0.93), middlebury (0.89), kitti2012 (0.85)
+  Worst by Spearman: spair (-0.18), pfwillow (0.54), pfpascal (0.56)
+  Rank@benchmark (mean): top1=0.25, top3=0.38, regret=3.54, spearman=0.69
+  Families: flow={kitti2012,kitti2015,middlebury,flyingthings,pointodyssey} semantic={spair,pfpascal,pfwillow,tss} (synthetic excluded)
+  Rank@benchmark (flow family): top1=0.50, top3=0.75, regret=2.06, spearman=0.80
+  Rank@benchmark (semantic family): top1=0.00, top3=0.00, regret=5.03, spearman=0.58
+  Baseline selectors (overall):
+    flow_mmd: top1=0.10, top3=0.50, regret=6.84, spearman=0.24
+    feature_mmd: top1=0.20, top3=0.50, regret=4.27, spearman=0.67
+    always_flyingthings: top1=0.50, top3=0.90, regret=1.90, spearman=n/a
+    always_best_avg: top1=0.00, top3=1.00, regret=8.42, spearman=n/a
+  Baseline selectors (families):
+    flow_mmd (flow family): top1=0.20, top3=0.60, regret=7.91, spearman=0.29
+    feature_mmd (semantic family): top1=0.00, top3=0.25, regret=2.60, spearman=0.63
+Prediction validation (LOBO, MixedLM):
+  Overall: MAE=17.47, RMSE=21.86, Pearson=0.229, Spearman=0.369
+  Best by Spearman: flyingthings (0.93), middlebury (0.89), kitti2012 (0.85)
+  Worst by Spearman: spair (-0.07), pointodyssey (0.50), pfpascal (0.57)
+
+Prediction validation (LOTO):
+  Overall: MAE=18.26, RMSE=24.02, Pearson=0.289, Spearman=0.461
+  Best by Spearman: flyingthings (0.82), synthetic_small_zoom (0.80), sintel (0.78)
+  Worst by Spearman: spair_synthetic_50_50 (-0.81), spair_synthetic_70_30 (-0.76), pointodyssey (-0.60)
+Prediction validation (LOTO, MixedLM):
+  Overall: MAE=12.38, RMSE=16.63, Pearson=0.688, Spearman=0.600
+  Best by Spearman: pointodyssey (0.97), sintel (0.97), flyingthings (0.96)
+  Worst by Spearman: spair (-0.00), synthetic_large_zoom (0.84), synthetic (0.86)
+
+Within-benchmark slope consistency (standardized OLS):
+  flow_train_to_eval_coverage_logit: +3 / -5 across benchmarks
+  flow_eval_to_train_coverage_logit: +4 / -4 across benchmarks
+  resnet_train_to_eval_coverage_logit: +7 / -1 across benchmarks
+  resnet_eval_to_train_coverage_logit: +4 / -4 across benchmarks
+  flow_mmd: +0 / -8 across benchmarks
+  feature_mmd: +1 / -7 across benchmarks
+
+Takeaways (auto-generated):
+  - Strongest standardized predictors: flow_eval_to_train_coverage_logit (+0.24 std), resnet_train_to_eval_coverage_logit (+0.22 std).
+  - Negative predictors (higher -> lower target): feature_mmd (-0.18 std), flow_mmd (-0.13 std).

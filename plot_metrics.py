@@ -237,6 +237,9 @@ def parse_directory_name(directory_name):
     pointodyssey_stride1_sequence_length16_freezeFalse_eval...
     spair_synthetic_70_30_pretrainedTrue_freezeFalse_eval...
     spair_synthetic_pretrainedTrue_freezeFalse_eval...
+    synthetic_small_zoom_pretrainedTrue_freezeFalse_eval...
+    synthetic_large_zoom_pretrainedTrue_freezeFalse_eval...
+    synthetic_random_flipping_pretrainedTrue_freezeFalse_eval...
     
     Args:
         directory_name: Name of the directory
@@ -248,43 +251,64 @@ def parse_directory_name(directory_name):
     result = {}
     
     # Known parameter keywords that indicate end of dataset name
-    param_keywords = ['stride', 'sequence_length', 'freeze', 'pretrained', 'eval']
+    param_keywords = ['stride', 'sequence_length', 'freeze', 'pretrained', 'eval', 'steps']
     
-    # Check for mixed dataset pattern: dataset1_dataset2 or dataset1_dataset2_X_Y
-    # Pattern 1: dataset1_dataset2_X_Y (with percentages)
-    mixed_with_percent_match = re.match(r'^([a-zA-Z]+)_([a-zA-Z]+)_(\d+)_(\d+)(?:_|$)', directory_name)
-    if mixed_with_percent_match:
-        dataset1 = mixed_with_percent_match.group(1)
-        dataset2 = mixed_with_percent_match.group(2)
-        percent1 = mixed_with_percent_match.group(3)
-        percent2 = mixed_with_percent_match.group(4)
-        result['dataset'] = f"{dataset1}_{dataset2}_{percent1}_{percent2}"
+    # Special handling for synthetic variants (e.g., synthetic_small_zoom, synthetic_large_zoom, synthetic_random_flipping)
+    # These should preserve the full variant name
+    parts = directory_name.split('_')
+    if len(parts) >= 2 and parts[0].lower() == 'synthetic':
+        # Check if this is a synthetic variant (synthetic_*)
+        # Collect parts until we hit a parameter keyword
+        dataset_parts = [parts[0]]  # Start with "synthetic"
+        for i in range(1, len(parts)):
+            part = parts[i].lower()
+            # Stop if we hit a parameter keyword
+            if (part in param_keywords or 
+                part.startswith('stride') or 
+                part.startswith('sequence') or
+                part.startswith('freeze') or
+                part.startswith('pretrained') or
+                part.startswith('steps') or
+                part.isdigit() and i > 1):  # Numbers after first part might be parameters
+                break
+            dataset_parts.append(parts[i])
+        result['dataset'] = '_'.join(dataset_parts)
     else:
-        # Pattern 2: dataset1_dataset2 (without percentages, assumed 50/50)
-        # Check if we have two words before hitting a parameter keyword
-        parts = directory_name.split('_')
-        if len(parts) >= 2:
-            # Check if first two parts look like dataset names (not numbers, not parameter keywords)
-            part1 = parts[0].lower()
-            part2 = parts[1].lower()
-            
-            # Check if part2 is a parameter keyword or number
-            is_part2_param = (part2 in param_keywords or 
-                            part2.startswith('stride') or 
-                            part2.startswith('sequence') or
-                            part2.startswith('freeze') or
-                            part2.startswith('pretrained') or
-                            part2.isdigit())
-            
-            if not is_part2_param:
-                # Likely a mixed dataset: dataset1_dataset2
-                result['dataset'] = f"{parts[0]}_{parts[1]}"
-            else:
-                # Single dataset
-                result['dataset'] = parts[0]
+        # Check for mixed dataset pattern: dataset1_dataset2 or dataset1_dataset2_X_Y
+        # Pattern 1: dataset1_dataset2_X_Y (with percentages)
+        mixed_with_percent_match = re.match(r'^([a-zA-Z]+)_([a-zA-Z]+)_(\d+)_(\d+)(?:_|$)', directory_name)
+        if mixed_with_percent_match:
+            dataset1 = mixed_with_percent_match.group(1)
+            dataset2 = mixed_with_percent_match.group(2)
+            percent1 = mixed_with_percent_match.group(3)
+            percent2 = mixed_with_percent_match.group(4)
+            result['dataset'] = f"{dataset1}_{dataset2}_{percent1}_{percent2}"
         else:
-            # Single word dataset name
-            result['dataset'] = parts[0] if parts else directory_name
+            # Pattern 2: dataset1_dataset2 (without percentages, assumed 50/50)
+            # Check if we have two words before hitting a parameter keyword
+            if len(parts) >= 2:
+                # Check if first two parts look like dataset names (not numbers, not parameter keywords)
+                part1 = parts[0].lower()
+                part2 = parts[1].lower()
+                
+                # Check if part2 is a parameter keyword or number
+                is_part2_param = (part2 in param_keywords or 
+                                part2.startswith('stride') or 
+                                part2.startswith('sequence') or
+                                part2.startswith('freeze') or
+                                part2.startswith('pretrained') or
+                                part2.startswith('steps') or
+                                part2.isdigit())
+                
+                if not is_part2_param:
+                    # Likely a mixed dataset: dataset1_dataset2
+                    result['dataset'] = f"{parts[0]}_{parts[1]}"
+                else:
+                    # Single dataset
+                    result['dataset'] = parts[0]
+            else:
+                # Single word dataset name
+                result['dataset'] = parts[0] if parts else directory_name
     
     # Extract stride (stride{value})
     stride_match = re.search(r'stride(\d+)', directory_name)
@@ -327,7 +351,17 @@ def parse_snapshot_directory(snapshot_dir):
         # Check if we're missing parameters that might be in directory name
         dir_info = parse_directory_name(snapshot_path.name)
         if dir_info:
-            # Merge: use summary for dataset name, but fill in missing params from directory
+            # For synthetic variants, prefer directory name (preserves variant info like synthetic_small_zoom)
+            summary_dataset = summary_info.get('dataset', '').lower()
+            dir_dataset = dir_info.get('dataset', '').lower()
+            if dir_dataset.startswith('synthetic_') and summary_dataset == 'synthetic':
+                # Directory has variant info, summary doesn't - use directory
+                summary_info['dataset'] = dir_info['dataset']
+            elif 'dataset' not in summary_info and 'dataset' in dir_info:
+                # Summary doesn't have dataset, use directory
+                summary_info['dataset'] = dir_info['dataset']
+            
+            # Fill in missing params from directory
             if 'stride' not in summary_info and 'stride' in dir_info:
                 summary_info['stride'] = dir_info['stride']
             if 'sequence_length' not in summary_info and 'sequence_length' in dir_info:

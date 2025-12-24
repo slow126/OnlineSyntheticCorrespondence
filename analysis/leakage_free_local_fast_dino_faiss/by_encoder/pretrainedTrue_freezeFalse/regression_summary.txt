@@ -1,0 +1,28 @@
+Rows: 180
+Predictors: flow_train_to_eval_coverage_logit, flow_eval_to_train_coverage_logit, flow_train_to_eval_mean_dist_over_radius_eval, flow_train_to_eval_median_dist_over_radius_eval, flow_train_to_eval_p90_dist_over_radius_eval, flow_eval_to_train_mean_dist_over_radius_train, flow_eval_to_train_median_dist_over_radius_train, flow_eval_to_train_p90_dist_over_radius_train, flow_mean_dist_asymmetry, dino_train_to_eval_coverage_logit, dino_eval_to_train_coverage_logit, dino_train_to_eval_mean_dist_over_radius_eval, dino_train_to_eval_median_dist_over_radius_eval, dino_train_to_eval_p90_dist_over_radius_eval, dino_eval_to_train_mean_dist_over_radius_train, dino_eval_to_train_median_dist_over_radius_train, dino_eval_to_train_p90_dist_over_radius_train, dino_mean_dist_asymmetry, flow_mmd, dino_mmd
+Target: auc_delta_rank
+
+Ridge (standardized, alpha=1.0):
+Intercept: -0.000000
+flow_train_to_eval_coverage_logit: -0.404562
+flow_eval_to_train_coverage_logit: -0.047519
+flow_train_to_eval_mean_dist_over_radius_eval: 0.251312
+flow_train_to_eval_median_dist_over_radius_eval: -1.048403
+flow_train_to_eval_p90_dist_over_radius_eval: 0.538236
+flow_eval_to_train_mean_dist_over_radius_train: -0.109382
+flow_eval_to_train_median_dist_over_radius_train: -0.312563
+flow_eval_to_train_p90_dist_over_radius_train: -0.016008
+flow_mean_dist_asymmetry: 0.041961
+dino_train_to_eval_coverage_logit: -0.146805
+dino_eval_to_train_coverage_logit: -0.384598
+dino_train_to_eval_mean_dist_over_radius_eval: -0.306973
+dino_train_to_eval_median_dist_over_radius_eval: -0.657067
+dino_train_to_eval_p90_dist_over_radius_eval: 0.561059
+dino_eval_to_train_mean_dist_over_radius_train: -0.176339
+dino_eval_to_train_median_dist_over_radius_train: -0.012319
+dino_eval_to_train_p90_dist_over_radius_train: 0.152469
+dino_mean_dist_asymmetry: -0.222369
+flow_mmd: 0.021638
+dino_mmd: -0.142423
+R2: 0.2504
+MixedLM skipped (ridge selected).

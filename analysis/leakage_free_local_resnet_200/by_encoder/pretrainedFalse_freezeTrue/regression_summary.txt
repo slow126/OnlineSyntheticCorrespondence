@@ -1,0 +1,5 @@
+Rows: 0
+Predictors: flow_train_to_eval_coverage_logit, flow_eval_to_train_coverage_logit, resnet_train_to_eval_coverage_logit, resnet_eval_to_train_coverage_logit, flow_mmd, feature_mmd
+Target: auc_delta
+
+No complete rows available for regression.

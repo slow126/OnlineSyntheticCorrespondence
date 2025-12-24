@@ -12,7 +12,7 @@ training:
   batch_size: 8
   n_threads: 32
   seed: 2021
-  lr: 3e-4
+  lr: 3e-5
   lr_backbone: 3e-6
   weight_decay: 0.05
   momentum: 0.9

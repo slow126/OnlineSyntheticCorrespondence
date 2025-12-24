@@ -1,0 +1,5 @@
+benchmark_normalize_predictors: zscore
+benchmark_normalize_target: none
+benchmark_normalize_scope: all
+cv_normalize_predictors_by_benchmark: none
+cv_normalize_predictors_by_encoder: none

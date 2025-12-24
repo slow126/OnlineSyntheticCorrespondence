@@ -1854,6 +1854,252 @@ def create_coverage_vs_pck_errorbar_plot(
     plt.close()
 
 
+def normalize_dataset_name_for_grouping(dataset_name):
+    """
+    Normalize dataset name by removing training configuration parameters.
+    Removes things like 'logsteps100', 'steps100', 'stride1', etc. that are training configs,
+    not dataset variations.
+    
+    Args:
+        dataset_name: Dataset name string (e.g., 'synthetic_small_zoom_stride1')
+        
+    Returns:
+        Normalized dataset name (e.g., 'synthetic_small_zoom')
+    """
+    import re
+    # Remove training config parameters
+    # Remove stride, sequence_length, freeze patterns
+    name = re.sub(r'_stride\d+', '', dataset_name)
+    name = re.sub(r'_sequence_length\d+', '', name)
+    name = re.sub(r'_freeze[TF]', '', name)
+    name = re.sub(r'_freezeTrue|_freezeFalse', '', name)
+    # Remove logsteps/steps patterns (these are training configs, not dataset variations)
+    name = re.sub(r'_logsteps\d+', '', name)
+    name = re.sub(r'_steps\d+', '', name)
+    name = re.sub(r'_S\d+', '', name)  # Remove sequence length shorthand
+    
+    return name
+
+
+def collect_best_pck_by_benchmark(snapshots_data):
+    """
+    Collect best PCK per benchmark per training dataset.
+    Groups by normalized dataset name (removes training config variations).
+    
+    Args:
+        snapshots_data: List of (training_dataset, validation_data_dict, metrics_list, snapshot_path) tuples
+        
+    Returns:
+        Dictionary mapping benchmark -> training_dataset -> best_pck
+        Also returns a list of all unique training datasets
+    """
+    benchmark_data = defaultdict(lambda: defaultdict(list))
+    all_datasets = set()
+    
+    for training_dataset_label, _, _, snapshot_path in snapshots_data:
+        summary_path = Path(snapshot_path) / 'training_summary.txt'
+        
+        # Get best performance per benchmark
+        best_performance = parse_best_performance_from_summary(summary_path)
+        if not best_performance:
+            continue
+        
+        # Normalize dataset name (remove training config variations)
+        normalized_dataset = normalize_dataset_name_for_grouping(training_dataset_label)
+        all_datasets.add(normalized_dataset)
+        
+        # Store best PCK for each benchmark
+        for benchmark, best_pck in best_performance.items():
+            benchmark_data[benchmark][normalized_dataset].append(best_pck)
+    
+    # For each benchmark-dataset pair, take the maximum (best) PCK
+    # (in case there are multiple runs with same normalized dataset name)
+    benchmark_best_pck = {}
+    for benchmark, datasets_dict in benchmark_data.items():
+        benchmark_best_pck[benchmark] = {}
+        for dataset, pck_values in datasets_dict.items():
+            benchmark_best_pck[benchmark][dataset] = max(pck_values)
+    
+    return benchmark_best_pck, sorted(list(all_datasets))
+
+
+def extract_encoder_regime_from_snapshots(snapshots_data):
+    """
+    Extract encoder regime (pretrained/freeze) from snapshots.
+    
+    Args:
+        snapshots_data: List of (training_dataset, validation_data_dict, metrics_list, snapshot_path) tuples
+        
+    Returns:
+        Tuple of (pretrained_status, freeze_status) or (None, None) if cannot determine or mixed
+        pretrained_status: 'pretrained' or 'not_pretrained' or None
+        freeze_status: 'frozen' or 'unfrozen' or None
+    """
+    regimes = set()
+    
+    for _, _, _, snapshot_path in snapshots_data:
+        path_str = str(snapshot_path)
+        path_lower = path_str.lower()
+        
+        # Extract pretrained and freeze status
+        pretrained = None
+        freeze = None
+        
+        if 'pretrainedtrue' in path_lower:
+            pretrained = 'pretrained'
+        elif 'pretrainedfalse' in path_lower:
+            pretrained = 'not_pretrained'
+        
+        if 'freezetrue' in path_lower:
+            freeze = 'frozen'
+        elif 'freezefalse' in path_lower:
+            freeze = 'unfrozen'
+        
+        if pretrained and freeze:
+            regimes.add((pretrained, freeze))
+    
+    # If all snapshots have the same regime, return it
+    if len(regimes) == 1:
+        return regimes.pop()
+    else:
+        # Mixed regimes or cannot determine
+        return None, None
+
+
+def create_best_pck_bar_plot(snapshots_data, output_dir, benchmarks_filter=None, dataset_color_map=None):
+    """
+    Create a bar plot showing best PCK per benchmark for each training dataset.
+    
+    Args:
+        snapshots_data: List of (training_dataset, validation_data_dict, metrics_list, snapshot_path) tuples
+        output_dir: Output directory path
+        benchmarks_filter: Optional list of benchmarks to plot (None = all)
+        dataset_color_map: Dictionary mapping training_dataset -> color
+    """
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    
+    # Collect best PCK data
+    benchmark_best_pck, all_datasets = collect_best_pck_by_benchmark(snapshots_data)
+    
+    if not benchmark_best_pck:
+        print("  Warning: No best PCK data found for bar plot")
+        return
+    
+    # Filter benchmarks if specified
+    benchmarks_to_plot = sorted(benchmark_best_pck.keys())
+    if benchmarks_filter:
+        benchmarks_to_plot = [b for b in benchmarks_to_plot if b in benchmarks_filter]
+    
+    if not benchmarks_to_plot:
+        print("  Warning: No benchmarks to plot after filtering")
+        return
+    
+    # Create normalized color map
+    # If a color map was provided, we need to map normalized names to colors
+    # by finding the first original dataset name that normalizes to each normalized name
+    normalized_color_map = {}
+    
+    if dataset_color_map is not None:
+        # Build mapping from normalized names to colors
+        for original_name, color in dataset_color_map.items():
+            normalized_name = normalize_dataset_name_for_grouping(original_name)
+            # Only set if not already set (first match wins)
+            if normalized_name not in normalized_color_map:
+                normalized_color_map[normalized_name] = color
+    
+    # Fill in any missing colors for normalized datasets
+    num_datasets = len(all_datasets)
+    if num_datasets <= 10:
+        colors = plt.cm.tab10(np.linspace(0, 1, num_datasets))
+    else:
+        colors = plt.cm.tab20(np.linspace(0, 1, min(num_datasets, 20)))
+        if num_datasets > 20:
+            colors = list(colors) * ((num_datasets // 20) + 1)
+            colors = colors[:num_datasets]
+    
+    # Assign colors to datasets that don't have them yet
+    for i, dataset in enumerate(all_datasets):
+        if dataset not in normalized_color_map:
+            normalized_color_map[dataset] = colors[i % len(colors)]
+    
+    # Use the normalized color map
+    dataset_color_map = normalized_color_map
+    
+    # Prepare data for plotting
+    # Create a matrix: rows = datasets, columns = benchmarks
+    plot_data = []
+    dataset_labels = []
+    
+    for dataset in all_datasets:
+        row = []
+        for benchmark in benchmarks_to_plot:
+            pck = benchmark_best_pck[benchmark].get(dataset, None)
+            row.append(pck)
+        # Only include datasets that have at least one benchmark result
+        if any(p is not None for p in row):
+            plot_data.append(row)
+            dataset_labels.append(dataset)
+    
+    if not plot_data:
+        print("  Warning: No data to plot")
+        return
+    
+    # Create bar plot
+    fig, ax = plt.subplots(figsize=(max(12, len(benchmarks_to_plot) * 1.5), 8))
+    
+    # Set up bar positions
+    x = np.arange(len(benchmarks_to_plot))
+    width = 0.8 / len(dataset_labels)  # Bar width
+    offset = (len(dataset_labels) - 1) * width / 2
+    
+    # Plot bars for each dataset
+    for i, (dataset, row_data) in enumerate(zip(dataset_labels, plot_data)):
+        positions = x - offset + i * width
+        color = dataset_color_map.get(dataset, 'gray')
+        
+        # Create bars, handling None values
+        for j, (pos, pck) in enumerate(zip(positions, row_data)):
+            if pck is not None:
+                # Only add label for first benchmark to avoid duplicate legend entries
+                label = dataset if j == 0 else ''
+                ax.bar(pos, pck, width, label=label, 
+                       color=color, alpha=0.8, edgecolor='black', linewidth=0.5)
+    
+    # Extract encoder regime for title
+    pretrained, freeze = extract_encoder_regime_from_snapshots(snapshots_data)
+    title = 'Best PCK by Benchmark and Training Dataset'
+    if pretrained and freeze:
+        # Format regime for display
+        pretrained_display = 'Pretrained' if pretrained == 'pretrained' else 'Not Pretrained'
+        freeze_display = 'Frozen' if freeze == 'frozen' else 'Unfrozen'
+        title = f'Best PCK by Benchmark and Training Dataset\n({pretrained_display}, {freeze_display})'
+    elif pretrained:
+        pretrained_display = 'Pretrained' if pretrained == 'pretrained' else 'Not Pretrained'
+        title = f'Best PCK by Benchmark and Training Dataset\n({pretrained_display})'
+    elif freeze:
+        freeze_display = 'Frozen' if freeze == 'frozen' else 'Unfrozen'
+        title = f'Best PCK by Benchmark and Training Dataset\n({freeze_display})'
+    
+    # Formatting
+    ax.set_xlabel('Benchmark', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Best PCK (%)', fontsize=12, fontweight='bold')
+    ax.set_title(title, fontsize=14, fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels([b.upper() for b in benchmarks_to_plot], rotation=45, ha='right')
+    ax.grid(True, alpha=0.3, axis='y')
+    ax.legend(loc='best', fontsize=9, ncol=2, framealpha=0.9)
+    
+    # Adjust layout
+    plt.tight_layout()
+    
+    # Save plot
+    output_file = output_path / 'best_pck_by_benchmark_barplot.png'
+    plt.savefig(output_file, dpi=150, bbox_inches='tight')
+    print(f"  Saved bar plot: {output_file}")
+    plt.close()
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Plot benchmark metrics across multiple snapshots',
@@ -1999,6 +2245,15 @@ Examples:
     benchmark_pck_data = organize_pck_vs_steps_by_benchmark(snapshots_data)
     create_pck_vs_steps_plots(
         benchmark_pck_data,
+        args.output_dir,
+        benchmarks_filter=args.benchmarks,
+        dataset_color_map=dataset_color_map
+    )
+    
+    # Create best PCK bar plot
+    print("\nCreating Best PCK Bar Plot...")
+    create_best_pck_bar_plot(
+        snapshots_data,
         args.output_dir,
         benchmarks_filter=args.benchmarks,
         dataset_color_map=dataset_color_map

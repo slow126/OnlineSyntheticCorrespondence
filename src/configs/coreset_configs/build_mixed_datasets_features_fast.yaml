@@ -16,7 +16,7 @@ coreset:
 coreset_config_file: src/configs/coreset_configs/coreset_config.yaml
 
 # DataLoader settings
-batch_size: 32
+batch_size: 16
 num_workers: 4
 # Optional per-batch subsampling to control very dense batches
 subsample:
@@ -61,7 +61,7 @@ datasets:
     percentages: [0.5, 0.5]
     split: train
     representation: resnet
-    num_batches: 5  # Set to null for complete dataset
+    num_batches: 100 # Set to null for complete dataset
     is_eval: false
     output: coresets/spair_synthetic_50_50_train_resnet.pt
   
@@ -73,6 +73,6 @@ datasets:
     percentages: [0.7, 0.3]
     split: train
     representation: resnet
-    num_batches: 5  # Set to null for complete dataset
+    num_batches: 100 # Set to null for complete dataset
     is_eval: false
     output: coresets/spair_synthetic_70_30_train_resnet.pt

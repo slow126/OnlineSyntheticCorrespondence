@@ -1,0 +1,107 @@
+pipeline:
+  python: python3
+  workdir: .
+  dry_run: false
+steps:
+  build_coresets:
+    enabled: false
+    configs:
+    - src/configs/coreset_configs/build_datasets_flow_fast.yaml
+    - src/configs/coreset_configs/build_datasets_dino_features_fast.yaml
+    - src/configs/coreset_configs/build_mixed_datasets_flow_fast.yaml
+    - src/configs/coreset_configs/build_mixed_datasets_dino_features_fast.yaml
+  calculate_coverage:
+    enabled: false
+    runs:
+    - name: flow
+      args:
+        coresets_dir: coresets
+        representation: flow
+        output: coverage_results_fast.csv
+        emit_direction: train_to_eval
+    - name: dino
+      args:
+        coresets_dir: coresets
+        representation: dino
+        output: coverage_dino_results_fast.csv
+        emit_direction: train_to_eval
+  calculate_coverage_faiss:
+    enabled: true
+    configs:
+    - src/configs/coverage_configs/coverage_faiss_flow_fast.yaml
+    - src/configs/coverage_configs/coverage_faiss_dino_fast.yaml
+  mmd:
+    enabled: true
+    configs:
+      flow: src/configs/mmd_configs/flow_mmd_config_fast.yaml
+      feature: src/configs/mmd_configs/feature_mmd_config_dino_fast.yaml
+  leakage_free_eval:
+    enabled: true
+    args:
+      snapshots_dir:
+      - snapshots
+      output_dir: analysis/leakage_free_local_fast_dino_faiss
+      mode: auc
+      metric: pck
+      auc_steps: 5000
+      coverage_csv: coverage_faiss_flow_results_fast.csv
+      coverage_resnet_csv: coverage_resnet_results_fast.csv
+      coverage_dino_csv: coverage_faiss_dino_results_fast.csv
+      flow_mmd_csv: flow_mmd_results_fast.csv
+      feature_mmd_csv: feature_mmd_results_fast.csv
+      dino_mmd_csv: dino_mmd_results_fast.csv
+      relative_target_baseline: spair
+      benchmark_normalize_predictors: none
+      benchmark_normalize_target: none
+      benchmark_normalize_scope: report_only
+      cv_normalize_predictors_by_benchmark: none
+      cv_within_benchmark_predictor_norm: rank
+      cv_normalize_predictors_by_encoder: none
+      cv_demean_target_by_encoder: true
+      cv_min_predictor_std: 1.0e-8
+      sanity_permutation: false
+      sanity_permute_group: benchmark
+      sanity_permute_seed: 17
+      sanity_direction_audit: false
+      distance_radius_norm: none
+      radius_transform: log
+      radius_eps: 1e-6
+      distance_radius_floor: 0.01
+      logit_coverage: true
+      linear_model: ridge
+      ridge_alpha: 1.0
+      standardize: false
+      encoder_interactions: false
+      encoder_main_effects: true
+      exclude_encoder_configs: FT
+      prediction_mixedlm: false
+      rank_target: true
+      rank_target_source: auc_delta
+      rank_target_col: auc_delta_rank
+      rank_target_group: benchmark
+      rank_target_with_encoder: true
+      prediction_clip: true
+      per_encoder: true
+      run_summary: true
+      prediction_target: auc_delta
+      strict_dataset_match: true
+      allow_unsplit_coverage: false
+      allow_unsplit_mmd: false
+      predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_train_to_eval_median_dist_over_radius_eval,flow_train_to_eval_p90_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_eval_to_train_median_dist_over_radius_train,flow_eval_to_train_p90_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_train_to_eval_median_dist_over_radius_eval,dino_train_to_eval_p90_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_eval_to_train_median_dist_over_radius_train,dino_eval_to_train_p90_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+  select_checkpoints:
+    enabled: true
+    args:
+      snapshots_dir:
+      - snapshots
+      output: analysis/selected_checkpoints_local_fast.csv
+      metric: pck
+      select: auc
+      auc_steps: 5000
+      auc_pad: true
+  summarize:
+    enabled: false
+    args:
+      auc_table: analysis/leakage_free_local_fast_dino_faiss/auc_with_features.csv
+      output_file: analysis/leakage_free_local_fast_dino_faiss/summary_report.txt
+      predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_train_to_eval_median_dist_over_radius_eval,flow_train_to_eval_p90_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_eval_to_train_median_dist_over_radius_train,flow_eval_to_train_p90_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_train_to_eval_median_dist_over_radius_eval,dino_train_to_eval_p90_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_eval_to_train_median_dist_over_radius_train,dino_eval_to_train_p90_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+      target: auc_delta

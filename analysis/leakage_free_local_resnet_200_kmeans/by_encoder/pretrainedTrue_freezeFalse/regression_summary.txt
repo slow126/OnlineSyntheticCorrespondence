@@ -1,0 +1,14 @@
+Rows: 168
+Predictors: flow_train_to_eval_coverage_logit, flow_eval_to_train_coverage_logit, resnet_train_to_eval_coverage_logit, resnet_eval_to_train_coverage_logit, flow_mmd, feature_mmd
+Target: auc_delta_rank
+
+Ridge (standardized, alpha=1.0):
+Intercept: 0.000000
+flow_train_to_eval_coverage_logit: 0.054026
+flow_eval_to_train_coverage_logit: 0.209292
+resnet_train_to_eval_coverage_logit: -0.160063
+resnet_eval_to_train_coverage_logit: 0.004826
+flow_mmd: -0.090680
+feature_mmd: -0.429287
+R2: 0.2264
+MixedLM skipped (ridge selected).

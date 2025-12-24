@@ -110,7 +110,7 @@ datasets:
     num_batches: 100
 
 # Data loading parameters
-batch_size: 8
+batch_size: 16
 num_workers: 32  # Set to 0 for synthetic (GPU-bound), or higher for other datasets
 
 # MMD configuration preset (from mmd_config.yaml)

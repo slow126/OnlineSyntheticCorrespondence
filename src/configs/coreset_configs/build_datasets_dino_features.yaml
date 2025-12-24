@@ -19,7 +19,7 @@ coreset_config_file: src/configs/coreset_configs/coreset_config.yaml
 encoder: dino
 
 # DataLoader settings
-batch_size: 4
+batch_size: 16
 num_workers: 4
 # Optional per-batch subsampling to control very dense batches
 subsample:
@@ -90,7 +90,7 @@ datasets:
   - name: synthetic
     split: train
     representation: dino
-    num_batches: 100  # Set to null for complete dataset
+    num_batches: 100 # Set to null for complete dataset
     is_eval: false
     output: coresets/synthetic_train_dino.pt
 

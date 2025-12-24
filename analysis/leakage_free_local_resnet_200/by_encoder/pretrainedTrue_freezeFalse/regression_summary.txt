@@ -1,0 +1,38 @@
+Rows: 176
+Predictors: flow_train_to_eval_coverage_logit, flow_eval_to_train_coverage_logit, resnet_train_to_eval_coverage_logit, resnet_eval_to_train_coverage_logit, flow_mmd, feature_mmd
+Target: auc_delta
+
+OLS:
+                            OLS Regression Results                            
+==============================================================================
+Dep. Variable:              auc_delta   R-squared:                       0.303
+Model:                            OLS   Adj. R-squared:                  0.278
+Method:                 Least Squares   F-statistic:                     12.23
+Date:                Tue, 23 Dec 2025   Prob (F-statistic):           2.07e-11
+Time:                        04:12:36   Log-Likelihood:                -638.89
+No. Observations:                 176   AIC:                             1292.
+Df Residuals:                     169   BIC:                             1314.
+Df Model:                           6                                         
+Covariance Type:            nonrobust                                         
+=======================================================================================================
+                                          coef    std err          t      P>|t|      [0.025      0.975]
+-------------------------------------------------------------------------------------------------------
+Intercept                               4.9119      0.721      6.811      0.000       3.488       6.336
+flow_train_to_eval_coverage_logit       1.0296      1.847      0.557      0.578      -2.616       4.676
+flow_eval_to_train_coverage_logit       4.2005      1.119      3.753      0.000       1.991       6.410
+resnet_train_to_eval_coverage_logit     3.3849      1.988      1.702      0.091      -0.540       7.310
+resnet_eval_to_train_coverage_logit     4.5272      1.123      4.030      0.000       2.309       6.745
+flow_mmd                               -2.1243      1.362     -1.559      0.121      -4.814       0.565
+feature_mmd                             0.5841      1.900      0.307      0.759      -3.167       4.336
+==============================================================================
+Omnibus:                        0.549   Durbin-Watson:                   1.074
+Prob(Omnibus):                  0.760   Jarque-Bera (JB):                0.268
+Skew:                          -0.051   Prob(JB):                        0.875
+Kurtosis:                       3.162   Cond. No.                         7.78
+==============================================================================
+
+Notes:
+[1] Standard Errors assume that the covariance matrix of the errors is correctly specified.
+
+MixedLM (random intercept by benchmark):
+MixedLM failed: Singular matrix
