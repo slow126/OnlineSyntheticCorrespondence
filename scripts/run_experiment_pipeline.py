@@ -102,7 +102,20 @@ def _run_mmd(step: Dict[str, Any], python_bin: str, dry_run: bool, cwd: Path) ->
 
 
 def _run_leakage_free_eval(step: Dict[str, Any], python_bin: str, dry_run: bool, cwd: Path) -> None:
-    args = _build_args(step.get("args", {}))
+    base_args = step.get("args", {}) or {}
+    runs = step.get("runs", [])
+    if runs:
+        for run in runs:
+            run_args = dict(base_args)
+            run_args.update(run.get("args", {}) or {})
+            name = run.get("name")
+            if name:
+                print(f"  -> {name}")
+            args = _build_args(run_args)
+            cmd = [python_bin, "scripts/build_leakage_free_eval.py"] + args
+            _run_command(cmd, dry_run, cwd)
+        return
+    args = _build_args(base_args)
     cmd = [python_bin, "scripts/build_leakage_free_eval.py"] + args
     _run_command(cmd, dry_run, cwd)
 
@@ -119,6 +132,18 @@ def _run_summarize(step: Dict[str, Any], python_bin: str, dry_run: bool, cwd: Pa
     _run_command(cmd, dry_run, cwd)
 
 
+def _run_compare_ablations(step: Dict[str, Any], python_bin: str, dry_run: bool, cwd: Path) -> None:
+    args = _build_args(step.get("args", {}))
+    cmd = [python_bin, "scripts/compare_ablation_runs.py"] + args
+    _run_command(cmd, dry_run, cwd)
+
+
+def _run_mixing_summary(step: Dict[str, Any], python_bin: str, dry_run: bool, cwd: Path) -> None:
+    args = _build_args(step.get("args", {}))
+    cmd = [python_bin, "scripts/summarize_mixing_intervention.py"] + args
+    _run_command(cmd, dry_run, cwd)
+
+
 STEP_HANDLERS = {
     "build_coresets": _run_build_coresets,
     "calculate_coverage": _run_calculate_coverage,
@@ -127,6 +152,8 @@ STEP_HANDLERS = {
     "leakage_free_eval": _run_leakage_free_eval,
     "select_checkpoints": _run_select_checkpoints,
     "summarize": _run_summarize,
+    "compare_ablations": _run_compare_ablations,
+    "mixing_summary": _run_mixing_summary,
 }
 
 

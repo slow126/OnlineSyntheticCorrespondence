@@ -30,13 +30,25 @@ class SyntheticCorrespondenceProcessor:
                  subsample_without_trainer=False,
                  downsample_for_cats=False,
                  cats_feat_size=32,
+                 faiss_index_type="ivf",
+                 faiss_nlist=32,
+                 faiss_nprobe=2,
                  ):
         super().__init__()
 
         # Import faiss locally to avoid storing module reference (unpickleable)
         import faiss
         import faiss.contrib.torch_utils
-        self.index = faiss.IndexIVFFlat(faiss.IndexFlatL2(3), 3, 32)
+        self.faiss_index_type = str(faiss_index_type).lower()
+        self.faiss_nlist = faiss_nlist
+        self.faiss_nprobe = faiss_nprobe
+        if self.faiss_index_type == "flat":
+            self.index = faiss.IndexFlatL2(3)
+        elif self.faiss_index_type == "ivf":
+            self.index = faiss.IndexIVFFlat(faiss.IndexFlatL2(3), 3, faiss_nlist)
+            self.index.nprobe = faiss_nprobe
+        else:
+            raise ValueError(f"Unknown faiss_index_type: {faiss_index_type}")
 
         self.transferred = False
 
@@ -150,6 +162,8 @@ class SyntheticCorrespondenceProcessor:
                     # Use current CUDA device if no index specified
                     idx = torch.cuda.current_device()
                 self.index = faiss.index_cpu_to_gpu(faiss.StandardGpuResources(), idx, self.index)
+                if self.faiss_index_type == "ivf":
+                    self.index.nprobe = self.faiss_nprobe
                 seed = torch.empty(1, dtype=torch.int64).random_(generator=self.rng).item()
                 self.rng = torch.Generator(device=device).manual_seed(seed)
                 self.transferred = True
@@ -310,7 +324,12 @@ class SyntheticCorrespondenceProcessor:
                 post_batch[k] = img
 
         # calculate ground-truth flow from geometry
-        flow = flow_by_coordinate_matching(batch[0]['geometry'], batch[1]['geometry'], self.index)
+        flow = flow_by_coordinate_matching(
+            batch[0]['geometry'],
+            batch[1]['geometry'],
+            self.index,
+            train_index=(self.faiss_index_type == "ivf"),
+        )
         full_flow = flow.clone()
         # subsampling flow (for ablation experiments)
         has_trainer = hasattr(self, 'trainer') and self.trainer is not None

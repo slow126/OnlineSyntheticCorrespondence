@@ -213,3 +213,93 @@ datasets:
   num_batches: 100
   is_eval: true
   output: coresets/middlebury_val_dino.pt
+- name: spair_synthetic_30_70
+  split: train
+  num_batches: 5
+  mixed: true
+  datasets:
+  - spair
+  - synthetic
+  percentages:
+  - 0.3
+  - 0.7
+- name: spair_synthetic_50_50
+  split: train
+  num_batches: 5
+  mixed: true
+  datasets:
+  - spair
+  - synthetic
+  percentages:
+  - 0.5
+  - 0.5
+- name: spair_synthetic_70_30
+  split: train
+  num_batches: 5
+  mixed: true
+  datasets:
+  - spair
+  - synthetic
+  percentages:
+  - 0.7
+  - 0.3
+- name: pointodyssey_synthetic_30_70
+  split: train
+  num_batches: 5
+  mixed: true
+  datasets:
+  - pointodyssey
+  - synthetic
+  percentages:
+  - 0.3
+  - 0.7
+- name: pointodyssey_synthetic_70_30
+  split: train
+  num_batches: 5
+  mixed: true
+  datasets:
+  - pointodyssey
+  - synthetic
+  percentages:
+  - 0.7
+  - 0.3
+- name: flyingthings_synthetic_30_70
+  split: train
+  num_batches: 5
+  mixed: true
+  datasets:
+  - flyingthings
+  - synthetic
+  percentages:
+  - 0.3
+  - 0.7
+- name: flyingthings_synthetic_70_30
+  split: train
+  num_batches: 5
+  mixed: true
+  datasets:
+  - flyingthings
+  - synthetic
+  percentages:
+  - 0.7
+  - 0.3
+- name: sintel_synthetic_30_70
+  split: train
+  num_batches: 5
+  mixed: true
+  datasets:
+  - sintel
+  - synthetic
+  percentages:
+  - 0.3
+  - 0.7
+- name: sintel_synthetic_70_30
+  split: train
+  num_batches: 5
+  mixed: true
+  datasets:
+  - sintel
+  - synthetic
+  percentages:
+  - 0.7
+  - 0.3

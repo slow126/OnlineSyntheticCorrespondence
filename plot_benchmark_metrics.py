@@ -449,6 +449,7 @@ def parse_training_dataset_from_summary(summary_path):
     if not os.path.exists(summary_path):
         return None
     
+    dataset = None
     try:
         with open(summary_path, 'r') as f:
             for line in f:
@@ -458,12 +459,30 @@ def parse_training_dataset_from_summary(summary_path):
                     # Convert "+" to "_" for mixed datasets (e.g., "spair+synthetic" -> "spair_synthetic")
                     # This ensures consistency with CSV lookup formats
                     dataset = dataset.replace('+', '_')
-                    return dataset
+                    break
     except Exception as e:
         print(f"Warning: Could not parse training dataset from {summary_path}: {e}")
         return None
-    
-    return None
+
+    try:
+        dir_info = parse_directory_name(Path(summary_path).parent.name)
+        dir_dataset = dir_info.get("dataset", "").lower() if dir_info else None
+    except Exception:
+        dir_dataset = None
+
+    if dir_dataset:
+        if dir_dataset.startswith("synthetic_") and dataset == "synthetic":
+            dataset = dir_dataset
+        elif (
+            "_synthetic_" in dir_dataset
+            and re.search(r"_\d+_\d+$", dir_dataset)
+            and (dataset is None or "synthetic" in dataset)
+        ):
+            dataset = dir_dataset
+        elif dataset is None:
+            dataset = dir_dataset
+
+    return dataset
 
 
 def parse_best_performance_from_summary(summary_path):
@@ -1923,6 +1942,217 @@ def collect_best_pck_by_benchmark(snapshots_data):
     return benchmark_best_pck, sorted(list(all_datasets))
 
 
+def collect_best_pck_stats_by_benchmark(snapshots_data):
+    """
+    Collect best PCK stats per benchmark per training dataset.
+
+    Args:
+        snapshots_data: List of (training_dataset, validation_data_dict, metrics_list, snapshot_path) tuples
+
+    Returns:
+        Tuple of (benchmark_stats, all_datasets)
+        benchmark_stats: benchmark -> dataset -> stats dict (mean/std/max/n/values)
+    """
+    benchmark_data = defaultdict(lambda: defaultdict(list))
+    all_datasets = set()
+
+    for training_dataset_label, _, _, snapshot_path in snapshots_data:
+        summary_path = Path(snapshot_path) / 'training_summary.txt'
+        best_performance = parse_best_performance_from_summary(summary_path)
+        if not best_performance:
+            continue
+
+        normalized_dataset = normalize_dataset_name_for_grouping(training_dataset_label)
+        all_datasets.add(normalized_dataset)
+
+        for benchmark, best_pck in best_performance.items():
+            benchmark_data[benchmark][normalized_dataset].append(best_pck)
+
+    benchmark_stats = {}
+    for benchmark, datasets_dict in benchmark_data.items():
+        benchmark_stats[benchmark] = {}
+        for dataset, pck_values in datasets_dict.items():
+            values = np.array(pck_values, dtype=float)
+            std = float(np.std(values, ddof=1)) if len(values) > 1 else 0.0
+            benchmark_stats[benchmark][dataset] = {
+                "values": values,
+                "mean": float(np.mean(values)),
+                "std": std,
+                "max": float(np.max(values)),
+                "n": int(len(values)),
+            }
+
+    return benchmark_stats, sorted(list(all_datasets))
+
+
+def get_encoder_regime_label(snapshot_path):
+    """
+    Parse encoder regime label from snapshot path.
+
+    Returns:
+        String label like 'pretrainedTrue_freezeFalse', or 'unknown' if not detected.
+    """
+    path_lower = str(snapshot_path).lower()
+    pretrained = None
+    freeze = None
+
+    if "pretrainedtrue" in path_lower:
+        pretrained = "pretrainedTrue"
+    elif "pretrainedfalse" in path_lower:
+        pretrained = "pretrainedFalse"
+
+    if "freezetrue" in path_lower:
+        freeze = "freezeTrue"
+    elif "freezefalse" in path_lower:
+        freeze = "freezeFalse"
+
+    if pretrained and freeze:
+        return f"{pretrained}_{freeze}"
+    if pretrained or freeze:
+        return f"{pretrained or 'pretrainedUnknown'}_{freeze or 'freezeUnknown'}"
+    return "unknown"
+
+
+def group_snapshots_by_encoder_regime(snapshots_data):
+    grouped = defaultdict(list)
+    for entry in snapshots_data:
+        _, _, _, snapshot_path = entry
+        regime = get_encoder_regime_label(snapshot_path)
+        grouped[regime].append(entry)
+    return grouped
+
+
+def build_color_map_for_datasets(datasets):
+    num_datasets = len(datasets)
+    if num_datasets <= 10:
+        colors = plt.cm.tab10(np.linspace(0, 1, num_datasets))
+    else:
+        colors = plt.cm.tab20(np.linspace(0, 1, min(num_datasets, 20)))
+        if num_datasets > 20:
+            colors = list(colors) * ((num_datasets // 20) + 1)
+            colors = colors[:num_datasets]
+    return {dataset: colors[i] for i, dataset in enumerate(sorted(datasets))}
+
+
+def create_pck_bar_plots_by_benchmark(
+    benchmark_stats,
+    output_dir,
+    dataset_color_map,
+    benchmarks_filter=None,
+    value_key="max",
+    error_key=None,
+    title_prefix="Best PCK",
+    filename_suffix="best_pck",
+):
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    benchmarks_to_plot = sorted(benchmark_stats.keys())
+    if benchmarks_filter:
+        benchmarks_to_plot = [b for b in benchmarks_to_plot if b in benchmarks_filter]
+
+    for benchmark in benchmarks_to_plot:
+        dataset_stats = benchmark_stats.get(benchmark, {})
+        if not dataset_stats:
+            continue
+
+        datasets = sorted(dataset_stats.keys())
+        values = [dataset_stats[ds][value_key] for ds in datasets]
+        errors = [dataset_stats[ds][error_key] for ds in datasets] if error_key else None
+
+        fig, ax = plt.subplots(figsize=(max(10, len(datasets) * 0.6), 6))
+        x = np.arange(len(datasets))
+        colors = [dataset_color_map.get(ds, "gray") for ds in datasets]
+
+        ax.bar(x, values, yerr=errors, capsize=4 if errors else 0,
+               color=colors, alpha=0.85, edgecolor='black', linewidth=0.5)
+
+        ax.set_title(f"{title_prefix} - {benchmark.upper()}", fontsize=13, fontweight='bold')
+        ax.set_xlabel("Training Dataset", fontsize=11, fontweight='bold')
+        ax.set_ylabel("PCK (%)", fontsize=11, fontweight='bold')
+        ax.set_xticks(x)
+        ax.set_xticklabels(datasets, rotation=45, ha='right')
+        ax.grid(True, alpha=0.3, axis='y')
+
+        plt.tight_layout()
+        output_file = output_path / f"{benchmark}_{filename_suffix}.png"
+        plt.savefig(output_file, dpi=150, bbox_inches='tight')
+        print(f"  Saved bar plot: {output_file}")
+        plt.close()
+
+
+def write_ranked_outputs_by_benchmark(benchmark_stats, output_dir, prefix):
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    best_rows = []
+    avg_rows = []
+    for benchmark, dataset_stats in benchmark_stats.items():
+        best_sorted = sorted(
+            dataset_stats.items(),
+            key=lambda kv: kv[1]["max"],
+            reverse=True,
+        )
+        for rank, (dataset, stats) in enumerate(best_sorted, start=1):
+            best_rows.append({
+                "benchmark": benchmark,
+                "train_dataset": dataset,
+                "best_pck": stats["max"],
+                "n_runs": stats["n"],
+                "rank": rank,
+            })
+
+        avg_sorted = sorted(
+            dataset_stats.items(),
+            key=lambda kv: kv[1]["mean"],
+            reverse=True,
+        )
+        for rank, (dataset, stats) in enumerate(avg_sorted, start=1):
+            avg_rows.append({
+                "benchmark": benchmark,
+                "train_dataset": dataset,
+                "mean_pck": stats["mean"],
+                "std_pck": stats["std"],
+                "n_runs": stats["n"],
+                "rank": rank,
+            })
+
+    if best_rows:
+        best_csv = output_path / f"{prefix}_ranked_best_pck_by_benchmark.csv"
+        pd.DataFrame(best_rows).to_csv(best_csv, index=False)
+        print(f"  Saved rankings: {best_csv}")
+
+        best_txt = output_path / f"{prefix}_ranked_best_pck_by_benchmark.txt"
+        with open(best_txt, "w") as f:
+            for benchmark in sorted(benchmark_stats.keys()):
+                f.write(f"{benchmark}\n")
+                rows = [r for r in best_rows if r["benchmark"] == benchmark]
+                for row in rows:
+                    f.write(
+                        f"  {row['rank']:>2}. {row['train_dataset']}: {row['best_pck']:.2f}% (n={row['n_runs']})\n"
+                    )
+                f.write("\n")
+        print(f"  Saved rankings: {best_txt}")
+
+    if avg_rows:
+        avg_csv = output_path / f"{prefix}_ranked_avg_pck_by_benchmark.csv"
+        pd.DataFrame(avg_rows).to_csv(avg_csv, index=False)
+        print(f"  Saved rankings: {avg_csv}")
+
+        avg_txt = output_path / f"{prefix}_ranked_avg_pck_by_benchmark.txt"
+        with open(avg_txt, "w") as f:
+            for benchmark in sorted(benchmark_stats.keys()):
+                f.write(f"{benchmark}\n")
+                rows = [r for r in avg_rows if r["benchmark"] == benchmark]
+                for row in rows:
+                    f.write(
+                        f"  {row['rank']:>2}. {row['train_dataset']}: "
+                        f"{row['mean_pck']:.2f}% ± {row['std_pck']:.2f} (n={row['n_runs']})\n"
+                    )
+                f.write("\n")
+        print(f"  Saved rankings: {avg_txt}")
+
+
 def extract_encoder_regime_from_snapshots(snapshots_data):
     """
     Extract encoder regime (pretrained/freeze) from snapshots.
@@ -2213,6 +2443,10 @@ Examples:
     
     # Create plots
     print("\nCreating plots...")
+
+    output_root = Path(args.output_dir)
+    overview_dir = output_root / "overview"
+    overview_dir.mkdir(parents=True, exist_ok=True)
     
     # Get all training datasets for color mapping (needed for scatter plot)
     all_datasets = set()
@@ -2234,7 +2468,7 @@ Examples:
     # Create benchmark plots
     create_benchmark_plots(
         benchmark_data,
-        args.output_dir,
+        str(overview_dir),
         benchmarks_filter=args.benchmarks,
         metrics_filter=metrics_filter,
         dataset_color_map=dataset_color_map
@@ -2245,7 +2479,7 @@ Examples:
     benchmark_pck_data = organize_pck_vs_steps_by_benchmark(snapshots_data)
     create_pck_vs_steps_plots(
         benchmark_pck_data,
-        args.output_dir,
+        str(overview_dir),
         benchmarks_filter=args.benchmarks,
         dataset_color_map=dataset_color_map
     )
@@ -2254,10 +2488,51 @@ Examples:
     print("\nCreating Best PCK Bar Plot...")
     create_best_pck_bar_plot(
         snapshots_data,
-        args.output_dir,
+        str(overview_dir),
         benchmarks_filter=args.benchmarks,
         dataset_color_map=dataset_color_map
     )
+
+    # Create per-encoder regime bar plots and rankings
+    print("\nCreating Per-Encoder Regime Bar Plots and Rankings...")
+    snapshots_by_regime = group_snapshots_by_encoder_regime(snapshots_data)
+    for regime, regime_snapshots in sorted(snapshots_by_regime.items()):
+        if not regime_snapshots:
+            continue
+        print(f"  Encoder regime: {regime} ({len(regime_snapshots)} snapshots)")
+
+        benchmark_stats, datasets = collect_best_pck_stats_by_benchmark(regime_snapshots)
+        if not benchmark_stats:
+            print(f"    Warning: No benchmark stats found for regime {regime}")
+            continue
+
+        regime_output = Path(args.output_dir) / "by_encoder" / regime
+        barplot_dir = regime_output / "barplots"
+        best_dir = barplot_dir / "best_pck"
+        avg_dir = barplot_dir / "avg_pck"
+        rankings_dir = regime_output / "rankings"
+
+        regime_color_map = build_color_map_for_datasets(datasets)
+        create_pck_bar_plots_by_benchmark(
+            benchmark_stats,
+            best_dir,
+            regime_color_map,
+            benchmarks_filter=args.benchmarks,
+            value_key="max",
+            title_prefix="Best PCK",
+            filename_suffix="best_pck"
+        )
+        create_pck_bar_plots_by_benchmark(
+            benchmark_stats,
+            avg_dir,
+            regime_color_map,
+            benchmarks_filter=args.benchmarks,
+            value_key="mean",
+            error_key="std",
+            title_prefix="Average Best PCK",
+            filename_suffix="avg_pck"
+        )
+        write_ranked_outputs_by_benchmark(benchmark_stats, rankings_dir, prefix=regime)
     
     # Load MMD lookup and create scatter plot
     print("\nCreating Flow MMD vs PCK scatter plot...")
@@ -2266,7 +2541,7 @@ Examples:
         create_mmd_vs_pck_scatter_plot(
             snapshots_data,
             mmd_lookup,
-            args.output_dir,
+            str(overview_dir),
             dataset_color_map
         )
         # Create error bar plot version
@@ -2274,7 +2549,7 @@ Examples:
         create_mmd_vs_pck_errorbar_plot(
             snapshots_data,
             mmd_lookup,
-            args.output_dir,
+            str(overview_dir),
             dataset_color_map,
             mmd_type="Flow"
         )
@@ -2288,7 +2563,7 @@ Examples:
         create_feature_mmd_vs_pck_scatter_plot(
             snapshots_data,
             feature_mmd_lookup,
-            args.output_dir,
+            str(overview_dir),
             dataset_color_map
         )
         # Create error bar plot version
@@ -2296,7 +2571,7 @@ Examples:
         create_mmd_vs_pck_errorbar_plot(
             snapshots_data,
             feature_mmd_lookup,
-            args.output_dir,
+            str(overview_dir),
             dataset_color_map,
             mmd_type="Feature"
         )
@@ -2330,7 +2605,7 @@ Examples:
             create_coverage_vs_pck_scatter_plot(
                 snapshots_data,
                 coverage_lookup,
-                args.output_dir,
+                str(overview_dir),
                 dataset_color_map,
                 score_key='recall',
                 score_label='Recall',
@@ -2340,7 +2615,7 @@ Examples:
             create_coverage_vs_pck_errorbar_plot(
                 snapshots_data,
                 coverage_lookup,
-                args.output_dir,
+                str(overview_dir),
                 dataset_color_map,
                 score_key='recall',
                 score_label='Recall',
@@ -2352,7 +2627,7 @@ Examples:
             create_coverage_vs_pck_scatter_plot(
                 snapshots_data,
                 coverage_lookup,
-                args.output_dir,
+                str(overview_dir),
                 dataset_color_map,
                 score_key='precision',
                 score_label='Precision',
@@ -2362,7 +2637,7 @@ Examples:
             create_coverage_vs_pck_errorbar_plot(
                 snapshots_data,
                 coverage_lookup,
-                args.output_dir,
+                str(overview_dir),
                 dataset_color_map,
                 score_key='precision',
                 score_label='Precision',

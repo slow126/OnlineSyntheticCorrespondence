@@ -46,6 +46,9 @@ steps:
       mode: auc
       metric: pck
       auc_steps: 5000
+      auc_pad: true
+      additional_targets: peak_pck
+      additional_target_dirs: peak_pck
       coverage_csv: coverage_results_fast.csv
       coverage_resnet_csv: coverage_resnet_results_fast.csv
       flow_mmd_csv: flow_mmd_results_fast.csv

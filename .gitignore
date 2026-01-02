@@ -67,6 +67,7 @@ debug/test_outputs/
 models/Datasets_CATs/
 snapshots/
 sorted_snapshots/
+snapshots_mixed/
 
 # Dino Outputs
 models/DinoV3/extracted_features/
@@ -112,6 +113,8 @@ slurm/experiment_configs/generated/
 # Benchmark Plots
 benchmark_plots/
 plots3d/
+analysis/
+snapshots_mixed_plots/
 
 # Slurm Jobs
 slurm_jobs/

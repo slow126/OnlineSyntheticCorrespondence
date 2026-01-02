@@ -3,7 +3,7 @@
 # Script to sort snapshots by pretrained and freeze configurations, then by dataset
 
 # Base directories
-SNAPSHOTS_DIR="snapshots"
+SNAPSHOTS_DIR="snapshots_mixed"
 OUTPUT_BASE="sorted_snapshots"
 
 # Function to extract dataset mix info from snapshot name

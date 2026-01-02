@@ -1,0 +1,80 @@
+# Smoke-test config for RAFT with train_lightning.py (single forward pass)
+
+model:
+  type: 'raft'
+  small: false
+  iters: 12
+  alternate_corr: false
+  mixed_precision: false
+  dropout: 0.0
+  pretrained_path: null
+
+training:
+  epochs: 1
+  batch_size: 1
+  n_threads: 0
+  seed: 2021
+  lr: 3e-4
+  lr_backbone: 3e-6
+  weight_decay: 0.05
+  momentum: 0.9
+  scheduler: 'step'
+  step: '[70, 80, 90]'
+  step_gamma: 0.5
+  steps_per_epoch: 1
+  augmentation: true
+  min_flow_length: null
+  max_flow_length: null
+  mmd_every_n_epochs: 0
+  enable_debug: false
+  debug_visualization_benchmarks: None
+  debug_visualization_persist: false
+  eval_initial: false
+  check_val_every_n_epoch: 999
+  val_check_interval: 1.0
+
+dataset:
+  dataset_name: 'synthetic'
+  split: 'train'
+  size: [128, 128]
+  downsample_flow: null
+  max_kps: null
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: false
+  geometry_config_path: 'src/configs/online_synth_configs/OnlineGeometryConfig.yaml'
+  processor_config_path: 'src/configs/online_synth_configs/OnlineProcessorConfig_smoke.yaml'
+  opengl_device_index: null
+  geometry_config_overrides:
+    num_samples: 4
+    size: 128
+    antialias: 1
+
+evaluation:
+  eval_benchmarks: ['synthetic']
+  eval_alphas: [0.05]
+  thres: 'img'
+  split_to_use_for_validation: 'test'
+  val_batch_size: 1
+  val_num_workers: 0
+  prefetch_factor: 2
+  use_motion_aware: false
+  min_motion_pixels: 5.0
+  zero_threshold: 0.5
+  datapath: './models/Datasets_CATs'
+  tss_root: '/home/spencer/Data/correspondence/TSS_CVPR2016'
+  kitti_root: '/home/spencer/Data/correspondence/kitti'
+  kitti_val_use_full_training: true
+  pointodyssey_root: '/home/spencer/Data/PointOdyssey'
+  flyingthings_root: '/home/spencer/Data/FlyingThings3D_tiny'
+  val_datasets:
+    synthetic:
+      geometry_config_path: 'src/configs/online_synth_configs/OnlineGeometryConfig_Val.yaml'
+      processor_config_path: 'src/configs/online_synth_configs/OnlineProcessorConfig_smoke.yaml'
+      normalize_images: false
+
+paths:
+  snapshots: './snapshots'
+  pretrained: null
+  start_epoch: 0

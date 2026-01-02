@@ -40,10 +40,11 @@ steps:
     args:
       snapshots_dir:
       - snapshots
-      output_dir: analysis/leakage_free_local_fast_dino_faiss
+      - snapshots_mixed
       mode: auc
       metric: pck
       auc_steps: 5000
+      auc_pad: true
       coverage_csv: coverage_faiss_flow_results_fast.csv
       coverage_resnet_csv: coverage_resnet_results_fast.csv
       coverage_dino_csv: coverage_faiss_dino_results_fast.csv
@@ -53,13 +54,14 @@ steps:
       relative_target_baseline: spair
       benchmark_normalize_predictors: none
       benchmark_normalize_target: none
-      benchmark_normalize_scope: report_only
+      benchmark_normalize_scope: none
       cv_normalize_predictors_by_benchmark: none
-      cv_within_benchmark_predictor_norm: rank
+      cv_within_benchmark_predictor_norm: none
       cv_normalize_predictors_by_encoder: none
-      cv_demean_target_by_encoder: true
+      cv_demean_target_by_encoder: false
+      cv_demean_target_by_benchmark: false
       cv_min_predictor_std: 1.0e-8
-      sanity_permutation: false
+      sanity_permutation: true
       sanity_permute_group: benchmark
       sanity_permute_seed: 17
       sanity_direction_audit: false
@@ -70,29 +72,190 @@ steps:
       logit_coverage: true
       linear_model: ridge
       ridge_alpha: 1.0
-      standardize: false
+      standardize: true
       encoder_interactions: false
       encoder_main_effects: true
       exclude_encoder_configs: FT
       prediction_mixedlm: false
-      rank_target: true
+      rank_target: false
       rank_target_source: auc_delta
       rank_target_col: auc_delta_rank
       rank_target_group: benchmark
-      rank_target_with_encoder: true
+      rank_target_with_encoder: false
       prediction_clip: true
-      per_encoder: true
+      per_encoder: false
       run_summary: true
       prediction_target: auc_delta
       strict_dataset_match: true
       allow_unsplit_coverage: false
       allow_unsplit_mmd: false
-      predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_train_to_eval_median_dist_over_radius_eval,flow_train_to_eval_p90_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_eval_to_train_median_dist_over_radius_train,flow_eval_to_train_p90_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_train_to_eval_median_dist_over_radius_eval,dino_train_to_eval_p90_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_eval_to_train_median_dist_over_radius_train,dino_eval_to_train_p90_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+      train_datasets_mode: all
+    runs:
+    - name: all_auc_delta_rank
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank/combined
+        rank_target: true
+        per_encoder: true
+        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_delta_rank_pooled
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank/pooled
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_delta_rank_unified
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank/unified
+        rank_target: true
+        encoder_interactions: true
+        encoder_main_effects: true
+        per_encoder: false
+        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_peak_pck_rank
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank/combined
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: true
+        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_peak_pck_rank_pooled
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank/pooled
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_peak_pck_rank_unified
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank/unified
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_interactions: true
+        encoder_main_effects: true
+        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_delta
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta/combined
+        per_encoder: true
+        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_delta_pooled
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta/pooled
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_delta_unified
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta/unified
+        per_encoder: false
+        encoder_interactions: true
+        encoder_main_effects: true
+        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: base_auc_delta_rank
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/base_only/auc_delta_rank/combined
+        train_datasets_mode: base_only
+        rank_target: true
+        per_encoder: true
+        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: base_auc_delta_rank_pooled
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/base_only/auc_delta_rank/pooled
+        train_datasets_mode: base_only
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: base_auc_delta_rank_unified
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/base_only/auc_delta_rank/unified
+        train_datasets_mode: base_only
+        rank_target: true
+        encoder_interactions: true
+        encoder_main_effects: true
+        per_encoder: false
+        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: base_peak_pck_rank
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/base_only/peak_pck_rank/combined
+        train_datasets_mode: base_only
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: true
+        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: base_peak_pck_rank_pooled
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/base_only/peak_pck_rank/pooled
+        train_datasets_mode: base_only
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: base_peak_pck_rank_unified
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/base_only/peak_pck_rank/unified
+        train_datasets_mode: base_only
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_interactions: true
+        encoder_main_effects: true
+        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: base_auc_delta
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/base_only/auc_delta/combined
+        train_datasets_mode: base_only
+        per_encoder: true
+        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: base_auc_delta_pooled
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/base_only/auc_delta/pooled
+        train_datasets_mode: base_only
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: base_auc_delta_unified
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/base_only/auc_delta/unified
+        train_datasets_mode: base_only
+        per_encoder: false
+        encoder_interactions: true
+        encoder_main_effects: true
+        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
   select_checkpoints:
     enabled: true
     args:
       snapshots_dir:
       - snapshots
+      - snapshots_mixed
       output: analysis/selected_checkpoints_local_fast.csv
       metric: pck
       select: auc
@@ -103,5 +266,21 @@ steps:
     args:
       auc_table: analysis/leakage_free_local_fast_dino_faiss/auc_with_features.csv
       output_file: analysis/leakage_free_local_fast_dino_faiss/summary_report.txt
-      predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_train_to_eval_median_dist_over_radius_eval,flow_train_to_eval_p90_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_eval_to_train_median_dist_over_radius_train,flow_eval_to_train_p90_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_train_to_eval_median_dist_over_radius_eval,dino_train_to_eval_p90_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_eval_to_train_median_dist_over_radius_train,dino_eval_to_train_p90_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+      predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
       target: auc_delta
+  compare_ablations:
+    enabled: true
+    args:
+      base_dir: analysis/leakage_free_local_fast_dino_faiss
+      targets: all/auc_delta_rank,all/peak_pck_rank,all/auc_delta,base_only/auc_delta_rank,base_only/peak_pck_rank,base_only/auc_delta
+      variants: combined,pooled,unified
+      output_name: ablation_summary.txt
+  mixing_summary:
+    enabled: true
+    args:
+      base_dir: analysis/leakage_free_local_fast_dino_faiss
+      targets: all/peak_pck_rank
+      variants: combined
+      metric: peak_pck
+      output_name: mix_intervention_summary
+      output_root: analysis/leakage_free_local_fast_dino_faiss

@@ -238,6 +238,7 @@ def _nn_distances(
     vectors: np.ndarray,
     metric: str,
     k: int,
+    agg: str = "first",
 ) -> np.ndarray:
     if vectors.size == 0:
         return np.array([], dtype=np.float32)
@@ -246,7 +247,17 @@ def _nn_distances(
         dists = 1.0 - dists
     else:
         dists = np.sqrt(np.maximum(dists, 0.0))
-    return dists[:, 0].astype(np.float32, copy=False)
+    if k <= 1 or agg in ("first", "min"):
+        out = dists[:, 0]
+    elif agg in ("kth", "last", "max"):
+        out = dists[:, -1]
+    elif agg == "mean":
+        out = dists.mean(axis=1)
+    elif agg == "median":
+        out = np.median(dists, axis=1)
+    else:
+        raise ValueError(f"Unsupported neighbor aggregation: {agg}")
+    return out.astype(np.float32, copy=False)
 
 
 def _self_radius(
@@ -254,16 +265,34 @@ def _self_radius(
     vectors: np.ndarray,
     metric: str,
     quantile: float,
+    k: int = 1,
+    agg: str = "first",
 ) -> float:
     if vectors.shape[0] < 2:
         return float("nan")
-    dists, _ = index.search(vectors, 2)
+    k = max(int(k), 1)
+    search_k = min(vectors.shape[0], k + 1)
+    if search_k <= 1:
+        return float("nan")
+    dists, _ = index.search(vectors, search_k)
     if metric == "cosine":
         dists = 1.0 - dists
     else:
         dists = np.sqrt(np.maximum(dists, 0.0))
-    self_dists = dists[:, 1]
-    return float(np.quantile(self_dists, quantile))
+    neigh_dists = dists[:, 1:]
+    if neigh_dists.size == 0:
+        return float("nan")
+    if agg in ("first", "min"):
+        sample = neigh_dists[:, 0]
+    elif agg in ("kth", "last", "max"):
+        sample = neigh_dists[:, -1]
+    elif agg == "mean":
+        sample = neigh_dists.mean(axis=1)
+    elif agg == "median":
+        sample = np.median(neigh_dists, axis=1)
+    else:
+        raise ValueError(f"Unsupported neighbor aggregation: {agg}")
+    return float(np.quantile(sample, quantile))
 
 
 def _sample_dataset_vectors(
@@ -441,6 +470,8 @@ def main() -> None:
     coverage_cfg = config.get("coverage", {})
     radius_quantile = float(coverage_cfg.get("radius_quantile", 0.95))
     k = int(coverage_cfg.get("k", 1))
+    neighbor_agg = str(coverage_cfg.get("neighbor_agg", "first"))
+    self_radius_k = int(coverage_cfg.get("self_radius_k", 1))
 
     output_cfg = config.get("output", {})
     output_file = output_cfg.get("results_file", "coverage_faiss_results.csv")
@@ -502,7 +533,14 @@ def main() -> None:
             nprobe,
         )
         indices[key] = index
-        radii[key] = _self_radius(index, vecs, metric, radius_quantile)
+        radii[key] = _self_radius(
+            index,
+            vecs,
+            metric,
+            radius_quantile,
+            k=self_radius_k,
+            agg=neighbor_agg,
+        )
 
     train_keys = [k for k, v in vectors_by_name.items() if not v["is_eval"]]
     eval_keys = [k for k, v in vectors_by_name.items() if v["is_eval"]]
@@ -524,8 +562,8 @@ def main() -> None:
             if eval_idx is None or eval_vecs.size == 0:
                 continue
 
-            dist_eval_to_train = _nn_distances(train_idx, eval_vecs, metric, k)
-            dist_train_to_eval = _nn_distances(eval_idx, train_vecs, metric, k)
+            dist_eval_to_train = _nn_distances(train_idx, eval_vecs, metric, k, agg=neighbor_agg)
+            dist_train_to_eval = _nn_distances(eval_idx, train_vecs, metric, k, agg=neighbor_agg)
 
             radius_train = radii.get(train_key, float("nan"))
             radius_eval = radii.get(eval_key, float("nan"))
@@ -548,6 +586,8 @@ def main() -> None:
                 "split2": eval_info["split"],
                 "representation": train_info["representation"],
                 "k": k,
+                "neighbor_agg": neighbor_agg,
+                "self_radius_k": self_radius_k,
                 "radius_quantile": radius_quantile,
                 "radius_train": radius_train,
                 "radius_eval": radius_eval,

@@ -289,15 +289,41 @@ def flow_by_coordinate_matching(
     mask1 = coord1.ne(0).any(-1)
     mask2 = coord2.ne(0).any(-1)
 
-    if train_index:
-        index.train(coord1[mask1])
-    
     b, h, w = coord2.shape[:-1]
     flow = coord2.new_full((b, 2, h, w), torch.inf)
+
+    if not mask1.any() or not mask2.any():
+        return flow
+
+    if train_index:
+        num_points = coord1[mask1].shape[0]
+        nlist = getattr(index, "nlist", None)
+        if num_points == 0:
+            return flow
+        if nlist is not None and num_points < nlist:
+            import faiss
+            import faiss.contrib.torch_utils
+
+            flat_index = faiss.IndexFlatL2(3)
+            if coord1.is_cuda:
+                device_index = coord1.device.index
+                if device_index is None:
+                    device_index = torch.cuda.current_device()
+                flat_index = faiss.index_cpu_to_gpu(
+                    faiss.StandardGpuResources(),
+                    device_index,
+                    flat_index,
+                )
+            index = flat_index
+            train_index = False
+        else:
+            index.train(coord1[mask1])
     
     for i in range(coord1.shape[0]):
         m1, m2 = mask1[i], mask2[i]
         c1, c2 = coord1[i][m1], coord2[i][m2] 
+        if c1.numel() == 0 or c2.numel() == 0:
+            continue
         index.reset()
         index.add(c1)
 

@@ -1,0 +1,121 @@
+# RAFT full-model sweep across all datasets (RC).
+# Generates one config per dataset (including mixed) at 512x512 resolution.
+
+project_root: "/home/slow1/Projects/OnlineSyntheticCorrespondence"
+
+training_base: "src/configs/lightning/training_base_rc.yaml"
+eval_base: "src/configs/lightning/eval_base_rc.yaml"
+
+training_datasets:
+  - name: "sintel"
+    dataset_config: "src/configs/lightning/datasets/sintel_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 16
+
+  - name: "flyingthings"
+    dataset_config: "src/configs/lightning/datasets/flyingthings_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 16
+
+  - name: "spair"
+    dataset_config: "src/configs/lightning/datasets/spair_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 16
+
+  - name: "pointodyssey"
+    dataset_config: "src/configs/lightning/datasets/pointodyssey_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 16
+
+  - name: "synthetic"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 0
+
+  - name: "synthetic_small_zoom"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc_small_zoom.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 0
+
+  - name: "synthetic_large_zoom"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc_large_zoom.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 0
+
+  - name: "synthetic_random_flipping"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc_random_flipping.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 0
+
+  - name: "spair_synthetic_70_30"
+    dataset_config: "src/configs/lightning/datasets/spair_synthetic_70_30_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 0
+
+  - name: "spair_synthetic_50_50"
+    dataset_config: "src/configs/lightning/datasets/spair_synthetic_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 0
+
+  - name: "spair_synthetic_30_70"
+    dataset_config: "src/configs/lightning/datasets/spair_synthetic_30_70_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 0
+
+  - name: "pointodyssey_synthetic_70_30"
+    dataset_config: "src/configs/lightning/datasets/pointodyssey_synthetic_70_30_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 0
+
+  - name: "pointodyssey_synthetic_30_70"
+    dataset_config: "src/configs/lightning/datasets/pointodyssey_synthetic_30_70_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 0
+
+  - name: "flyingthings_synthetic_70_30"
+    dataset_config: "src/configs/lightning/datasets/flyingthings_synthetic_70_30_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 0
+
+  - name: "flyingthings_synthetic_30_70"
+    dataset_config: "src/configs/lightning/datasets/flyingthings_synthetic_30_70_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 0
+
+  - name: "sintel_synthetic_70_30"
+    dataset_config: "src/configs/lightning/datasets/sintel_synthetic_70_30_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 0
+
+  - name: "sintel_synthetic_30_70"
+    dataset_config: "src/configs/lightning/datasets/sintel_synthetic_30_70_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 0
+
+output_dir: "/home/slow1/Projects/OnlineSyntheticCorrespondence/slurm/experiment_configs/generated_raft_full"
+
+sweeps:
+  - name: "raft_full"
+    parameters:
+      model.type: raft
+      model.small: false
+      dataset.size: [512, 512]
+      dataset.downsample_flow: null
+    name_template: "raft_full_512"

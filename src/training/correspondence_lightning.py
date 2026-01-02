@@ -13,6 +13,7 @@ import pytorch_lightning as pl
 from typing import Dict, Any, Optional
 from models.CATs_PlusPlus.utils_training.optimize import EPE
 from models.CATs_PlusPlus.utils_training.utils import parse_list
+from src.objectives.endpoint_error import endpoint_error
 
 
 class CorrespondenceLightningModule(pl.LightningModule):
@@ -160,8 +161,11 @@ class CorrespondenceLightningModule(pl.LightningModule):
             scale_w = target_w / orig_w
             pred_flow = pred_flow * torch.tensor([scale_w, scale_h], device=pred_flow.device).view(1, 2, 1, 1)
         
-        # Compute loss
-        loss = EPE(pred_flow, flow_gt)
+        # Compute loss (handle invalid flow marked as inf)
+        if torch.isfinite(flow_gt).all():
+            loss = EPE(pred_flow, flow_gt)
+        else:
+            loss = endpoint_error(pred_flow, flow_gt, sparse=True, reduction='mean')
         
         # Log loss
         self.log('train/loss', loss, on_step=True, on_epoch=True, prog_bar=True)

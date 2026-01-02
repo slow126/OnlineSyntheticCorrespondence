@@ -7,6 +7,7 @@ Creates one plot per metric comparing different training datasets/benchmarks.
 import argparse
 import csv
 import os
+import re
 import sys
 from pathlib import Path
 from collections import defaultdict
@@ -356,6 +357,13 @@ def parse_snapshot_directory(snapshot_dir):
             dir_dataset = dir_info.get('dataset', '').lower()
             if dir_dataset.startswith('synthetic_') and summary_dataset == 'synthetic':
                 # Directory has variant info, summary doesn't - use directory
+                summary_info['dataset'] = dir_info['dataset']
+            elif (
+                '_synthetic_' in dir_dataset
+                and re.search(r'_\d+_\d+$', dir_dataset)
+                and ('synthetic' in summary_dataset or '+' in summary_dataset)
+            ):
+                # Mixed dataset with explicit ratio is only in directory name.
                 summary_info['dataset'] = dir_info['dataset']
             elif 'dataset' not in summary_info and 'dataset' in dir_info:
                 # Summary doesn't have dataset, use directory
@@ -840,4 +848,3 @@ Examples:
 
 if __name__ == '__main__':
     main()
-

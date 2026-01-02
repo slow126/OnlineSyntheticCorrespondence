@@ -6,8 +6,8 @@ model:
   small: false  # If true, use RAFT-small architecture
   iters: 12  # Number of refinement iterations
   alternate_corr: false  # Use alternate correlation implementation
-  mixed_precision: false  # Enable mixed precision training
-  dropout: 0.0  # Dropout rate
+  mixed_precision: true  # Enable mixed precision training
+  dropout: 0.1  # Dropout rate
   pretrained_path: null  # Optional: path to pretrained RAFT checkpoint (can also use paths.pretrained)
 
 # Training parameters
@@ -37,7 +37,7 @@ training:
   debug_visualization_benchmarks: None
   debug_visualization_persist: false
 
-  steps_per_epoch: 100
+  steps_per_epoch: 2000
 
   eval_initial: false
 

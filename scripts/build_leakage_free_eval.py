@@ -20,6 +20,7 @@ Optional (mode=all):
 """
 
 import argparse
+import math
 import csv
 import re
 import subprocess
@@ -1516,7 +1517,14 @@ def compute_within_benchmark_slopes(df, predictors, target, output_path, min_row
     return df_out
 
 
-def compute_ranking_dataframe(pred_df, target_col, option_col, benchmark_col="benchmark"):
+def compute_ranking_dataframe(
+    pred_df,
+    target_col,
+    option_col,
+    benchmark_col="benchmark",
+    topk_frac=None,
+    topk_min=1,
+):
     rows = []
     if pred_df.empty:
         return pd.DataFrame()
@@ -1543,21 +1551,49 @@ def compute_ranking_dataframe(pred_df, target_col, option_col, benchmark_col="be
         pred_top3 = list(grouped.index[:3])
 
         rank_true = grouped["true_mean"].rank(ascending=False, method="min")
+        rank_pred = grouped["pred_mean"].rank(ascending=False, method="min")
+        n_options = int(len(grouped))
+        denom = float(max(n_options - 1, 1))
+        true_rank_pct = (rank_true - 1.0) / denom
+        pred_rank_pct = (rank_pred - 1.0) / denom
+        abs_rank_error = (rank_pred - rank_true).abs()
+        abs_rank_pct_error = (pred_rank_pct - true_rank_pct).abs()
         top1 = int(pred_best_idx == true_best_idx)
         top3 = int(rank_true.loc[pred_best_idx] <= 3)
         regret = float(true_best - pred_best_true)
         spearman = spearman_corr(grouped["true_mean"].to_numpy(), grouped["pred_mean"].to_numpy())
 
+        topk = np.nan
+        topk_k = np.nan
+        topk_frac_out = np.nan
+        if topk_frac is not None and topk_frac > 0:
+            k = int(math.ceil(float(topk_frac) * n_options))
+            if topk_min is not None:
+                k = max(int(topk_min), k)
+            k = min(k, n_options)
+            topk = int(rank_true.loc[pred_best_idx] <= k)
+            topk_k = int(k)
+            topk_frac_out = float(topk_frac)
+
         rows.append({
             benchmark_col: benchmark,
-            "n_options": int(len(grouped)),
+            "n_options": n_options,
             "top1": top1,
             "top3": top3,
+            "topk": topk,
+            "topk_k": topk_k,
+            "topk_frac": topk_frac_out,
             "regret": regret,
             "spearman": spearman,
+            "mean_abs_rank_error": float(abs_rank_error.mean()),
+            "median_abs_rank_error": float(abs_rank_error.median()),
+            "mean_abs_rank_pct_error": float(abs_rank_pct_error.mean()),
+            "median_abs_rank_pct_error": float(abs_rank_pct_error.median()),
             "true_best_option": str(true_best_idx),
             "pred_best_option": str(pred_best_idx),
             "pred_top3_options": ",".join(str(x) for x in pred_top3),
+            "pred_best_true_rank": int(rank_true.loc[pred_best_idx]),
+            "pred_best_true_rank_pct": float(true_rank_pct.loc[pred_best_idx]),
         })
 
     if not rows:
@@ -1569,8 +1605,23 @@ def compute_ranking_dataframe(pred_df, target_col, option_col, benchmark_col="be
         "n_options": int(df_out["n_options"].sum()),
         "top1": float(df_out["top1"].mean()),
         "top3": float(df_out["top3"].mean()),
+        "topk": float(df_out["topk"].mean()) if "topk" in df_out.columns else np.nan,
+        "topk_k": float(df_out["topk_k"].mean()) if "topk_k" in df_out.columns else np.nan,
+        "topk_frac": float(df_out["topk_frac"].mean()) if "topk_frac" in df_out.columns else np.nan,
         "regret": float(df_out["regret"].mean()),
         "spearman": float(df_out["spearman"].mean()),
+        "mean_abs_rank_error": float(df_out["mean_abs_rank_error"].mean())
+        if "mean_abs_rank_error" in df_out.columns
+        else np.nan,
+        "median_abs_rank_error": float(df_out["median_abs_rank_error"].mean())
+        if "median_abs_rank_error" in df_out.columns
+        else np.nan,
+        "mean_abs_rank_pct_error": float(df_out["mean_abs_rank_pct_error"].mean())
+        if "mean_abs_rank_pct_error" in df_out.columns
+        else np.nan,
+        "median_abs_rank_pct_error": float(df_out["median_abs_rank_pct_error"].mean())
+        if "median_abs_rank_pct_error" in df_out.columns
+        else np.nan,
         "true_best_option": "n/a",
         "pred_best_option": "n/a",
     }
@@ -1578,12 +1629,91 @@ def compute_ranking_dataframe(pred_df, target_col, option_col, benchmark_col="be
     return df_out
 
 
-def compute_ranking_summary(pred_df, target_col, option_col, output_path, benchmark_col="benchmark"):
-    df_out = compute_ranking_dataframe(pred_df, target_col, option_col, benchmark_col)
+def compute_ranking_summary(
+    pred_df,
+    target_col,
+    option_col,
+    output_path,
+    benchmark_col="benchmark",
+    topk_frac=None,
+    topk_min=1,
+):
+    df_out = compute_ranking_dataframe(
+        pred_df,
+        target_col,
+        option_col,
+        benchmark_col,
+        topk_frac=topk_frac,
+        topk_min=topk_min,
+    )
     if not df_out.empty:
         df_out.to_csv(output_path, index=False)
         return df_out.to_dict(orient="records")
     return []
+
+
+def compute_rank_detail_rows(pred_df, target_col, option_col, benchmark_col="benchmark"):
+    rows = []
+    if pred_df.empty:
+        return pd.DataFrame()
+
+    required_cols = [benchmark_col, option_col, "prediction", target_col]
+    df = pred_df.dropna(subset=required_cols).copy()
+    if df.empty:
+        return pd.DataFrame()
+
+    for benchmark, sub in df.groupby(benchmark_col):
+        grouped = sub.groupby(option_col).agg(
+            pred_mean=("prediction", "mean"),
+            true_mean=(target_col, "mean"),
+            n=("prediction", "size"),
+        )
+        if len(grouped) < 2:
+            continue
+
+        grouped["true_rank"] = grouped["true_mean"].rank(ascending=False, method="min")
+        grouped["pred_rank"] = grouped["pred_mean"].rank(ascending=False, method="min")
+        n_options = int(len(grouped))
+        denom = float(max(n_options - 1, 1))
+        grouped["true_rank_pct"] = (grouped["true_rank"] - 1.0) / denom
+        grouped["pred_rank_pct"] = (grouped["pred_rank"] - 1.0) / denom
+        grouped["rank_error"] = grouped["pred_rank"] - grouped["true_rank"]
+        grouped["abs_rank_error"] = grouped["rank_error"].abs()
+        grouped["rank_pct_error"] = grouped["pred_rank_pct"] - grouped["true_rank_pct"]
+        grouped["abs_rank_pct_error"] = grouped["rank_pct_error"].abs()
+
+        for option, row in grouped.iterrows():
+            rows.append({
+                benchmark_col: benchmark,
+                option_col: option,
+                "n_options": n_options,
+                "true_mean": float(row["true_mean"]),
+                "pred_mean": float(row["pred_mean"]),
+                "true_rank": int(row["true_rank"]),
+                "pred_rank": int(row["pred_rank"]),
+                "true_rank_pct": float(row["true_rank_pct"]),
+                "pred_rank_pct": float(row["pred_rank_pct"]),
+                "rank_error": float(row["rank_error"]),
+                "abs_rank_error": float(row["abs_rank_error"]),
+                "rank_pct_error": float(row["rank_pct_error"]),
+                "abs_rank_pct_error": float(row["abs_rank_pct_error"]),
+                "n": int(row["n"]),
+            })
+
+    return pd.DataFrame(rows)
+
+
+def write_rank_detail_rows(
+    pred_df,
+    target_col,
+    option_col,
+    output_path,
+    benchmark_col="benchmark",
+):
+    df_out = compute_rank_detail_rows(pred_df, target_col, option_col, benchmark_col)
+    if not df_out.empty:
+        df_out.to_csv(output_path, index=False)
+    return df_out
 
 
 def write_direction_audit(pred_df, target_col, option_col, output_path, benchmark_col="benchmark"):
@@ -1637,7 +1767,15 @@ def write_direction_audit(pred_df, target_col, option_col, output_path, benchmar
     output_path.write_text("No benchmark with >=2 options found for direction audit.")
 
 
-def compute_constant_selector(df, target_col, option_col, chosen_option, benchmark_col="benchmark"):
+def compute_constant_selector(
+    df,
+    target_col,
+    option_col,
+    chosen_option,
+    benchmark_col="benchmark",
+    topk_frac=None,
+    topk_min=1,
+):
     rows = []
     if df.empty:
         return pd.DataFrame()
@@ -1661,11 +1799,27 @@ def compute_constant_selector(df, target_col, option_col, chosen_option, benchma
         top3 = int(rank_true.loc[chosen_option] <= 3)
         regret = float(true_best - pred_best_true)
 
+        topk = np.nan
+        topk_k = np.nan
+        topk_frac_out = np.nan
+        if topk_frac is not None and topk_frac > 0:
+            n_options = int(len(grouped))
+            k = int(math.ceil(float(topk_frac) * n_options))
+            if topk_min is not None:
+                k = max(int(topk_min), k)
+            k = min(k, n_options)
+            topk = int(rank_true.loc[chosen_option] <= k)
+            topk_k = int(k)
+            topk_frac_out = float(topk_frac)
+
         rows.append({
             benchmark_col: benchmark,
             "n_options": int(len(grouped)),
             "top1": top1,
             "top3": top3,
+            "topk": topk,
+            "topk_k": topk_k,
+            "topk_frac": topk_frac_out,
             "regret": regret,
             "spearman": np.nan,
             "true_best_option": str(true_best_idx),
@@ -1682,6 +1836,9 @@ def compute_constant_selector(df, target_col, option_col, chosen_option, benchma
         "n_options": int(df_out["n_options"].sum()),
         "top1": float(df_out["top1"].mean()),
         "top3": float(df_out["top3"].mean()),
+        "topk": float(df_out["topk"].mean()) if "topk" in df_out.columns else np.nan,
+        "topk_k": float(df_out["topk_k"].mean()) if "topk_k" in df_out.columns else np.nan,
+        "topk_frac": float(df_out["topk_frac"].mean()) if "topk_frac" in df_out.columns else np.nan,
         "regret": float(df_out["regret"].mean()),
         "spearman": np.nan,
         "true_best_option": "n/a",
@@ -1698,6 +1855,8 @@ def compute_baseline_rankings(
     output_path,
     selectors,
     benchmark_col="benchmark",
+    topk_frac=None,
+    topk_min=1,
 ):
     baseline_frames = []
     if df.empty:
@@ -1716,18 +1875,41 @@ def compute_baseline_rankings(
             pred_df = sub.rename(columns={col: "prediction"}).copy()
             if selector.get("direction", 1) < 0:
                 pred_df["prediction"] = -pred_df["prediction"]
-            ranking_df = compute_ranking_dataframe(pred_df, target_col, option_col, benchmark_col)
+            ranking_df = compute_ranking_dataframe(
+                pred_df,
+                target_col,
+                option_col,
+                benchmark_col,
+                topk_frac=topk_frac,
+                topk_min=topk_min,
+            )
         elif sel_type == "constant":
             option = selector.get("option")
             if not option:
                 continue
-            ranking_df = compute_constant_selector(df, target_col, option_col, option, benchmark_col)
+            ranking_df = compute_constant_selector(
+                df,
+                target_col,
+                option_col,
+                option,
+                benchmark_col,
+                topk_frac=topk_frac,
+                topk_min=topk_min,
+            )
         elif sel_type == "best_avg":
             valid = df.dropna(subset=[option_col, target_col])
             if valid.empty:
                 continue
             option = valid.groupby(option_col)[target_col].mean().idxmax()
-            ranking_df = compute_constant_selector(df, target_col, option_col, option, benchmark_col)
+            ranking_df = compute_constant_selector(
+                df,
+                target_col,
+                option_col,
+                option,
+                benchmark_col,
+                topk_frac=topk_frac,
+                topk_min=topk_min,
+            )
         else:
             continue
 
@@ -1801,10 +1983,10 @@ def add_rank_target(df, source_col, group_cols, output_col):
     if not group_cols:
         return add_rank_target(df, source_col, [], output_col)
 
-    def rank_group(sub):
-        return sub[source_col].rank(method="average", ascending=True)
-
-    df[output_col] = df.groupby(group_cols, dropna=False).apply(rank_group).reset_index(level=group_cols, drop=True)
+    df[output_col] = (
+        df.groupby(group_cols, dropna=False)[source_col]
+        .rank(method="average", ascending=True)
+    )
     return df
 
 
@@ -1818,6 +2000,19 @@ def _parse_encoder_config_list(value):
             continue
         items.append(token)
     return items
+
+
+def _select_target_demean_group(args):
+    if args.cv_demean_target_by_benchmark and args.cv_demean_target_by_encoder:
+        print(
+            "Warning: both cv_demean_target_by_benchmark and "
+            "cv_demean_target_by_encoder are set; using benchmark demeaning."
+        )
+    if args.cv_demean_target_by_benchmark:
+        return "benchmark"
+    if args.cv_demean_target_by_encoder:
+        return "encoder_config"
+    return None
 
 
 def filter_encoder_configs(df, exclude):
@@ -1942,20 +2137,10 @@ def add_relative_target(df, baseline_dataset, target_col):
 
 
 def _select_random_slopes(args, predictors):
-    if args.mixedlm_random_slopes:
-        return [p.strip() for p in args.mixedlm_random_slopes.split(",") if p.strip()]
-
-    preferred = [
-        "flow_train_to_eval_coverage_logit",
-        "flow_eval_to_train_coverage_logit",
-        "flow_train_to_eval_mean_dist",
-        "flow_eval_to_train_mean_dist",
-        "flow_mmd",
-    ]
-    slopes = [p for p in preferred if p in predictors]
-    if len(slopes) > 2:
-        slopes = slopes[:2]
-    return slopes
+    if not args.mixedlm_random_slopes:
+        return []
+    requested = [p.strip() for p in args.mixedlm_random_slopes.split(",") if p.strip()]
+    return [p for p in requested if p in predictors]
 
 
 def _drop_algebraic_redundancies(predictors):
@@ -2075,6 +2260,8 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
     pred_target = args.prediction_target or args.target
     pred_model = args.prediction_model or args.linear_model
     cv_df = cv_df if cv_df is not None else feature_df
+    target_demean_group = _select_target_demean_group(args)
+    target_group_demean = target_demean_group is not None
 
     lobo_summary, lobo_preds = run_group_cv(
         cv_df,
@@ -2088,8 +2275,8 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
         within_benchmark_norm=args.cv_within_benchmark_predictor_norm,
         encoder_group_norm_mode=args.cv_normalize_predictors_by_encoder,
         encoder_group_col="encoder_config",
-        target_group_demean=args.cv_demean_target_by_encoder,
-        target_group_col="encoder_config",
+        target_group_demean=target_group_demean,
+        target_group_col=target_demean_group,
         min_predictor_std=args.cv_min_predictor_std,
         prediction_clip=args.prediction_clip,
         prediction_clip_min=args.prediction_clip_min,
@@ -2107,6 +2294,14 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
             pred_target,
             args.ranking_group,
             out_dir / "prediction_lobo_rank_summary.csv",
+            topk_frac=args.ranking_topk_frac,
+            topk_min=args.ranking_topk_min,
+        )
+        write_rank_detail_rows(
+            lobo_preds,
+            pred_target,
+            args.ranking_group,
+            out_dir / "prediction_lobo_rank_detail.csv",
         )
         if args.sanity_direction_audit:
             write_direction_audit(
@@ -2123,6 +2318,8 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
         args.ranking_group,
         out_dir / "prediction_lobo_rank_baselines.csv",
         baseline_selectors,
+        topk_frac=args.ranking_topk_frac,
+        topk_min=args.ranking_topk_min,
     )
 
     if args.prediction_mixedlm and HAS_STATSMODELS:
@@ -2141,8 +2338,8 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
             within_benchmark_norm=args.cv_within_benchmark_predictor_norm,
             encoder_group_norm_mode=args.cv_normalize_predictors_by_encoder,
             encoder_group_col="encoder_config",
-            target_group_demean=args.cv_demean_target_by_encoder,
-            target_group_col="encoder_config",
+            target_group_demean=target_group_demean,
+            target_group_col=target_demean_group,
             min_predictor_std=args.cv_min_predictor_std,
             prediction_clip=args.prediction_clip,
             prediction_clip_min=args.prediction_clip_min,
@@ -2161,6 +2358,8 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
                 args.target,
                 args.ranking_group,
                 out_dir / "prediction_lobo_mixed_rank_summary.csv",
+                topk_frac=args.ranking_topk_frac,
+                topk_min=args.ranking_topk_min,
             )
 
     if args.loto_collapse_mixed:
@@ -2183,8 +2382,8 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
         within_benchmark_norm=args.cv_within_benchmark_predictor_norm,
         encoder_group_norm_mode=args.cv_normalize_predictors_by_encoder,
         encoder_group_col="encoder_config",
-        target_group_demean=args.cv_demean_target_by_encoder,
-        target_group_col="encoder_config",
+        target_group_demean=target_group_demean,
+        target_group_col=target_demean_group,
         min_predictor_std=args.cv_min_predictor_std,
         prediction_clip=args.prediction_clip,
         prediction_clip_min=args.prediction_clip_min,
@@ -2202,6 +2401,14 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
             pred_target,
             args.ranking_group,
             out_dir / "prediction_loto_rank_summary.csv",
+            topk_frac=args.ranking_topk_frac,
+            topk_min=args.ranking_topk_min,
+        )
+        write_rank_detail_rows(
+            loto_preds,
+            pred_target,
+            args.ranking_group,
+            out_dir / "prediction_loto_rank_detail.csv",
         )
 
     if args.sanity_permutation:
@@ -2220,8 +2427,8 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
             within_benchmark_norm=args.cv_within_benchmark_predictor_norm,
             encoder_group_norm_mode=args.cv_normalize_predictors_by_encoder,
             encoder_group_col="encoder_config",
-            target_group_demean=args.cv_demean_target_by_encoder,
-            target_group_col="encoder_config",
+            target_group_demean=target_group_demean,
+            target_group_col=target_demean_group,
             min_predictor_std=args.cv_min_predictor_std,
             prediction_clip=args.prediction_clip,
             prediction_clip_min=args.prediction_clip_min,
@@ -2246,6 +2453,8 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
                 pred_target,
                 args.ranking_group,
                 out_dir / "prediction_lobo_permutation_rank_summary.csv",
+                topk_frac=args.ranking_topk_frac,
+                topk_min=args.ranking_topk_min,
             )
 
         perm_loto_summary, perm_loto_preds = run_group_cv(
@@ -2260,8 +2469,8 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
             within_benchmark_norm=args.cv_within_benchmark_predictor_norm,
             encoder_group_norm_mode=args.cv_normalize_predictors_by_encoder,
             encoder_group_col="encoder_config",
-            target_group_demean=args.cv_demean_target_by_encoder,
-            target_group_col="encoder_config",
+            target_group_demean=target_group_demean,
+            target_group_col=target_demean_group,
             min_predictor_std=args.cv_min_predictor_std,
             prediction_clip=args.prediction_clip,
             prediction_clip_min=args.prediction_clip_min,
@@ -2298,8 +2507,8 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
             within_benchmark_norm=args.cv_within_benchmark_predictor_norm,
             encoder_group_norm_mode=args.cv_normalize_predictors_by_encoder,
             encoder_group_col="encoder_config",
-            target_group_demean=args.cv_demean_target_by_encoder,
-            target_group_col="encoder_config",
+            target_group_demean=target_group_demean,
+            target_group_col=target_demean_group,
             min_predictor_std=args.cv_min_predictor_std,
             prediction_clip=args.prediction_clip,
             prediction_clip_min=args.prediction_clip_min,
@@ -2449,6 +2658,29 @@ def collapse_mixed_dataset(name):
     return name
 
 
+def is_mixed_dataset(name: str | None) -> bool:
+    if not name:
+        return False
+    name = normalize_dataset_name(name)
+    if name.startswith("synthetic"):
+        return False
+    return "_synthetic" in name
+
+
+def filter_train_datasets_by_mode(df: pd.DataFrame, mode: str):
+    if df.empty or "train_dataset" not in df.columns or mode == "all":
+        return df, 0
+    df = df.copy()
+    mask = df["train_dataset"].apply(is_mixed_dataset)
+    if mode == "base_only":
+        filtered = int(mask.sum())
+        return df[~mask].copy(), filtered
+    if mode == "mixed_only":
+        filtered = int((~mask).sum())
+        return df[mask].copy(), filtered
+    return df, 0
+
+
 def main():
     parser = argparse.ArgumentParser(description="Leakage-free analysis pipeline.")
     parser.add_argument(
@@ -2477,6 +2709,12 @@ def main():
         "--metric",
         default="pck",
         help="Metric column to use for selection and AUC.",
+    )
+    parser.add_argument(
+        "--train-datasets-mode",
+        choices=["all", "base_only", "mixed_only"],
+        default="all",
+        help="Filter train datasets before analysis (default: all).",
     )
     parser.add_argument(
         "--fixed-steps",
@@ -2640,14 +2878,14 @@ def main():
     parser.add_argument(
         "--benchmark-normalize-predictors",
         choices=["auto", "none", "center", "zscore"],
-        default="auto",
+        default="none",
         help="Normalize predictors within each benchmark before regression/prediction.",
     )
     parser.add_argument(
         "--benchmark-normalize-scope",
         choices=["all", "report_only", "none"],
-        default="all",
-        help="Where to apply benchmark normalization (default: all).",
+        default="none",
+        help="Where to apply benchmark normalization (default: none).",
     )
     parser.add_argument(
         "--benchmark-normalize-target",
@@ -2680,12 +2918,25 @@ def main():
         help="Demean target by encoder config inside LOBO/LOTO folds.",
     )
     parser.add_argument(
+        "--cv-demean-target-by-benchmark",
+        dest="cv_demean_target_by_benchmark",
+        action="store_true",
+        help="Demean target by benchmark inside LOBO/LOTO folds (train-only means).",
+    )
+    parser.add_argument(
         "--no-cv-demean-target-by-encoder",
         dest="cv_demean_target_by_encoder",
         action="store_false",
         help="Disable encoder-config target demeaning inside LOBO/LOTO folds.",
     )
+    parser.add_argument(
+        "--no-cv-demean-target-by-benchmark",
+        dest="cv_demean_target_by_benchmark",
+        action="store_false",
+        help="Disable benchmark target demeaning inside LOBO/LOTO folds.",
+    )
     parser.set_defaults(cv_demean_target_by_encoder=False)
+    parser.set_defaults(cv_demean_target_by_benchmark=False)
     parser.add_argument(
         "--cv-min-predictor-std",
         type=float,
@@ -2836,6 +3087,18 @@ def main():
         help="Column to rank options within each benchmark (default: train_dataset).",
     )
     parser.add_argument(
+        "--ranking-topk-frac",
+        type=float,
+        default=0.2,
+        help="Top-k fraction for rank summary (default: 0.2 for top-20%%).",
+    )
+    parser.add_argument(
+        "--ranking-topk-min",
+        type=int,
+        default=1,
+        help="Minimum k for top-k evaluation (default: 1).",
+    )
+    parser.add_argument(
         "--dual-target",
         action="store_true",
         help="Run analysis twice (delta and absolute targets) into subdirectories.",
@@ -2844,6 +3107,16 @@ def main():
         "--dual-target-dirs",
         default="delta,absolute",
         help="Comma-separated subdirs for dual-target outputs.",
+    )
+    parser.add_argument(
+        "--additional-targets",
+        default=None,
+        help="Comma-separated list of extra target columns to analyze (optional).",
+    )
+    parser.add_argument(
+        "--additional-target-dirs",
+        default=None,
+        help="Comma-separated subdirs for additional targets (defaults to target names).",
     )
     parser.add_argument(
         "--strict-dataset-match",
@@ -3025,12 +3298,16 @@ def main():
                                 }
                             )
 
+        curve_stats = compute_curve_stats(df, args.metric)
+        curve_map = {row["benchmark"]: row for row in curve_stats}
         for bench, sub in df.groupby("benchmark"):
             auc, n_points, last_step = compute_auc(sub, args.metric, args.auc_steps, args.auc_pad)
             if last_step is not None and last_step < args.auc_steps:
                 print(
                     f"Warning: {snapshot_dir.name} {bench} ends at {last_step} < {args.auc_steps} steps"
                 )
+            curve_info = curve_map.get(bench, {})
+            curve_extra = {k: v for k, v in curve_info.items() if k != "benchmark"}
             auc_rows.append(
                 {
                     **run_info,
@@ -3039,10 +3316,11 @@ def main():
                     "auc": auc,
                     "auc_normalized": auc / args.auc_steps if args.auc_steps else np.nan,
                     "auc_points": int(n_points),
+                    **curve_extra,
                 }
             )
 
-        for row in compute_curve_stats(df, args.metric):
+        for row in curve_stats:
             curve_rows.append({**run_info, **row})
 
     if dev_rows:
@@ -3098,6 +3376,13 @@ def main():
         radius_eps=args.radius_eps,
         radius_floor=args.distance_radius_floor,
     )
+    feature_df, filtered = filter_train_datasets_by_mode(
+        feature_df, args.train_datasets_mode
+    )
+    if filtered:
+        print(
+            f"Filtered {filtered} rows using train_datasets_mode={args.train_datasets_mode}."
+        )
     if args.relative_target_baseline and not feature_df.empty:
         feature_df, missing_baseline, baseline_name = add_relative_target(
             feature_df, args.relative_target_baseline, args.target
@@ -3213,10 +3498,7 @@ def main():
 
     predictor_norm = args.benchmark_normalize_predictors
     if predictor_norm == "auto":
-        if args.relative_target_baseline or args.target == "auc_delta":
-            predictor_norm = "zscore"
-        else:
-            predictor_norm = "none"
+        predictor_norm = "none"
     target_norm = args.benchmark_normalize_target
 
     report_df = feature_df
@@ -3248,6 +3530,87 @@ def main():
             )
         report_df.to_csv(out_dir / "auc_with_features.csv", index=False)
 
+    def run_target_mode(mode_target, mode_out_dir):
+        if mode_target not in feature_df.columns:
+            print(f"Skipping {mode_out_dir.name}: target '{mode_target}' not in table.")
+            return
+        mode_out_dir.mkdir(parents=True, exist_ok=True)
+        mode_args = argparse.Namespace(**vars(args))
+        mode_args.target = mode_target
+        mode_args.prediction_target = mode_target
+        mode_report_df = report_df.copy()
+        mode_cv_df = cv_df.copy()
+        if target_norm != "none":
+            if apply_report_norm:
+                mode_report_df = normalize_by_group(
+                    mode_report_df, [mode_target], "benchmark", target_norm
+                )
+            if apply_cv_norm:
+                mode_cv_df = normalize_by_group(
+                    mode_cv_df, [mode_target], "benchmark", target_norm
+                )
+        if mode_args.rank_target:
+            rank_source = mode_target
+            rank_col = mode_args.rank_target_col or f"{rank_source}_rank"
+            rank_groups = []
+            if mode_args.rank_target_group:
+                rank_groups.append(mode_args.rank_target_group)
+            if mode_args.rank_target_with_encoder:
+                mode_report_df = ensure_encoder_config(mode_report_df)
+                mode_cv_df = ensure_encoder_config(mode_cv_df)
+                rank_groups.append("encoder_config")
+            mode_report_df = add_rank_target(mode_report_df, rank_source, rank_groups, rank_col)
+            mode_cv_df = add_rank_target(mode_cv_df, rank_source, rank_groups, rank_col)
+            mode_args.target = rank_col
+            mode_args.prediction_target = rank_col
+        pooled_report_df, pooled_cv_df, pooled_predictors = prepare_encoder_pooled_frames(
+            mode_report_df.copy(),
+            mode_cv_df.copy(),
+            predictors,
+            mode_args.encoder_interaction_baseline,
+            mode_args.encoder_interactions,
+            mode_args.encoder_main_effects,
+            mode_args.cv_normalize_predictors_by_encoder,
+        )
+        pooled_report_df.to_csv(mode_out_dir / "auc_with_features.csv", index=False)
+        run_analysis_bundle(
+            pooled_report_df,
+            mode_out_dir,
+            pooled_predictors,
+            mode_args,
+            cv_df=pooled_cv_df,
+        )
+        if mode_args.run_summary:
+            run_summary_report(mode_out_dir, pooled_predictors, mode_args)
+        if mode_args.per_encoder:
+            per_args = argparse.Namespace(**vars(mode_args))
+            per_args.encoder_interactions = False
+            per_args.encoder_main_effects = True
+            per_args.cv_normalize_predictors_by_encoder = "none"
+            per_args.cv_demean_target_by_encoder = False
+            per_dir = mode_out_dir / "by_encoder"
+            per_dir.mkdir(parents=True, exist_ok=True)
+            for (pretrained, freeze), group in mode_report_df.groupby(
+                ["pretrained", "freeze"], dropna=False
+            ):
+                tag = f"pretrained{_format_bool(pretrained)}_freeze{_format_bool(freeze)}"
+                group_dir = per_dir / tag
+                group_dir.mkdir(parents=True, exist_ok=True)
+                group.to_csv(group_dir / "auc_with_features.csv", index=False)
+                cv_group = mode_cv_df[
+                    (mode_cv_df["pretrained"] == pretrained)
+                    & (mode_cv_df["freeze"] == freeze)
+                ].copy()
+                run_analysis_bundle(
+                    group,
+                    group_dir,
+                    predictors,
+                    per_args,
+                    cv_df=cv_group,
+                )
+                if mode_args.run_summary:
+                    run_summary_report(group_dir, predictors, per_args)
+
     if args.dual_target:
         mode_dirs = [m.strip() for m in args.dual_target_dirs.split(",") if m.strip()]
         if len(mode_dirs) != 2:
@@ -3257,86 +3620,7 @@ def main():
             (mode_dirs[1], "auc_normalized"),
         ]
         for mode_dir, mode_target in modes:
-            if mode_target not in feature_df.columns:
-                print(f"Skipping {mode_dir}: target '{mode_target}' not in table.")
-                continue
-            mode_out_dir = out_dir / mode_dir
-            mode_out_dir.mkdir(parents=True, exist_ok=True)
-            mode_args = argparse.Namespace(**vars(args))
-            mode_args.target = mode_target
-            mode_args.prediction_target = mode_target
-            mode_report_df = report_df.copy()
-            mode_cv_df = cv_df.copy()
-            if target_norm != "none":
-                if apply_report_norm:
-                    mode_report_df = normalize_by_group(
-                        mode_report_df, [mode_target], "benchmark", target_norm
-                    )
-                if apply_cv_norm:
-                    mode_cv_df = normalize_by_group(
-                        mode_cv_df, [mode_target], "benchmark", target_norm
-                    )
-            if mode_args.rank_target:
-                rank_source = mode_target
-                rank_col = mode_args.rank_target_col or f"{rank_source}_rank"
-                rank_groups = []
-                if mode_args.rank_target_group:
-                    rank_groups.append(mode_args.rank_target_group)
-                if mode_args.rank_target_with_encoder:
-                    mode_report_df = ensure_encoder_config(mode_report_df)
-                    mode_cv_df = ensure_encoder_config(mode_cv_df)
-                    rank_groups.append("encoder_config")
-                mode_report_df = add_rank_target(mode_report_df, rank_source, rank_groups, rank_col)
-                mode_cv_df = add_rank_target(mode_cv_df, rank_source, rank_groups, rank_col)
-                mode_args.target = rank_col
-                mode_args.prediction_target = rank_col
-            pooled_report_df, pooled_cv_df, pooled_predictors = prepare_encoder_pooled_frames(
-                mode_report_df.copy(),
-                mode_cv_df.copy(),
-                predictors,
-                mode_args.encoder_interaction_baseline,
-                mode_args.encoder_interactions,
-                mode_args.encoder_main_effects,
-                mode_args.cv_normalize_predictors_by_encoder,
-            )
-            pooled_report_df.to_csv(mode_out_dir / "auc_with_features.csv", index=False)
-            run_analysis_bundle(
-                pooled_report_df,
-                mode_out_dir,
-                pooled_predictors,
-                mode_args,
-                cv_df=pooled_cv_df,
-            )
-            if mode_args.run_summary:
-                run_summary_report(mode_out_dir, pooled_predictors, mode_args)
-            if mode_args.per_encoder:
-                per_args = argparse.Namespace(**vars(mode_args))
-                per_args.encoder_interactions = False
-                per_args.encoder_main_effects = True
-                per_args.cv_normalize_predictors_by_encoder = "none"
-                per_args.cv_demean_target_by_encoder = False
-                per_dir = mode_out_dir / "by_encoder"
-                per_dir.mkdir(parents=True, exist_ok=True)
-                for (pretrained, freeze), group in mode_report_df.groupby(
-                    ["pretrained", "freeze"], dropna=False
-                ):
-                    tag = f"pretrained{_format_bool(pretrained)}_freeze{_format_bool(freeze)}"
-                    group_dir = per_dir / tag
-                    group_dir.mkdir(parents=True, exist_ok=True)
-                    group.to_csv(group_dir / "auc_with_features.csv", index=False)
-                    cv_group = mode_cv_df[
-                        (mode_cv_df["pretrained"] == pretrained)
-                        & (mode_cv_df["freeze"] == freeze)
-                    ].copy()
-                    run_analysis_bundle(
-                        group,
-                        group_dir,
-                        predictors,
-                        per_args,
-                        cv_df=cv_group,
-                    )
-                    if mode_args.run_summary:
-                        run_summary_report(group_dir, predictors, per_args)
+            run_target_mode(mode_target, out_dir / mode_dir)
     else:
         if target_norm != "none":
             if apply_report_norm:
@@ -3366,6 +3650,19 @@ def main():
         )
         if args.run_summary:
             run_summary_report(out_dir, pooled_predictors, args)
+
+    if args.additional_targets:
+        targets = [t.strip() for t in args.additional_targets.split(",") if t.strip()]
+        dir_names = []
+        if args.additional_target_dirs:
+            dir_names = [d.strip() for d in args.additional_target_dirs.split(",") if d.strip()]
+            if len(dir_names) != len(targets):
+                raise ValueError("--additional-target-dirs must match --additional-targets length.")
+        for idx, target in enumerate(targets):
+            if target == args.target:
+                continue
+            mode_dir = dir_names[idx] if dir_names else target
+            run_target_mode(target, out_dir / mode_dir)
 
     if args.per_encoder:
         per_args = argparse.Namespace(**vars(args))
