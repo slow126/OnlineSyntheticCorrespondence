@@ -44,6 +44,14 @@ class CorrespondenceDataset(Dataset):
         self.debug = debug
 
         self.size: Optional[Tuple[int, int]] = kwargs.get("size", (512, 512))
+        if self.size is not None:
+            if isinstance(self.size, (list, tuple)) and len(self.size) == 2:
+                self.size = (int(self.size[0]), int(self.size[1]))
+            elif isinstance(self.size, (int, float)):
+                side = int(self.size)
+                self.size = (side, side)
+            else:
+                raise ValueError(f"size must be int or (H, W), got {self.size!r}")
         self.max_kps: Optional[int] = kwargs.get("max_kps", None)
         self.downsample_feat_size: int = kwargs.get("downsample_flow", 32)
         self.prefer_all_dense: bool = kwargs.get("dense_kps_use_all", True)
