@@ -68,6 +68,7 @@ models/Datasets_CATs/
 snapshots/
 sorted_snapshots/
 snapshots_mixed/
+snapshots*
 
 # Dino Outputs
 models/DinoV3/extracted_features/

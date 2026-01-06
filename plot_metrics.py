@@ -111,6 +111,19 @@ def parse_training_summary(summary_path):
                         result['freeze'] = 'F'
                     else:
                         result['freeze'] = freeze_str
+                # Extract pretrained
+                elif 'pretrained:' in line or 'Pretrained:' in line:
+                    if 'pretrained:' in line:
+                        pretrained_str = line.split('pretrained:')[1].strip()
+                    else:
+                        pretrained_str = line.split('Pretrained:')[1].strip()
+                    pretrained_str = pretrained_str.lower()
+                    if pretrained_str in ['true', '1', 'yes']:
+                        result['pretrained'] = 'T'
+                    elif pretrained_str in ['false', '0', 'no']:
+                        result['pretrained'] = 'F'
+                    else:
+                        result['pretrained'] = pretrained_str
     except Exception as e:
         print(f"Warning: Could not parse {summary_path}: {e}")
         return None
@@ -326,6 +339,12 @@ def parse_directory_name(directory_name):
     if freeze_match:
         freeze_val = freeze_match.group(1)
         result['freeze'] = 'T' if freeze_val == 'True' else 'F'
+
+    # Extract pretrained (pretrainedTrue or pretrainedFalse)
+    pretrained_match = re.search(r'pretrained(True|False)', directory_name)
+    if pretrained_match:
+        pretrained_val = pretrained_match.group(1)
+        result['pretrained'] = 'T' if pretrained_val == 'True' else 'F'
     
     return result if result else None
 

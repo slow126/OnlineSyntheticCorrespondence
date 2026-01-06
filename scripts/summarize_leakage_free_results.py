@@ -582,6 +582,11 @@ def main():
         out_lines.append("Encoder config counts (FF/FT/TF/TT):")
         for name, group in df.groupby("encoder_config", dropna=False):
             out_lines.append(f"  {name}: {len(group)} rows")
+    if "model_family" in df.columns:
+        out_lines.append("")
+        out_lines.append("Model family counts:")
+        for name, group in df.groupby("model_family", dropna=False):
+            out_lines.append(f"  {name}: {len(group)} rows")
 
     out_lines.append("")
     out_lines.append(f"Target: {args.target}")

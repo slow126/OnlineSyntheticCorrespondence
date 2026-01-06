@@ -97,6 +97,13 @@ steps:
         rank_target: true
         per_encoder: true
         predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_delta_rank_pairwise
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank/pairwise
+        rank_target: true
+        per_encoder: true
+        prediction_model: pairwise_rank
+        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
     - name: all_auc_delta_rank_pooled
       args:
         output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank/pooled
@@ -122,6 +129,17 @@ steps:
         rank_target_source: peak_pck
         rank_target_col: peak_pck_rank
         per_encoder: true
+        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_peak_pck_rank_pairwise
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank/pairwise
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: true
+        prediction_model: pairwise_rank
         predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
     - name: all_peak_pck_rank_pooled
       args:

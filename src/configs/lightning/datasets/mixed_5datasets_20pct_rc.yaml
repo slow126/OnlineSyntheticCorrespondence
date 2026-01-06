@@ -1,0 +1,55 @@
+# Mixed dataset: 20% each of sintel, synthetic, spair, flyingthings, pointodyssey (RC)
+# Contains only dataset-specific parameters
+
+dataset:
+  mixed: true
+  datasets: ['sintel', 'synthetic', 'spair', 'flyingthings', 'pointodyssey']
+  percentages: [0.2, 0.2, 0.2, 0.2, 0.2]
+
+  # Common parameters (applied to all datasets unless overridden)
+  split: 'train'
+  size: [512, 512]
+  downsample_flow: 32
+  max_kps: null  # null = no truncation
+  dense_kps_use_all: true  # use all valid kps for dense flow; set false to sample up to max_kps
+  verbose: false
+  debug: false
+
+  # Optional: epoch_size (if None, uses sum of all dataset lengths)
+  epoch_size: null
+
+  # Optional: seed for reproducibility in sampling
+  seed: 42
+
+  # Dataset-specific overrides
+  dataset_overrides:
+    sintel:
+      sintel_root: '/home/slow1/Data'  # Torchvision appends '/Sintel' automatically
+      pass_name: 'clean'  # 'clean', 'final', or 'both'
+      reverse_flow: true
+      normalize_images: true
+    synthetic:
+      geometry_config_path: 'src/configs/online_synth_configs/OnlineGeometryConfig.yaml'
+      processor_config_path: 'src/configs/online_synth_configs/OnlineProcessorConfig.yaml'
+      opengl_device_index: null  # null = auto-detect
+      normalize_images: false  # Synthetic already normalized by processor
+      geometry_config_overrides: null
+    spair:
+      datapath: './models/Datasets_CATs'
+      normalize_images: false  # SPair is already normalized
+    flyingthings:
+      datapath: '/home/slow1/Data/FlyingThings3D_Pytorch'
+      reverse_flow: true
+      normalize_images: true
+    pointodyssey:
+      dataset_location: '/home/slow1/Data/PointOdyssey'
+      pointodyssey_use_augs: false
+      pointodyssey_sequence_length: 2
+      pointodyssey_num_pts_to_track: 32
+      pointodyssey_strides: [1, 2, 4]
+      pointodyssey_quick: false
+      reverse_flow: true
+      thres: 'img'
+      use_all_valid: true
+      pointodyssey_disable_motion_filter: true
+      normalize_images: true

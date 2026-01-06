@@ -79,7 +79,25 @@ def load_snapshots(snapshot_dirs):
     return snapshots_data, sorted(list(all_metrics))
 
 
-def organize_by_benchmark(snapshots_data):
+def _dedup_by_step(data_points):
+    """Aggregate duplicate training_steps by mean value."""
+    if not data_points:
+        return data_points
+    step_values = defaultdict(list)
+    for step, value in data_points:
+        try:
+            step_key = int(step)
+        except (TypeError, ValueError):
+            continue
+        try:
+            step_values[step_key].append(float(value))
+        except (TypeError, ValueError):
+            continue
+    deduped = [(step, float(np.mean(values))) for step, values in step_values.items()]
+    return sorted(deduped, key=lambda x: x[0])
+
+
+def organize_by_benchmark(snapshots_data, metric_pairs=None):
     """
     Organize data by benchmark, then by metric pairs.
     
@@ -94,11 +112,12 @@ def organize_by_benchmark(snapshots_data):
     benchmark_data = defaultdict(lambda: defaultdict(list))
     
     # Define metric pairs to plot
-    metric_pairs = [
-        ('pck', 'mmd2_pred_corr_vs_pred_miss'),
-        ('pck', 'mmd2_pred_corr_vs_gt'),
-        ('pck', 'mmd2_pred_miss_vs_gt'),
-    ]
+    if metric_pairs is None:
+        metric_pairs = [
+            ('pck', 'mmd2_pred_corr_vs_pred_miss'),
+            ('pck', 'mmd2_pred_corr_vs_gt'),
+            ('pck', 'mmd2_pred_miss_vs_gt'),
+        ]
     
     for training_dataset, validation_data, metrics, _ in snapshots_data:
         # Group data by benchmark
@@ -112,9 +131,9 @@ def organize_by_benchmark(snapshots_data):
         for benchmark, metrics_dict in benchmark_metrics.items():
             for metric1, metric2 in metric_pairs:
                 if metric1 in metrics_dict and metric2 in metrics_dict:
-                    # Get data points for both metrics
-                    metric1_data = metrics_dict[metric1]
-                    metric2_data = metrics_dict[metric2]
+                    # Get data points for both metrics (dedup by step)
+                    metric1_data = _dedup_by_step(metrics_dict[metric1])
+                    metric2_data = _dedup_by_step(metrics_dict[metric2])
                     
                     # Create dictionaries keyed by training_steps for alignment
                     metric1_dict = {step: value for step, value in metric1_data}
@@ -290,7 +309,7 @@ def organize_pck_vs_steps_by_benchmark(snapshots_data):
         # Extract PCK vs training_steps for each benchmark
         for benchmark, metrics_dict in benchmark_metrics.items():
             if 'pck' in metrics_dict:
-                pck_data = metrics_dict['pck']
+                pck_data = _dedup_by_step(metrics_dict['pck'])
                 # Sort by training_steps
                 pck_data_sorted = sorted(pck_data, key=lambda x: x[0])
                 steps = [point[0] for point in pck_data_sorted]
@@ -2420,18 +2439,9 @@ Examples:
     
     print(f"\nFound {len(all_metrics)} metrics: {all_metrics}")
     
-    # Organize data by benchmark
-    print("\nOrganizing data by benchmark...")
-    benchmark_data = organize_by_benchmark(snapshots_data)
-    
-    if not benchmark_data:
-        print("Error: No benchmark data found!")
-        sys.exit(1)
-    
-    print(f"Found {len(benchmark_data)} benchmarks: {list(benchmark_data.keys())}")
-    
     # Parse metrics filter if provided
     metrics_filter = None
+    metric_pairs = None
     if args.metrics:
         metrics_filter = []
         for metric_str in args.metrics:
@@ -2440,6 +2450,35 @@ Examples:
                 metrics_filter.append((parts[0].strip(), parts[1].strip()))
             else:
                 print(f"Warning: Invalid metric pair format '{metric_str}', expected 'metric1,metric2'")
+        if metrics_filter:
+            metric_pairs = metrics_filter
+
+    if metric_pairs is None:
+        # Default to MMD pairs when available; otherwise fall back to PCK vs loss
+        has_mmd = any(
+            m in all_metrics
+            for m in ("mmd2_pred_corr_vs_pred_miss", "mmd2_pred_corr_vs_gt", "mmd2_pred_miss_vs_gt")
+        )
+        if has_mmd:
+            metric_pairs = [
+                ('pck', 'mmd2_pred_corr_vs_pred_miss'),
+                ('pck', 'mmd2_pred_corr_vs_gt'),
+                ('pck', 'mmd2_pred_miss_vs_gt'),
+            ]
+        elif "pck" in all_metrics and "loss" in all_metrics:
+            metric_pairs = [('pck', 'loss')]
+        else:
+            metric_pairs = []
+
+    # Organize data by benchmark
+    print("\nOrganizing data by benchmark...")
+    benchmark_data = organize_by_benchmark(snapshots_data, metric_pairs=metric_pairs)
+    
+    if not benchmark_data:
+        print("Warning: No metric pair data found (missing MMD or paired metrics).")
+    
+    if benchmark_data:
+        print(f"Found {len(benchmark_data)} benchmarks: {list(benchmark_data.keys())}")
     
     # Create plots
     print("\nCreating plots...")
@@ -2465,14 +2504,17 @@ Examples:
     
     dataset_color_map = {dataset: colors[i] for i, dataset in enumerate(sorted(all_datasets))}
     
-    # Create benchmark plots
-    create_benchmark_plots(
-        benchmark_data,
-        str(overview_dir),
-        benchmarks_filter=args.benchmarks,
-        metrics_filter=metrics_filter,
-        dataset_color_map=dataset_color_map
-    )
+    # Create benchmark plots (skip if no metric pairs available)
+    if benchmark_data:
+        create_benchmark_plots(
+            benchmark_data,
+            str(overview_dir),
+            benchmarks_filter=args.benchmarks,
+            metrics_filter=metrics_filter,
+            dataset_color_map=dataset_color_map
+        )
+    else:
+        print("Skipping metric-pair plots (no matching metric pairs found).")
     
     # Create PCK vs training steps plots for each benchmark
     print("\nCreating PCK vs Training Steps plots...")

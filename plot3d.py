@@ -1029,6 +1029,23 @@ def collect_all_predictors_data_points(
         best_performance = parse_best_performance_from_summary(summary_path)
         if not best_performance:
             continue
+
+        encoder_info = {}
+        summary_info = parse_training_summary(summary_path) or {}
+        dir_info = parse_directory_name(Path(snapshot_path).name) or {}
+        for key in ("pretrained", "freeze"):
+            if key in summary_info:
+                encoder_info[key] = summary_info[key]
+            elif key in dir_info:
+                encoder_info[key] = dir_info[key]
+        pretrained_val = encoder_info.get("pretrained")
+        freeze_val = encoder_info.get("freeze")
+        if pretrained_val is None and freeze_val is None:
+            encoder_regime = "unknown"
+        else:
+            pretrained_tag = pretrained_val if pretrained_val is not None else "U"
+            freeze_tag = freeze_val if freeze_val is not None else "U"
+            encoder_regime = f"pretrained{pretrained_tag}_freeze{freeze_tag}"
         
         for benchmark, best_pck in best_performance.items():
             benchmark_lower = str(benchmark).lower()
@@ -1153,6 +1170,9 @@ def collect_all_predictors_data_points(
                     'pck': best_pck,
                     'training_dataset': training_dataset_label,
                     'benchmark': benchmark,
+                    'pretrained': pretrained_val,
+                    'freeze': freeze_val,
+                    'encoder_regime': encoder_regime,
                     'snapshot_path': str(snapshot_path)
                 })
             elif debug:
@@ -1180,7 +1200,13 @@ def collect_all_predictors_data_points(
     return data_points
 
 
-def compare_predictors_with_mixed_effects(df, output_path=None, create_plots=True):
+def compare_predictors_with_mixed_effects(
+    df,
+    output_path=None,
+    create_plots=True,
+    encoder_offsets=False,
+    encoder_column="encoder_regime",
+):
     """
     Compare all predictors using multiple mixed-effects regression models.
     
@@ -1213,6 +1239,22 @@ def compare_predictors_with_mixed_effects(df, output_path=None, create_plots=Tru
     print(f"{'='*80}")
     print(f"\nData: {len(df)} observations across {df['benchmark'].nunique()} benchmarks")
     print(f"Benchmarks: {', '.join(sorted(df['benchmark'].unique()))}")
+    encoder_term = ""
+    use_encoder_offsets = False
+    if encoder_offsets:
+        if encoder_column not in df.columns:
+            print(f"Warning: Encoder offsets requested but '{encoder_column}' column is missing. Skipping offsets.")
+        else:
+            df[encoder_column] = df[encoder_column].fillna("unknown")
+            if df[encoder_column].nunique() < 2:
+                print(
+                    f"Warning: Encoder offsets requested but '{encoder_column}' has only one category. "
+                    "Skipping offsets."
+                )
+            else:
+                encoder_term = f" + C({encoder_column})"
+                use_encoder_offsets = True
+                print(f"Encoder offsets enabled: C({encoder_column})")
     
     # Standardize predictors for fair comparison (mean=0, std=1)
     # This allows comparing coefficients on the same scale
@@ -1333,7 +1375,9 @@ def compare_predictors_with_mixed_effects(df, output_path=None, create_plots=Tru
     
     for predictor in predictors:
         try:
-            model = smf.mixedlm(f"pck ~ {predictor}_std", data=df_scaled, groups=df_scaled["benchmark"])
+            model = smf.mixedlm(
+                f"pck ~ {predictor}_std{encoder_term}", data=df_scaled, groups=df_scaled["benchmark"]
+            )
             result = model.fit(method='lbfgs', reml=False)  # Use ML instead of REML for AIC/BIC
             
             # Check if model converged
@@ -1385,7 +1429,7 @@ def compare_predictors_with_mixed_effects(df, output_path=None, create_plots=Tru
     try:
         # Build formula with available predictors
         formula_parts = [f"{p}_std" for p in predictors_to_scale]
-        formula = "pck ~ " + " + ".join(formula_parts)
+        formula = "pck ~ " + " + ".join(formula_parts) + encoder_term
         model_full = smf.mixedlm(formula, data=df_scaled, groups=df_scaled["benchmark"])
         result_full = model_full.fit(method='lbfgs', reml=False)  # Use ML instead of REML for AIC/BIC
         
@@ -1412,7 +1456,8 @@ def compare_predictors_with_mixed_effects(df, output_path=None, create_plots=Tru
                 'dino_eval_to_train_mean_dist': 'DINO Eval->Train Mean Dist',
             }
             formula_display = " + ".join([predictor_names.get(p, p) for p in predictors_to_scale])
-            print(f"Model: PCK ~ {formula_display} + (1|benchmark)")
+            encoder_display = f" + C({encoder_column})" if use_encoder_offsets else ""
+            print(f"Model: PCK ~ {formula_display}{encoder_display} + (1|benchmark)")
             print(f"\n{'Predictor':<20} {'Std Coef':>12} {'p-value':>12} {'Significant':>12}")
             print(f"{'-'*60}")
             
@@ -1525,7 +1570,7 @@ def compare_predictors_with_mixed_effects(df, output_path=None, create_plots=Tru
     ols_results = {}
     for predictor in predictors_to_scale:
         try:
-            model = smf.ols(f"pck ~ {predictor}_std", data=df_scaled)
+            model = smf.ols(f"pck ~ {predictor}_std{encoder_term}", data=df_scaled)
             result = model.fit()
             coef = result.params.get(f"{predictor}_std", np.nan)
             pval = result.pvalues.get(f"{predictor}_std", np.nan)
@@ -1553,7 +1598,7 @@ def compare_predictors_with_mixed_effects(df, output_path=None, create_plots=Tru
     ols_full = None
     try:
         formula_parts = [f"{p}_std" for p in predictors_to_scale]
-        formula = "pck ~ " + " + ".join(formula_parts)
+        formula = "pck ~ " + " + ".join(formula_parts) + encoder_term
         model_full = smf.ols(formula, data=df_scaled)
         result_full = model_full.fit()
         aic = result_full.aic if hasattr(result_full, "aic") else np.nan
@@ -1579,37 +1624,41 @@ def compare_predictors_with_mixed_effects(df, output_path=None, create_plots=Tru
     print(f"\n{'='*80}")
     print("2c. BENCHMARK-MEAN OLS (Offset Sniff Test)")
     print(f"{'='*80}")
-    bench_df = df_scaled.groupby("benchmark").mean(numeric_only=True)
-    if len(bench_df) < 3:
-        print("Not enough benchmarks for benchmark-mean OLS (need at least 3).")
+    if use_encoder_offsets:
+        print("Skipping benchmark-mean OLS because encoder offsets are enabled.")
         bench_ols = None
     else:
-        print(f"{'Predictor':<20} {'Std Coef':>12} {'p-value':>12} {'R2':>8}")
-        print(f"{'-'*60}")
-        bench_ols = {}
-        for predictor in predictors_to_scale:
-            col = f"{predictor}_std"
-            if col not in bench_df.columns:
-                continue
-            try:
-                model = smf.ols(f"pck ~ {col}", data=bench_df)
-                result = model.fit()
-                coef = result.params.get(col, np.nan)
-                pval = result.pvalues.get(col, np.nan)
-                r2 = result.rsquared if hasattr(result, "rsquared") else np.nan
-                sig_marker = '*' if (not np.isnan(pval) and pval < 0.05) else ''
-                r2_str = f"{r2:.3f}" if not np.isnan(r2) else "N/A"
-                print(f"{predictor:<20} {coef:>12.4f} {pval:>12.4f}{sig_marker:>1} {r2_str:>8}")
-                bench_ols[predictor] = {
-                    "std_coef": coef,
-                    "pvalue": pval,
-                    "r2": r2,
-                    "significant": pval < 0.05 if not np.isnan(pval) else False,
-                }
-            except Exception as e:
-                print(f"{predictor:<20} {'ERROR':>12} {'ERROR':>12} {'ERROR':>8}")
-                print(f"  Error: {e}")
-                bench_ols[predictor] = None
+        bench_df = df_scaled.groupby("benchmark").mean(numeric_only=True)
+        if len(bench_df) < 3:
+            print("Not enough benchmarks for benchmark-mean OLS (need at least 3).")
+            bench_ols = None
+        else:
+            print(f"{'Predictor':<20} {'Std Coef':>12} {'p-value':>12} {'R2':>8}")
+            print(f"{'-'*60}")
+            bench_ols = {}
+            for predictor in predictors_to_scale:
+                col = f"{predictor}_std"
+                if col not in bench_df.columns:
+                    continue
+                try:
+                    model = smf.ols(f"pck ~ {col}", data=bench_df)
+                    result = model.fit()
+                    coef = result.params.get(col, np.nan)
+                    pval = result.pvalues.get(col, np.nan)
+                    r2 = result.rsquared if hasattr(result, "rsquared") else np.nan
+                    sig_marker = '*' if (not np.isnan(pval) and pval < 0.05) else ''
+                    r2_str = f"{r2:.3f}" if not np.isnan(r2) else "N/A"
+                    print(f"{predictor:<20} {coef:>12.4f} {pval:>12.4f}{sig_marker:>1} {r2_str:>8}")
+                    bench_ols[predictor] = {
+                        "std_coef": coef,
+                        "pvalue": pval,
+                        "r2": r2,
+                        "significant": pval < 0.05 if not np.isnan(pval) else False,
+                    }
+                except Exception as e:
+                    print(f"{predictor:<20} {'ERROR':>12} {'ERROR':>12} {'ERROR':>8}")
+                    print(f"  Error: {e}")
+                    bench_ols[predictor] = None
     results["benchmark_ols"] = bench_ols
     
     # 3. Model comparison
@@ -1693,6 +1742,8 @@ def compare_predictors_with_mixed_effects(df, output_path=None, create_plots=Tru
             f.write("="*80 + "\n\n")
             f.write(f"Data: {len(df)} observations across {df['benchmark'].nunique()} benchmarks\n")
             f.write(f"Benchmarks: {', '.join(sorted(df['benchmark'].unique()))}\n")
+            if use_encoder_offsets:
+                f.write(f"Encoder offsets: C({encoder_column})\n")
             
             # Write collinearity analysis section
             f.write(f"\n{'='*80}\n")
@@ -1790,7 +1841,8 @@ def compare_predictors_with_mixed_effects(df, output_path=None, create_plots=Tru
                     'dino_eval_to_train_mean_dist': 'DINO Eval->Train Mean Dist',
                 }
                 formula_display = " + ".join([predictor_names.get(p, p) for p in predictors_to_scale])
-                f.write(f"Model: PCK ~ {formula_display} + (1|benchmark)\n")
+                encoder_display = f" + C({encoder_column})" if use_encoder_offsets else ""
+                f.write(f"Model: PCK ~ {formula_display}{encoder_display} + (1|benchmark)\n")
                 f.write(f"\n{'Predictor':<20} {'Std Coef':>12} {'p-value':>12} {'Significant':>12}\n")
                 f.write(f"{'-'*60}\n")
                 
@@ -1871,7 +1923,9 @@ def compare_predictors_with_mixed_effects(df, output_path=None, create_plots=Tru
             f.write("2c. BENCHMARK-MEAN OLS (Offset Sniff Test)\n")
             f.write(f"{'='*80}\n")
             bench_ols = results.get("benchmark_ols")
-            if not bench_ols:
+            if use_encoder_offsets:
+                f.write("Skipping benchmark-mean OLS because encoder offsets are enabled.\n")
+            elif not bench_ols:
                 f.write("Not enough benchmarks for benchmark-mean OLS (need at least 3).\n")
             else:
                 f.write(f"{'Predictor':<20} {'Std Coef':>12} {'p-value':>12} {'R2':>8}\n")
@@ -2227,6 +2281,10 @@ def main():
         '--zscore', action='store_true',
         help='Also create z-scored versions of PCK'
     )
+    parser.add_argument(
+        '--encoder-offsets', action='store_true',
+        help='Add encoder regime offsets (pretrained/freeze) in mixed-effects models'
+    )
     args = parser.parse_args()
     
     # Create output directory
@@ -2506,7 +2564,12 @@ def main():
         
         if len(all_predictors_data) >= 10:
             df_all = pd.DataFrame(all_predictors_data)
-            compare_predictors_with_mixed_effects(df_all, output_path=output_path, create_plots=True)
+            compare_predictors_with_mixed_effects(
+                df_all,
+                output_path=output_path,
+                create_plots=True,
+                encoder_offsets=args.encoder_offsets,
+            )
         else:
             print(f"\nWarning: Only {len(all_predictors_data)} data points with core predictors.")
             print("  Need at least 10 points for reliable comparison.")

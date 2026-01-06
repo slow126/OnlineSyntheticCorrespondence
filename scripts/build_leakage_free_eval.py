@@ -45,6 +45,17 @@ RUN_NAME_RE = re.compile(
     r"_(?P<timestamp>\d{4}_\d{2}_\d{2}_\d{2}_\d{2})$"
 )
 
+MODEL_FAMILY_DEFAULT = "catspp"
+MODEL_FAMILY_ALIASES = {
+    "mixed": MODEL_FAMILY_DEFAULT,
+    "mixed_plots": MODEL_FAMILY_DEFAULT,
+    "cats": MODEL_FAMILY_DEFAULT,
+    "catspp": MODEL_FAMILY_DEFAULT,
+    "raft": "raft",
+    "flowformer": "flowformer",
+}
+MODEL_FAMILY_ORDER = (MODEL_FAMILY_DEFAULT, "raft", "flowformer")
+
 
 def normalize_dataset_name(name):
     if name is None:
@@ -84,6 +95,7 @@ def parse_run_name(snapshot_dir: Path) -> dict:
         "pretrained": None,
         "freeze": None,
         "timestamp": None,
+        "model_family": None,
     }
     match = RUN_NAME_RE.match(snapshot_dir.name)
     if match:
@@ -107,6 +119,13 @@ def parse_run_name(snapshot_dir: Path) -> dict:
         elif key == "train_dataset" and config_info.get(key) is not None:
             if info.get(key) is None or info.get(key) == "spair_synthetic":
                 info[key] = config_info[key]
+    name_dataset = parse_dataset_from_snapshot_name(snapshot_dir.name)
+    if name_dataset is not None:
+        if info.get("train_dataset") is None:
+            info["train_dataset"] = name_dataset
+        elif len(name_dataset) > len(str(info.get("train_dataset"))):
+            info["train_dataset"] = name_dataset
+    info["model_family"] = derive_model_family(snapshot_dir)
     return info
 
 
@@ -146,6 +165,35 @@ def parse_run_config(config_path: Path) -> dict:
     if "freeze" in model_cfg:
         info["freeze"] = bool(model_cfg.get("freeze"))
     return info
+
+
+def parse_dataset_from_snapshot_name(name: str):
+    if not name:
+        return None
+    lower = name.lower()
+    for token in ("raft", "flowformer"):
+        marker = f"_{token}"
+        if marker in lower:
+            prefix = name[: lower.index(marker)]
+            return normalize_dataset_name(prefix)
+    return None
+
+
+def derive_model_family(snapshot_dir: Path) -> str:
+    for part in snapshot_dir.parts:
+        if part == "snapshots":
+            return MODEL_FAMILY_DEFAULT
+        if part.startswith("snapshots_"):
+            suffix = part.split("snapshots_", 1)[1].strip().lower()
+            if not suffix:
+                return MODEL_FAMILY_DEFAULT
+            return MODEL_FAMILY_ALIASES.get(suffix, suffix)
+    name = snapshot_dir.name.lower()
+    if "raft" in name:
+        return "raft"
+    if "flowformer" in name:
+        return "flowformer"
+    return MODEL_FAMILY_DEFAULT
 
 
 def list_snapshot_dirs(root_dirs):
@@ -1969,6 +2017,16 @@ def ensure_encoder_config(df):
     return df
 
 
+def ensure_model_family(df):
+    if "model_family" in df.columns:
+        return df
+    if "run_id" not in df.columns:
+        return df
+    df = df.copy()
+    df["model_family"] = df["run_id"].apply(lambda value: derive_model_family(Path(str(value))))
+    return df
+
+
 def add_rank_target(df, source_col, group_cols, output_col):
     if source_col not in df.columns:
         return df
@@ -2002,6 +2060,30 @@ def _parse_encoder_config_list(value):
     return items
 
 
+def _parse_model_family_list(value):
+    if not value:
+        return []
+    items = []
+    for raw in str(value).split(","):
+        token = raw.strip().lower()
+        if not token:
+            continue
+        items.append(token)
+    return items
+
+
+def _parse_benchmark_list(value):
+    if not value:
+        return []
+    items = []
+    for raw in str(value).split(","):
+        token = normalize_dataset_name(raw)
+        if not token:
+            continue
+        items.append(token)
+    return items
+
+
 def _select_target_demean_group(args):
     if args.cv_demean_target_by_benchmark and args.cv_demean_target_by_encoder:
         print(
@@ -2029,9 +2111,105 @@ def filter_encoder_configs(df, exclude):
     return filtered, before - len(filtered)
 
 
+def filter_model_families(df, exclude):
+    if not exclude:
+        return df, 0
+    df = ensure_model_family(df)
+    if "model_family" not in df.columns:
+        return df, 0
+    exclude_set = {item.lower() for item in exclude}
+    if not exclude_set:
+        return df, 0
+    before = len(df)
+    filtered = df[~df["model_family"].astype(str).str.lower().isin(exclude_set)].copy()
+    return filtered, before - len(filtered)
+
+
 def _collect_encoder_configs(series):
     configs = [c for c in ENCODER_CONFIG_ORDER if c in set(series.dropna().unique())]
     return configs
+
+
+def _model_family_token(value):
+    token = re.sub(r"[^a-z0-9]+", "_", str(value).strip().lower())
+    token = token.strip("_")
+    return token or "unknown"
+
+
+def _collect_model_families(series):
+    unique = list(pd.Series(series).dropna().unique())
+    ordered = [m for m in MODEL_FAMILY_ORDER if m in unique]
+    remainder = [m for m in unique if m not in ordered]
+    remainder = sorted(remainder)
+    return ordered + remainder
+
+
+def add_model_family_effects(df, predictors, families, baseline, add_interactions):
+    if not families or len(families) < 2:
+        return df, [], []
+    df = df.copy()
+    baseline = baseline or families[-1]
+    if baseline not in families:
+        baseline = families[-1]
+
+    dummy_cols = []
+    family_tokens = {fam: _model_family_token(fam) for fam in families}
+    for fam in families:
+        if fam == baseline:
+            continue
+        token = family_tokens[fam]
+        col = f"mf_{token}"
+        df[col] = (df["model_family"] == fam).astype(float)
+        dummy_cols.append(col)
+
+    interaction_cols = []
+    if add_interactions:
+        for pred in predictors:
+            if pred not in df.columns:
+                continue
+            for fam in families:
+                if fam == baseline:
+                    continue
+                token = family_tokens[fam]
+                inter_col = f"{pred}__mf_{token}"
+                df[inter_col] = df[pred] * df[f"mf_{token}"]
+                interaction_cols.append(inter_col)
+    return df, dummy_cols, interaction_cols
+
+
+def prepare_model_family_pooled_frames(
+    report_df,
+    cv_df,
+    predictors,
+    base_predictors,
+    baseline,
+    add_interactions,
+    include_main_effects,
+):
+    if not add_interactions and not include_main_effects:
+        return report_df, cv_df, predictors
+
+    report_df = ensure_model_family(report_df)
+    cv_df = ensure_model_family(cv_df)
+    if "model_family" not in report_df.columns:
+        return report_df, cv_df, predictors
+
+    families = _collect_model_families(report_df["model_family"])
+    if len(families) < 2:
+        print("Warning: model_family effects requested but insufficient families.")
+        return report_df, cv_df, predictors
+
+    report_df, dummy_cols, interaction_cols = add_model_family_effects(
+        report_df, base_predictors, families, baseline, add_interactions
+    )
+    cv_df, _, _ = add_model_family_effects(
+        cv_df, base_predictors, families, baseline, add_interactions
+    )
+    if include_main_effects:
+        predictors = predictors + dummy_cols
+    if add_interactions:
+        predictors = predictors + interaction_cols
+    return report_df, cv_df, predictors
 
 
 def add_encoder_interactions(df, predictors, configs, baseline):
@@ -2260,6 +2438,16 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
     pred_target = args.prediction_target or args.target
     pred_model = args.prediction_model or args.linear_model
     cv_df = cv_df if cv_df is not None else feature_df
+    exclude_benchmarks = _parse_benchmark_list(args.exclude_benchmarks)
+    if exclude_benchmarks and "benchmark" in cv_df.columns:
+        cv_df = cv_df[
+            ~cv_df["benchmark"].astype(str).str.lower().isin(exclude_benchmarks)
+        ].copy()
+        if cv_df.empty:
+            print(
+                "Warning: excluded all rows for prediction; skipping LOBO/LOTO runs."
+            )
+            return
     target_demean_group = _select_target_demean_group(args)
     target_group_demean = target_demean_group is not None
 
@@ -3037,9 +3225,45 @@ def main():
     )
     parser.set_defaults(encoder_main_effects=True)
     parser.add_argument(
+        "--model-family-interactions",
+        dest="model_family_interactions",
+        action="store_true",
+        help="Add model-family indicators and predictor interactions for pooled analysis.",
+    )
+    parser.add_argument(
+        "--no-model-family-interactions",
+        dest="model_family_interactions",
+        action="store_false",
+        help="Disable model-family interactions for pooled analysis.",
+    )
+    parser.set_defaults(model_family_interactions=False)
+    parser.add_argument(
+        "--model-family-interaction-baseline",
+        default=MODEL_FAMILY_DEFAULT,
+        help="Baseline model_family for pooled interactions.",
+    )
+    parser.add_argument(
+        "--model-family-main-effects",
+        dest="model_family_main_effects",
+        action="store_true",
+        help="Include model-family main effects in pooled analysis.",
+    )
+    parser.add_argument(
+        "--no-model-family-main-effects",
+        dest="model_family_main_effects",
+        action="store_false",
+        help="Exclude model-family main effects in pooled analysis.",
+    )
+    parser.set_defaults(model_family_main_effects=False)
+    parser.add_argument(
         "--exclude-encoder-configs",
         default="",
         help="Comma-separated encoder configs to exclude (FF, FT, TF, TT).",
+    )
+    parser.add_argument(
+        "--exclude-model-families",
+        default="",
+        help="Comma-separated model_family values to exclude (e.g., raft,catspp).",
     )
     parser.add_argument(
         "--rank-target",
@@ -3081,6 +3305,23 @@ def main():
         help="Do not include encoder_config when ranking target.",
     )
     parser.set_defaults(rank_target_with_encoder=False)
+    parser.add_argument(
+        "--rank-target-with-model",
+        action="store_true",
+        help="Include model_family when ranking target.",
+    )
+    parser.add_argument(
+        "--no-rank-target-with-model",
+        dest="rank_target_with_model",
+        action="store_false",
+        help="Do not include model_family when ranking target.",
+    )
+    parser.set_defaults(rank_target_with_model=False)
+    parser.add_argument(
+        "--exclude-benchmarks",
+        default="",
+        help="Comma-separated benchmarks to exclude from LOBO/LOTO prediction runs.",
+    )
     parser.add_argument(
         "--ranking-group",
         default="train_dataset",
@@ -3397,6 +3638,8 @@ def main():
 
     if args.rank_target and not feature_df.empty:
         feature_df = ensure_encoder_config(feature_df)
+        if args.rank_target_with_model:
+            feature_df = ensure_model_family(feature_df)
         rank_source = args.rank_target_source or args.target
         rank_col = args.rank_target_col or f"{rank_source}_rank"
         rank_groups = []
@@ -3404,6 +3647,8 @@ def main():
             rank_groups.append(args.rank_target_group)
         if args.rank_target_with_encoder:
             rank_groups.append("encoder_config")
+        if args.rank_target_with_model:
+            rank_groups.append("model_family")
         feature_df = add_rank_target(feature_df, rank_source, rank_groups, rank_col)
         if args.target == rank_source:
             args.target = rank_col
@@ -3417,6 +3662,15 @@ def main():
             print(
                 "Dropped rows for encoder configs: "
                 + ", ".join(exclude_encoder_configs)
+                + f" ({dropped} rows)"
+            )
+    exclude_model_families = _parse_model_family_list(args.exclude_model_families)
+    if exclude_model_families:
+        feature_df, dropped = filter_model_families(feature_df, exclude_model_families)
+        if dropped:
+            print(
+                "Dropped rows for model families: "
+                + ", ".join(exclude_model_families)
                 + f" ({dropped} rows)"
             )
 
@@ -3538,6 +3792,7 @@ def main():
         mode_args = argparse.Namespace(**vars(args))
         mode_args.target = mode_target
         mode_args.prediction_target = mode_target
+        base_predictors = predictors
         mode_report_df = report_df.copy()
         mode_cv_df = cv_df.copy()
         if target_norm != "none":
@@ -3559,6 +3814,10 @@ def main():
                 mode_report_df = ensure_encoder_config(mode_report_df)
                 mode_cv_df = ensure_encoder_config(mode_cv_df)
                 rank_groups.append("encoder_config")
+            if mode_args.rank_target_with_model:
+                mode_report_df = ensure_model_family(mode_report_df)
+                mode_cv_df = ensure_model_family(mode_cv_df)
+                rank_groups.append("model_family")
             mode_report_df = add_rank_target(mode_report_df, rank_source, rank_groups, rank_col)
             mode_cv_df = add_rank_target(mode_cv_df, rank_source, rank_groups, rank_col)
             mode_args.target = rank_col
@@ -3566,11 +3825,20 @@ def main():
         pooled_report_df, pooled_cv_df, pooled_predictors = prepare_encoder_pooled_frames(
             mode_report_df.copy(),
             mode_cv_df.copy(),
-            predictors,
+            base_predictors,
             mode_args.encoder_interaction_baseline,
             mode_args.encoder_interactions,
             mode_args.encoder_main_effects,
             mode_args.cv_normalize_predictors_by_encoder,
+        )
+        pooled_report_df, pooled_cv_df, pooled_predictors = prepare_model_family_pooled_frames(
+            pooled_report_df,
+            pooled_cv_df,
+            pooled_predictors,
+            base_predictors,
+            mode_args.model_family_interaction_baseline,
+            mode_args.model_family_interactions,
+            mode_args.model_family_main_effects,
         )
         pooled_report_df.to_csv(mode_out_dir / "auc_with_features.csv", index=False)
         run_analysis_bundle(
@@ -3631,14 +3899,24 @@ def main():
                 cv_df = normalize_by_group(
                     cv_df, [args.target], "benchmark", target_norm
                 )
+        base_predictors = predictors
         pooled_report_df, pooled_cv_df, pooled_predictors = prepare_encoder_pooled_frames(
             report_df.copy(),
             cv_df.copy(),
-            predictors,
+            base_predictors,
             args.encoder_interaction_baseline,
             args.encoder_interactions,
             args.encoder_main_effects,
             args.cv_normalize_predictors_by_encoder,
+        )
+        pooled_report_df, pooled_cv_df, pooled_predictors = prepare_model_family_pooled_frames(
+            pooled_report_df,
+            pooled_cv_df,
+            pooled_predictors,
+            base_predictors,
+            args.model_family_interaction_baseline,
+            args.model_family_interactions,
+            args.model_family_main_effects,
         )
         pooled_report_df.to_csv(out_dir / "auc_with_features.csv", index=False)
         run_analysis_bundle(

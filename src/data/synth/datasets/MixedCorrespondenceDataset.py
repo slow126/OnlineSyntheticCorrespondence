@@ -110,10 +110,9 @@ class MixedCorrespondenceDataset(Dataset):
         # (Training loop will move to GPU as needed)
         self.target_device = torch.device("cpu")
         
-        # Normalization: use first dataset's flag, or check if any dataset needs normalization
-        # For mixed datasets, we'll use the first dataset's normalization flag
-        # Individual datasets may have different flags, but we'll normalize uniformly
-        self.normalize_images_flag = first_ds.normalize_images_flag
+        # Normalization: track per-dataset flags so mixed batches normalize correctly
+        self.normalize_images_flags = [ds.normalize_images_flag for ds in datasets]
+        self.normalize_images_flag = self.normalize_images_flags[0]
         
         # Epoch size
         if epoch_size is not None:
@@ -244,6 +243,24 @@ class MixedCorrespondenceDataset(Dataset):
             synthetic_dataset = self.datasets[self.synthetic_dataset_idx]
             # Process synthetic batch using the dataset's _process_synthetic_batch method
             synthetic_processed_samples = synthetic_dataset._process_synthetic_batch(synthetic_raw_batch)
+            if len(synthetic_processed_samples) != len(synthetic_samples):
+                raise ValueError(
+                    "Synthetic batch processing returned mismatched sample count "
+                    f"({len(synthetic_processed_samples)} != {len(synthetic_samples)})"
+                )
+            for processed, original in zip(synthetic_processed_samples, synthetic_samples):
+                original_meta = original.meta or {}
+                processed.meta = {
+                    "source_dataset": original_meta.get(
+                        "source_dataset",
+                        self.dataset_names[self.synthetic_dataset_idx],
+                    ),
+                    "source_dataset_idx": original_meta.get(
+                        "source_dataset_idx",
+                        self.synthetic_dataset_idx,
+                    ),
+                    "sample_idx": original_meta.get("sample_idx"),
+                }
             
             # Move synthetic samples to CPU to match non-synthetic samples
             # (They'll be moved to target_device later in collate_common_samples)
@@ -300,7 +317,15 @@ class MixedCorrespondenceDataset(Dataset):
             )
             
             # Normalize images
-            sample = normalize_images(sample, self.normalize_images_flag)
+            source_dataset_idx = sample.meta.get("source_dataset_idx")
+            if (
+                source_dataset_idx is not None
+                and 0 <= source_dataset_idx < len(self.normalize_images_flags)
+            ):
+                normalize_flag = self.normalize_images_flags[source_dataset_idx]
+            else:
+                normalize_flag = self.normalize_images_flag
+            sample = normalize_images(sample, normalize_flag)
             
             processed_samples.append(sample)
         
