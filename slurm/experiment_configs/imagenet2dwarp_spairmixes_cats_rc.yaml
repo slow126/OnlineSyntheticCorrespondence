@@ -30,7 +30,7 @@ training_datasets:
       training.batch_size: 8
       training.n_threads: 16
 
-output_dir: "/home/slow1/Projects/OnlineSyntheticCorrespondence/slurm/experiment_configs/generated_imagenet2dwarp_spairmixes_cats_rc"
+output_dir: "slurm/experiment_configs/generated_2d_warp"
 
 sweeps:
   - name: "cats_encoder_grid"

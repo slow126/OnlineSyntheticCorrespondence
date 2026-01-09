@@ -29,7 +29,7 @@ dataset:
     imagenet2dwarp:
       datapath: 'hf://ILSVRC/imagenet-1k'
       hf_streaming: false
-      hf_cache_dir: '/home/spencer/.cache/huggingface/datasets'
+      hf_cache_dir: '/home/slow1/Data/hf_cache/datasets'
       # hf_max_samples: null
       normalize_images: true
       rotation_range: [-30.0, 30.0]

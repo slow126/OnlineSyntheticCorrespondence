@@ -1,4 +1,4 @@
-# ImageNet 2D Warp Dataset Configuration (RC)
+# ImageNet 2D Warp Dataset Configuration (local)
 # Contains only dataset-specific parameters
 
 dataset:
@@ -13,7 +13,7 @@ dataset:
   normalize_images: true  # Use ImageNet normalization for ImageNet images
   datapath: 'hf://ILSVRC/imagenet-1k'
   hf_streaming: false
-  hf_cache_dir: '/home/slow1/Data/hf_cache/datasets'
+  hf_cache_dir: '/home/spencer/.cache/huggingface/datasets'
   # hf_max_samples: null
 
   # Warp parameters (defaults shown for clarity)
