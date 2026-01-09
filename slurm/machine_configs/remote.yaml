@@ -15,6 +15,7 @@ datasets:
   kitti_root: "/home/slow1/Data/correspondence/kitti-split"  # UPDATE THIS
   kitti_unsplit_root: "/home/slow1/Data/correspondence/kitti"  # UPDATE THIS
   datapath: "./models/Datasets_CATs"
+  hf_cache_dir: "/home/slow1/Data/hf_cache/datasets"
 
 # SLURM resource defaults
 slurm:
@@ -26,4 +27,3 @@ slurm:
   qos: "cs"
   mem_default: "128g"
   mem_large: "128g"
-

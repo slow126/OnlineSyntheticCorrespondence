@@ -87,8 +87,10 @@ def generate_slurm_script(
     
     slurm_config = machine_config.get('slurm', {})
     machine = machine_config.get('machine', {})
+    datasets_config = machine_config.get('datasets', {})
     project_root = machine.get('project_root', os.getcwd())
     conda_env = machine.get('conda_env')
+    hf_cache_dir = datasets_config.get('hf_cache_dir')
     
     # Create job filename
     job_filename = f"job_{exp_name}.sh"
@@ -138,6 +140,14 @@ conda activate {conda_env}
 echo "Activated conda environment: {conda_env}"
 """
     
+    script_content += f"""
+# Force HF offline mode for isolated clusters
+export HF_DATASETS_OFFLINE=1
+export HF_HUB_OFFLINE=1
+"""
+    if hf_cache_dir:
+        script_content += f"export HF_DATASETS_CACHE={hf_cache_dir}\n"
+
     script_content += f"""
 # Run training with srun (allows sattach and real-time output)
 # --ntasks=1 ensures only one instance runs (not multiple per CPU)
