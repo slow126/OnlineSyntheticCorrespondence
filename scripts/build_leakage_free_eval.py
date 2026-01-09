@@ -56,12 +56,37 @@ MODEL_FAMILY_ALIASES = {
 }
 MODEL_FAMILY_ORDER = (MODEL_FAMILY_DEFAULT, "raft", "flowformer")
 
+COVERAGE_RENAME_MAP = {
+    "flow_eval_to_train_coverage": "flow_eval_to_train_over_train_precision",
+    "flow_eval_to_train_coverage_logit": "flow_eval_to_train_over_train_precision_logit",
+    "flow_train_to_eval_coverage": "flow_train_to_eval_over_eval_recall",
+    "flow_train_to_eval_coverage_logit": "flow_train_to_eval_over_eval_recall_logit",
+    "resnet_eval_to_train_coverage": "resnet_eval_to_train_over_train_precision",
+    "resnet_eval_to_train_coverage_logit": "resnet_eval_to_train_over_train_precision_logit",
+    "resnet_train_to_eval_coverage": "resnet_train_to_eval_over_eval_recall",
+    "resnet_train_to_eval_coverage_logit": "resnet_train_to_eval_over_eval_recall_logit",
+    "dino_eval_to_train_coverage": "dino_eval_to_train_over_train_precision",
+    "dino_eval_to_train_coverage_logit": "dino_eval_to_train_over_train_precision_logit",
+    "dino_train_to_eval_coverage": "dino_train_to_eval_over_eval_recall",
+    "dino_train_to_eval_coverage_logit": "dino_train_to_eval_over_eval_recall_logit",
+}
+
 
 def normalize_dataset_name(name):
     if name is None:
         return None
     name = str(name).strip().lower()
     return name.replace('+', '_')
+
+
+def add_explicit_coverage_columns(df):
+    if df.empty:
+        return df
+    df = df.copy()
+    for old, new in COVERAGE_RENAME_MAP.items():
+        if old in df.columns and new not in df.columns:
+            df[new] = df[old]
+    return df
 
 
 def parse_training_summary(summary_path: Path) -> dict:
@@ -316,6 +341,8 @@ def load_coverage_lookup(csv_path, allow_unsplit=True):
                 mean_train_to_eval = _parse_float(row, "mean_nn_train_to_eval")
                 median_train_to_eval = _parse_float(row, "median_nn_train_to_eval")
                 p90_train_to_eval = _parse_float(row, "p90_nn_train_to_eval")
+                kl_eval_to_train = _parse_float(row, "kl_eval_to_train")
+                kl_train_to_eval = _parse_float(row, "kl_train_to_eval")
 
                 if not allow_unsplit and (not train_split or not eval_split):
                     continue
@@ -334,6 +361,8 @@ def load_coverage_lookup(csv_path, allow_unsplit=True):
                     "mean_nn_train_to_eval": mean_train_to_eval,
                     "median_nn_train_to_eval": median_train_to_eval,
                     "p90_nn_train_to_eval": p90_train_to_eval,
+                    "kl_eval_to_train": kl_eval_to_train,
+                    "kl_train_to_eval": kl_train_to_eval,
                 }
                 if allow_unsplit:
                     coverage_lookup[(train_dataset, eval_dataset)] = {
@@ -350,6 +379,8 @@ def load_coverage_lookup(csv_path, allow_unsplit=True):
                         "mean_nn_train_to_eval": mean_train_to_eval,
                         "median_nn_train_to_eval": median_train_to_eval,
                         "p90_nn_train_to_eval": p90_train_to_eval,
+                        "kl_eval_to_train": kl_eval_to_train,
+                        "kl_train_to_eval": kl_train_to_eval,
                     }
     except Exception as exc:
         print(f"Warning: could not read coverage CSV {csv_path}: {exc}")
@@ -718,6 +749,7 @@ def build_auc_feature_table(
     radius_transform="keep",
     radius_eps=1e-6,
     radius_floor=0.0,
+    rename_coverage=False,
 ):
     rows = []
     missing = defaultdict(int)
@@ -811,6 +843,12 @@ def build_auc_feature_table(
             "flow_train_to_eval_p90_dist": (
                 flow_metrics["p90_nn_train_to_eval"] if flow_metrics else np.nan
             ),
+            "flow_eval_to_train_kl_div": (
+                flow_metrics["kl_eval_to_train"] if flow_metrics else np.nan
+            ),
+            "flow_train_to_eval_kl_div": (
+                flow_metrics["kl_train_to_eval"] if flow_metrics else np.nan
+            ),
             "resnet_train_to_eval_coverage": (
                 resnet_metrics["train_to_eval_coverage"] if resnet_metrics else np.nan
             ),
@@ -839,6 +877,12 @@ def build_auc_feature_table(
             ),
             "resnet_train_to_eval_p90_dist": (
                 resnet_metrics["p90_nn_train_to_eval"] if resnet_metrics else np.nan
+            ),
+            "resnet_eval_to_train_kl_div": (
+                resnet_metrics["kl_eval_to_train"] if resnet_metrics else np.nan
+            ),
+            "resnet_train_to_eval_kl_div": (
+                resnet_metrics["kl_train_to_eval"] if resnet_metrics else np.nan
             ),
             "dino_train_to_eval_coverage": (
                 dino_metrics["train_to_eval_coverage"] if dino_metrics else np.nan
@@ -869,6 +913,12 @@ def build_auc_feature_table(
             "dino_train_to_eval_p90_dist": (
                 dino_metrics["p90_nn_train_to_eval"] if dino_metrics else np.nan
             ),
+            "dino_eval_to_train_kl_div": (
+                dino_metrics["kl_eval_to_train"] if dino_metrics else np.nan
+            ),
+            "dino_train_to_eval_kl_div": (
+                dino_metrics["kl_train_to_eval"] if dino_metrics else np.nan
+            ),
             "flow_mmd": flow_mmd,
             "feature_mmd": feature_mmd,
             "dino_mmd": dino_mmd,
@@ -896,6 +946,8 @@ def build_auc_feature_table(
                 "dino_outside_mass",
             ],
         )
+    if rename_coverage:
+        df = add_explicit_coverage_columns(df)
     return df, missing
 
 
@@ -1067,6 +1119,7 @@ def run_group_cv(
     predictors,
     target,
     standardize=True,
+    standardize_mode="local",
     center_by_group=False,
     center_group_col=None,
     group_norm_mode="none",
@@ -1090,10 +1143,29 @@ def run_group_cv(
     results = []
     pred_rows = []
 
+    # Global standardization: compute mean/std from ALL data before CV
+    global_mean = None
+    global_std = None
+    df_standardized = df.copy()
+    if standardize and standardize_mode == "global":
+        complete_df = filter_complete_rows(df, predictors, target)
+        if not complete_df.empty:
+            X_all = complete_df[predictors].to_numpy(dtype=float)
+            global_mean = X_all.mean(axis=0)
+            global_std = X_all.std(axis=0)
+            if min_predictor_std > 0:
+                global_std = np.where(global_std < float(min_predictor_std), float(min_predictor_std), global_std)
+            global_std[global_std == 0] = 1.0
+            # Apply global standardization to all data
+            for i, pred in enumerate(predictors):
+                df_standardized[pred] = (df_standardized[pred] - global_mean[i]) / global_std[i]
+
     groups = sorted(df[group_col].dropna().unique())
     for idx, group in enumerate(groups):
-        train_df = df[df[group_col] != group]
-        test_df = df[df[group_col] == group]
+        # Use pre-standardized data if global mode
+        fold_df = df_standardized if (standardize and standardize_mode == "global") else df
+        train_df = fold_df[fold_df[group_col] != group]
+        test_df = fold_df[fold_df[group_col] == group]
         train_df = filter_complete_rows(train_df, predictors, target)
         test_df = filter_complete_rows(test_df, predictors, target)
 
@@ -1141,6 +1213,9 @@ def run_group_cv(
                 train_df, test_df, predictors_fold, center_group_col, "center"
             )
 
+        # Disable local standardization if global mode is used
+        local_standardize = standardize and standardize_mode == "local"
+        
         if model == "pairwise_rank":
             coef, mean, std = fit_pairwise_rank_model(
                 train_df,
@@ -1148,23 +1223,23 @@ def run_group_cv(
                 target,
                 pairwise_group_col,
                 pairwise_option_col,
-                standardize=standardize,
+                standardize=local_standardize,
                 ridge_alpha=ridge_alpha,
                 min_std=min_predictor_std,
             )
-            y_pred = predict_pairwise_rank(test_df, predictors_fold, coef, mean, std, standardize)
+            y_pred = predict_pairwise_rank(test_df, predictors_fold, coef, mean, std, local_standardize)
         else:
             coef, mean, std = fit_linear_model(
                 train_df,
                 predictors_fold,
                 target,
-                standardize=standardize,
+                standardize=local_standardize,
                 model=model,
                 ridge_alpha=ridge_alpha,
                 min_std=min_predictor_std,
             )
-            y_pred = predict_linear_model(test_df, predictors_fold, coef, mean, std, standardize)
-        if standardize:
+            y_pred = predict_linear_model(test_df, predictors_fold, coef, mean, std, local_standardize)
+        if local_standardize:
             X_test = (test_df[predictors_fold].to_numpy(dtype=float) - mean) / std
             max_abs_z = float(np.nanmax(np.abs(X_test))) if X_test.size else np.nan
         else:
@@ -1343,6 +1418,7 @@ def run_group_cv_mixedlm(
     random_group_col=None,
     random_slopes=None,
     standardize=True,
+    standardize_mode="local",
     center_by_group=False,
     center_group_col=None,
     group_norm_mode="none",
@@ -1367,10 +1443,29 @@ def run_group_cv_mixedlm(
     group_col = random_group_col or holdout_col
     random_slopes = random_slopes or []
 
+    # Global standardization: compute mean/std from ALL data before CV
+    global_mean = None
+    global_std = None
+    df_standardized = df.copy()
+    if standardize and standardize_mode == "global":
+        complete_df = filter_complete_rows(df, predictors, target)
+        if not complete_df.empty:
+            X_all = complete_df[predictors].to_numpy(dtype=float)
+            global_mean = X_all.mean(axis=0)
+            global_std = X_all.std(axis=0)
+            if min_predictor_std > 0:
+                global_std = np.where(global_std < float(min_predictor_std), float(min_predictor_std), global_std)
+            global_std[global_std == 0] = 1.0
+            # Apply global standardization to all data
+            for i, pred in enumerate(predictors):
+                df_standardized[pred] = (df_standardized[pred] - global_mean[i]) / global_std[i]
+
     groups = sorted(df[holdout_col].dropna().unique())
     for idx, group in enumerate(groups):
-        train_df = df[df[holdout_col] != group]
-        test_df = df[df[holdout_col] == group]
+        # Use pre-standardized data if global mode
+        fold_df = df_standardized if (standardize and standardize_mode == "global") else df
+        train_df = fold_df[fold_df[holdout_col] != group]
+        test_df = fold_df[fold_df[holdout_col] == group]
         train_df = filter_complete_rows(train_df, predictors, target)
         test_df = filter_complete_rows(test_df, predictors, target)
 
@@ -1418,8 +1513,10 @@ def run_group_cv_mixedlm(
                 train_df, test_df, predictors_fold, center_group_col, "center"
             )
 
+        # Disable local standardization if global mode is used
+        local_standardize = standardize and standardize_mode == "local"
         train_df, test_df, pred_cols, mapping = _standardize_predictors(
-            train_df, test_df, predictors_fold, standardize, min_std=min_predictor_std
+            train_df, test_df, predictors_fold, local_standardize, min_std=min_predictor_std
         )
 
         random_cols = []
@@ -2325,12 +2422,14 @@ def _drop_algebraic_redundancies(predictors):
     redundant = []
     for prefix in ("flow", "resnet", "dino"):
         cov = f"{prefix}_eval_to_train_coverage"
+        cov_explicit = f"{prefix}_eval_to_train_over_train_precision"
         outside = f"{prefix}_outside_mass"
         cov_logit = f"{cov}_logit"
+        cov_logit_explicit = f"{cov_explicit}_logit"
         outside_logit = f"{outside}_logit"
-        if cov in predictors and outside in predictors:
+        if (cov in predictors or cov_explicit in predictors) and outside in predictors:
             redundant.append(outside)
-        if cov_logit in predictors and outside_logit in predictors:
+        if (cov_logit in predictors or cov_logit_explicit in predictors) and outside_logit in predictors:
             redundant.append(outside_logit)
     if not redundant:
         return predictors, []
@@ -2338,7 +2437,29 @@ def _drop_algebraic_redundancies(predictors):
     return filtered, redundant
 
 
-def _build_baseline_selectors(feature_df, use_logit=True):
+def _extend_predictors_with_kl(predictors, feature_df):
+    if not predictors or feature_df is None or feature_df.empty:
+        return predictors
+    prefixes = set()
+    for pred in predictors:
+        if pred.startswith("flow_"):
+            prefixes.add("flow")
+        if pred.startswith("resnet_"):
+            prefixes.add("resnet")
+        if pred.startswith("dino_"):
+            prefixes.add("dino")
+    if not prefixes:
+        return predictors
+    extended = list(predictors)
+    for prefix in sorted(prefixes):
+        for suffix in ("train_to_eval_kl_div", "eval_to_train_kl_div"):
+            col = f"{prefix}_{suffix}"
+            if col in feature_df.columns and col not in extended:
+                extended.append(col)
+    return extended
+
+
+def _build_baseline_selectors(feature_df, predictors=None, use_logit=True):
     selectors = []
 
     def add_metric(name, col, direction=1):
@@ -2350,50 +2471,110 @@ def _build_baseline_selectors(feature_df, use_logit=True):
                 "direction": direction,
             })
 
-    distance_cols = [
-        "flow_train_to_eval_mean_dist",
-        "flow_eval_to_train_mean_dist",
-        "resnet_train_to_eval_mean_dist",
-        "resnet_eval_to_train_mean_dist",
-        "dino_train_to_eval_mean_dist",
-        "dino_eval_to_train_mean_dist",
-    ]
-    has_distance = any(col in feature_df.columns for col in distance_cols)
-    if has_distance:
-        add_metric("flow_train_to_eval_mean_dist", "flow_train_to_eval_mean_dist", direction=-1)
-        add_metric("flow_eval_to_train_mean_dist", "flow_eval_to_train_mean_dist", direction=-1)
-        add_metric("resnet_train_to_eval_mean_dist", "resnet_train_to_eval_mean_dist", direction=-1)
-        add_metric("resnet_eval_to_train_mean_dist", "resnet_eval_to_train_mean_dist", direction=-1)
-        add_metric("dino_train_to_eval_mean_dist", "dino_train_to_eval_mean_dist", direction=-1)
-        add_metric("dino_eval_to_train_mean_dist", "dino_eval_to_train_mean_dist", direction=-1)
-    elif use_logit:
-        add_metric(
-            "flow_train_to_eval_coverage_logit",
-            "flow_train_to_eval_coverage_logit",
-            direction=1,
-        )
-        add_metric(
-            "resnet_train_to_eval_coverage_logit",
-            "resnet_train_to_eval_coverage_logit",
-            direction=1,
-        )
-        add_metric(
-            "dino_train_to_eval_coverage_logit",
-            "dino_train_to_eval_coverage_logit",
-            direction=1,
-        )
-    else:
-        add_metric("flow_train_to_eval_coverage", "flow_train_to_eval_coverage", direction=1)
-        add_metric(
-            "resnet_train_to_eval_coverage",
-            "resnet_train_to_eval_coverage",
-            direction=1,
-        )
-        add_metric("dino_train_to_eval_coverage", "dino_train_to_eval_coverage", direction=1)
+    def infer_direction(name):
+        lower = name.lower()
+        if "coverage" in lower or "precision" in lower or "recall" in lower:
+            return 1
+        if "mmd" in lower:
+            return -1
+        if "outside" in lower:
+            return -1
+        if "dist" in lower:
+            return -1
+        if "radius" in lower:
+            return -1
+        return 1
 
-    add_metric("flow_mmd", "flow_mmd", direction=-1)
-    add_metric("feature_mmd", "feature_mmd", direction=-1)
-    add_metric("dino_mmd", "dino_mmd", direction=-1)
+    if predictors:
+        seen = set()
+        for pred in predictors:
+            if not pred or pred in seen:
+                continue
+            seen.add(pred)
+            add_metric(pred, pred, direction=infer_direction(pred))
+    else:
+        distance_cols = [
+            "flow_train_to_eval_mean_dist",
+            "flow_eval_to_train_mean_dist",
+            "resnet_train_to_eval_mean_dist",
+            "resnet_eval_to_train_mean_dist",
+            "dino_train_to_eval_mean_dist",
+            "dino_eval_to_train_mean_dist",
+        ]
+        has_distance = any(col in feature_df.columns for col in distance_cols)
+        if has_distance:
+            add_metric(
+                "flow_train_to_eval_mean_dist",
+                "flow_train_to_eval_mean_dist",
+                direction=-1,
+            )
+            add_metric(
+                "flow_eval_to_train_mean_dist",
+                "flow_eval_to_train_mean_dist",
+                direction=-1,
+            )
+            add_metric(
+                "resnet_train_to_eval_mean_dist",
+                "resnet_train_to_eval_mean_dist",
+                direction=-1,
+            )
+            add_metric(
+                "resnet_eval_to_train_mean_dist",
+                "resnet_eval_to_train_mean_dist",
+                direction=-1,
+            )
+            add_metric(
+                "dino_train_to_eval_mean_dist",
+                "dino_train_to_eval_mean_dist",
+                direction=-1,
+            )
+            add_metric(
+                "dino_eval_to_train_mean_dist",
+                "dino_eval_to_train_mean_dist",
+                direction=-1,
+            )
+        elif use_logit:
+            flow_cov_logit = (
+                "flow_train_to_eval_over_eval_recall_logit"
+                if "flow_train_to_eval_over_eval_recall_logit" in feature_df.columns
+                else "flow_train_to_eval_coverage_logit"
+            )
+            resnet_cov_logit = (
+                "resnet_train_to_eval_over_eval_recall_logit"
+                if "resnet_train_to_eval_over_eval_recall_logit" in feature_df.columns
+                else "resnet_train_to_eval_coverage_logit"
+            )
+            dino_cov_logit = (
+                "dino_train_to_eval_over_eval_recall_logit"
+                if "dino_train_to_eval_over_eval_recall_logit" in feature_df.columns
+                else "dino_train_to_eval_coverage_logit"
+            )
+            add_metric(flow_cov_logit, flow_cov_logit, direction=1)
+            add_metric(resnet_cov_logit, resnet_cov_logit, direction=1)
+            add_metric(dino_cov_logit, dino_cov_logit, direction=1)
+        else:
+            flow_cov = (
+                "flow_train_to_eval_over_eval_recall"
+                if "flow_train_to_eval_over_eval_recall" in feature_df.columns
+                else "flow_train_to_eval_coverage"
+            )
+            resnet_cov = (
+                "resnet_train_to_eval_over_eval_recall"
+                if "resnet_train_to_eval_over_eval_recall" in feature_df.columns
+                else "resnet_train_to_eval_coverage"
+            )
+            dino_cov = (
+                "dino_train_to_eval_over_eval_recall"
+                if "dino_train_to_eval_over_eval_recall" in feature_df.columns
+                else "dino_train_to_eval_coverage"
+            )
+            add_metric(flow_cov, flow_cov, direction=1)
+            add_metric(resnet_cov, resnet_cov, direction=1)
+            add_metric(dino_cov, dino_cov, direction=1)
+
+        add_metric("flow_mmd", "flow_mmd", direction=-1)
+        add_metric("feature_mmd", "feature_mmd", direction=-1)
+        add_metric("dino_mmd", "dino_mmd", direction=-1)
 
     selectors.append({
         "name": "always_flyingthings",
@@ -2457,6 +2638,7 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
         predictors,
         pred_target,
         standardize=args.standardize,
+        standardize_mode=args.cv_standardize_mode,
         center_by_group=args.center_predictors_by_benchmark,
         center_group_col="benchmark",
         group_norm_mode=args.cv_normalize_predictors_by_benchmark,
@@ -2499,7 +2681,11 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
                 out_dir / "prediction_lobo_direction_audit.txt",
             )
 
-    baseline_selectors = _build_baseline_selectors(feature_df, use_logit=args.logit_coverage)
+    baseline_selectors = _build_baseline_selectors(
+        feature_df,
+        predictors=predictors,
+        use_logit=args.logit_coverage,
+    )
     compute_baseline_rankings(
         cv_df,
         pred_target,
@@ -2520,6 +2706,7 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
             random_group_col="benchmark",
             random_slopes=random_slopes,
             standardize=args.standardize,
+            standardize_mode=args.cv_standardize_mode,
             center_by_group=args.center_predictors_by_benchmark,
             center_group_col="benchmark",
             group_norm_mode=args.cv_normalize_predictors_by_benchmark,
@@ -2564,6 +2751,7 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
         predictors,
         pred_target,
         standardize=args.standardize,
+        standardize_mode=args.cv_standardize_mode,
         center_by_group=args.center_predictors_by_benchmark,
         center_group_col="benchmark",
         group_norm_mode=args.cv_normalize_predictors_by_benchmark,
@@ -2609,6 +2797,7 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
             predictors,
             pred_target,
             standardize=args.standardize,
+            standardize_mode=args.cv_standardize_mode,
             center_by_group=args.center_predictors_by_benchmark,
             center_group_col="benchmark",
             group_norm_mode=args.cv_normalize_predictors_by_benchmark,
@@ -2651,6 +2840,7 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
             predictors,
             pred_target,
             standardize=args.standardize,
+            standardize_mode=args.cv_standardize_mode,
             center_by_group=args.center_predictors_by_benchmark,
             center_group_col="benchmark",
             group_norm_mode=args.cv_normalize_predictors_by_benchmark,
@@ -2689,6 +2879,7 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
             random_group_col="benchmark",
             random_slopes=random_slopes,
             standardize=args.standardize,
+            standardize_mode=args.cv_standardize_mode,
             center_by_group=args.center_predictors_by_benchmark,
             center_group_col="benchmark",
             group_norm_mode=args.cv_normalize_predictors_by_benchmark,
@@ -2749,6 +2940,22 @@ def run_summary_report(out_dir, predictors, args):
         str(args.linear_model),
         "--ridge-alpha",
         str(args.ridge_alpha),
+        "--prediction-model",
+        str(args.prediction_model or args.linear_model),
+        "--standardize",
+        str(args.standardize),
+        "--cv-standardize-mode",
+        str(args.cv_standardize_mode),
+        "--per-encoder",
+        str(args.per_encoder),
+        "--encoder-main-effects",
+        str(args.encoder_main_effects),
+        "--encoder-interactions",
+        str(args.encoder_interactions),
+        "--model-family-main-effects",
+        str(args.model_family_main_effects),
+        "--model-family-interactions",
+        str(args.model_family_interactions),
     ]
     if args.prediction_target:
         cmd.extend(["--prediction-target", str(args.prediction_target)])
@@ -2928,6 +3135,12 @@ def main():
         help="Pad last value to auc-steps when runs end early.",
     )
     parser.add_argument(
+        "--no-auc-pad",
+        dest="auc_pad",
+        action="store_false",
+        help="Disable padding last value to auc-steps.",
+    )
+    parser.add_argument(
         "--coverage-csv",
         default="coverage_results.csv",
         help="Coverage CSV for flow/label metrics.",
@@ -2971,6 +3184,11 @@ def main():
     )
     parser.set_defaults(logit_coverage=True)
     parser.add_argument(
+        "--rename-coverage",
+        action="store_true",
+        help="Add explicit precision/recall coverage column names in outputs.",
+    )
+    parser.add_argument(
         "--distance-radius-norm",
         choices=["none", "divide"],
         default="none",
@@ -2999,6 +3217,19 @@ def main():
         default=None,
         help="Comma-separated predictors for regression/prediction.",
     )
+    parser.add_argument(
+        "--include-kl",
+        dest="include_kl",
+        action="store_true",
+        help="Append KL-divergence predictors when available.",
+    )
+    parser.add_argument(
+        "--no-include-kl",
+        dest="include_kl",
+        action="store_false",
+        help="Disable automatic KL-divergence predictors.",
+    )
+    parser.set_defaults(include_kl=False)
     parser.add_argument(
         "--target",
         default=None,
@@ -3045,6 +3276,13 @@ def main():
         help="Disable predictor standardization.",
     )
     parser.set_defaults(standardize=True)
+    parser.add_argument(
+        "--cv-standardize-mode",
+        choices=["local", "global"],
+        default="global",
+        help="Standardization mode: 'local' = within each CV fold (removes between-group variance), "
+             "'global' = once using all data before CV (preserves between-group variance). Default: global.",
+    )
     parser.add_argument(
         "--skip-prediction",
         action="store_true",
@@ -3616,6 +3854,7 @@ def main():
         radius_transform=args.radius_transform,
         radius_eps=args.radius_eps,
         radius_floor=args.distance_radius_floor,
+        rename_coverage=args.rename_coverage,
     )
     feature_df, filtered = filter_train_datasets_by_mode(
         feature_df, args.train_datasets_mode
@@ -3687,24 +3926,47 @@ def main():
     if args.predictors:
         predictors = [p.strip() for p in args.predictors.split(",") if p.strip()]
     else:
-        if args.logit_coverage:
-            predictors = [
-                "flow_train_to_eval_coverage_logit",
-                "flow_eval_to_train_coverage_logit",
-                "resnet_train_to_eval_coverage_logit",
-                "resnet_eval_to_train_coverage_logit",
-                "flow_mmd",
-                "feature_mmd",
-            ]
+        if args.rename_coverage:
+            if args.logit_coverage:
+                predictors = [
+                    "flow_train_to_eval_over_eval_recall_logit",
+                    "flow_eval_to_train_over_train_precision_logit",
+                    "resnet_train_to_eval_over_eval_recall_logit",
+                    "resnet_eval_to_train_over_train_precision_logit",
+                    "flow_mmd",
+                    "feature_mmd",
+                ]
+            else:
+                predictors = [
+                    "flow_train_to_eval_over_eval_recall",
+                    "flow_eval_to_train_over_train_precision",
+                    "resnet_train_to_eval_over_eval_recall",
+                    "resnet_eval_to_train_over_train_precision",
+                    "flow_mmd",
+                    "feature_mmd",
+                ]
         else:
-            predictors = [
-                "flow_train_to_eval_coverage",
-                "flow_eval_to_train_coverage",
-                "resnet_train_to_eval_coverage",
-                "resnet_eval_to_train_coverage",
-                "flow_mmd",
-                "feature_mmd",
-            ]
+            if args.logit_coverage:
+                predictors = [
+                    "flow_train_to_eval_coverage_logit",
+                    "flow_eval_to_train_coverage_logit",
+                    "resnet_train_to_eval_coverage_logit",
+                    "resnet_eval_to_train_coverage_logit",
+                    "flow_mmd",
+                    "feature_mmd",
+                ]
+            else:
+                predictors = [
+                    "flow_train_to_eval_coverage",
+                    "flow_eval_to_train_coverage",
+                    "resnet_train_to_eval_coverage",
+                    "resnet_eval_to_train_coverage",
+                    "flow_mmd",
+                    "feature_mmd",
+                ]
+
+    if args.include_kl:
+        predictors = _extend_predictors_with_kl(predictors, feature_df)
 
     if args.target not in feature_df.columns:
         print(f"Target '{args.target}' not found in auc_with_features table.")

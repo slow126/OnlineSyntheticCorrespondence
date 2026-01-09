@@ -1,0 +1,27 @@
+# ImageNet2DWarp baseline with RAFT (RC)
+
+project_root: "/home/slow1/Projects/OnlineSyntheticCorrespondence"
+
+training_base: "src/configs/lightning/training_base_rc.yaml"
+eval_base: "src/configs/lightning/eval_base_rc.yaml"
+
+training_datasets:
+  - name: "imagenet2dwarp"
+    dataset_config: "src/configs/lightning/datasets/imagenet2dwarp_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 16
+
+output_dir: "/home/slow1/Projects/OnlineSyntheticCorrespondence/slurm/experiment_configs/generated_imagenet2dwarp_raft_rc"
+
+sweeps:
+  - name: "raft_full"
+    parameters:
+      model.type: raft
+      model.small: false
+      model.iters: 12
+      model.alternate_corr: false
+      model.mixed_precision: false
+      model.dropout: 0.0
+      dataset.downsample_flow: null
+    name_template: "raft_full"

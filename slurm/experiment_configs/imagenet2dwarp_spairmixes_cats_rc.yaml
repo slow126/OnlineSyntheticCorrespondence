@@ -1,0 +1,42 @@
+# ImageNet2DWarp baseline + SPair mixes with CATs++ encoder grid (RC)
+
+project_root: "/home/slow1/Projects/OnlineSyntheticCorrespondence"
+
+training_base: "src/configs/lightning/training_base_rc.yaml"
+eval_base: "src/configs/lightning/eval_base_rc.yaml"
+
+training_datasets:
+  - name: "imagenet2dwarp"
+    dataset_config: "src/configs/lightning/datasets/imagenet2dwarp_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 16
+
+  - name: "spair_2d_warp_70_30"
+    dataset_config: "src/configs/lightning/datasets/spair_2d_warp_70_30_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 16
+
+  - name: "spair_2d_warp_50_50"
+    dataset_config: "src/configs/lightning/datasets/spair_2d_warp_50_50_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 16
+
+  - name: "spair_2d_warp_30_70"
+    dataset_config: "src/configs/lightning/datasets/spair_2d_warp_30_70_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 16
+
+output_dir: "/home/slow1/Projects/OnlineSyntheticCorrespondence/slurm/experiment_configs/generated_imagenet2dwarp_spairmixes_cats_rc"
+
+sweeps:
+  - name: "cats_encoder_grid"
+    parameters:
+      model.type: cats
+      training.steps_per_epoch: 100
+      model.pretrained_backbone: [True, False]
+      model.freeze: [True, False]
+    name_template: "cats_steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"

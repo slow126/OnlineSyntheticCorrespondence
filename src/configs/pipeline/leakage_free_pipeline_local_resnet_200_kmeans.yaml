@@ -56,6 +56,7 @@ steps:
       cv_demean_target_by_encoder: true
       cv_min_predictor_std: 1.0e-8
       logit_coverage: true
+      rename_coverage: true
       linear_model: ridge
       ridge_alpha: 1.0
       standardize: false
@@ -74,7 +75,7 @@ steps:
       strict_dataset_match: true
       allow_unsplit_coverage: false
       allow_unsplit_mmd: false
-      predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,resnet_train_to_eval_coverage_logit,resnet_eval_to_train_coverage_logit,flow_mmd,feature_mmd
+      predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,resnet_train_to_eval_over_eval_recall_logit,resnet_eval_to_train_over_train_precision_logit,flow_mmd,feature_mmd
   select_checkpoints:
     enabled: false
     args:
@@ -90,5 +91,5 @@ steps:
     args:
       auc_table: analysis/leakage_free_local_resnet_200_kmeans/auc_with_features.csv
       output_file: analysis/leakage_free_local_resnet_200_kmeans/summary_report.txt
-      predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,resnet_train_to_eval_coverage_logit,resnet_eval_to_train_coverage_logit,flow_mmd,feature_mmd
+      predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,resnet_train_to_eval_over_eval_recall_logit,resnet_eval_to_train_over_train_precision_logit,flow_mmd,feature_mmd
       target: auc_delta

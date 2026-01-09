@@ -50,6 +50,7 @@ steps:
       benchmark_normalize_predictors: zscore
       benchmark_normalize_target: none
       logit_coverage: true
+      rename_coverage: true
       per_encoder: true
       run_summary: true
   select_checkpoints:
@@ -67,5 +68,5 @@ steps:
     args:
       auc_table: analysis/leakage_free_local_resnet_200/auc_with_features.csv
       output_file: analysis/leakage_free_local_resnet_200/summary_report.txt
-      predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,resnet_train_to_eval_coverage_logit,resnet_eval_to_train_coverage_logit,flow_mmd,feature_mmd
+      predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,resnet_train_to_eval_over_eval_recall_logit,resnet_eval_to_train_over_train_precision_logit,flow_mmd,feature_mmd
       target: auc_delta

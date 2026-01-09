@@ -57,6 +57,7 @@ steps:
       dino_mmd_csv: dino_mmd_results_fast.csv
       relative_target_baseline: spair
       logit_coverage: true
+      rename_coverage: true
       per_encoder: true
       run_summary: true
 
@@ -76,5 +77,5 @@ steps:
     args:
       auc_table: analysis/leakage_free_local_fast_dino/auc_with_features.csv
       output_file: analysis/leakage_free_local_fast_dino/summary_report.txt
-      predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,flow_mmd,dino_mmd
+      predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,flow_mmd,dino_mmd
       target: auc_delta

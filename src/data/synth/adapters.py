@@ -15,6 +15,7 @@ from src.data.synth.datasets.DrivingDataset import DrivingSimpleDataset
 from src.data.synth.datasets.SintelDataset import SintelSimpleDataset
 from src.data.synth.datasets.HD1KDataset import HD1KSimpleDataset
 from src.data.synth.datasets.VirtualKitti2Dataset import VirtualKitti2SimpleDataset
+from src.data.synth.datasets.ImageNet2DWarpDataset import ImageNet2DWarpDataset
 
 
 class BaseAdapter:
@@ -296,6 +297,63 @@ class VirtualKitti2Adapter(BaseAdapter):
         )
 
 
+class ImageNet2DWarpAdapter(BaseAdapter):
+    name = "imagenet2dwarp"
+
+    def __init__(
+        self,
+        datapath: str,
+        split: str = "train",
+        reverse_flow: bool = False,
+        **kwargs
+    ):
+        """
+        Initialize ImageNet 2D Warp adapter.
+        
+        Args:
+            datapath: Root directory of ImageNet100 dataset
+            split: 'train' or 'val'
+            reverse_flow: If True, reverse flow direction (not typically needed)
+            **kwargs: Additional arguments passed to ImageNet2DWarpDataset:
+                - rotation_range: (min, max) rotation angle in degrees (default: (-30, 30))
+                - scale_range: (min, max) scale factor (default: (0.5, 2.5))
+                - translation_range: (min, max) translation as fraction of image size (default: (-0.1, 0.1))
+                - shear_range: (min, max) shear factor (default: (-0.2, 0.2))
+                - cache_warp_params: If True, cache warp parameters (default: True)
+                - cache_dir: Directory to cache warp parameters
+                - seed: Random seed for reproducibility
+        """
+        self.dataset = ImageNet2DWarpDataset(
+            root=datapath,
+            split=split,
+            rotation_range=kwargs.get("rotation_range", (-30.0, 30.0)),
+            scale_range=kwargs.get("scale_range", (0.5, 2.5)),
+            translation_range=kwargs.get("translation_range", (-0.1, 0.1)),
+            shear_range=kwargs.get("shear_range", (-0.2, 0.2)),
+            cache_warp_params=kwargs.get("cache_warp_params", True),
+            cache_dir=kwargs.get("cache_dir", None),
+            seed=kwargs.get("seed", None),
+        )
+        self.reverse_flow = reverse_flow
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx) -> CommonSample:
+        raw = self.dataset[idx]
+        flow = raw.get("flow")
+        
+        # Reverse flow if requested
+        if self.reverse_flow and flow is not None:
+            flow = -flow
+        
+        return CommonSample(
+            src_img=raw.get("src_img"),
+            trg_img=raw.get("trg_img"),
+            flow_full=flow,
+        )
+
+
 class BenchmarkAdapter(BaseAdapter):
     """PF-Pascal/Willow/SPair; flows are already feature-res in many cases."""
 
@@ -393,6 +451,7 @@ ADAPTER_REGISTRY = {
     "sintel": SintelAdapter,
     "hd1k": HD1KAdapter,
     "virtualkitti2": VirtualKitti2Adapter,
+    "imagenet2dwarp": ImageNet2DWarpAdapter,
     "pfpascal": BenchmarkAdapter,
     "pfwillow": BenchmarkAdapter,
     "spair": BenchmarkAdapter,

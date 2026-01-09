@@ -41,6 +41,7 @@ steps:
       snapshots_dir:
       - snapshots
       - snapshots_mixed
+      - snapshots_raft
       mode: auc
       metric: pck
       auc_steps: 5000
@@ -70,9 +71,12 @@ steps:
       radius_eps: 1e-6
       distance_radius_floor: 0.01
       logit_coverage: true
+      rename_coverage: true
+      include_kl: true
       linear_model: ridge
       ridge_alpha: 1.0
       standardize: true
+      cv_standardize_mode: local
       encoder_interactions: false
       encoder_main_effects: true
       exclude_encoder_configs: FT
@@ -91,19 +95,19 @@ steps:
       allow_unsplit_mmd: false
       train_datasets_mode: all
     runs:
-    - name: all_auc_delta_rank
+    - name: all_auc_delta_rank_per_encoder
       args:
-        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank/combined
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank/per_encoder
         rank_target: true
         per_encoder: true
-        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
-    - name: all_auc_delta_rank_pairwise
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_delta_rank_per_encoder_pairwise
       args:
-        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank/pairwise
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank/per_encoder_pairwise
         rank_target: true
         per_encoder: true
         prediction_model: pairwise_rank
-        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
     - name: all_auc_delta_rank_pooled
       args:
         output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank/pooled
@@ -111,28 +115,369 @@ steps:
         per_encoder: false
         encoder_main_effects: false
         encoder_interactions: false
-        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
     - name: all_auc_delta_rank_unified
       args:
         output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank/unified
         rank_target: true
         encoder_interactions: true
         encoder_main_effects: true
+        model_family_main_effects: true
+        model_family_interactions: false
         per_encoder: false
-        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
-    - name: all_peak_pck_rank
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_delta_rank_enc_main
       args:
-        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank/combined
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank/enc_main
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_delta_rank_enc_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank/enc_interactions
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_delta_rank_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank/mf_main
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_delta_rank_enc_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank/enc_mf_main
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_delta_rank_mf_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank/mf_interactions
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_delta_rank_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank/full_interactions
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_delta_rank_trimmed_per_encoder
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_trimmed/per_encoder
+        rank_target: true
+        per_encoder: true
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_delta_rank_kl_mmd_per_encoder
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_kl_mmd/per_encoder
+        rank_target: true
+        per_encoder: true
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_delta_rank_trimmed_per_encoder_pairwise
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_trimmed/per_encoder_pairwise
+        rank_target: true
+        per_encoder: true
+        prediction_model: pairwise_rank
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_delta_rank_kl_mmd_per_encoder_pairwise
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_kl_mmd/per_encoder_pairwise
+        rank_target: true
+        per_encoder: true
+        prediction_model: pairwise_rank
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_delta_rank_trimmed_pooled
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_trimmed/pooled
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_delta_rank_kl_mmd_pooled
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_kl_mmd/pooled
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_delta_rank_trimmed_enc_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_trimmed/enc_main
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_delta_rank_kl_mmd_enc_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_kl_mmd/enc_main
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_delta_rank_trimmed_enc_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_trimmed/enc_interactions
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_delta_rank_kl_mmd_enc_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_kl_mmd/enc_interactions
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_delta_rank_trimmed_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_trimmed/mf_main
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_delta_rank_kl_mmd_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_kl_mmd/mf_main
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_delta_rank_trimmed_enc_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_trimmed/enc_mf_main
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_delta_rank_kl_mmd_enc_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_kl_mmd/enc_mf_main
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_delta_rank_trimmed_mf_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_trimmed/mf_interactions
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_delta_rank_kl_mmd_mf_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_kl_mmd/mf_interactions
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_delta_rank_trimmed_unified
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_trimmed/unified
+        rank_target: true
+        per_encoder: false
+        encoder_interactions: true
+        encoder_main_effects: true
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_delta_rank_kl_mmd_unified
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_kl_mmd/unified
+        rank_target: true
+        per_encoder: false
+        encoder_interactions: true
+        encoder_main_effects: true
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_delta_rank_trimmed_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_trimmed/full_interactions
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_delta_rank_kl_mmd_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_kl_mmd/full_interactions
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_delta_rank_coverage_per_encoder
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_coverage/per_encoder
+        rank_target: true
+        per_encoder: true
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_delta_rank_coverage_per_encoder_pairwise
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_coverage/per_encoder_pairwise
+        rank_target: true
+        per_encoder: true
+        prediction_model: pairwise_rank
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_delta_rank_coverage_pooled
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_coverage/pooled
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_delta_rank_coverage_enc_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_coverage/enc_main
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_delta_rank_coverage_enc_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_coverage/enc_interactions
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_delta_rank_coverage_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_coverage/mf_main
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_delta_rank_coverage_enc_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_coverage/enc_mf_main
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_delta_rank_coverage_mf_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_coverage/mf_interactions
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_delta_rank_coverage_unified
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_coverage/unified
+        rank_target: true
+        per_encoder: false
+        encoder_interactions: true
+        encoder_main_effects: true
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_delta_rank_coverage_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_coverage/full_interactions
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_peak_pck_rank_per_encoder
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank/per_encoder
         target: peak_pck
         prediction_target: peak_pck
         rank_target: true
         rank_target_source: peak_pck
         rank_target_col: peak_pck_rank
         per_encoder: true
-        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
-    - name: all_peak_pck_rank_pairwise
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_peak_pck_rank_per_encoder_pairwise
       args:
-        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank/pairwise
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank/per_encoder_pairwise
         target: peak_pck
         prediction_target: peak_pck
         rank_target: true
@@ -140,7 +485,7 @@ steps:
         rank_target_col: peak_pck_rank
         per_encoder: true
         prediction_model: pairwise_rank
-        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
     - name: all_peak_pck_rank_pooled
       args:
         output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank/pooled
@@ -152,7 +497,490 @@ steps:
         per_encoder: false
         encoder_main_effects: false
         encoder_interactions: false
-        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_peak_pck_rank_enc_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank/enc_main
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_peak_pck_rank_enc_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank/enc_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_peak_pck_rank_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank/mf_main
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_peak_pck_rank_enc_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank/enc_mf_main
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_peak_pck_rank_mf_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank/mf_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_peak_pck_rank_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank/full_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_peak_pck_rank_trimmed_per_encoder
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_trimmed/per_encoder
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: true
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_peak_pck_rank_kl_mmd_per_encoder
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_kl_mmd/per_encoder
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: true
+        predictors: flow_mmd,dino_mmd
+    - name: all_peak_pck_rank_trimmed_per_encoder_pairwise
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_trimmed/per_encoder_pairwise
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: true
+        prediction_model: pairwise_rank
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_peak_pck_rank_kl_mmd_per_encoder_pairwise
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_kl_mmd/per_encoder_pairwise
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: true
+        prediction_model: pairwise_rank
+        predictors: flow_mmd,dino_mmd
+    - name: all_peak_pck_rank_trimmed_pooled
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_trimmed/pooled
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_peak_pck_rank_kl_mmd_pooled
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_kl_mmd/pooled
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_peak_pck_rank_trimmed_enc_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_trimmed/enc_main
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_peak_pck_rank_kl_mmd_enc_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_kl_mmd/enc_main
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_peak_pck_rank_trimmed_enc_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_trimmed/enc_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_peak_pck_rank_kl_mmd_enc_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_kl_mmd/enc_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_peak_pck_rank_trimmed_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_trimmed/mf_main
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_peak_pck_rank_kl_mmd_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_kl_mmd/mf_main
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_peak_pck_rank_trimmed_enc_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_trimmed/enc_mf_main
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_peak_pck_rank_kl_mmd_enc_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_kl_mmd/enc_mf_main
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_peak_pck_rank_trimmed_mf_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_trimmed/mf_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_peak_pck_rank_kl_mmd_mf_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_kl_mmd/mf_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_mmd,dino_mmd
+    - name: all_peak_pck_rank_trimmed_unified
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_trimmed/unified
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_interactions: true
+        encoder_main_effects: true
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_peak_pck_rank_kl_mmd_unified
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_kl_mmd/unified
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_interactions: true
+        encoder_main_effects: true
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_peak_pck_rank_trimmed_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_trimmed/full_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_peak_pck_rank_kl_mmd_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_kl_mmd/full_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_mmd,dino_mmd
+    - name: all_peak_pck_rank_coverage_per_encoder
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_coverage/per_encoder
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: true
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_peak_pck_rank_coverage_per_encoder_pairwise
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_coverage/per_encoder_pairwise
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: true
+        prediction_model: pairwise_rank
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_peak_pck_rank_coverage_pooled
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_coverage/pooled
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_peak_pck_rank_coverage_enc_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_coverage/enc_main
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_peak_pck_rank_coverage_enc_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_coverage/enc_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_peak_pck_rank_coverage_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_coverage/mf_main
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_peak_pck_rank_coverage_enc_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_coverage/enc_mf_main
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_peak_pck_rank_coverage_mf_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_coverage/mf_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_peak_pck_rank_coverage_unified
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_coverage/unified
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_interactions: true
+        encoder_main_effects: true
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_peak_pck_rank_coverage_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_coverage/full_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
     - name: all_peak_pck_rank_unified
       args:
         output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank/unified
@@ -164,33 +992,1762 @@ steps:
         per_encoder: false
         encoder_interactions: true
         encoder_main_effects: true
-        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
-    - name: all_auc_delta
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_peak_pck_per_encoder
       args:
-        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta/combined
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck/per_encoder
+        target: peak_pck
+        prediction_target: peak_pck
         per_encoder: true
-        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+        rank_target: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_peak_pck_pooled
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck/pooled
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_peak_pck_enc_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck/enc_main
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_peak_pck_enc_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck/enc_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_peak_pck_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck/mf_main
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_peak_pck_enc_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck/enc_mf_main
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_peak_pck_mf_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck/mf_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_peak_pck_unified
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck/unified
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_interactions: true
+        encoder_main_effects: true
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_peak_pck_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck/full_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_peak_pck_trimmed_per_encoder
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_trimmed/per_encoder
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: true
+        rank_target: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_peak_pck_kl_mmd_per_encoder
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_kl_mmd/per_encoder
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: true
+        rank_target: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_peak_pck_trimmed_pooled
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_trimmed/pooled
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_peak_pck_kl_mmd_pooled
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_kl_mmd/pooled
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_peak_pck_trimmed_enc_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_trimmed/enc_main
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_peak_pck_kl_mmd_enc_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_kl_mmd/enc_main
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_peak_pck_trimmed_enc_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_trimmed/enc_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_peak_pck_kl_mmd_enc_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_kl_mmd/enc_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_peak_pck_trimmed_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_trimmed/mf_main
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_peak_pck_kl_mmd_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_kl_mmd/mf_main
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_peak_pck_trimmed_enc_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_trimmed/enc_mf_main
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_peak_pck_kl_mmd_enc_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_kl_mmd/enc_mf_main
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_peak_pck_trimmed_mf_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_trimmed/mf_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_peak_pck_kl_mmd_mf_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_kl_mmd/mf_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_mmd,dino_mmd
+    - name: all_peak_pck_trimmed_unified
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_trimmed/unified
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_interactions: true
+        encoder_main_effects: true
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_peak_pck_kl_mmd_unified
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_kl_mmd/unified
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_interactions: true
+        encoder_main_effects: true
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_peak_pck_trimmed_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_trimmed/full_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_peak_pck_kl_mmd_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_kl_mmd/full_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_mmd,dino_mmd
+    - name: all_peak_pck_coverage_per_encoder
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_coverage/per_encoder
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: true
+        rank_target: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_peak_pck_coverage_pooled
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_coverage/pooled
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_peak_pck_coverage_enc_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_coverage/enc_main
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_peak_pck_coverage_enc_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_coverage/enc_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_peak_pck_coverage_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_coverage/mf_main
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_peak_pck_coverage_enc_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_coverage/enc_mf_main
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_peak_pck_coverage_mf_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_coverage/mf_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_peak_pck_coverage_unified
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_coverage/unified
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_interactions: true
+        encoder_main_effects: true
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_peak_pck_coverage_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_coverage/full_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        per_encoder: false
+        rank_target: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_delta_per_encoder
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta/per_encoder
+        per_encoder: true
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
     - name: all_auc_delta_pooled
       args:
         output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta/pooled
         per_encoder: false
         encoder_main_effects: false
         encoder_interactions: false
-        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
     - name: all_auc_delta_unified
       args:
         output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta/unified
         per_encoder: false
         encoder_interactions: true
         encoder_main_effects: true
-        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
-    - name: base_auc_delta_rank
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_delta_enc_main
       args:
-        output_dir: analysis/leakage_free_local_fast_dino_faiss/base_only/auc_delta_rank/combined
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta/enc_main
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_delta_enc_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta/enc_interactions
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_delta_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta/mf_main
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_delta_enc_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta/enc_mf_main
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_delta_mf_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta/mf_interactions
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_delta_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta/full_interactions
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_delta_trimmed_per_encoder
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_trimmed/per_encoder
+        per_encoder: true
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_delta_kl_mmd_per_encoder
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_kl_mmd/per_encoder
+        per_encoder: true
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_delta_trimmed_pooled
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_trimmed/pooled
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_delta_kl_mmd_pooled
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_kl_mmd/pooled
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_delta_trimmed_enc_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_trimmed/enc_main
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_delta_kl_mmd_enc_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_kl_mmd/enc_main
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_delta_trimmed_enc_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_trimmed/enc_interactions
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_delta_kl_mmd_enc_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_kl_mmd/enc_interactions
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_delta_trimmed_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_trimmed/mf_main
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_delta_kl_mmd_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_kl_mmd/mf_main
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_delta_trimmed_enc_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_trimmed/enc_mf_main
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_delta_kl_mmd_enc_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_kl_mmd/enc_mf_main
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_delta_trimmed_mf_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_trimmed/mf_interactions
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_delta_kl_mmd_mf_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_kl_mmd/mf_interactions
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_delta_trimmed_unified
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_trimmed/unified
+        per_encoder: false
+        encoder_interactions: true
+        encoder_main_effects: true
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_delta_kl_mmd_unified
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_kl_mmd/unified
+        per_encoder: false
+        encoder_interactions: true
+        encoder_main_effects: true
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_delta_trimmed_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_trimmed/full_interactions
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_delta_kl_mmd_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_kl_mmd/full_interactions
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_delta_coverage_per_encoder
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_coverage/per_encoder
+        per_encoder: true
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_delta_coverage_pooled
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_coverage/pooled
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_delta_coverage_enc_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_coverage/enc_main
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_delta_coverage_enc_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_coverage/enc_interactions
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_delta_coverage_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_coverage/mf_main
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_delta_coverage_enc_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_coverage/enc_mf_main
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_delta_coverage_mf_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_coverage/mf_interactions
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_delta_coverage_unified
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_coverage/unified
+        per_encoder: false
+        encoder_interactions: true
+        encoder_main_effects: true
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_delta_coverage_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_coverage/full_interactions
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_normalized_rank_per_encoder
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank/per_encoder
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: true
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_normalized_rank_per_encoder_pairwise
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank/per_encoder_pairwise
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: true
+        prediction_model: pairwise_rank
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_normalized_rank_pooled
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank/pooled
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_normalized_rank_enc_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank/enc_main
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_normalized_rank_enc_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank/enc_interactions
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_normalized_rank_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank/mf_main
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_normalized_rank_enc_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank/enc_mf_main
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_normalized_rank_mf_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank/mf_interactions
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_normalized_rank_unified
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank/unified
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_interactions: true
+        encoder_main_effects: true
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_normalized_rank_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank/full_interactions
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_normalized_rank_trimmed_per_encoder
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_trimmed/per_encoder
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: true
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_normalized_rank_kl_mmd_per_encoder
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_kl_mmd/per_encoder
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: true
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_normalized_rank_trimmed_per_encoder_pairwise
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_trimmed/per_encoder_pairwise
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: true
+        prediction_model: pairwise_rank
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_normalized_rank_kl_mmd_per_encoder_pairwise
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_kl_mmd/per_encoder_pairwise
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: true
+        prediction_model: pairwise_rank
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_normalized_rank_trimmed_pooled
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_trimmed/pooled
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_normalized_rank_kl_mmd_pooled
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_kl_mmd/pooled
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_normalized_rank_trimmed_enc_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_trimmed/enc_main
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_normalized_rank_kl_mmd_enc_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_kl_mmd/enc_main
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_normalized_rank_trimmed_enc_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_trimmed/enc_interactions
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_normalized_rank_kl_mmd_enc_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_kl_mmd/enc_interactions
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_normalized_rank_trimmed_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_trimmed/mf_main
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_normalized_rank_kl_mmd_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_kl_mmd/mf_main
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_normalized_rank_trimmed_enc_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_trimmed/enc_mf_main
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_normalized_rank_kl_mmd_enc_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_kl_mmd/enc_mf_main
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_normalized_rank_trimmed_mf_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_trimmed/mf_interactions
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_normalized_rank_kl_mmd_mf_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_kl_mmd/mf_interactions
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_normalized_rank_trimmed_unified
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_trimmed/unified
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_interactions: true
+        encoder_main_effects: true
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_normalized_rank_kl_mmd_unified
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_kl_mmd/unified
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_interactions: true
+        encoder_main_effects: true
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_normalized_rank_trimmed_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_trimmed/full_interactions
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_normalized_rank_kl_mmd_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_kl_mmd/full_interactions
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_normalized_rank_coverage_per_encoder
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_coverage/per_encoder
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: true
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_normalized_rank_coverage_per_encoder_pairwise
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_coverage/per_encoder_pairwise
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: true
+        prediction_model: pairwise_rank
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_normalized_rank_coverage_pooled
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_coverage/pooled
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_normalized_rank_coverage_enc_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_coverage/enc_main
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_normalized_rank_coverage_enc_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_coverage/enc_interactions
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_normalized_rank_coverage_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_coverage/mf_main
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_normalized_rank_coverage_enc_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_coverage/enc_mf_main
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_normalized_rank_coverage_mf_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_coverage/mf_interactions
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_normalized_rank_coverage_unified
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_coverage/unified
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_interactions: true
+        encoder_main_effects: true
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_normalized_rank_coverage_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_rank_coverage/full_interactions
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: true
+        rank_target_source: auc_normalized
+        rank_target_col: auc_normalized_rank
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_normalized_per_encoder
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized/per_encoder
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: true
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_normalized_pooled
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized/pooled
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_normalized_enc_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized/enc_main
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_normalized_enc_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized/enc_interactions
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_normalized_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized/mf_main
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_normalized_enc_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized/enc_mf_main
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_normalized_mf_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized/mf_interactions
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_normalized_unified
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized/unified
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_interactions: true
+        encoder_main_effects: true
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_normalized_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized/full_interactions
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: all_auc_normalized_trimmed_per_encoder
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_trimmed/per_encoder
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: true
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_normalized_kl_mmd_per_encoder
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_kl_mmd/per_encoder
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: true
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_normalized_trimmed_pooled
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_trimmed/pooled
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_normalized_kl_mmd_pooled
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_kl_mmd/pooled
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_normalized_trimmed_enc_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_trimmed/enc_main
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_normalized_kl_mmd_enc_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_kl_mmd/enc_main
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_normalized_trimmed_enc_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_trimmed/enc_interactions
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_normalized_kl_mmd_enc_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_kl_mmd/enc_interactions
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_normalized_trimmed_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_trimmed/mf_main
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_normalized_kl_mmd_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_kl_mmd/mf_main
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_normalized_trimmed_enc_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_trimmed/enc_mf_main
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_normalized_kl_mmd_enc_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_kl_mmd/enc_mf_main
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_normalized_trimmed_mf_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_trimmed/mf_interactions
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_normalized_kl_mmd_mf_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_kl_mmd/mf_interactions
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_normalized_trimmed_unified
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_trimmed/unified
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_interactions: true
+        encoder_main_effects: true
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_normalized_kl_mmd_unified
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_kl_mmd/unified
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_interactions: true
+        encoder_main_effects: true
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_normalized_trimmed_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_trimmed/full_interactions
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train
+    - name: all_auc_normalized_kl_mmd_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_kl_mmd/full_interactions
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_normalized_coverage_per_encoder
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_coverage/per_encoder
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: true
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_normalized_coverage_pooled
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_coverage/pooled
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_normalized_coverage_enc_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_coverage/enc_main
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_normalized_coverage_enc_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_coverage/enc_interactions
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: false
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_normalized_coverage_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_coverage/mf_main
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_normalized_coverage_enc_mf_main
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_coverage/enc_mf_main
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_normalized_coverage_mf_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_coverage/mf_interactions
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: false
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_normalized_coverage_unified
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_coverage/unified
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_interactions: true
+        encoder_main_effects: true
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: all_auc_normalized_coverage_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_normalized_coverage/full_interactions
+        target: auc_normalized
+        prediction_target: auc_normalized
+        rank_target: false
+        auc_pad: false
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_over_eval_recall,flow_eval_to_train_over_train_precision,flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,dino_train_to_eval_over_eval_recall,dino_eval_to_train_over_train_precision,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit
+    - name: base_auc_delta_rank_per_encoder
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/base_only/auc_delta_rank/per_encoder
         train_datasets_mode: base_only
         rank_target: true
         per_encoder: true
-        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
     - name: base_auc_delta_rank_pooled
       args:
         output_dir: analysis/leakage_free_local_fast_dino_faiss/base_only/auc_delta_rank/pooled
@@ -199,7 +2756,7 @@ steps:
         per_encoder: false
         encoder_main_effects: false
         encoder_interactions: false
-        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
     - name: base_auc_delta_rank_unified
       args:
         output_dir: analysis/leakage_free_local_fast_dino_faiss/base_only/auc_delta_rank/unified
@@ -208,10 +2765,10 @@ steps:
         encoder_interactions: true
         encoder_main_effects: true
         per_encoder: false
-        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
-    - name: base_peak_pck_rank
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: base_peak_pck_rank_per_encoder
       args:
-        output_dir: analysis/leakage_free_local_fast_dino_faiss/base_only/peak_pck_rank/combined
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/base_only/peak_pck_rank/per_encoder
         train_datasets_mode: base_only
         target: peak_pck
         prediction_target: peak_pck
@@ -219,7 +2776,7 @@ steps:
         rank_target_source: peak_pck
         rank_target_col: peak_pck_rank
         per_encoder: true
-        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
     - name: base_peak_pck_rank_pooled
       args:
         output_dir: analysis/leakage_free_local_fast_dino_faiss/base_only/peak_pck_rank/pooled
@@ -232,7 +2789,7 @@ steps:
         per_encoder: false
         encoder_main_effects: false
         encoder_interactions: false
-        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
     - name: base_peak_pck_rank_unified
       args:
         output_dir: analysis/leakage_free_local_fast_dino_faiss/base_only/peak_pck_rank/unified
@@ -245,13 +2802,13 @@ steps:
         per_encoder: false
         encoder_interactions: true
         encoder_main_effects: true
-        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
-    - name: base_auc_delta
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+    - name: base_auc_delta_per_encoder
       args:
-        output_dir: analysis/leakage_free_local_fast_dino_faiss/base_only/auc_delta/combined
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/base_only/auc_delta/per_encoder
         train_datasets_mode: base_only
         per_encoder: true
-        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
     - name: base_auc_delta_pooled
       args:
         output_dir: analysis/leakage_free_local_fast_dino_faiss/base_only/auc_delta/pooled
@@ -259,7 +2816,7 @@ steps:
         per_encoder: false
         encoder_main_effects: false
         encoder_interactions: false
-        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
     - name: base_auc_delta_unified
       args:
         output_dir: analysis/leakage_free_local_fast_dino_faiss/base_only/auc_delta/unified
@@ -267,7 +2824,7 @@ steps:
         per_encoder: false
         encoder_interactions: true
         encoder_main_effects: true
-        predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+        predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
   select_checkpoints:
     enabled: true
     args:
@@ -284,21 +2841,21 @@ steps:
     args:
       auc_table: analysis/leakage_free_local_fast_dino_faiss/auc_with_features.csv
       output_file: analysis/leakage_free_local_fast_dino_faiss/summary_report.txt
-      predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_coverage_logit,dino_eval_to_train_coverage_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
+      predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,flow_mmd,dino_mmd
       target: auc_delta
   compare_ablations:
     enabled: true
     args:
       base_dir: analysis/leakage_free_local_fast_dino_faiss
       targets: all/auc_delta_rank,all/peak_pck_rank,all/auc_delta,base_only/auc_delta_rank,base_only/peak_pck_rank,base_only/auc_delta
-      variants: combined,pooled,unified
+      variants: per_encoder,pooled,unified
       output_name: ablation_summary.txt
   mixing_summary:
     enabled: true
     args:
       base_dir: analysis/leakage_free_local_fast_dino_faiss
       targets: all/peak_pck_rank
-      variants: combined
+      variants: per_encoder
       metric: peak_pck
       output_name: mix_intervention_summary
       output_root: analysis/leakage_free_local_fast_dino_faiss

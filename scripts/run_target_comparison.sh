@@ -17,6 +17,7 @@ COMMON_ARGS=(
   --feature-mmd-csv feature_mmd_results_fast.csv
   --dino-mmd-csv dino_mmd_results_fast.csv
   --predictors "${PREDICTORS}"
+  --include-kl
   --linear-model ridge
   --ridge-alpha 1.0
   --standardize

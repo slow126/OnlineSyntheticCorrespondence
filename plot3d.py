@@ -20,6 +20,7 @@ import argparse
 import csv
 import os
 import sys
+from typing import List, Optional, Tuple
 from pathlib import Path
 from collections import defaultdict
 import matplotlib.pyplot as plt
@@ -50,6 +51,118 @@ from plot_benchmark_metrics import (
     parse_best_performance_from_summary,
     load_mmd_lookup,
 )
+
+MODEL_FAMILY_DEFAULT = "catspp"
+MODEL_FAMILY_ALIASES = {
+    "mixed": MODEL_FAMILY_DEFAULT,
+    "mixed_plots": MODEL_FAMILY_DEFAULT,
+    "cats": MODEL_FAMILY_DEFAULT,
+    "catspp": MODEL_FAMILY_DEFAULT,
+}
+
+STANDARDIZE_MODES = ("global", "none", "benchmark", "encoder", "model_family")
+PREDICTOR_SETS = ("all", "trimmed")
+
+ALL_PREDICTORS = [
+    "flow_mmd",
+    "feature_mmd",
+    "dino_mmd",
+    "flow_train_to_eval_coverage",
+    "flow_eval_to_train_coverage",
+    "resnet_train_to_eval_coverage",
+    "resnet_eval_to_train_coverage",
+    "dino_train_to_eval_coverage",
+    "dino_eval_to_train_coverage",
+    "flow_train_to_eval_mean_dist",
+    "flow_eval_to_train_mean_dist",
+    "resnet_train_to_eval_mean_dist",
+    "resnet_eval_to_train_mean_dist",
+    "dino_train_to_eval_mean_dist",
+    "dino_eval_to_train_mean_dist",
+]
+
+TRIMMED_PREDICTORS = [
+    "flow_train_to_eval_mean_dist",
+    "flow_eval_to_train_mean_dist",
+    "resnet_train_to_eval_mean_dist",
+    "resnet_eval_to_train_mean_dist",
+    "dino_train_to_eval_mean_dist",
+    "dino_eval_to_train_mean_dist",
+]
+
+
+def derive_model_family(snapshot_path: Path) -> str:
+    for part in snapshot_path.parts:
+        if part == "snapshots":
+            return MODEL_FAMILY_DEFAULT
+        if part.startswith("snapshots_"):
+            suffix = part.split("snapshots_", 1)[1].strip().lower()
+            if not suffix:
+                return MODEL_FAMILY_DEFAULT
+            return MODEL_FAMILY_ALIASES.get(suffix, suffix)
+    name = snapshot_path.name.lower()
+    if "raft" in name:
+        return "raft"
+    if "flowformer" in name:
+        return "flowformer"
+    return MODEL_FAMILY_DEFAULT
+
+
+def select_predictor_candidates(predictor_set: str) -> List[str]:
+    if predictor_set == "trimmed":
+        return list(TRIMMED_PREDICTORS)
+    return list(ALL_PREDICTORS)
+
+
+def _standardize_predictors_insample(
+    df: pd.DataFrame,
+    predictors: List[str],
+    mode: str,
+    min_std: float = 0.0,
+    group_col: Optional[str] = None,
+) -> Tuple[pd.DataFrame, List[str]]:
+    df = df.copy()
+    if not predictors:
+        return df, []
+
+    if mode == "none":
+        standardized_cols = []
+        for col in predictors:
+            z_col = f"{col}_std"
+            df[z_col] = df[col]
+            standardized_cols.append(z_col)
+        return df, standardized_cols
+
+    means = df[predictors].mean()
+    stds = df[predictors].std(ddof=0).replace(0, 1.0)
+    if min_std > 0:
+        stds = stds.where(stds >= float(min_std), float(min_std))
+
+    use_group = mode in ("benchmark", "encoder", "model_family") and group_col
+    if use_group and group_col not in df.columns:
+        print(
+            f"Warning: standardize_mode={mode} requested but '{group_col}' column is missing. "
+            "Falling back to global standardization."
+        )
+        use_group = False
+
+    if use_group:
+        group_means = df.groupby(group_col)[predictors].transform("mean")
+        group_stds = (
+            df.groupby(group_col)[predictors].transform(lambda x: x.std(ddof=0)).replace(0, 1.0)
+        )
+        group_means = group_means.fillna(means)
+        group_stds = group_stds.fillna(stds).replace(0, 1.0)
+
+    standardized_cols = []
+    for col in predictors:
+        z_col = f"{col}_std"
+        if use_group:
+            df[z_col] = (df[col] - group_means[col]) / group_stds[col]
+        else:
+            df[z_col] = (df[col] - means[col]) / stds[col]
+        standardized_cols.append(z_col)
+    return df, standardized_cols
 
 
 def load_coverage_lookup(csv_path='coverage_results.csv'):
@@ -1018,7 +1131,7 @@ def collect_all_predictors_data_points(
     
     for training_dataset_label, _, _, snapshot_path in snapshots_data:
         summary_path = Path(snapshot_path) / 'training_summary.txt'
-        
+
         if not summary_path.exists():
             continue
         
@@ -1151,6 +1264,7 @@ def collect_all_predictors_data_points(
                 and not pd.isna(flow_train_to_eval)
                 and (has_resnet or has_dino)
             ):
+                model_family = derive_model_family(Path(snapshot_path))
                 data_points.append({
                     'flow_mmd': flow_mmd,
                     'feature_mmd': feature_mmd,
@@ -1173,6 +1287,7 @@ def collect_all_predictors_data_points(
                     'pretrained': pretrained_val,
                     'freeze': freeze_val,
                     'encoder_regime': encoder_regime,
+                    'model_family': model_family,
                     'snapshot_path': str(snapshot_path)
                 })
             elif debug:
@@ -1206,6 +1321,13 @@ def compare_predictors_with_mixed_effects(
     create_plots=True,
     encoder_offsets=False,
     encoder_column="encoder_regime",
+    model_family_offsets=False,
+    model_family_column="model_family",
+    encoder_interactions=False,
+    model_family_interactions=False,
+    predictor_set="all",
+    standardize_mode="global",
+    output_suffix="",
 ):
     """
     Compare all predictors using multiple mixed-effects regression models.
@@ -1241,6 +1363,12 @@ def compare_predictors_with_mixed_effects(
     print(f"Benchmarks: {', '.join(sorted(df['benchmark'].unique()))}")
     encoder_term = ""
     use_encoder_offsets = False
+    model_family_term = ""
+    use_model_family_offsets = False
+    encoder_interaction_term = ""
+    model_family_interaction_term = ""
+    use_encoder_interactions = False
+    use_model_family_interactions = False
     if encoder_offsets:
         if encoder_column not in df.columns:
             print(f"Warning: Encoder offsets requested but '{encoder_column}' column is missing. Skipping offsets.")
@@ -1255,34 +1383,62 @@ def compare_predictors_with_mixed_effects(
                 encoder_term = f" + C({encoder_column})"
                 use_encoder_offsets = True
                 print(f"Encoder offsets enabled: C({encoder_column})")
+    if model_family_offsets:
+        if model_family_column not in df.columns:
+            print(
+                "Warning: Model family offsets requested but "
+                f"'{model_family_column}' column is missing. Skipping offsets."
+            )
+        else:
+            df[model_family_column] = df[model_family_column].fillna("unknown")
+            if df[model_family_column].nunique() < 2:
+                print(
+                    "Warning: Model family offsets requested but "
+                    f"'{model_family_column}' has only one category. Skipping offsets."
+                )
+            else:
+                model_family_term = f" + C({model_family_column})"
+                use_model_family_offsets = True
+                print(f"Model family offsets enabled: C({model_family_column})")
+
+    if encoder_interactions:
+        if encoder_column not in df.columns:
+            print(
+                "Warning: Encoder interactions requested but "
+                f"'{encoder_column}' column is missing. Skipping interactions."
+            )
+        else:
+            df[encoder_column] = df[encoder_column].fillna("unknown")
+            if df[encoder_column].nunique() < 2:
+                print(
+                    "Warning: Encoder interactions requested but "
+                    f"'{encoder_column}' has only one category. Skipping interactions."
+                )
+            else:
+                encoder_interaction_term = f":C({encoder_column})"
+                use_encoder_interactions = True
+                print(f"Encoder interactions enabled: {encoder_column}")
+
+    if model_family_interactions:
+        if model_family_column not in df.columns:
+            print(
+                "Warning: Model family interactions requested but "
+                f"'{model_family_column}' column is missing. Skipping interactions."
+            )
+        else:
+            df[model_family_column] = df[model_family_column].fillna("unknown")
+            if df[model_family_column].nunique() < 2:
+                print(
+                    "Warning: Model family interactions requested but "
+                    f"'{model_family_column}' has only one category. Skipping interactions."
+                )
+            else:
+                model_family_interaction_term = f":C({model_family_column})"
+                use_model_family_interactions = True
+                print(f"Model family interactions enabled: {model_family_column}")
     
-    # Standardize predictors for fair comparison (mean=0, std=1)
-    # This allows comparing coefficients on the same scale
-    try:
-        from sklearn.preprocessing import StandardScaler
-    except ImportError:
-        print("Error: sklearn not installed. Install with: pip install scikit-learn")
-        return None
-    
-    scaler = StandardScaler()
     min_required = 10
-    candidate_predictors = [
-        "flow_mmd",
-        "feature_mmd",
-        "dino_mmd",
-        "flow_train_to_eval_coverage",
-        "flow_eval_to_train_coverage",
-        "resnet_train_to_eval_coverage",
-        "resnet_eval_to_train_coverage",
-        "dino_train_to_eval_coverage",
-        "dino_eval_to_train_coverage",
-        "flow_train_to_eval_mean_dist",
-        "flow_eval_to_train_mean_dist",
-        "resnet_train_to_eval_mean_dist",
-        "resnet_eval_to_train_mean_dist",
-        "dino_train_to_eval_mean_dist",
-        "dino_eval_to_train_mean_dist",
-    ]
+    candidate_predictors = select_predictor_candidates(predictor_set)
     predictors = []
     for name in candidate_predictors:
         if name not in df.columns:
@@ -1298,9 +1454,27 @@ def compare_predictors_with_mixed_effects(
         return None
     
     df_scaled = df.copy()
-    # Only standardize predictors that exist and have data
     predictors_to_scale = [p for p in predictors if p in df.columns]
-    df_scaled[[f'{p}_std' for p in predictors_to_scale]] = scaler.fit_transform(df[predictors_to_scale])
+    if standardize_mode not in STANDARDIZE_MODES:
+        print(
+            f"Warning: Unknown standardize_mode '{standardize_mode}', "
+            "falling back to global."
+        )
+        standardize_mode = "global"
+    group_col = None
+    if standardize_mode == "benchmark":
+        group_col = "benchmark"
+    elif standardize_mode == "encoder":
+        group_col = encoder_column
+    elif standardize_mode == "model_family":
+        group_col = model_family_column
+    df_scaled, standardized_cols = _standardize_predictors_insample(
+        df_scaled,
+        predictors_to_scale,
+        standardize_mode,
+        min_std=0.0,
+        group_col=group_col,
+    )
     
     # 0. Collinearity analysis (correlation matrix)
     print(f"\n{'='*80}")
@@ -1373,13 +1547,26 @@ def compare_predictors_with_mixed_effects(
     print(f"{'Predictor':<20} {'Std Coef':>12} {'p-value':>12} {'AIC':>10} {'BIC':>10}")
     print(f"{'-'*70}")
     
+    mixed_fallback_count = 0
     for predictor in predictors:
         try:
+            predictor_std = f"{predictor}_std"
+            interaction_terms = []
+            if use_encoder_interactions:
+                interaction_terms.append(f"{predictor_std}{encoder_interaction_term}")
+            if use_model_family_interactions:
+                interaction_terms.append(f"{predictor_std}{model_family_interaction_term}")
+            interaction_clause = ""
+            if interaction_terms:
+                interaction_clause = " + " + " + ".join(interaction_terms)
+            formula = f"pck ~ {predictor_std}{encoder_term}{model_family_term}{interaction_clause}"
             model = smf.mixedlm(
-                f"pck ~ {predictor}_std{encoder_term}", data=df_scaled, groups=df_scaled["benchmark"]
+                formula,
+                data=df_scaled,
+                groups=df_scaled["benchmark"],
             )
             result = model.fit(method='lbfgs', reml=False)  # Use ML instead of REML for AIC/BIC
-            
+
             # Check if model converged
             if not result.converged:
                 print(f"{predictor:<20} {'NO CONV':>12} {'NO CONV':>12} {'NO CONV':>10} {'NO CONV':>10}")
@@ -1417,19 +1604,64 @@ def compare_predictors_with_mixed_effects(
             bic_str = f"{bic:.1f}" if not np.isnan(bic) else "N/A"
             print(f"{predictor:<20} {coef:>12.4f} {pval:>12.4f}{sig_marker:>1} {aic_str:>10} {bic_str:>10}")
         except Exception as e:
-            print(f"{predictor:<20} {'ERROR':>12} {'ERROR':>12} {'ERROR':>10} {'ERROR':>10}")
-            print(f"  Error: {e}")
-            results[predictor] = None
+            try:
+                fe_formula = f"{formula} + C(benchmark)"
+                fallback = smf.ols(fe_formula, data=df_scaled).fit()
+                coef = fallback.params.get(predictor_std, np.nan)
+                pval = fallback.pvalues.get(predictor_std, np.nan)
+                aic = fallback.aic if hasattr(fallback, "aic") else np.nan
+                bic = fallback.bic if hasattr(fallback, "bic") else np.nan
+                results[predictor] = {
+                    'std_coef': coef,
+                    'pvalue': pval,
+                    'aic': aic,
+                    'bic': bic,
+                    'converged': True,
+                    'significant': pval < 0.05 if not np.isnan(pval) else False,
+                    'model': fallback,
+                    'model_type': 'ols_fe',
+                }
+                mixed_fallback_count += 1
+                aic_str = f"{aic:.1f}" if not np.isnan(aic) else "N/A"
+                bic_str = f"{bic:.1f}" if not np.isnan(bic) else "N/A"
+                print(f"{predictor:<20} {coef:>12.4f} {pval:>12.4f} {aic_str:>10} {bic_str:>10}")
+            except Exception as fallback_error:
+                print(f"{predictor:<20} {'ERROR':>12} {'ERROR':>12} {'ERROR':>10} {'ERROR':>10}")
+                print(f"  MixedLM error: {e}")
+                print(f"  OLS fallback error: {fallback_error}")
+                results[predictor] = None
+
+    if mixed_fallback_count:
+        print(
+            f"Note: MixedLM failed for {mixed_fallback_count} predictor(s); "
+            "used OLS with benchmark fixed effects instead."
+        )
     
     # 2. Full model with all predictors
     print(f"\n{'='*80}")
     print("2. FULL MODEL (All predictors together)")
     print(f"{'='*80}")
     
+    full_model_type = "mixedlm"
     try:
         # Build formula with available predictors
         formula_parts = [f"{p}_std" for p in predictors_to_scale]
-        formula = "pck ~ " + " + ".join(formula_parts) + encoder_term
+        interaction_terms = []
+        if use_encoder_interactions:
+            interaction_terms.extend(
+                [f"{p}_std{encoder_interaction_term}" for p in predictors_to_scale]
+            )
+        if use_model_family_interactions:
+            interaction_terms.extend(
+                [f"{p}_std{model_family_interaction_term}" for p in predictors_to_scale]
+            )
+        formula = "pck ~ " + " + ".join(formula_parts)
+        if encoder_term:
+            formula += encoder_term
+        if model_family_term:
+            formula += model_family_term
+        if interaction_terms:
+            formula += " + " + " + ".join(interaction_terms)
         model_full = smf.mixedlm(formula, data=df_scaled, groups=df_scaled["benchmark"])
         result_full = model_full.fit(method='lbfgs', reml=False)  # Use ML instead of REML for AIC/BIC
         
@@ -1457,14 +1689,25 @@ def compare_predictors_with_mixed_effects(
             }
             formula_display = " + ".join([predictor_names.get(p, p) for p in predictors_to_scale])
             encoder_display = f" + C({encoder_column})" if use_encoder_offsets else ""
-            print(f"Model: PCK ~ {formula_display}{encoder_display} + (1|benchmark)")
+            model_family_display = f" + C({model_family_column})" if use_model_family_offsets else ""
+            interaction_display = ""
+            if use_encoder_interactions:
+                interaction_display += f" + predictors:C({encoder_column})"
+            if use_model_family_interactions:
+                interaction_display += f" + predictors:C({model_family_column})"
+            print(
+                f"Model: PCK ~ {formula_display}{encoder_display}{model_family_display}"
+                f"{interaction_display} + (1|benchmark)"
+            )
             print(f"\n{'Predictor':<20} {'Std Coef':>12} {'p-value':>12} {'Significant':>12}")
             print(f"{'-'*60}")
             
             full_results = {}
+            params = result_full.fe_params
+            pvalues = result_full.pvalues
             for predictor in predictors_to_scale:
-                coef = result_full.fe_params.get(f'{predictor}_std', np.nan)
-                pval = result_full.pvalues.get(f'{predictor}_std', np.nan)
+                coef = params.get(f'{predictor}_std', np.nan)
+                pval = pvalues.get(f'{predictor}_std', np.nan)
                 sig = pval < 0.05 if not np.isnan(pval) else False
                 sig_marker = '*' if sig else ''
                 
@@ -1541,7 +1784,8 @@ def compare_predictors_with_mixed_effects(
                 'bic': bic,
                 'converged': result_full.converged,
                 'df_scaled': df_scaled,
-                'predictors_to_scale': predictors_to_scale
+                'predictors_to_scale': predictors_to_scale,
+                'model_type': full_model_type,
             }
             results['mixedlm_diagnostics'] = mixed_diag
             
@@ -1555,10 +1799,86 @@ def compare_predictors_with_mixed_effects(
                     predictors_to_scale
                 )
     except Exception as e:
-        print(f"Error fitting full model: {e}")
-        import traceback
-        traceback.print_exc()
-        results['full_model'] = None
+        try:
+            full_model_type = "ols_fe"
+            fe_formula = f"{formula} + C(benchmark)"
+            result_full = smf.ols(fe_formula, data=df_scaled).fit()
+            predictor_names = {
+                'flow_mmd': 'Flow MMD',
+                'feature_mmd': 'ResNet MMD',
+                'dino_mmd': 'DINO MMD',
+                'flow_train_to_eval_coverage': 'Flow Train->Eval Coverage',
+                'flow_eval_to_train_coverage': 'Flow Eval->Train Coverage',
+                'resnet_train_to_eval_coverage': 'ResNet Train->Eval Coverage',
+                'resnet_eval_to_train_coverage': 'ResNet Eval->Train Coverage',
+                'dino_train_to_eval_coverage': 'DINO Train->Eval Coverage',
+                'dino_eval_to_train_coverage': 'DINO Eval->Train Coverage',
+                'flow_train_to_eval_mean_dist': 'Flow Train->Eval Mean Dist',
+                'flow_eval_to_train_mean_dist': 'Flow Eval->Train Mean Dist',
+                'resnet_train_to_eval_mean_dist': 'ResNet Train->Eval Mean Dist',
+                'resnet_eval_to_train_mean_dist': 'ResNet Eval->Train Mean Dist',
+                'dino_train_to_eval_mean_dist': 'DINO Train->Eval Mean Dist',
+                'dino_eval_to_train_mean_dist': 'DINO Eval->Train Mean Dist',
+            }
+            formula_display = " + ".join([predictor_names.get(p, p) for p in predictors_to_scale])
+            encoder_display = f" + C({encoder_column})" if use_encoder_offsets else ""
+            model_family_display = f" + C({model_family_column})" if use_model_family_offsets else ""
+            interaction_display = ""
+            if use_encoder_interactions:
+                interaction_display += f" + predictors:C({encoder_column})"
+            if use_model_family_interactions:
+                interaction_display += f" + predictors:C({model_family_column})"
+            print(
+                "MixedLM full model failed; falling back to OLS with benchmark fixed effects."
+            )
+            print(
+                f"Model: PCK ~ {formula_display}{encoder_display}{model_family_display}"
+                f"{interaction_display} + C(benchmark)"
+            )
+            print(f"\n{'Predictor':<20} {'Std Coef':>12} {'p-value':>12} {'Significant':>12}")
+            print(f"{'-'*60}")
+
+            full_results = {}
+            params = result_full.params
+            pvalues = result_full.pvalues
+            for predictor in predictors_to_scale:
+                coef = params.get(f'{predictor}_std', np.nan)
+                pval = pvalues.get(f'{predictor}_std', np.nan)
+                sig = pval < 0.05 if not np.isnan(pval) else False
+                sig_marker = '*' if sig else ''
+                full_results[predictor] = {
+                    'std_coef': coef,
+                    'pvalue': pval,
+                    'significant': sig
+                }
+                print(f"{predictor:<20} {coef:>12.4f} {pval:>12.4f}{sig_marker:>1} {'Yes' if sig else 'No':>12}")
+
+            aic = result_full.aic if hasattr(result_full, 'aic') else np.nan
+            bic = result_full.bic if hasattr(result_full, 'bic') else np.nan
+            llf_str = f"{result_full.llf:.2f}" if hasattr(result_full, 'llf') else "N/A"
+            aic_str = f"{aic:.1f}" if not np.isnan(aic) else "N/A"
+            bic_str = f"{bic:.1f}" if not np.isnan(bic) else "N/A"
+            print(f"\nModel fit:")
+            print(f"  AIC: {aic_str}")
+            print(f"  BIC: {bic_str}")
+            print(f"  Log-likelihood: {llf_str}")
+
+            results['full_model'] = {
+                'result': result_full,
+                'predictors': full_results,
+                'aic': aic,
+                'bic': bic,
+                'converged': True,
+                'df_scaled': df_scaled,
+                'predictors_to_scale': predictors_to_scale,
+                'model_type': full_model_type,
+            }
+        except Exception as fallback_error:
+            print(f"Error fitting full model: {e}")
+            print(f"OLS fallback error: {fallback_error}")
+            import traceback
+            traceback.print_exc()
+            results['full_model'] = None
 
     # 2b. Non-mixed effects (OLS) models
     print(f"\n{'='*80}")
@@ -1667,10 +1987,15 @@ def compare_predictors_with_mixed_effects(
     print(f"{'='*80}")
     
     # Sort individual models by AIC (filter out NaN AIC values)
-    valid_models = [(k, v) for k, v in results.items() 
-                    if v is not None and k != 'full_model' 
-                    and not np.isnan(v.get('aic', np.nan))]
+    valid_models = [
+        (k, v)
+        for k, v in results.items()
+        if v is not None
+        and k != "full_model"
+        and not np.isnan(v.get("aic", np.nan))
+    ]
     valid_models.sort(key=lambda x: x[1]['aic'])
+    valid_predictor_models = [(k, v) for k, v in valid_models if "std_coef" in v]
     
     print(f"{'Model':<25} {'AIC':>10} {'BIC':>10} {'ΔAIC vs Best':>15}")
     print(f"{'-'*60}")
@@ -1697,13 +2022,15 @@ def compare_predictors_with_mixed_effects(
     print(f"{'='*80}")
     
     # Find best individual predictor
-    if valid_models:
-        best_predictor = valid_models[0][0]
-        best_model = valid_models[0][1]
+    if valid_predictor_models:
+        best_predictor = valid_predictor_models[0][0]
+        best_model = valid_predictor_models[0][1]
         print(f"\nBest individual predictor: {best_predictor}")
         print(f"  Standardized coefficient: {best_model['std_coef']:.4f}")
         print(f"  p-value: {best_model['pvalue']:.4f}")
-        print(f"  {'✓ Statistically significant' if best_model['significant'] else '✗ Not statistically significant'}")
+        print(
+            f"  {'✓ Statistically significant' if best_model['significant'] else '✗ Not statistically significant'}"
+        )
     
     # Check if full model is better
     if results.get('full_model') and not np.isnan(results['full_model'].get('aic', np.nan)):
@@ -1735,15 +2062,24 @@ def compare_predictors_with_mixed_effects(
     
     # Save summary to file if requested
     if output_path:
-        output_file = output_path / 'predictor_comparison_analysis.txt'
+        suffix = output_suffix or ""
+        output_file = output_path / f"predictor_comparison_analysis{suffix}.txt"
         with open(output_file, 'w') as f:
             f.write("="*80 + "\n")
             f.write("PREDICTOR COMPARISON ANALYSIS\n")
             f.write("="*80 + "\n\n")
             f.write(f"Data: {len(df)} observations across {df['benchmark'].nunique()} benchmarks\n")
             f.write(f"Benchmarks: {', '.join(sorted(df['benchmark'].unique()))}\n")
+            f.write(f"Predictor set: {predictor_set}\n")
+            f.write(f"Standardize mode: {standardize_mode}\n")
             if use_encoder_offsets:
                 f.write(f"Encoder offsets: C({encoder_column})\n")
+            if use_model_family_offsets:
+                f.write(f"Model family offsets: C({model_family_column})\n")
+            if use_encoder_interactions:
+                f.write(f"Encoder interactions: predictors:C({encoder_column})\n")
+            if use_model_family_interactions:
+                f.write(f"Model family interactions: predictors:C({model_family_column})\n")
             
             # Write collinearity analysis section
             f.write(f"\n{'='*80}\n")
@@ -1816,6 +2152,11 @@ def compare_predictors_with_mixed_effects(
                         f.write(f"{predictor:<20} {'NO CONV':>12} {'NO CONV':>12} {'NO CONV':>10} {'NO CONV':>10}\n")
                 else:
                     f.write(f"{predictor:<20} {'ERROR':>12} {'ERROR':>12} {'ERROR':>10} {'ERROR':>10}\n")
+            if mixed_fallback_count:
+                f.write(
+                    "\nNote: MixedLM failed for "
+                    f"{mixed_fallback_count} predictor(s); used OLS with benchmark fixed effects instead.\n"
+                )
             
             # Write full model section
             f.write(f"\n{'='*80}\n")
@@ -1971,13 +2312,15 @@ def compare_predictors_with_mixed_effects(
             f.write("4. SUMMARY & RECOMMENDATIONS\n")
             f.write(f"{'='*80}\n")
             
-            if valid_models:
-                best_predictor = valid_models[0][0]
-                best_model = valid_models[0][1]
+            if valid_predictor_models:
+                best_predictor = valid_predictor_models[0][0]
+                best_model = valid_predictor_models[0][1]
                 f.write(f"\nBest individual predictor: {best_predictor}\n")
                 f.write(f"  Standardized coefficient: {best_model['std_coef']:.4f}\n")
                 f.write(f"  p-value: {best_model['pvalue']:.4f}\n")
-                f.write(f"  {'✓ Statistically significant' if best_model['significant'] else '✗ Not statistically significant'}\n")
+                f.write(
+                    f"  {'✓ Statistically significant' if best_model['significant'] else '✗ Not statistically significant'}\n"
+                )
             
             # Check if full model is better
             if results.get('full_model') and not np.isnan(results['full_model'].get('aic', np.nan)):
@@ -2250,6 +2593,10 @@ def main():
         help='Directory containing snapshot subdirectories (default: snapshots/)'
     )
     parser.add_argument(
+        '--snapshots-dirs', type=str, default=None,
+        help='Comma-separated list of snapshot directories (overrides --snapshots-dir)'
+    )
+    parser.add_argument(
         '--coverage-csv', type=str, default='coverage_results.csv',
         help='Path to flow coverage CSV (default: coverage_results.csv)'
     )
@@ -2285,6 +2632,35 @@ def main():
         '--encoder-offsets', action='store_true',
         help='Add encoder regime offsets (pretrained/freeze) in mixed-effects models'
     )
+    parser.add_argument(
+        '--encoder-interactions', action='store_true',
+        help='Add encoder interactions (predictors x encoder regime) in mixed-effects models'
+    )
+    parser.add_argument(
+        '--model-family-offsets', action='store_true',
+        help='Add model family offsets (catspp/raft/flowformer) in mixed-effects models'
+    )
+    parser.add_argument(
+        '--model-family-interactions', action='store_true',
+        help='Add model family interactions (predictors x model family) in mixed-effects models'
+    )
+    parser.add_argument(
+        '--predictor-set',
+        choices=PREDICTOR_SETS,
+        default='all',
+        help='Predictor set for mixed-effects analysis (all or trimmed).'
+    )
+    parser.add_argument(
+        '--standardize-mode',
+        choices=STANDARDIZE_MODES,
+        default='global',
+        help='Predictor standardization mode for mixed-effects analysis.'
+    )
+    parser.add_argument(
+        '--analysis-suffix',
+        default='',
+        help='Suffix appended to predictor comparison analysis output filename.'
+    )
     args = parser.parse_args()
     
     # Create output directory
@@ -2293,14 +2669,26 @@ def main():
     
     # Load snapshots
     print("Loading snapshots...")
-    snapshots_dir_path = Path(args.snapshots_dir).expanduser()
-    if not snapshots_dir_path.exists():
-        print(f"Error: Snapshots directory does not exist: {args.snapshots_dir}")
+    snapshots_root_list = []
+    if args.snapshots_dirs:
+        snapshots_root_list.extend(
+            [p.strip() for p in args.snapshots_dirs.split(",") if p.strip()]
+        )
+    else:
+        snapshots_root_list.extend(
+            [p.strip() for p in str(args.snapshots_dir).split(",") if p.strip()]
+        )
+
+    snapshots_root_paths = [Path(p).expanduser() for p in snapshots_root_list]
+    snapshots_root_paths = [p for p in snapshots_root_paths if p.exists()]
+    if not snapshots_root_paths:
+        missing = args.snapshots_dirs or args.snapshots_dir
+        print(f"Error: No snapshot directories exist: {missing}")
         return
-    
+
     # Collect snapshot directories (recursively search nested directories)
     snapshot_dirs = []
-    
+
     def find_snapshot_directories(root_path, max_depth=3, current_depth=0):
         """Recursively find directories containing training_summary.txt."""
         found = []
@@ -2321,10 +2709,13 @@ def main():
         
         return found
     
-    snapshot_dirs = find_snapshot_directories(snapshots_dir_path)
+    for root_path in snapshots_root_paths:
+        snapshot_dirs.extend(find_snapshot_directories(root_path))
+    snapshot_dirs = sorted(set(snapshot_dirs))
     
     if not snapshot_dirs:
-        print(f"Error: No snapshot directories found in {args.snapshots_dir}")
+        roots_display = ", ".join(str(p) for p in snapshots_root_paths)
+        print(f"Error: No snapshot directories found in {roots_display}")
         print("  (Looking for directories containing training_summary.txt, searched recursively)")
         return
     
@@ -2569,6 +2960,12 @@ def main():
                 output_path=output_path,
                 create_plots=True,
                 encoder_offsets=args.encoder_offsets,
+                model_family_offsets=args.model_family_offsets,
+                encoder_interactions=args.encoder_interactions,
+                model_family_interactions=args.model_family_interactions,
+                predictor_set=args.predictor_set,
+                standardize_mode=args.standardize_mode,
+                output_suffix=args.analysis_suffix,
             )
         else:
             print(f"\nWarning: Only {len(all_predictors_data)} data points with core predictors.")

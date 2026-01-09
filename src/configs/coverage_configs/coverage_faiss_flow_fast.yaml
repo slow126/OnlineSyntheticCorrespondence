@@ -22,6 +22,10 @@ faiss:
 coverage:
   k: 1
   radius_quantile: 0.95
+  kl_method: knn
+  kl_knn_k: 5
+  kl_bins: 50
+  kl_eps: 1.0e-8
 output:
   results_file: coverage_faiss_flow_results_fast.csv
 dataset_params:

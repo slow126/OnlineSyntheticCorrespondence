@@ -122,6 +122,21 @@ def _format_coef(name, coef, pval):
     return f"{name}: {coef:+.3f} (p={pval:.3g})"
 
 
+def _format_flag(value):
+    if value is None:
+        return "unknown"
+    if isinstance(value, bool):
+        return "True" if value else "False"
+    text = str(value).strip().lower()
+    if text in ("true", "1", "yes"):
+        return "True"
+    if text in ("false", "0", "no"):
+        return "False"
+    if not text:
+        return "unknown"
+    return str(value)
+
+
 def _filter_predictors(df, predictors):
     present = [p for p in predictors if p in df.columns]
     missing = [p for p in predictors if p not in df.columns]
@@ -132,12 +147,14 @@ def _filter_predictors(df, predictors):
     redundant = []
     for prefix in ("flow", "resnet", "dino"):
         cov = f"{prefix}_eval_to_train_coverage"
+        cov_explicit = f"{prefix}_eval_to_train_over_train_precision"
         outside = f"{prefix}_outside_mass"
         cov_logit = f"{cov}_logit"
+        cov_logit_explicit = f"{cov_explicit}_logit"
         outside_logit = f"{outside}_logit"
-        if cov in filtered and outside in filtered:
+        if (cov in filtered or cov_explicit in filtered) and outside in filtered:
             redundant.append(outside)
-        if cov_logit in filtered and outside_logit in filtered:
+        if (cov_logit in filtered or cov_logit_explicit in filtered) and outside_logit in filtered:
             redundant.append(outside_logit)
     if redundant:
         filtered = [p for p in filtered if p not in redundant]
@@ -152,6 +169,43 @@ def _predictor_family(name):
     if name in ("feature_mmd", "dino_mmd"):
         return "semantic"
     return "other"
+
+
+def _predictor_group(name):
+    base = name.split("__", 1)[0]
+    if base.startswith("flow_") or base == "flow_mmd":
+        return "flow"
+    if base.startswith("dino_") or base == "dino_mmd":
+        return "dino"
+    if base.startswith("resnet_") or base == "feature_mmd":
+        return "resnet"
+    return None
+
+
+def _aggregate_group_abs(params, predictors, exclude_interactions=False):
+    totals = {}
+    for pred in predictors:
+        if exclude_interactions and "__" in pred:
+            continue
+        coef = params.get(pred, np.nan)
+        if np.isnan(coef):
+            continue
+        group = _predictor_group(pred)
+        if not group:
+            continue
+        totals[group] = totals.get(group, 0.0) + abs(float(coef))
+    return totals
+
+
+def _format_group_totals(totals):
+    if not totals:
+        return ""
+    total_abs = sum(totals.values()) or 1.0
+    parts = []
+    for name in sorted(totals.keys()):
+        share = totals[name] / total_abs
+        parts.append(f"{name} abs_sum={totals[name]:.3f}, share={share:.2f}")
+    return "; ".join(parts)
 
 
 def summarize_predictions(summary_df, label_col, top_n=3):
@@ -332,6 +386,19 @@ def _select_baseline_selector(df, candidates):
     return None, None
 
 
+def _best_baseline_overall(df, metric, higher_better=True, candidates=None):
+    if df is None or df.empty or metric not in df.columns:
+        return None
+    sub = df
+    if candidates is not None:
+        sub = sub[sub["selector"].isin(candidates)]
+    sub = sub.dropna(subset=[metric])
+    if sub.empty:
+        return None
+    idx = sub[metric].idxmax() if higher_better else sub[metric].idxmin()
+    return sub.loc[idx]
+
+
 def main():
     parser = argparse.ArgumentParser(description="Summarize leakage-free outputs.")
     parser.add_argument(
@@ -450,6 +517,46 @@ def main():
         type=float,
         default=1.0,
         help="Ridge penalty strength when linear-model=ridge.",
+    )
+    parser.add_argument(
+        "--prediction-model",
+        default=None,
+        help="Model used for LOBO/LOTO predictions (optional).",
+    )
+    parser.add_argument(
+        "--standardize",
+        default=None,
+        help="Whether predictors were standardized in CV (optional).",
+    )
+    parser.add_argument(
+        "--cv-standardize-mode",
+        default=None,
+        help="Standardization mode used in CV (optional).",
+    )
+    parser.add_argument(
+        "--per-encoder",
+        default=None,
+        help="Whether per-encoder outputs were enabled (optional).",
+    )
+    parser.add_argument(
+        "--encoder-main-effects",
+        default=None,
+        help="Include encoder main effects (optional).",
+    )
+    parser.add_argument(
+        "--encoder-interactions",
+        default=None,
+        help="Include encoder interactions (optional).",
+    )
+    parser.add_argument(
+        "--model-family-main-effects",
+        default=None,
+        help="Include model-family main effects (optional).",
+    )
+    parser.add_argument(
+        "--model-family-interactions",
+        default=None,
+        help="Include model-family interactions (optional).",
     )
     parser.add_argument(
         "--predictors",
@@ -589,6 +696,30 @@ def main():
             out_lines.append(f"  {name}: {len(group)} rows")
 
     out_lines.append("")
+    out_lines.append("Analysis config:")
+    out_lines.append(
+        "  encoder_main_effects="
+        + _format_flag(args.encoder_main_effects)
+        + ", encoder_interactions="
+        + _format_flag(args.encoder_interactions)
+        + ", model_family_main_effects="
+        + _format_flag(args.model_family_main_effects)
+        + ", model_family_interactions="
+        + _format_flag(args.model_family_interactions)
+    )
+    prediction_model = args.prediction_model or args.linear_model
+    out_lines.append(
+        "  prediction_model="
+        + str(prediction_model)
+        + ", standardize="
+        + _format_flag(args.standardize)
+        + ", cv_standardize_mode="
+        + str(args.cv_standardize_mode or "unknown")
+        + ", per_encoder="
+        + _format_flag(args.per_encoder)
+    )
+
+    out_lines.append("")
     out_lines.append(f"Target: {args.target}")
     if args.prediction_target and args.prediction_target != args.target:
         out_lines.append(f"Prediction target: {args.prediction_target}")
@@ -723,6 +854,15 @@ def main():
                 out_lines.append(
                     f"  {family}: abs_sum={entry['abs_sum']:.3f}, share={share:.2f}, top={top_pred} ({top_val:.3f})"
                 )
+        group_totals = _aggregate_group_abs(params, predictors, exclude_interactions=False)
+        if group_totals:
+            out_lines.append("")
+            out_lines.append(f"Flow vs DINO aggregate weight (standardized {model_label}):")
+            out_lines.append(f"  all terms: {_format_group_totals(group_totals)}")
+            if any("__" in pred for pred in predictors):
+                main_totals = _aggregate_group_abs(params, predictors, exclude_interactions=True)
+                if main_totals and main_totals != group_totals:
+                    out_lines.append(f"  main effects only: {_format_group_totals(main_totals)}")
 
     if "benchmark" in df.columns:
         out_lines.append("")
@@ -847,29 +987,65 @@ def main():
             baseline_overall = baseline_df[baseline_df["benchmark"] == "__overall__"]
             if not baseline_overall.empty:
                 out_lines.append("  Baseline selectors (overall):")
-                baseline_order = [
-                    "flow_train_to_eval_mean_dist",
-                    "flow_eval_to_train_mean_dist",
-                    "resnet_train_to_eval_mean_dist",
-                    "resnet_eval_to_train_mean_dist",
-                    "dino_train_to_eval_mean_dist",
-                    "dino_eval_to_train_mean_dist",
-                    "flow_train_to_eval_coverage_logit",
-                    "resnet_train_to_eval_coverage_logit",
-                    "dino_train_to_eval_coverage_logit",
-                    "flow_mmd",
-                    "feature_mmd",
-                    "dino_mmd",
-                    "always_flyingthings",
-                    "always_best_avg",
+                available = set(baseline_overall["selector"].astype(str))
+                baseline_order = [p for p in predictors if p in available]
+                constants = [
+                    name
+                    for name in ["always_flyingthings", "always_best_avg"]
+                    if name in available and name not in baseline_order
                 ]
-                for selector in baseline_order:
+                for selector in baseline_order + constants:
                     row = baseline_overall[baseline_overall["selector"] == selector]
                     if row.empty:
                         continue
                     out_lines.append(
                         "    " + _format_rank_metrics(selector, row.iloc[0].to_dict())
                     )
+                best_candidates = [p for p in predictors if p in available]
+                if best_candidates:
+                    best_top1 = _best_baseline_overall(
+                        baseline_overall,
+                        "top1",
+                        higher_better=True,
+                        candidates=best_candidates,
+                    )
+                    best_regret = _best_baseline_overall(
+                        baseline_overall,
+                        "regret",
+                        higher_better=False,
+                        candidates=best_candidates,
+                    )
+                    best_spearman = _best_baseline_overall(
+                        baseline_overall,
+                        "spearman",
+                        higher_better=True,
+                        candidates=best_candidates,
+                    )
+                    out_lines.append("  Best single-predictor baselines (overall):")
+                    if best_top1 is not None:
+                        out_lines.append(
+                            "    top1: "
+                            + _format_rank_metrics(
+                                best_top1["selector"],
+                                best_top1.to_dict(),
+                            ).replace(f"{best_top1['selector']}: ", "")
+                        )
+                    if best_regret is not None:
+                        out_lines.append(
+                            "    regret: "
+                            + _format_rank_metrics(
+                                best_regret["selector"],
+                                best_regret.to_dict(),
+                            ).replace(f"{best_regret['selector']}: ", "")
+                        )
+                    if best_spearman is not None:
+                        out_lines.append(
+                            "    spearman: "
+                            + _format_rank_metrics(
+                                best_spearman["selector"],
+                                best_spearman.to_dict(),
+                            ).replace(f"{best_spearman['selector']}: ", "")
+                        )
 
             baseline_per_benchmark = baseline_df[baseline_df["benchmark"] != "__overall__"]
             flow_name, flow_baseline = _select_baseline_selector(
@@ -896,10 +1072,14 @@ def main():
                     "    "
                     + _format_rank_metrics(f"{flow_name} (flow family)", flow_base_summary)
                 )
-        if semantic_base_summary:
-            out_lines.append(
-                "    " + _format_rank_metrics(f"{semantic_name} (semantic family)", semantic_base_summary)
-            )
+            if semantic_base_summary:
+                out_lines.append(
+                    "    "
+                    + _format_rank_metrics(
+                        f"{semantic_name} (semantic family)",
+                        semantic_base_summary,
+                    )
+                )
 
 
     lobo_mixed_path = Path(args.lobo_mixed_summary)

@@ -123,3 +123,6 @@ slurm/slurm_jobs/
 
 # Coresets
 coresets/
+
+# Insample
+insample_analysis/

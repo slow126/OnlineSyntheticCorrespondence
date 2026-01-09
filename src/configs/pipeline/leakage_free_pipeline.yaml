@@ -55,6 +55,7 @@ steps:
       feature_mmd_csv: feature_mmd_results.csv
       relative_target_baseline: spair
       logit_coverage: true
+      rename_coverage: true
       per_encoder: true
       run_summary: true
 
@@ -74,5 +75,5 @@ steps:
     args:
       auc_table: analysis/leakage_free/auc_with_features.csv
       output_file: analysis/leakage_free/summary_report.txt
-      predictors: flow_train_to_eval_coverage_logit,flow_eval_to_train_coverage_logit,resnet_train_to_eval_coverage_logit,resnet_eval_to_train_coverage_logit,flow_mmd,feature_mmd
+      predictors: flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,resnet_train_to_eval_over_eval_recall_logit,resnet_eval_to_train_over_train_precision_logit,flow_mmd,feature_mmd
       target: auc_delta

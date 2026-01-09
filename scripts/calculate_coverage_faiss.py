@@ -260,6 +260,104 @@ def _nn_distances(
     return out.astype(np.float32, copy=False)
 
 
+def _kl_divergence_from_samples(
+    p_samples: np.ndarray,
+    q_samples: np.ndarray,
+    bins: int,
+    eps: float,
+) -> float:
+    p_samples = p_samples[np.isfinite(p_samples)]
+    q_samples = q_samples[np.isfinite(q_samples)]
+    if p_samples.size == 0 or q_samples.size == 0:
+        return float("nan")
+    if bins < 2:
+        return float("nan")
+    combined = np.concatenate([p_samples, q_samples], axis=0)
+    combined = combined[np.isfinite(combined)]
+    if combined.size == 0:
+        return float("nan")
+    quantiles = np.linspace(0.0, 1.0, bins + 1)
+    edges = np.unique(np.quantile(combined, quantiles))
+    if edges.size < 2:
+        return 0.0
+    p_counts, _ = np.histogram(p_samples, bins=edges)
+    q_counts, _ = np.histogram(q_samples, bins=edges)
+    p = p_counts.astype(np.float64) + eps
+    q = q_counts.astype(np.float64) + eps
+    p = p / p.sum()
+    q = q / q.sum()
+    return float(np.sum(p * np.log(p / q)))
+
+
+def _convert_search_distances(dists: np.ndarray, metric: str) -> np.ndarray:
+    if metric == "cosine":
+        dists = 1.0 - dists
+        dists = np.maximum(dists, 0.0)
+        dists = np.sqrt(2.0 * dists)
+    else:
+        dists = np.sqrt(np.maximum(dists, 0.0))
+    return dists
+
+
+def _kth_neighbor_distances(
+    index: "faiss.Index",
+    vectors: np.ndarray,
+    metric: str,
+    k: int,
+    exclude_self: bool,
+) -> Optional[np.ndarray]:
+    if vectors.size == 0 or k < 1:
+        return None
+    n = vectors.shape[0]
+    if exclude_self and n <= k:
+        return None
+    if not exclude_self and n < k:
+        return None
+    search_k = k + 1 if exclude_self else k
+    search_k = min(search_k, n)
+    if exclude_self and search_k <= k:
+        return None
+    dists, _ = index.search(vectors, search_k)
+    dists = _convert_search_distances(dists, metric)
+    if exclude_self:
+        tiny = 1e-12
+        has_self = dists[:, 0] <= tiny
+        idx = np.where(has_self, k, k - 1)
+        return np.take_along_axis(dists, idx[:, None], axis=1).squeeze(1)
+    return dists[:, k - 1]
+
+
+def _knn_kl_divergence(
+    p_vecs: np.ndarray,
+    q_vecs: np.ndarray,
+    p_index: "faiss.Index",
+    q_index: "faiss.Index",
+    metric: str,
+    k: int,
+    eps: float,
+) -> float:
+    if p_vecs.size == 0 or q_vecs.size == 0:
+        return float("nan")
+    n = p_vecs.shape[0]
+    m = q_vecs.shape[0]
+    if n <= 1 or m < 1 or k < 1:
+        return float("nan")
+    rho = _kth_neighbor_distances(p_index, p_vecs, metric, k, exclude_self=True)
+    nu = _kth_neighbor_distances(q_index, p_vecs, metric, k, exclude_self=False)
+    if rho is None or nu is None:
+        return float("nan")
+    mask = np.isfinite(rho) & np.isfinite(nu)
+    if not np.any(mask):
+        return float("nan")
+    rho = np.maximum(rho[mask], eps)
+    nu = np.maximum(nu[mask], eps)
+    n_eff = rho.size
+    if n_eff <= 1:
+        return float("nan")
+    dim = p_vecs.shape[1]
+    return float((dim / n_eff) * np.sum(np.log(nu / rho)) + np.log(m / (n_eff - 1)))
+
+
 def _self_radius(
     index: "faiss.Index",
     vectors: np.ndarray,
@@ -472,6 +570,13 @@ def main() -> None:
     k = int(coverage_cfg.get("k", 1))
     neighbor_agg = str(coverage_cfg.get("neighbor_agg", "first"))
     self_radius_k = int(coverage_cfg.get("self_radius_k", 1))
+    kl_bins = int(coverage_cfg.get("kl_bins", 50))
+    kl_eps = float(coverage_cfg.get("kl_eps", 1e-8))
+    kl_knn_k = int(coverage_cfg.get("kl_knn_k", 5))
+    kl_method = str(coverage_cfg.get("kl_method", "")).strip().lower()
+    if not kl_method:
+        kl_method = "knn" if "kl_knn_k" in coverage_cfg else "hist"
+    kl_enabled = kl_method not in ("none", "off", "false")
 
     output_cfg = config.get("output", {})
     output_file = output_cfg.get("results_file", "coverage_faiss_results.csv")
@@ -579,6 +684,44 @@ def main() -> None:
                 else float("nan")
             )
 
+            kl_eval_to_train = float("nan")
+            kl_train_to_eval = float("nan")
+            if kl_enabled:
+                if kl_method == "knn":
+                    kl_eval_to_train = _knn_kl_divergence(
+                        eval_vecs,
+                        train_vecs,
+                        eval_idx,
+                        train_idx,
+                        metric,
+                        kl_knn_k,
+                        max(kl_eps, 1e-12),
+                    )
+                    kl_train_to_eval = _knn_kl_divergence(
+                        train_vecs,
+                        eval_vecs,
+                        train_idx,
+                        eval_idx,
+                        metric,
+                        kl_knn_k,
+                        max(kl_eps, 1e-12),
+                    )
+                elif kl_method == "hist" and kl_bins >= 2:
+                    kl_eval_to_train = _kl_divergence_from_samples(
+                        dist_eval_to_train,
+                        dist_train_to_eval,
+                        kl_bins,
+                        max(kl_eps, 1e-12),
+                    )
+                    kl_train_to_eval = _kl_divergence_from_samples(
+                        dist_train_to_eval,
+                        dist_eval_to_train,
+                        kl_bins,
+                        max(kl_eps, 1e-12),
+                    )
+                else:
+                    raise ValueError(f"Unsupported kl_method: {kl_method}")
+
             result = {
                 "dataset1": train_label,
                 "split1": train_split,
@@ -602,6 +745,12 @@ def main() -> None:
                 "mean_nn_train_to_eval": float(np.mean(dist_train_to_eval)) if dist_train_to_eval.size else float("nan"),
                 "median_nn_train_to_eval": float(np.median(dist_train_to_eval)) if dist_train_to_eval.size else float("nan"),
                 "p90_nn_train_to_eval": float(np.quantile(dist_train_to_eval, 0.9)) if dist_train_to_eval.size else float("nan"),
+                "kl_method": kl_method,
+                "kl_knn_k": int(kl_knn_k),
+                "kl_bins": int(kl_bins),
+                "kl_eps": float(kl_eps),
+                "kl_eval_to_train": kl_eval_to_train,
+                "kl_train_to_eval": kl_train_to_eval,
                 "n_train_vectors": int(train_vecs.shape[0]),
                 "n_eval_vectors": int(eval_vecs.shape[0]),
             }
