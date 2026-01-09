@@ -141,7 +141,7 @@ class ImageNet2DWarpDataset(Dataset):
                         f"ImageNet2DWarpDataset: Loaded HF dataset {self.hf_dataset_name} "
                         f"({hf_split_name}) with {self.hf_dataset_len} images"
                     )
-            except NotImplementedError:
+            except (NotImplementedError, ConnectionError):
                 self.hf_dataset = self._load_hf_from_cache(hf_split_name, hf_cache_dir, hf_max_samples)
                 self.hf_dataset_len = len(self.hf_dataset)
                 print(
