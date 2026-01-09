@@ -57,6 +57,19 @@ dataset_overrides:
     processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
     normalize_images: false
     device: cuda
+  imagenet2dwarp:
+    datapath: hf://ILSVRC/imagenet-1k
+    hf_streaming: false
+    hf_max_samples: 5000
+    hf_cache_dir: /home/spencer/.cache/huggingface/datasets
+    normalize_images: true
+    rotation_range: [-30.0, 30.0]
+    scale_range: [0.5, 2.5]
+    translation_range: [-0.1, 0.1]
+    shear_range: [-0.2, 0.2]
+    cache_warp_params: true
+    cache_dir: ./cache/imagenet2dwarp
+    seed: 42
   pointodyssey:
     dataset_location: /home/spencer/Data/PointOdyssey
     normalize_images: true
@@ -79,6 +92,41 @@ dataset_overrides:
     datapath: /home/spencer/Data/middlebury/all
     normalize_images: true
 datasets:
+- name: imagenet2dwarp
+  split: train
+  representation: flow
+  num_batches: 100
+  is_eval: false
+- name: spair_2d_warp_70_30
+  split: train
+  num_batches: 5
+  mixed: true
+  datasets:
+  - spair
+  - imagenet2dwarp
+  percentages:
+  - 0.7
+  - 0.3
+- name: spair_2d_warp_50_50
+  split: train
+  num_batches: 5
+  mixed: true
+  datasets:
+  - spair
+  - imagenet2dwarp
+  percentages:
+  - 0.5
+  - 0.5
+- name: spair_2d_warp_30_70
+  split: train
+  num_batches: 5
+  mixed: true
+  datasets:
+  - spair
+  - imagenet2dwarp
+  percentages:
+  - 0.3
+  - 0.7
 - name: synthetic
   split: train
   representation: flow

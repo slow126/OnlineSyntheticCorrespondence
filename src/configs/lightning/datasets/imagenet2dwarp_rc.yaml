@@ -11,7 +11,10 @@ dataset:
   verbose: false
   debug: false
   normalize_images: true  # Use ImageNet normalization for ImageNet images
-  datapath: '/home/slow1/Data/imagenet100'
+  datapath: 'hf://ILSVRC/imagenet-1k'
+  hf_streaming: false
+  hf_cache_dir: '/home/spencer/.cache/huggingface/datasets'
+  # hf_max_samples: null
 
   # Warp parameters (defaults shown for clarity)
   rotation_range: [-30.0, 30.0]

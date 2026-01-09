@@ -7,6 +7,11 @@ to generate correspondence pairs. Uses bilinear interpolation for warping.
 
 from pathlib import Path
 from typing import Union, Optional, Dict, Tuple
+import itertools
+import importlib.util
+import site
+import sys
+from importlib.machinery import PathFinder
 import random
 import pickle
 
@@ -44,6 +49,11 @@ class ImageNet2DWarpDataset(Dataset):
         cache_warp_params: bool = True,
         cache_dir: Optional[Union[str, Path]] = None,
         seed: Optional[int] = None,
+        hf_dataset: Optional[str] = None,
+        hf_split: Optional[str] = None,
+        hf_cache_dir: Optional[Union[str, Path]] = None,
+        hf_streaming: bool = False,
+        hf_max_samples: Optional[int] = None,
     ):
         """
         Initialize ImageNet 2D Warp dataset.
@@ -59,7 +69,19 @@ class ImageNet2DWarpDataset(Dataset):
             cache_dir: Directory to cache warp parameters (default: root/cache)
             seed: Random seed for reproducibility
         """
-        self.root = Path(root)
+        self.hf_dataset_name = None
+        self.hf_dataset = None
+        self.hf_samples = None
+        self.hf_dataset_len = None
+        root_str = str(root)
+        if hf_dataset:
+            self.hf_dataset_name = hf_dataset
+        elif root_str.startswith("hf://"):
+            self.hf_dataset_name = root_str[len("hf://"):]
+        elif root_str.startswith("hf:"):
+            self.hf_dataset_name = root_str[len("hf:"):]
+
+        self.root = None if self.hf_dataset_name else Path(root)
         self.split = split
         self.rotation_range = rotation_range
         self.scale_range = scale_range
@@ -75,28 +97,72 @@ class ImageNet2DWarpDataset(Dataset):
         
         # Cache directory
         if cache_dir is None:
-            cache_dir = self.root / "cache"
+            if self.hf_dataset_name:
+                cache_dir = Path("./cache/imagenet2dwarp")
+            else:
+                cache_dir = self.root / "cache"
         self.cache_dir = Path(cache_dir)
         if self.cache_warp_params:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Load image paths
-        split_dir = self.root / split
-        if not split_dir.exists():
-            raise ValueError(f"Split directory not found: {split_dir}")
-        
+
+        # Load image paths or HF dataset
         self.image_paths = []
-        for class_dir in sorted(split_dir.iterdir()):
-            if not class_dir.is_dir():
-                continue
-            # Find all images in this class
-            for ext in ['*.JPEG', '*.jpg', '*.png']:
-                self.image_paths.extend(class_dir.glob(ext))
-        
-        if len(self.image_paths) == 0:
-            raise ValueError(f"No images found in {split_dir}")
-        
-        print(f"ImageNet2DWarpDataset: Found {len(self.image_paths)} images in {split} split")
+        if self.hf_dataset_name:
+            datasets_module = self._import_hf_datasets()
+            load_dataset = datasets_module.load_dataset
+            hf_split_name = hf_split or ("validation" if split in ("val", "validation") else split)
+            streaming = bool(hf_streaming)
+            try:
+                self.hf_dataset = load_dataset(
+                    self.hf_dataset_name,
+                    split=hf_split_name,
+                    cache_dir=str(hf_cache_dir) if hf_cache_dir else None,
+                    streaming=streaming,
+                )
+                if streaming:
+                    if hf_max_samples is None:
+                        raise ValueError(
+                            "HF streaming requires hf_max_samples to materialize examples "
+                            "for random access."
+                        )
+                    self.hf_samples = list(itertools.islice(self.hf_dataset, int(hf_max_samples)))
+                    self.hf_dataset = None
+                    self.hf_dataset_len = len(self.hf_samples)
+                    print(
+                        f"ImageNet2DWarpDataset: Loaded HF dataset {self.hf_dataset_name} "
+                        f"({hf_split_name}) streaming, cached {self.hf_dataset_len} samples"
+                    )
+                else:
+                    if hf_max_samples is not None:
+                        limit = min(int(hf_max_samples), len(self.hf_dataset))
+                        self.hf_dataset = self.hf_dataset.select(range(limit))
+                    self.hf_dataset_len = len(self.hf_dataset)
+                    print(
+                        f"ImageNet2DWarpDataset: Loaded HF dataset {self.hf_dataset_name} "
+                        f"({hf_split_name}) with {self.hf_dataset_len} images"
+                    )
+            except NotImplementedError:
+                self.hf_dataset = self._load_hf_from_cache(hf_split_name, hf_cache_dir, hf_max_samples)
+                self.hf_dataset_len = len(self.hf_dataset)
+                print(
+                    f"ImageNet2DWarpDataset: Loaded HF dataset {self.hf_dataset_name} "
+                    f"({hf_split_name}) from cached Arrow files with {self.hf_dataset_len} images"
+                )
+        else:
+            split_dir = self.root / split
+            if not split_dir.exists():
+                raise ValueError(f"Split directory not found: {split_dir}")
+
+            for class_dir in sorted(split_dir.iterdir()):
+                if not class_dir.is_dir():
+                    continue
+                for ext in ['*.JPEG', '*.jpg', '*.png']:
+                    self.image_paths.extend(class_dir.glob(ext))
+
+            if len(self.image_paths) == 0:
+                raise ValueError(f"No images found in {split_dir}")
+
+            print(f"ImageNet2DWarpDataset: Found {len(self.image_paths)} images in {split} split")
         
         # Load or create warp parameter cache
         self.warp_params_cache = {}
@@ -143,22 +209,34 @@ class ImageNet2DWarpDataset(Dataset):
         angle_rad = np.deg2rad(params['rotation'])
         
         # Center of image
-        center = torch.tensor([img_w / 2, img_h / 2], device=device)
+        center = torch.tensor([img_w / 2, img_h / 2], device=device, dtype=torch.float32)
         
         # Translation in pixels (from fraction of image size)
-        translation = torch.tensor([
-            params['translation_x'] * img_w,
-            params['translation_y'] * img_h
-        ], device=device)
+        translation = torch.tensor(
+            [
+                params['translation_x'] * img_w,
+                params['translation_y'] * img_h,
+            ],
+            device=device,
+            dtype=torch.float32,
+        )
         
         # Scale
-        scale = torch.tensor([params['scale_x'], params['scale_y']], device=device)
+        scale = torch.tensor(
+            [params['scale_x'], params['scale_y']],
+            device=device,
+            dtype=torch.float32,
+        )
         
         # Rotation angle
-        angle = torch.tensor([angle_rad], device=device)
+        angle = torch.tensor([angle_rad], device=device, dtype=torch.float32)
         
         # Shear
-        shear = torch.tensor([params['shear_x'], params['shear_y']], device=device)
+        shear = torch.tensor(
+            [params['shear_x'], params['shear_y']],
+            device=device,
+            dtype=torch.float32,
+        )
         
         # Create affine matrix using kornia
         affine_matrix = kornia.geometry.get_affine_matrix2d(
@@ -306,14 +384,114 @@ class ImageNet2DWarpDataset(Dataset):
         
         return warped.squeeze(0)  # [3, H, W]
     
-    def _read_image(self, path: Path) -> torch.Tensor:
+    def _read_image(self, source) -> torch.Tensor:
         """Read image and convert to tensor [3, H, W] in [0, 1] range."""
-        img = Image.open(path).convert('RGB')
-        # Convert to tensor: (H, W, C) -> (C, H, W) and normalize to [0, 1]
-        img_tensor = torch.from_numpy(np.array(img)).permute(2, 0, 1).float().contiguous() / 255.0
-        return img_tensor
+        if isinstance(source, (str, Path)):
+            img = Image.open(source).convert('RGB')
+            img_tensor = torch.from_numpy(np.array(img)).permute(2, 0, 1).float() / 255.0
+            return img_tensor.contiguous()
+        if isinstance(source, Image.Image):
+            img = source.convert('RGB')
+            img_tensor = torch.from_numpy(np.array(img)).permute(2, 0, 1).float() / 255.0
+            return img_tensor.contiguous()
+        if isinstance(source, np.ndarray):
+            if source.ndim == 3 and source.shape[-1] in (1, 3):
+                img_tensor = torch.from_numpy(source).permute(2, 0, 1).float()
+                if img_tensor.max() > 1.0:
+                    img_tensor = img_tensor / 255.0
+                return img_tensor.contiguous()
+            raise ValueError(f"Unsupported numpy image shape: {source.shape}")
+        if isinstance(source, torch.Tensor):
+            img_tensor = source.float()
+            if img_tensor.ndim == 3 and img_tensor.shape[-1] in (1, 3):
+                img_tensor = img_tensor.permute(2, 0, 1)
+            if img_tensor.max() > 1.0:
+                img_tensor = img_tensor / 255.0
+            return img_tensor.contiguous()
+        raise ValueError(f"Unsupported image type: {type(source).__name__}")
+
+    def _import_hf_datasets(self):
+        try:
+            import datasets as ds  # type: ignore
+            if hasattr(ds, "load_dataset"):
+                return ds
+        except Exception:
+            ds = None
+
+        if "datasets" in sys.modules:
+            mod = sys.modules.get("datasets")
+            if mod is not None and not hasattr(mod, "load_dataset"):
+                del sys.modules["datasets"]
+
+        search_paths = []
+        try:
+            search_paths.extend(site.getsitepackages())
+        except Exception:
+            pass
+        try:
+            user_site = site.getusersitepackages()
+            if user_site:
+                search_paths.append(user_site)
+        except Exception:
+            pass
+
+        for base in search_paths:
+            if not base:
+                continue
+            spec = PathFinder.find_spec("datasets", [base])
+            if spec is None or spec.loader is None:
+                continue
+            module = importlib.util.module_from_spec(spec)
+            sys.modules["datasets"] = module
+            spec.loader.exec_module(module)
+            if hasattr(module, "load_dataset"):
+                return module
+
+        raise ImportError(
+            "Hugging Face datasets is required for hf:// sources. "
+            "Install with: pip install datasets"
+        )
+
+    def _resolve_hf_cache_root(self, hf_cache_dir: Optional[Union[str, Path]]) -> Path:
+        if hf_cache_dir:
+            base = Path(hf_cache_dir).expanduser()
+        else:
+            try:
+                from datasets import config as ds_config  # type: ignore
+                base = Path(ds_config.HF_DATASETS_CACHE)
+            except Exception:
+                base = Path.home() / ".cache" / "huggingface" / "datasets"
+        dataset_dir = self.hf_dataset_name.replace("/", "___")
+        if base.name != dataset_dir and (base / dataset_dir).exists():
+            return base / dataset_dir
+        return base
+
+    def _load_hf_from_cache(
+        self,
+        split_name: str,
+        hf_cache_dir: Optional[Union[str, Path]],
+        hf_max_samples: Optional[int],
+    ):
+        from datasets import Dataset, concatenate_datasets  # type: ignore
+        cache_root = self._resolve_hf_cache_root(hf_cache_dir)
+        if not cache_root.exists():
+            raise ValueError(f"HF cache directory not found: {cache_root}")
+        split_token = "validation" if split_name in ("val", "validation") else split_name
+        arrow_files = sorted(cache_root.rglob(f"*{split_token}*.arrow"))
+        if not arrow_files:
+            raise ValueError(
+                f"No cached Arrow files found for split '{split_token}' under {cache_root}"
+            )
+        datasets = [Dataset.from_file(str(path)) for path in arrow_files]
+        dataset = concatenate_datasets(datasets) if len(datasets) > 1 else datasets[0]
+        if hf_max_samples is not None:
+            limit = min(int(hf_max_samples), len(dataset))
+            dataset = dataset.select(range(limit))
+        return dataset
     
     def __len__(self):
+        if self.hf_dataset_len is not None:
+            return self.hf_dataset_len
         return len(self.image_paths)
     
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
@@ -328,11 +506,21 @@ class ImageNet2DWarpDataset(Dataset):
                     Flow convention: flow from trg to src
                     Invalid pixels marked with float('inf')
         """
-        # Get image path
-        img_path = self.image_paths[idx]
-        
-        # Load source image
-        src_img = self._read_image(img_path)
+        if self.hf_samples is not None:
+            item = self.hf_samples[idx]
+            img_item = item.get("image") or item.get("img") or item.get("pixel_values")
+            if img_item is None:
+                raise ValueError("HF dataset sample missing image field")
+            src_img = self._read_image(img_item)
+        elif self.hf_dataset is not None:
+            item = self.hf_dataset[idx]
+            img_item = item.get("image") or item.get("img") or item.get("pixel_values")
+            if img_item is None:
+                raise ValueError("HF dataset sample missing image field")
+            src_img = self._read_image(img_item)
+        else:
+            img_path = self.image_paths[idx]
+            src_img = self._read_image(img_path)
         _, img_h, img_w = src_img.shape
         
         # Get or generate warp parameters
@@ -368,4 +556,3 @@ class ImageNet2DWarpDataset(Dataset):
             print(f"Saving {len(self.warp_params_cache)} warp parameters to {cache_file}")
             with open(cache_file, 'wb') as f:
                 pickle.dump(self.warp_params_cache, f)
-

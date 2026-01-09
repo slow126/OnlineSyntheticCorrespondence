@@ -27,7 +27,10 @@ dataset:
       datapath: './models/Datasets_CATs'
       normalize_images: false  # SPair is already normalized
     imagenet2dwarp:
-      datapath: '/home/slow1/Data/imagenet100'
+      datapath: 'hf://ILSVRC/imagenet-1k'
+      hf_streaming: false
+      hf_cache_dir: '/home/spencer/.cache/huggingface/datasets'
+      # hf_max_samples: null
       normalize_images: true
       rotation_range: [-30.0, 30.0]
       scale_range: [0.5, 2.5]

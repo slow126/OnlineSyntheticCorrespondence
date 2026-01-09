@@ -311,7 +311,7 @@ class ImageNet2DWarpAdapter(BaseAdapter):
         Initialize ImageNet 2D Warp adapter.
         
         Args:
-            datapath: Root directory of ImageNet100 dataset
+            datapath: Root directory of ImageNet100 dataset or hf:// dataset name.
             split: 'train' or 'val'
             reverse_flow: If True, reverse flow direction (not typically needed)
             **kwargs: Additional arguments passed to ImageNet2DWarpDataset:
@@ -322,6 +322,9 @@ class ImageNet2DWarpAdapter(BaseAdapter):
                 - cache_warp_params: If True, cache warp parameters (default: True)
                 - cache_dir: Directory to cache warp parameters
                 - seed: Random seed for reproducibility
+                - hf_dataset: Hugging Face dataset name (overrides datapath)
+                - hf_split: Override HF split (default: train/validation)
+                - hf_cache_dir: Hugging Face cache directory
         """
         self.dataset = ImageNet2DWarpDataset(
             root=datapath,
@@ -333,6 +336,11 @@ class ImageNet2DWarpAdapter(BaseAdapter):
             cache_warp_params=kwargs.get("cache_warp_params", True),
             cache_dir=kwargs.get("cache_dir", None),
             seed=kwargs.get("seed", None),
+            hf_dataset=kwargs.get("hf_dataset", None),
+            hf_split=kwargs.get("hf_split", None),
+            hf_cache_dir=kwargs.get("hf_cache_dir", None),
+            hf_streaming=kwargs.get("hf_streaming", False),
+            hf_max_samples=kwargs.get("hf_max_samples", None),
         )
         self.reverse_flow = reverse_flow
 
