@@ -9,7 +9,7 @@ for the existing leakage-free analysis (recall/precision/outside columns).
 import argparse
 import sys
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 import numpy as np
 import torch
@@ -199,6 +199,25 @@ def _l2_normalize(vectors: np.ndarray) -> np.ndarray:
     return vectors / norms
 
 
+def _filter_vectors(
+    vectors: Optional[np.ndarray],
+    drop_zero: bool,
+    min_norm: float = 0.0,
+) -> tuple[Optional[np.ndarray], int, int]:
+    if vectors is None or vectors.size == 0:
+        return vectors, 0, 0
+    finite_mask = np.all(np.isfinite(vectors), axis=1)
+    dropped_non_finite = int(vectors.shape[0] - finite_mask.sum())
+    vectors = vectors[finite_mask]
+    dropped_zero = 0
+    if drop_zero and vectors.size:
+        norms = np.linalg.norm(vectors, axis=1)
+        zero_mask = norms > float(min_norm)
+        dropped_zero = int(vectors.shape[0] - zero_mask.sum())
+        vectors = vectors[zero_mask]
+    return vectors, dropped_non_finite, dropped_zero
+
+
 def _build_index(
     vectors: np.ndarray,
     index_factory: str,
@@ -287,6 +306,57 @@ def _kl_divergence_from_samples(
     p = p / p.sum()
     q = q / q.sum()
     return float(np.sum(p * np.log(p / q)))
+
+
+def _kl_divergence_from_samples_linear(
+    p_samples: np.ndarray,
+    q_samples: np.ndarray,
+    bins: int,
+    eps: float,
+) -> float:
+    p_samples = p_samples[np.isfinite(p_samples)]
+    q_samples = q_samples[np.isfinite(q_samples)]
+    if p_samples.size == 0 or q_samples.size == 0:
+        return float("nan")
+    if bins < 2:
+        return float("nan")
+    combined = np.concatenate([p_samples, q_samples], axis=0)
+    combined = combined[np.isfinite(combined)]
+    if combined.size == 0:
+        return float("nan")
+    lo = float(np.min(combined))
+    hi = float(np.max(combined))
+    if hi <= lo:
+        return 0.0
+    edges = np.linspace(lo, hi, bins + 1)
+    p_counts, _ = np.histogram(p_samples, bins=edges)
+    q_counts, _ = np.histogram(q_samples, bins=edges)
+    p = p_counts.astype(np.float64) + eps
+    q = q_counts.astype(np.float64) + eps
+    p = p / p.sum()
+    q = q / q.sum()
+    return float(np.sum(p * np.log(p / q)))
+
+
+def _log1p_samples(samples: np.ndarray) -> np.ndarray:
+    return np.log1p(np.maximum(samples, 0.0))
+
+
+def _rank_percentiles(
+    p_samples: np.ndarray,
+    q_samples: np.ndarray,
+) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+    p = p_samples[np.isfinite(p_samples)]
+    q = q_samples[np.isfinite(q_samples)]
+    if p.size == 0 or q.size == 0:
+        return None, None
+    combined = np.concatenate([p, q], axis=0)
+    order = np.argsort(combined, kind="mergesort")
+    ranks = np.empty_like(order, dtype=np.float64)
+    ranks[order] = np.arange(order.size, dtype=np.float64)
+    denom = max(order.size - 1, 1)
+    percentiles = ranks / float(denom)
+    return percentiles[: p.size], percentiles[p.size :]
 
 
 def _convert_search_distances(dists: np.ndarray, metric: str) -> np.ndarray:
@@ -468,6 +538,20 @@ def _sample_dataset_vectors(
         if vectors is None or vectors.size == 0:
             continue
 
+        vectors, dropped_non_finite, dropped_zero = _filter_vectors(
+            vectors,
+            drop_zero=(representation == "flow"),
+            min_norm=0.0,
+        )
+        if dropped_non_finite or dropped_zero:
+            print(
+                f"    [{label}] filtered vectors:"
+                f" non-finite={dropped_non_finite},"
+                f" zero-norm={dropped_zero}"
+            )
+        if vectors is None or vectors.size == 0:
+            continue
+
         vectors = _subsample_dense(
             vectors,
             dense_threshold,
@@ -577,6 +661,7 @@ def main() -> None:
     if not kl_method:
         kl_method = "knn" if "kl_knn_k" in coverage_cfg else "hist"
     kl_enabled = kl_method not in ("none", "off", "false")
+    extra_kl_variants = bool(coverage_cfg.get("extra_kl_variants", True))
 
     output_cfg = config.get("output", {})
     output_file = output_cfg.get("results_file", "coverage_faiss_results.csv")
@@ -722,6 +807,95 @@ def main() -> None:
                 else:
                     raise ValueError(f"Unsupported kl_method: {kl_method}")
 
+            extra_kl = {}
+            if extra_kl_variants:
+                eps = max(kl_eps, 1e-12)
+                extra_kl["kl_eval_to_train_hist"] = _kl_divergence_from_samples(
+                    dist_eval_to_train,
+                    dist_train_to_eval,
+                    kl_bins,
+                    eps,
+                )
+                extra_kl["kl_train_to_eval_hist"] = _kl_divergence_from_samples(
+                    dist_train_to_eval,
+                    dist_eval_to_train,
+                    kl_bins,
+                    eps,
+                )
+
+                extra_kl["kl_eval_to_train_hist_log1p_linear"] = _kl_divergence_from_samples_linear(
+                    _log1p_samples(dist_eval_to_train),
+                    _log1p_samples(dist_train_to_eval),
+                    kl_bins,
+                    eps,
+                )
+                extra_kl["kl_train_to_eval_hist_log1p_linear"] = _kl_divergence_from_samples_linear(
+                    _log1p_samples(dist_train_to_eval),
+                    _log1p_samples(dist_eval_to_train),
+                    kl_bins,
+                    eps,
+                )
+
+                if np.isfinite(radius_train) and radius_train > 0 and np.isfinite(radius_eval) and radius_eval > 0:
+                    dist_eval_norm = dist_eval_to_train / float(radius_train)
+                    dist_train_norm = dist_train_to_eval / float(radius_eval)
+                    extra_kl["kl_eval_to_train_hist_radius"] = _kl_divergence_from_samples(
+                        dist_eval_norm,
+                        dist_train_norm,
+                        kl_bins,
+                        eps,
+                    )
+                    extra_kl["kl_train_to_eval_hist_radius"] = _kl_divergence_from_samples(
+                        dist_train_norm,
+                        dist_eval_norm,
+                        kl_bins,
+                        eps,
+                    )
+                else:
+                    extra_kl["kl_eval_to_train_hist_radius"] = float("nan")
+                    extra_kl["kl_train_to_eval_hist_radius"] = float("nan")
+
+                med_eval = float(np.median(dist_eval_to_train)) if dist_eval_to_train.size else float("nan")
+                med_train = float(np.median(dist_train_to_eval)) if dist_train_to_eval.size else float("nan")
+                if np.isfinite(med_eval) and med_eval > 0 and np.isfinite(med_train) and med_train > 0:
+                    dist_eval_med = dist_eval_to_train / med_eval
+                    dist_train_med = dist_train_to_eval / med_train
+                    extra_kl["kl_eval_to_train_hist_median"] = _kl_divergence_from_samples(
+                        dist_eval_med,
+                        dist_train_med,
+                        kl_bins,
+                        eps,
+                    )
+                    extra_kl["kl_train_to_eval_hist_median"] = _kl_divergence_from_samples(
+                        dist_train_med,
+                        dist_eval_med,
+                        kl_bins,
+                        eps,
+                    )
+                else:
+                    extra_kl["kl_eval_to_train_hist_median"] = float("nan")
+                    extra_kl["kl_train_to_eval_hist_median"] = float("nan")
+
+                rank_eval, rank_train = _rank_percentiles(
+                    dist_eval_to_train, dist_train_to_eval
+                )
+                if rank_eval is not None and rank_train is not None:
+                    extra_kl["kl_eval_to_train_hist_rank"] = _kl_divergence_from_samples_linear(
+                        rank_eval,
+                        rank_train,
+                        kl_bins,
+                        eps,
+                    )
+                    extra_kl["kl_train_to_eval_hist_rank"] = _kl_divergence_from_samples_linear(
+                        rank_train,
+                        rank_eval,
+                        kl_bins,
+                        eps,
+                    )
+                else:
+                    extra_kl["kl_eval_to_train_hist_rank"] = float("nan")
+                    extra_kl["kl_train_to_eval_hist_rank"] = float("nan")
+
             result = {
                 "dataset1": train_label,
                 "split1": train_split,
@@ -754,6 +928,8 @@ def main() -> None:
                 "n_train_vectors": int(train_vecs.shape[0]),
                 "n_eval_vectors": int(eval_vecs.shape[0]),
             }
+            if extra_kl:
+                result.update(extra_kl)
             results.append(result)
             print(
                 f"[{train_label} -> {eval_info['label']}] "

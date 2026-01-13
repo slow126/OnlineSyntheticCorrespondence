@@ -19,6 +19,7 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -26,7 +27,6 @@ sys.path.insert(0, str(project_root))
 
 from train_lightning import create_model, load_config
 from train_cats_unified import create_validation_datasets
-from src.data.base import CorrespondenceDataset
 
 
 def calculate_total_variation(flow: torch.Tensor) -> float:
@@ -188,9 +188,9 @@ def run_inference_on_benchmark(
     dataloader: DataLoader,
     device: torch.device,
     benchmark_name: str
-) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
+) -> List[Dict[str, float]]:
     """
-    Run inference on a benchmark dataset and collect flow predictions.
+    Run inference on a benchmark dataset and compute smoothness metrics.
     
     Args:
         model: Model to run inference with
@@ -199,18 +199,17 @@ def run_inference_on_benchmark(
         benchmark_name: Name of benchmark (for logging)
         
     Returns:
-        Tuple of (predicted_flows, ground_truth_flows) lists
+        List of smoothness metrics per sample
     """
     model = model.to(device)
     model.eval()
     
-    pred_flows = []
-    gt_flows = []
+    smoothness_metrics = []
     
-    print(f"Running inference on {benchmark_name} ({len(dataloader)} batches)...")
+    print(f"\nRunning inference on {benchmark_name}...", flush=True)
     
     with torch.no_grad():
-        for batch_idx, batch in enumerate(dataloader):
+        for batch_idx, batch in enumerate(tqdm(dataloader, desc=f"  {benchmark_name}", unit="batch", file=sys.stdout)):
             # Get source and target images
             src_key = 'src_img' if 'src_img' in batch else 'src'
             trg_key = 'trg_img' if 'trg_img' in batch else 'trg'
@@ -249,6 +248,16 @@ def run_inference_on_benchmark(
             elif hasattr(model, 'hpn_learner'):  # CATs model
                 # CATs expects (trg_img, src_img) order
                 pred_flow = model(trg, src)
+                # CATs models return dict or tensor - handle both
+                if isinstance(pred_flow, dict):
+                    # Try to get the finest resolution prediction
+                    if 'flow' in pred_flow:
+                        pred_flow = pred_flow['flow']
+                    elif 'full' in pred_flow:
+                        pred_flow = pred_flow['full']
+                    else:
+                        # Take the last/finest prediction
+                        pred_flow = list(pred_flow.values())[-1]
             elif hasattr(model, 'raft'):  # RAFT wrapper
                 # RAFT wrapper handles its own normalization
                 pred_flow = model(trg, src)
@@ -262,9 +271,28 @@ def run_inference_on_benchmark(
                 if isinstance(pred_flow, (list, tuple)):
                     pred_flow = pred_flow[-1]  # Take last prediction
             
+            # Always ensure prediction matches source image resolution
+            if pred_flow.shape[-2:] != src.shape[-2:]:
+                pred_flow = F.interpolate(
+                    pred_flow,
+                    size=src.shape[-2:],
+                    mode='bilinear',
+                    align_corners=False
+                )
+            
             # Get ground truth flow if available
             if flow_key in batch:
                 gt_flow = batch[flow_key].to(device)
+                
+                # Resize prediction to match ground truth if needed
+                if pred_flow.shape[-2:] != gt_flow.shape[-2:]:
+                    pred_flow = F.interpolate(
+                        pred_flow,
+                        size=gt_flow.shape[-2:],
+                        mode='bilinear',
+                        align_corners=False
+                    )
+                
                 # Handle invalid flow (inf values)
                 if torch.isinf(gt_flow).any():
                     # Create mask for valid pixels
@@ -275,52 +303,61 @@ def run_inference_on_benchmark(
             else:
                 gt_flow = None
             
-            # Store predictions
-            pred_flows.append(pred_flow.cpu())
-            if gt_flow is not None:
-                gt_flows.append(gt_flow.cpu())
+            # Compute smoothness immediately (streaming - avoid memory accumulation)
+            # Move to CPU and process each sample in batch
+            pred_flow_cpu = pred_flow.cpu()
+            B = pred_flow_cpu.shape[0]
             
-            if (batch_idx + 1) % 10 == 0:
-                print(f"  Processed {batch_idx + 1}/{len(dataloader)} batches")
+            for b in range(B):
+                flow = pred_flow_cpu[b]  # (2, H, W)
+                
+                # Skip if flow is all zeros or invalid
+                if flow.abs().max() < 1e-6:
+                    continue
+                
+                # Compute smoothness for this flow
+                tv = calculate_total_variation(flow)
+                laplacian = calculate_laplacian_smoothness(flow)
+                
+                smoothness_metrics.append({'tv': tv, 'laplacian': laplacian})
+            
+            # Free memory immediately
+            del pred_flow_cpu, pred_flow
+            if gt_flow is not None:
+                del gt_flow
     
-    print(f"  Completed inference on {benchmark_name}")
-    return pred_flows, gt_flows
+    print(f"  ✓ Completed {len(smoothness_metrics)} predictions on {benchmark_name}", flush=True)
+    return smoothness_metrics
 
 
-def calculate_smoothness_metrics(flows: List[torch.Tensor]) -> Dict[str, float]:
+def calculate_smoothness_metrics(flow_metrics: List[Dict[str, float]]) -> Dict[str, float]:
     """
-    Calculate smoothness metrics for a list of flow tensors.
+    Calculate statistics from pre-computed smoothness metrics.
     
     Args:
-        flows: List of flow tensors, each of shape (B, 2, H, W)
+        flow_metrics: List of dicts with 'tv' and 'laplacian' keys
         
     Returns:
         Dictionary with mean TV and Laplacian smoothness
     """
-    all_tv = []
-    all_laplacian = []
+    if len(flow_metrics) == 0:
+        return {
+            'mean_tv': 0.0,
+            'std_tv': 0.0,
+            'mean_laplacian': 0.0,
+            'std_laplacian': 0.0,
+            'num_samples': 0
+        }
     
-    for flow_batch in flows:
-        # Process each sample in batch
-        B = flow_batch.shape[0]
-        for b in range(B):
-            flow = flow_batch[b]  # (2, H, W)
-            
-            # Skip if flow is all zeros or invalid
-            if flow.abs().max() < 1e-6:
-                continue
-            
-            tv = calculate_total_variation(flow)
-            laplacian = calculate_laplacian_smoothness(flow)
-            
-            all_tv.append(tv)
-            all_laplacian.append(laplacian)
+    # Extract values
+    all_tv = [m['tv'] for m in flow_metrics]
+    all_laplacian = [m['laplacian'] for m in flow_metrics]
     
     return {
-        'mean_tv': np.mean(all_tv) if all_tv else 0.0,
-        'std_tv': np.std(all_tv) if all_tv else 0.0,
-        'mean_laplacian': np.mean(all_laplacian) if all_laplacian else 0.0,
-        'std_laplacian': np.std(all_laplacian) if all_laplacian else 0.0,
+        'mean_tv': np.mean(all_tv),
+        'std_tv': np.std(all_tv),
+        'mean_laplacian': np.mean(all_laplacian),
+        'std_laplacian': np.std(all_laplacian),
         'num_samples': len(all_tv)
     }
 
@@ -376,33 +413,34 @@ def main():
     
     args = parser.parse_args()
     
-    # Parse checkpoint paths
-    checkpoint_paths = []
+    # Parse snapshot directories
+    snapshot_dirs = []
     if len(args.checkpoints) == 1 and args.checkpoints[0].endswith('.csv'):
         # Load from CSV
         df = pd.read_csv(args.checkpoints[0])
-        if 'checkpoint_path' in df.columns:
-            checkpoint_paths = df['checkpoint_path'].dropna().tolist()
+        if 'snapshot_dir' in df.columns:
+            snapshot_dirs = df['snapshot_dir'].dropna().unique().tolist()
         else:
-            raise ValueError("CSV must have 'checkpoint_path' column")
+            raise ValueError("CSV must have 'snapshot_dir' column")
     else:
-        checkpoint_paths = args.checkpoints
+        # Assume args are checkpoint paths, extract parent directories
+        snapshot_dirs = list(set([str(Path(p).parent) for p in args.checkpoints]))
     
-    # Filter out non-existent paths
-    valid_paths = [p for p in checkpoint_paths if Path(p).exists()]
-    if len(valid_paths) < len(checkpoint_paths):
-        print(f"Warning: {len(checkpoint_paths) - len(valid_paths)} checkpoint paths not found")
+    # Filter out non-existent directories
+    valid_snapshot_dirs = [d for d in snapshot_dirs if Path(d).exists()]
+    if len(valid_snapshot_dirs) < len(snapshot_dirs):
+        print(f"Warning: {len(snapshot_dirs) - len(valid_snapshot_dirs)} snapshot directories not found")
     
-    if not valid_paths:
-        raise ValueError("No valid checkpoint paths found")
+    if not valid_snapshot_dirs:
+        raise ValueError("No valid snapshot directories found")
     
-    print(f"Found {len(valid_paths)} checkpoint(s) to evaluate")
+    print(f"\nFound {len(valid_snapshot_dirs)} snapshot(s) to evaluate", flush=True)
     
     # Create base config for dataloaders
-    # Try to load config from first checkpoint directory
-    base_config_path = Path(valid_paths[0]).parent / "config.yaml"
+    # Try to load config from first snapshot directory
+    base_config_path = Path(valid_snapshot_dirs[0]) / "config.yaml"
     if not base_config_path.exists():
-        base_config_path = Path(valid_paths[0]).parent.parent / "config.yaml"
+        base_config_path = Path(valid_snapshot_dirs[0]).parent / "config.yaml"
     
     if base_config_path.exists():
         base_config = load_config(str(base_config_path))
@@ -430,63 +468,89 @@ def main():
             }
         }
     
-    # Override benchmarks in config
+    # Override evaluation settings from command-line args
     base_config['evaluation']['eval_benchmarks'] = args.benchmarks
+    base_config['evaluation']['val_batch_size'] = args.batch_size
+    base_config['evaluation']['val_num_workers'] = args.num_workers
+    
+    # Override dataset paths to use local paths (in case config has remote paths)
+    base_config['evaluation']['kitti_root'] = '/home/spencer/Data/correspondence/kitti'
+    base_config['evaluation']['middlebury_root'] = '/home/spencer/Data/middlebury/all'
+    base_config['evaluation']['datapath'] = './models/Datasets_CATs'
     
     # Create validation dataloaders
     device = torch.device(args.device)
-    print(f"Creating validation dataloaders for benchmarks: {args.benchmarks}")
+    print(f"Creating validation dataloaders for benchmarks: {args.benchmarks}", flush=True)
     val_datasets, val_dataloaders = create_validation_datasets(base_config, device=device)
+    print(f"✓ Dataloaders created\n", flush=True)
     
     # Results storage
     all_results = []
     
-    # Process each checkpoint
-    for checkpoint_path in valid_paths:
-        print(f"\n{'='*60}")
-        print(f"Processing checkpoint: {checkpoint_path}")
-        print(f"{'='*60}")
+    # Process each snapshot
+    print(f"\n{'='*80}", flush=True)
+    print(f"Processing {len(valid_snapshot_dirs)} snapshot(s) x {len(args.benchmarks)} benchmark(s)", flush=True)
+    print(f"{'='*80}\n", flush=True)
+    
+    for idx, checkpoint_path in enumerate(valid_snapshot_dirs, 1):
+        snapshot_dir = Path(checkpoint_path)
+        print(f"\n[{idx}/{len(valid_snapshot_dirs)}] Processing: {snapshot_dir.name}", flush=True)
+        print(f"-" * 80, flush=True)
         
-        try:
-            # Load model
-            model = load_model_from_checkpoint(checkpoint_path, args.config)
-            model = model.to(device)
-            
-            # Extract checkpoint info
-            checkpoint_dir = Path(checkpoint_path).parent
-            checkpoint_name = checkpoint_dir.name
-            
-            # Try to get training dataset info from config or directory name
-            train_dataset = "unknown"
-            if base_config_path.exists():
-                dataset_cfg = base_config.get('dataset', {})
+        # Try to get training dataset info from config
+        train_dataset = "unknown"
+        config_path = snapshot_dir / 'config.yaml'
+        if config_path.exists():
+            try:
+                snapshot_config = load_config(str(config_path))
+                dataset_cfg = snapshot_config.get('dataset', {})
                 if dataset_cfg.get('mixed', False) or 'datasets' in dataset_cfg:
                     datasets_list = dataset_cfg.get('datasets', [])
                     train_dataset = '+'.join(datasets_list) if datasets_list else 'mixed'
                 else:
                     train_dataset = dataset_cfg.get('dataset_name', 'unknown')
+            except:
+                pass
+        
+        # Evaluate on each benchmark with benchmark-specific checkpoints
+        for benchmark in args.benchmarks:
+            if benchmark not in val_dataloaders:
+                print(f"  Warning: Benchmark '{benchmark}' not available, skipping", flush=True)
+                continue
             
-            # Evaluate on each benchmark
-            for benchmark in args.benchmarks:
-                if benchmark not in val_dataloaders:
-                    print(f"Warning: Benchmark '{benchmark}' not available, skipping")
+            print(f"\n  Benchmark: {benchmark}", flush=True)
+            
+            try:
+                # Find benchmark-specific checkpoint
+                from scripts.run_smoothness_comparison import find_best_checkpoint
+                benchmark_checkpoint = find_best_checkpoint(snapshot_dir, benchmark)
+                
+                if benchmark_checkpoint is None:
+                    print(f"    ✗ No valid checkpoint found for {benchmark}", flush=True)
                     continue
+                
+                benchmark_checkpoint = Path(benchmark_checkpoint)
+                
+                # Load model
+                print(f"    Loading model from checkpoint: {benchmark_checkpoint.name}...", flush=True)
+                model = load_model_from_checkpoint(benchmark_checkpoint, args.config)
+                model = model.to(device)
+                print(f"    ✓ Model loaded successfully", flush=True)
                 
                 dataloader = val_dataloaders[benchmark]
                 
                 # Run inference
-                pred_flows, gt_flows = run_inference_on_benchmark(
+                smoothness_metrics = run_inference_on_benchmark(
                     model, dataloader, device, benchmark
                 )
                 
-                # Calculate smoothness metrics
-                print(f"Calculating smoothness metrics for {benchmark}...")
-                metrics = calculate_smoothness_metrics(pred_flows)
+                # Calculate smoothness statistics
+                metrics = calculate_smoothness_metrics(smoothness_metrics)
                 
                 # Store results
                 result = {
-                    'checkpoint_path': str(checkpoint_path),
-                    'checkpoint_name': checkpoint_name,
+                    'checkpoint_path': str(benchmark_checkpoint),
+                    'checkpoint_name': snapshot_dir.name,
                     'train_dataset': train_dataset,
                     'benchmark': benchmark,
                     'mean_tv': metrics['mean_tv'],
@@ -497,14 +561,23 @@ def main():
                 }
                 all_results.append(result)
                 
-                print(f"  {benchmark} - Mean TV: {metrics['mean_tv']:.6f}, "
-                      f"Mean Laplacian: {metrics['mean_laplacian']:.6f}")
-        
-        except Exception as e:
-            print(f"Error processing {checkpoint_path}: {e}")
-            import traceback
-            traceback.print_exc()
-            continue
+                print(f"    ✓ {benchmark}: TV={metrics['mean_tv']:.6f}, Laplacian={metrics['mean_laplacian']:.6f}", flush=True)
+                
+                # Clean up model to free GPU memory
+                del model
+                torch.cuda.empty_cache()
+            
+            except Exception as e:
+                print(f"\n    ✗ Error processing {benchmark} on {snapshot_dir.name}: {e}", flush=True)
+                import traceback
+                traceback.print_exc()
+                # Clean up even on error
+                try:
+                    del model
+                    torch.cuda.empty_cache()
+                except:
+                    pass
+                continue
     
     # Save results
     output_path = Path(args.output)
@@ -512,17 +585,17 @@ def main():
     
     df_results = pd.DataFrame(all_results)
     df_results.to_csv(output_path, index=False)
-    print(f"\n{'='*60}")
-    print(f"Results saved to: {output_path}")
-    print(f"Total results: {len(all_results)}")
-    print(f"{'='*60}")
+    print(f"\n{'='*60}", flush=True)
+    print(f"Results saved to: {output_path}", flush=True)
+    print(f"Total results: {len(all_results)}", flush=True)
+    print(f"{'='*60}", flush=True)
     
     # Print summary
     if len(all_results) > 0:
-        print("\nSummary:")
+        print("\nSummary:", flush=True)
         print(df_results.groupby(['train_dataset', 'benchmark'])[
             ['mean_tv', 'mean_laplacian']
-        ].mean())
+        ].mean(), flush=True)
 
 
 if __name__ == '__main__':

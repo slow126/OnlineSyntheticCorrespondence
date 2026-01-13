@@ -11,6 +11,23 @@ training_datasets:
     overrides:
       training.batch_size: 8
       training.n_threads: 16
+  - name: "spair_2d_warp_70_30"
+    dataset_config: "src/configs/lightning/datasets/spair_2d_warp_70_30_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 16
+
+  - name: "spair_2d_warp_50_50"
+    dataset_config: "src/configs/lightning/datasets/spair_2d_warp_50_50_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 16
+
+  - name: "spair_2d_warp_30_70"
+    dataset_config: "src/configs/lightning/datasets/spair_2d_warp_30_70_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 16
 
 output_dir: "slurm/experiment_configs/generated_2d_warp"
 

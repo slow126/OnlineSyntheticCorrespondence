@@ -343,6 +343,16 @@ def load_coverage_lookup(csv_path, allow_unsplit=True):
                 p90_train_to_eval = _parse_float(row, "p90_nn_train_to_eval")
                 kl_eval_to_train = _parse_float(row, "kl_eval_to_train")
                 kl_train_to_eval = _parse_float(row, "kl_train_to_eval")
+                kl_eval_to_train_hist = _parse_float(row, "kl_eval_to_train_hist")
+                kl_train_to_eval_hist = _parse_float(row, "kl_train_to_eval_hist")
+                kl_eval_to_train_hist_log1p = _parse_float(row, "kl_eval_to_train_hist_log1p_linear")
+                kl_train_to_eval_hist_log1p = _parse_float(row, "kl_train_to_eval_hist_log1p_linear")
+                kl_eval_to_train_hist_radius = _parse_float(row, "kl_eval_to_train_hist_radius")
+                kl_train_to_eval_hist_radius = _parse_float(row, "kl_train_to_eval_hist_radius")
+                kl_eval_to_train_hist_median = _parse_float(row, "kl_eval_to_train_hist_median")
+                kl_train_to_eval_hist_median = _parse_float(row, "kl_train_to_eval_hist_median")
+                kl_eval_to_train_hist_rank = _parse_float(row, "kl_eval_to_train_hist_rank")
+                kl_train_to_eval_hist_rank = _parse_float(row, "kl_train_to_eval_hist_rank")
 
                 if not allow_unsplit and (not train_split or not eval_split):
                     continue
@@ -363,6 +373,16 @@ def load_coverage_lookup(csv_path, allow_unsplit=True):
                     "p90_nn_train_to_eval": p90_train_to_eval,
                     "kl_eval_to_train": kl_eval_to_train,
                     "kl_train_to_eval": kl_train_to_eval,
+                    "kl_eval_to_train_hist": kl_eval_to_train_hist,
+                    "kl_train_to_eval_hist": kl_train_to_eval_hist,
+                    "kl_eval_to_train_hist_log1p_linear": kl_eval_to_train_hist_log1p,
+                    "kl_train_to_eval_hist_log1p_linear": kl_train_to_eval_hist_log1p,
+                    "kl_eval_to_train_hist_radius": kl_eval_to_train_hist_radius,
+                    "kl_train_to_eval_hist_radius": kl_train_to_eval_hist_radius,
+                    "kl_eval_to_train_hist_median": kl_eval_to_train_hist_median,
+                    "kl_train_to_eval_hist_median": kl_train_to_eval_hist_median,
+                    "kl_eval_to_train_hist_rank": kl_eval_to_train_hist_rank,
+                    "kl_train_to_eval_hist_rank": kl_train_to_eval_hist_rank,
                 }
                 if allow_unsplit:
                     coverage_lookup[(train_dataset, eval_dataset)] = {
@@ -381,6 +401,16 @@ def load_coverage_lookup(csv_path, allow_unsplit=True):
                         "p90_nn_train_to_eval": p90_train_to_eval,
                         "kl_eval_to_train": kl_eval_to_train,
                         "kl_train_to_eval": kl_train_to_eval,
+                        "kl_eval_to_train_hist": kl_eval_to_train_hist,
+                        "kl_train_to_eval_hist": kl_train_to_eval_hist,
+                        "kl_eval_to_train_hist_log1p_linear": kl_eval_to_train_hist_log1p,
+                        "kl_train_to_eval_hist_log1p_linear": kl_train_to_eval_hist_log1p,
+                        "kl_eval_to_train_hist_radius": kl_eval_to_train_hist_radius,
+                        "kl_train_to_eval_hist_radius": kl_train_to_eval_hist_radius,
+                        "kl_eval_to_train_hist_median": kl_eval_to_train_hist_median,
+                        "kl_train_to_eval_hist_median": kl_train_to_eval_hist_median,
+                        "kl_eval_to_train_hist_rank": kl_eval_to_train_hist_rank,
+                        "kl_train_to_eval_hist_rank": kl_train_to_eval_hist_rank,
                     }
     except Exception as exc:
         print(f"Warning: could not read coverage CSV {csv_path}: {exc}")
@@ -849,6 +879,22 @@ def build_auc_feature_table(
             "flow_train_to_eval_kl_div": (
                 flow_metrics["kl_train_to_eval"] if flow_metrics else np.nan
             ),
+            "flow_eval_to_train_kl_div_hist": (
+                flow_metrics.get("kl_eval_to_train_hist", np.nan) if flow_metrics else np.nan
+            ),
+            "flow_train_to_eval_kl_div_hist": (
+                flow_metrics.get("kl_train_to_eval_hist", np.nan) if flow_metrics else np.nan
+            ),
+            "flow_eval_to_train_kl_div_hist_log1p_linear": (
+                flow_metrics.get("kl_eval_to_train_hist_log1p_linear", np.nan)
+                if flow_metrics
+                else np.nan
+            ),
+            "flow_train_to_eval_kl_div_hist_log1p_linear": (
+                flow_metrics.get("kl_train_to_eval_hist_log1p_linear", np.nan)
+                if flow_metrics
+                else np.nan
+            ),
             "resnet_train_to_eval_coverage": (
                 resnet_metrics["train_to_eval_coverage"] if resnet_metrics else np.nan
             ),
@@ -884,6 +930,22 @@ def build_auc_feature_table(
             "resnet_train_to_eval_kl_div": (
                 resnet_metrics["kl_train_to_eval"] if resnet_metrics else np.nan
             ),
+            "resnet_eval_to_train_kl_div_hist": (
+                resnet_metrics.get("kl_eval_to_train_hist", np.nan) if resnet_metrics else np.nan
+            ),
+            "resnet_train_to_eval_kl_div_hist": (
+                resnet_metrics.get("kl_train_to_eval_hist", np.nan) if resnet_metrics else np.nan
+            ),
+            "resnet_eval_to_train_kl_div_hist_log1p_linear": (
+                resnet_metrics.get("kl_eval_to_train_hist_log1p_linear", np.nan)
+                if resnet_metrics
+                else np.nan
+            ),
+            "resnet_train_to_eval_kl_div_hist_log1p_linear": (
+                resnet_metrics.get("kl_train_to_eval_hist_log1p_linear", np.nan)
+                if resnet_metrics
+                else np.nan
+            ),
             "dino_train_to_eval_coverage": (
                 dino_metrics["train_to_eval_coverage"] if dino_metrics else np.nan
             ),
@@ -918,6 +980,22 @@ def build_auc_feature_table(
             ),
             "dino_train_to_eval_kl_div": (
                 dino_metrics["kl_train_to_eval"] if dino_metrics else np.nan
+            ),
+            "dino_eval_to_train_kl_div_hist": (
+                dino_metrics.get("kl_eval_to_train_hist", np.nan) if dino_metrics else np.nan
+            ),
+            "dino_train_to_eval_kl_div_hist": (
+                dino_metrics.get("kl_train_to_eval_hist", np.nan) if dino_metrics else np.nan
+            ),
+            "dino_eval_to_train_kl_div_hist_log1p_linear": (
+                dino_metrics.get("kl_eval_to_train_hist_log1p_linear", np.nan)
+                if dino_metrics
+                else np.nan
+            ),
+            "dino_train_to_eval_kl_div_hist_log1p_linear": (
+                dino_metrics.get("kl_train_to_eval_hist_log1p_linear", np.nan)
+                if dino_metrics
+                else np.nan
             ),
             "flow_mmd": flow_mmd,
             "feature_mmd": feature_mmd,
@@ -1001,6 +1079,289 @@ def fit_linear_model(
     else:
         coef, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
     return coef, mean, std
+
+
+def run_stability_selection(
+    df,
+    predictors,
+    target,
+    n_bootstrap=100,
+    lasso_alpha_range=None,
+    threshold=0.7,
+    output_path=None,
+):
+    """
+    Stability selection: run regularized regression on bootstrap samples
+    and count how often each predictor is selected.
+    
+    Returns DataFrame with stability scores for each predictor.
+    """
+    try:
+        from sklearn.linear_model import LassoCV
+        from sklearn.exceptions import ConvergenceWarning
+        import warnings
+    except ImportError:
+        print("Warning: scikit-learn not available, skipping stability selection")
+        return pd.DataFrame({
+            'predictor': predictors,
+            'stability_score': np.zeros(len(predictors)),
+            'stable': [False] * len(predictors),
+        })
+    
+    if lasso_alpha_range is None:
+        lasso_alpha_range = np.logspace(-4, 0, 50)
+    
+    complete_df = filter_complete_rows(df, predictors, target)
+    if complete_df.empty or len(complete_df) < 10:
+        return pd.DataFrame({
+            'predictor': predictors,
+            'stability_score': np.zeros(len(predictors)),
+            'stable': [False] * len(predictors),
+        })
+    
+    X = complete_df[predictors].values
+    y = complete_df[target].values
+    n_samples, n_features = X.shape
+    
+    selection_matrix = np.zeros((n_bootstrap, n_features))
+    
+    for i in range(n_bootstrap):
+        rng = np.random.RandomState(i)
+        boot_idx = rng.choice(n_samples, size=n_samples, replace=True)
+        X_boot = X[boot_idx]
+        y_boot = y[boot_idx]
+        
+        # Standardize
+        mean = X_boot.mean(axis=0)
+        std = X_boot.std(axis=0)
+        std[std == 0] = 1.0
+        X_boot_std = (X_boot - mean) / std
+        
+        # Fit Lasso with CV
+        try:
+            lasso = LassoCV(
+                alphas=lasso_alpha_range, 
+                cv=min(5, len(X_boot) // 2), 
+                max_iter=5000,  # Increased from default 1000
+                tol=1e-3,       # Relaxed from default 1e-4
+                random_state=i
+            )
+            # Suppress convergence warnings during stability selection
+            # Results are still valid even with minor convergence issues
+            with warnings.catch_warnings():
+                warnings.filterwarnings('ignore', category=ConvergenceWarning)
+                lasso.fit(X_boot_std, y_boot)
+            # Record selections
+            selection_matrix[i] = (np.abs(lasso.coef_) > 1e-10).astype(int)
+        except Exception:
+            # If Lasso fails, skip this bootstrap iteration
+            continue
+    
+    stability_scores = selection_matrix.mean(axis=0)
+    
+    results = pd.DataFrame({
+        'predictor': predictors,
+        'stability_score': stability_scores,
+        'stable': stability_scores >= threshold,
+        'selection_count': (selection_matrix.sum(axis=0)).astype(int),
+    }).sort_values('stability_score', ascending=False)
+    
+    if output_path:
+        results.to_csv(output_path, index=False)
+        
+        # Also write stable predictors to txt for easy reuse
+        stable_preds = results[results['stable']]['predictor'].tolist()
+        if stable_preds:
+            txt_path = Path(output_path).parent / "stable_predictors.txt"
+            txt_path.write_text(",".join(stable_preds))
+    
+    return results
+
+
+def compute_predictor_family_comparison(
+    df,
+    predictor_families,
+    target,
+    output_path,
+    standardize=True,
+    ridge_alpha=1.0,
+    cv_standardize_mode="global",
+):
+    """
+    Compare predictor families (flow vs dino vs mmd) in separate models.
+    
+    predictor_families: dict like {'flow': [...predictors], 'dino': [...], 'mmd': [...]}
+    
+    Returns DataFrame comparing R², LOBO performance, and aggregate weights.
+    """
+    results = []
+    complete_df = df.copy()
+    
+    # Get all predictors
+    all_predictors = []
+    for family_preds in predictor_families.values():
+        all_predictors.extend(family_preds)
+    all_predictors = list(set(all_predictors))
+    
+    complete_df = filter_complete_rows(complete_df, all_predictors, target)
+    
+    if complete_df.empty:
+        return pd.DataFrame()
+    
+    for family_name, family_predictors in predictor_families.items():
+        available_preds = [p for p in family_predictors if p in complete_df.columns]
+        if not available_preds:
+            continue
+        
+        # Fit model with only this family
+        X = complete_df[available_preds].values
+        y = complete_df[target].values
+        
+        mean = np.zeros(X.shape[1])
+        std = np.ones(X.shape[1])
+        
+        if standardize:
+            mean = X.mean(axis=0)
+            std = X.std(axis=0)
+            std[std == 0] = 1.0
+            X_std = (X - mean) / std
+        else:
+            X_std = X
+        
+        # Ridge regression
+        X_std = np.column_stack([np.ones(len(X_std)), X_std])
+        penalty = np.eye(X_std.shape[1])
+        penalty[0, 0] = 0.0
+        coef = np.linalg.solve(X_std.T @ X_std + float(ridge_alpha) * penalty, X_std.T @ y)
+        
+        y_pred = X_std.dot(coef)
+        ss_res = np.sum((y - y_pred) ** 2)
+        ss_tot = np.sum((y - np.mean(y)) ** 2)
+        r2 = 1.0 - (ss_res / ss_tot) if ss_tot != 0 else 0.0
+        
+        # Aggregate weight (sum of absolute coefficients)
+        agg_weight = float(np.sum(np.abs(coef[1:])))  # Skip intercept
+        
+        # LOBO validation
+        lobo_summary, _ = run_group_cv(
+            complete_df,
+            "benchmark",
+            available_preds,
+            target,
+            standardize=standardize,
+            standardize_mode=cv_standardize_mode,
+            model="ridge",
+            ridge_alpha=ridge_alpha,
+        )
+        
+        if not lobo_summary.empty:
+            overall = lobo_summary[lobo_summary["benchmark"] == "__overall__"]
+            lobo_pearson = float(overall["pearson"].iloc[0]) if not overall.empty else np.nan
+            lobo_spearman = float(overall["spearman"].iloc[0]) if not overall.empty else np.nan
+        else:
+            lobo_pearson = np.nan
+            lobo_spearman = np.nan
+        
+        results.append({
+            'family': family_name,
+            'n_predictors': len(available_preds),
+            'r2': r2,
+            'agg_weight': agg_weight,
+            'lobo_pearson': lobo_pearson,
+            'lobo_spearman': lobo_spearman,
+            'predictors': ", ".join(available_preds),
+        })
+    
+    result_df = pd.DataFrame(results).sort_values('lobo_spearman', ascending=False)
+    
+    if output_path:
+        result_df.to_csv(output_path, index=False)
+    
+    return result_df
+
+
+def compute_univariate_predictor_comparison(
+    df,
+    all_predictors,
+    target,
+    output_path,
+    standardize=True,
+    ridge_alpha=0.5,
+    cv_standardize_mode="global",
+):
+    """
+    Fit each predictor individually in separate LOBO runs.
+    
+    This shows which predictors are useful on their own, without confounding
+    from other correlated predictors.
+    
+    Returns DataFrame with one row per predictor showing LOBO performance.
+    """
+    results = []
+    
+    for predictor in all_predictors:
+        if predictor not in df.columns:
+            continue
+        
+        # Filter to complete cases for this predictor
+        predictor_df = df[[predictor, target, 'benchmark']].dropna()
+        
+        if predictor_df.empty or len(predictor_df) < 10:
+            continue
+        
+        # Run LOBO with just this one predictor
+        try:
+            lobo_summary, _ = run_group_cv(
+                predictor_df,
+                "benchmark",
+                [predictor],
+                target,
+                standardize=standardize,
+                standardize_mode=cv_standardize_mode,
+                model="ridge",
+                ridge_alpha=ridge_alpha,
+            )
+            
+            if not lobo_summary.empty:
+                overall = lobo_summary[lobo_summary["benchmark"] == "__overall__"]
+                if not overall.empty:
+                    lobo_pearson = float(overall["pearson"].iloc[0])
+                    lobo_spearman = float(overall["spearman"].iloc[0])
+                    lobo_mae = float(overall["mae"].iloc[0])
+                    lobo_rmse = float(overall["rmse"].iloc[0])
+                else:
+                    lobo_pearson = np.nan
+                    lobo_spearman = np.nan
+                    lobo_mae = np.nan
+                    lobo_rmse = np.nan
+            else:
+                lobo_pearson = np.nan
+                lobo_spearman = np.nan
+                lobo_mae = np.nan
+                lobo_rmse = np.nan
+        except Exception as e:
+            print(f"Warning: Failed to fit {predictor}: {e}")
+            lobo_pearson = np.nan
+            lobo_spearman = np.nan
+            lobo_mae = np.nan
+            lobo_rmse = np.nan
+        
+        results.append({
+            'predictor': predictor,
+            'n_obs': len(predictor_df),
+            'lobo_pearson': lobo_pearson,
+            'lobo_spearman': lobo_spearman,
+            'lobo_mae': lobo_mae,
+            'lobo_rmse': lobo_rmse,
+        })
+    
+    result_df = pd.DataFrame(results).sort_values('lobo_spearman', ascending=False)
+    
+    if output_path:
+        result_df.to_csv(output_path, index=False)
+        print(f"Saved univariate comparison to {output_path}")
+    
+    return result_df
 
 
 def fit_pairwise_rank_model(
@@ -1177,9 +1538,17 @@ def run_group_cv(
         y_true = test_df[target].to_numpy(dtype=float)
         target_offsets = None
         if target_group_demean and target_group_col:
-            train_df, test_df, target_offsets = demean_target_by_group(
-                train_df, test_df, target, target_group_col
-            )
+            # Support both single column (string) and multiple columns (list)
+            if isinstance(target_group_col, str):
+                train_df, test_df, target_offsets = demean_target_by_group(
+                    train_df, test_df, target, target_group_col
+                )
+            else:
+                # Multiple groups
+                train_df, test_df = demean_target_by_multiple_groups(
+                    train_df, test_df, target, target_group_col
+                )
+                target_offsets = None  # Not tracked for multiple groups
 
         if permute_target:
             rng = np.random.RandomState(int(permute_seed) + idx)
@@ -1477,9 +1846,16 @@ def run_group_cv_mixedlm(
             continue
 
         if target_group_demean and target_group_col:
-            train_df, test_df, _ = demean_target_by_group(
-                train_df, test_df, target, target_group_col
-            )
+            # Support both single column (string) and multiple columns (list)
+            if isinstance(target_group_col, str):
+                train_df, test_df, _ = demean_target_by_group(
+                    train_df, test_df, target, target_group_col
+                )
+            else:
+                # Multiple groups
+                train_df, test_df = demean_target_by_multiple_groups(
+                    train_df, test_df, target, target_group_col
+                )
 
         if permute_target:
             rng = np.random.RandomState(int(permute_seed) + idx)
@@ -2124,6 +2500,119 @@ def ensure_model_family(df):
     return df
 
 
+def create_model_family_encoder_column(df):
+    """
+    Create a composite 'model_family_encoder' column for proper demeaning.
+    
+    For models like RAFT that don't have encoder variants (encoder_config is empty/NaN),
+    use just the model_family. For models like CatsPP that do have encoder variants,
+    combine model_family and encoder_config.
+    
+    This ensures that when we demean by 'encoder', RAFT models are grouped separately
+    and don't get mixed with CatsPP encoder groups.
+    """
+    df = ensure_model_family(df)
+    df = ensure_encoder_config(df)
+    
+    if "model_family" not in df.columns:
+        return df
+    
+    df = df.copy()
+    
+    # Check if encoder_config exists and has meaningful values
+    has_encoder = "encoder_config" in df.columns
+    
+    if has_encoder:
+        # For rows with valid encoder_config, combine model_family + encoder_config
+        # For rows without (e.g., RAFT), use just model_family
+        df["model_family_encoder"] = df.apply(
+            lambda row: (
+                f"{row['model_family']}_{row['encoder_config']}"
+                if pd.notna(row.get('encoder_config')) and row.get('encoder_config') not in ['', 'unknown']
+                else str(row['model_family'])
+            ),
+            axis=1
+        )
+    else:
+        # No encoder_config column, just use model_family
+        df["model_family_encoder"] = df["model_family"].astype(str)
+    
+    return df
+
+
+def _safe_group_tag(value):
+    if pd.isna(value):
+        return "unknown"
+    text = str(value).strip()
+    if not text or text.lower() == "nan":
+        return "unknown"
+    safe = []
+    for ch in text:
+        if ch.isalnum() or ch in ("-", "_", "."):
+            safe.append(ch)
+        else:
+            safe.append("_")
+    return "".join(safe)
+
+
+def _iter_per_encoder_groups(report_df, cv_df):
+    if "model_family_encoder" in report_df.columns:
+        group_col = "model_family_encoder"
+        if cv_df is not None and "model_family_encoder" not in cv_df.columns:
+            cv_df = create_model_family_encoder_column(cv_df)
+        for group_name, group in report_df.groupby(group_col, dropna=False):
+            tag = _safe_group_tag(group_name)
+            cv_group = (
+                cv_df[cv_df[group_col] == group_name].copy()
+                if cv_df is not None
+                else None
+            )
+            yield tag, group, cv_group
+        return
+    for (pretrained, freeze), group in report_df.groupby(
+        ["pretrained", "freeze"], dropna=False
+    ):
+        tag = f"pretrained{_format_bool(pretrained)}_freeze{_format_bool(freeze)}"
+        cv_group = None
+        if cv_df is not None:
+            cv_group = cv_df[
+                (cv_df["pretrained"] == pretrained) & (cv_df["freeze"] == freeze)
+            ].copy()
+        yield tag, group, cv_group
+
+
+def ensure_train_dataset_encoder_column(df, output_col="train_dataset_encoder"):
+    if output_col in df.columns:
+        return df
+    if "train_dataset" not in df.columns:
+        return df
+    df = ensure_encoder_config(df)
+    if "encoder_config" not in df.columns:
+        return df
+    df = df.copy()
+    df[output_col] = (
+        df["train_dataset"].astype(str) + "__" + df["encoder_config"].astype(str)
+    )
+    return df
+
+
+def ensure_train_dataset_model_family_encoder_column(
+    df, output_col="train_dataset_model_family_encoder"
+):
+    if output_col in df.columns:
+        return df
+    if "train_dataset" not in df.columns:
+        return df
+    df = create_model_family_encoder_column(df)
+    if "model_family_encoder" not in df.columns:
+        return df
+    df = df.copy()
+    df[output_col] = (
+        df["train_dataset"].astype(str) + "__" + df["model_family_encoder"].astype(str)
+    )
+    return df
+
+
 def add_rank_target(df, source_col, group_cols, output_col):
     if source_col not in df.columns:
         return df
@@ -2181,17 +2670,51 @@ def _parse_benchmark_list(value):
     return items
 
 
-def _select_target_demean_group(args):
-    if args.cv_demean_target_by_benchmark and args.cv_demean_target_by_encoder:
-        print(
-            "Warning: both cv_demean_target_by_benchmark and "
-            "cv_demean_target_by_encoder are set; using benchmark demeaning."
-        )
-    if args.cv_demean_target_by_benchmark:
-        return "benchmark"
+def demean_target_by_multiple_groups(train_df, test_df, target, group_cols):
+    """
+    Sequentially demean target by multiple grouping columns.
+    Order matters: typically do encoder first, then benchmark.
+    """
+    train_df = train_df.copy()
+    test_df = test_df.copy()
+    
+    for group_col in group_cols:
+        if group_col not in train_df.columns or group_col not in test_df.columns:
+            continue
+        
+        # Compute group means from training data only
+        group_means = train_df.groupby(group_col)[target].mean()
+        global_mean = train_df[target].mean()
+        
+        # Apply to both train and test
+        train_offsets = train_df[group_col].map(group_means).fillna(global_mean)
+        test_offsets = test_df[group_col].map(group_means).fillna(global_mean)
+        
+        train_df[target] = train_df[target] - train_offsets
+        test_df[target] = test_df[target] - test_offsets
+    
+    return train_df, test_df
+
+
+def _select_target_demean_groups(args):
+    """Select which groups to demean target by (returns list)."""
+    demean_groups = []
+    
+    # Order matters: encoder first (main effect), then benchmark (difficulty)
+    # Use model_family_encoder to properly handle models like RAFT that don't have encoder variants
     if args.cv_demean_target_by_encoder:
-        return "encoder_config"
-    return None
+        demean_groups.append("model_family_encoder")
+    
+    if args.cv_demean_target_by_benchmark:
+        demean_groups.append("benchmark")
+    
+    return demean_groups
+
+
+def _select_target_demean_group(args):
+    """Legacy function for backward compatibility - returns first group or None."""
+    groups = _select_target_demean_groups(args)
+    return groups[0] if groups else None
 
 
 def filter_encoder_configs(df, exclude):
@@ -2346,7 +2869,7 @@ def prepare_encoder_pooled_frames(
     include_main_effects,
     encoder_norm_mode,
 ):
-    if not add_interactions and encoder_norm_mode == "none":
+    if not add_interactions and not include_main_effects and encoder_norm_mode == "none":
         return report_df, cv_df, predictors
 
     report_df = ensure_encoder_config(report_df)
@@ -2354,19 +2877,36 @@ def prepare_encoder_pooled_frames(
     if "encoder_config" not in report_df.columns:
         return report_df, cv_df, predictors
 
-    if not add_interactions:
-        return report_df, cv_df, predictors
-
     configs = _collect_encoder_configs(report_df["encoder_config"])
     if len(configs) < 2:
-        print("Warning: encoder_interactions requested but insufficient encoder configs.")
+        print("Warning: encoder effects requested but insufficient encoder configs.")
         return report_df, cv_df, predictors
 
     baseline = (baseline or "").strip().upper()
-    report_df, dummy_cols, interaction_cols = add_encoder_interactions(
-        report_df, predictors, configs, baseline
-    )
-    cv_df, _, _ = add_encoder_interactions(cv_df, predictors, configs, baseline)
+    if baseline and baseline not in configs:
+        baseline = configs[-1]
+    dummy_cols = []
+    if include_main_effects or add_interactions:
+        for cfg in configs:
+            if cfg == baseline:
+                continue
+            col = f"enc_{cfg}"
+            report_df[col] = (report_df["encoder_config"] == cfg).astype(float)
+            cv_df[col] = (cv_df["encoder_config"] == cfg).astype(float)
+            dummy_cols.append(col)
+
+    interaction_cols = []
+    if add_interactions:
+        for pred in predictors:
+            if pred not in report_df.columns:
+                continue
+            for cfg in configs:
+                if cfg == baseline:
+                    continue
+                inter_col = f"{pred}__enc_{cfg}"
+                report_df[inter_col] = report_df[pred] * report_df[f"enc_{cfg}"]
+                cv_df[inter_col] = cv_df[pred] * cv_df[f"enc_{cfg}"]
+                interaction_cols.append(inter_col)
     if include_main_effects:
         predictors = predictors + dummy_cols
     predictors = predictors + interaction_cols
@@ -2452,7 +2992,14 @@ def _extend_predictors_with_kl(predictors, feature_df):
         return predictors
     extended = list(predictors)
     for prefix in sorted(prefixes):
-        for suffix in ("train_to_eval_kl_div", "eval_to_train_kl_div"):
+        for suffix in (
+            "train_to_eval_kl_div_hist",
+            "eval_to_train_kl_div_hist",
+            "train_to_eval_kl_div_hist_log1p_linear",
+            "eval_to_train_kl_div_hist_log1p_linear",
+            "train_to_eval_kl_div",
+            "eval_to_train_kl_div",
+        ):
             col = f"{prefix}_{suffix}"
             if col in feature_df.columns and col not in extended:
                 extended.append(col)
@@ -2598,6 +3145,60 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
         print(f"Target '{args.target}' not found in {out_dir / 'auc_with_features.csv'}.")
         return
 
+    # Run stability selection if requested
+    if args.run_stability_selection:
+        stability_path = out_dir / "stability_selection_results.csv"
+        print(f"Running stability selection with {args.stability_n_bootstrap} bootstrap iterations...")
+        run_stability_selection(
+            feature_df,
+            predictors,
+            args.target,
+            n_bootstrap=args.stability_n_bootstrap,
+            threshold=args.stability_threshold,
+            output_path=stability_path,
+        )
+        print(f"Stability selection results saved to {stability_path}")
+
+    # Run family comparison if requested
+    if args.run_family_comparison:
+        # Define predictor families
+        flow_predictors = [p for p in predictors if p.startswith("flow_")]
+        dino_predictors = [p for p in predictors if p.startswith("dino_")]
+        predictor_families = {}
+        if flow_predictors:
+            predictor_families['flow'] = flow_predictors
+        if dino_predictors:
+            predictor_families['dino'] = dino_predictors
+        
+        if len(predictor_families) >= 2:
+            family_path = out_dir / "predictor_family_comparison.csv"
+            print(f"Running predictor family comparison...")
+            compute_predictor_family_comparison(
+                feature_df,
+                predictor_families,
+                args.target,
+                family_path,
+                standardize=args.standardize,
+                ridge_alpha=args.ridge_alpha,
+                cv_standardize_mode=args.cv_standardize_mode,
+            )
+            print(f"Family comparison results saved to {family_path}")
+    
+    # Run univariate comparison if requested
+    if args.run_univariate_comparison:
+        univariate_path = out_dir / "univariate_predictor_comparison.csv"
+        print(f"Running univariate predictor comparison ({len(predictors)} predictors)...")
+        compute_univariate_predictor_comparison(
+            feature_df,
+            predictors,
+            args.target,
+            univariate_path,
+            standardize=args.standardize,
+            ridge_alpha=args.ridge_alpha,
+            cv_standardize_mode=args.cv_standardize_mode,
+        )
+        print(f"Univariate comparison results saved to {univariate_path}")
+
     within_path = out_dir / "within_benchmark_slopes.csv"
     compute_within_benchmark_slopes(feature_df, predictors, args.target, within_path)
 
@@ -2629,8 +3230,8 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
                 "Warning: excluded all rows for prediction; skipping LOBO/LOTO runs."
             )
             return
-    target_demean_group = _select_target_demean_group(args)
-    target_group_demean = target_demean_group is not None
+    target_demean_groups = _select_target_demean_groups(args)
+    target_group_demean = len(target_demean_groups) > 0
 
     lobo_summary, lobo_preds = run_group_cv(
         cv_df,
@@ -2646,7 +3247,7 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
         encoder_group_norm_mode=args.cv_normalize_predictors_by_encoder,
         encoder_group_col="encoder_config",
         target_group_demean=target_group_demean,
-        target_group_col=target_demean_group,
+        target_group_col=target_demean_groups,
         min_predictor_std=args.cv_min_predictor_std,
         prediction_clip=args.prediction_clip,
         prediction_clip_min=args.prediction_clip_min,
@@ -2714,7 +3315,7 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
             encoder_group_norm_mode=args.cv_normalize_predictors_by_encoder,
             encoder_group_col="encoder_config",
             target_group_demean=target_group_demean,
-            target_group_col=target_demean_group,
+            target_group_col=target_demean_groups,
             min_predictor_std=args.cv_min_predictor_std,
             prediction_clip=args.prediction_clip,
             prediction_clip_min=args.prediction_clip_min,
@@ -2759,7 +3360,7 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
         encoder_group_norm_mode=args.cv_normalize_predictors_by_encoder,
         encoder_group_col="encoder_config",
         target_group_demean=target_group_demean,
-        target_group_col=target_demean_group,
+        target_group_col=target_demean_groups,
         min_predictor_std=args.cv_min_predictor_std,
         prediction_clip=args.prediction_clip,
         prediction_clip_min=args.prediction_clip_min,
@@ -2805,7 +3406,7 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
             encoder_group_norm_mode=args.cv_normalize_predictors_by_encoder,
             encoder_group_col="encoder_config",
             target_group_demean=target_group_demean,
-            target_group_col=target_demean_group,
+            target_group_col=target_demean_groups,
             min_predictor_std=args.cv_min_predictor_std,
             prediction_clip=args.prediction_clip,
             prediction_clip_min=args.prediction_clip_min,
@@ -2848,7 +3449,7 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
             encoder_group_norm_mode=args.cv_normalize_predictors_by_encoder,
             encoder_group_col="encoder_config",
             target_group_demean=target_group_demean,
-            target_group_col=target_demean_group,
+            target_group_col=target_demean_groups,
             min_predictor_std=args.cv_min_predictor_std,
             prediction_clip=args.prediction_clip,
             prediction_clip_min=args.prediction_clip_min,
@@ -2887,7 +3488,7 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
             encoder_group_norm_mode=args.cv_normalize_predictors_by_encoder,
             encoder_group_col="encoder_config",
             target_group_demean=target_group_demean,
-            target_group_col=target_demean_group,
+            target_group_col=target_demean_groups,
             min_predictor_std=args.cv_min_predictor_std,
             prediction_clip=args.prediction_clip,
             prediction_clip_min=args.prediction_clip_min,
@@ -3259,6 +3860,33 @@ def main():
         help="Ridge penalty strength when linear-model=ridge.",
     )
     parser.add_argument(
+        "--run-stability-selection",
+        action="store_true",
+        help="Run stability selection to identify robust predictors.",
+    )
+    parser.add_argument(
+        "--stability-n-bootstrap",
+        type=int,
+        default=100,
+        help="Number of bootstrap iterations for stability selection.",
+    )
+    parser.add_argument(
+        "--stability-threshold",
+        type=float,
+        default=0.7,
+        help="Stability threshold (fraction of bootstraps predictor must be selected).",
+    )
+    parser.add_argument(
+        "--run-family-comparison",
+        action="store_true",
+        help="Compare predictor families (flow vs dino vs mmd) separately.",
+    )
+    parser.add_argument(
+        "--run-univariate-comparison",
+        action="store_true",
+        help="Fit each predictor individually in separate LOBO runs.",
+    )
+    parser.add_argument(
         "--relative-target-baseline",
         default=None,
         help="Training dataset name to use as per-benchmark baseline for delta target.",
@@ -3563,7 +4191,12 @@ def main():
     parser.add_argument(
         "--ranking-group",
         default="train_dataset",
-        help="Column to rank options within each benchmark (default: train_dataset).",
+        help=(
+            "Column to rank options within each benchmark "
+            "(default: train_dataset). "
+            "Special values: train_dataset_encoder, "
+            "train_dataset_model_family_encoder."
+        ),
     )
     parser.add_argument(
         "--ranking-topk-frac",
@@ -3893,6 +4526,15 @@ def main():
             args.target = rank_col
         if args.prediction_target == rank_source:
             args.prediction_target = rank_col
+    
+    # Create composite model_family_encoder column for proper demeaning
+    # This must happen before any target demeaning operations
+    if not feature_df.empty:
+        feature_df = create_model_family_encoder_column(feature_df)
+        if args.ranking_group == "train_dataset_encoder":
+            feature_df = ensure_train_dataset_encoder_column(feature_df)
+        elif args.ranking_group == "train_dataset_model_family_encoder":
+            feature_df = ensure_train_dataset_model_family_encoder_column(feature_df)
 
     exclude_encoder_configs = _parse_encoder_config_list(args.exclude_encoder_configs)
     if exclude_encoder_configs:
@@ -4120,17 +4762,12 @@ def main():
             per_args.cv_demean_target_by_encoder = False
             per_dir = mode_out_dir / "by_encoder"
             per_dir.mkdir(parents=True, exist_ok=True)
-            for (pretrained, freeze), group in mode_report_df.groupby(
-                ["pretrained", "freeze"], dropna=False
+            for tag, group, cv_group in _iter_per_encoder_groups(
+                mode_report_df, mode_cv_df
             ):
-                tag = f"pretrained{_format_bool(pretrained)}_freeze{_format_bool(freeze)}"
                 group_dir = per_dir / tag
                 group_dir.mkdir(parents=True, exist_ok=True)
                 group.to_csv(group_dir / "auc_with_features.csv", index=False)
-                cv_group = mode_cv_df[
-                    (mode_cv_df["pretrained"] == pretrained)
-                    & (mode_cv_df["freeze"] == freeze)
-                ].copy()
                 run_analysis_bundle(
                     group,
                     group_dir,
@@ -4212,16 +4849,10 @@ def main():
         per_args.cv_demean_target_by_encoder = False
         per_dir = out_dir / "by_encoder"
         per_dir.mkdir(parents=True, exist_ok=True)
-        for (pretrained, freeze), group in report_df.groupby(
-            ["pretrained", "freeze"], dropna=False
-        ):
-            tag = f"pretrained{_format_bool(pretrained)}_freeze{_format_bool(freeze)}"
+        for tag, group, cv_group in _iter_per_encoder_groups(report_df, cv_df):
             group_dir = per_dir / tag
             group_dir.mkdir(parents=True, exist_ok=True)
             group.to_csv(group_dir / "auc_with_features.csv", index=False)
-            cv_group = cv_df[
-                (cv_df["pretrained"] == pretrained) & (cv_df["freeze"] == freeze)
-            ].copy()
             run_analysis_bundle(group, group_dir, predictors, per_args, cv_df=cv_group)
             if args.run_summary:
                 run_summary_report(group_dir, predictors, per_args)

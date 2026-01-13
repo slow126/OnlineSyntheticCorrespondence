@@ -1,0 +1,176 @@
+pipeline:
+  python: python3
+  workdir: .
+  dry_run: false
+
+steps:
+  leakage_free_eval:
+    enabled: true
+    args:
+      # Data sources (keep as-is)
+      snapshots_dir:
+        - snapshots
+        - snapshots_mixed
+        - snapshots_raft
+      mode: auc
+      metric: pck
+      auc_steps: 5000
+      auc_pad: true
+      coverage_csv: coverage_faiss_flow_results_fast.csv
+      coverage_resnet_csv: coverage_resnet_results_fast.csv
+      coverage_dino_csv: coverage_faiss_dino_results_fast.csv
+      flow_mmd_csv: flow_mmd_results_fast.csv
+      feature_mmd_csv: feature_mmd_results_fast.csv
+      dino_mmd_csv: dino_mmd_results_fast.csv
+      
+      # Target setup
+      relative_target_baseline: spair
+      rank_target: true
+      rank_target_source: auc_delta
+      rank_target_col: auc_delta_rank
+      rank_target_group: benchmark
+      rank_target_with_encoder: true
+      
+      # Predictor preprocessing
+      logit_coverage: true
+      rename_coverage: true
+      distance_radius_norm: none
+      radius_transform: log
+      radius_eps: 1e-6
+      distance_radius_floor: 0.01
+      
+      # Model settings
+      linear_model: ridge
+      ridge_alpha: 0.5  # Moderate regularization
+      standardize: true
+      cv_standardize_mode: global  # Preserve between-group variance
+      
+      # Critical: proper controls
+      cv_demean_target_by_encoder: true   # Remove encoder main effects
+      cv_demean_target_by_benchmark: true  # Remove benchmark difficulty
+      cv_normalize_predictors_by_encoder: none  # Don't normalize predictors
+      cv_normalize_predictors_by_benchmark: none
+      cv_within_benchmark_predictor_norm: none
+      encoder_main_effects: false  # Don't include encoder dummies
+      encoder_interactions: false
+      model_family_main_effects: false
+      model_family_interactions: false
+      
+      # Validation
+      prediction_clip: false
+      cv_min_predictor_std: 1.0e-8
+      per_encoder: true  # For universality check
+      run_summary: true
+      
+      # Data filtering
+      exclude_encoder_configs: ""  # Keep all
+      train_datasets_mode: all
+      strict_dataset_match: true
+      allow_unsplit_coverage: false
+      allow_unsplit_mmd: false
+
+    runs:
+      # ============================================================
+      # STAGE 1: Univariate Family Comparison
+      # ============================================================
+      - name: stage1_flow_only
+        args:
+          output_dir: analysis/clean/stage1_univariate/flow_only
+          predictors: "flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mmd"
+          prediction_target: auc_delta_rank
+          run_family_comparison: true
+
+      - name: stage1_dino_only
+        args:
+          output_dir: analysis/clean/stage1_univariate/dino_only
+          predictors: "dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mmd"
+          prediction_target: auc_delta_rank
+
+      - name: stage1_mmd_only
+        args:
+          output_dir: analysis/clean/stage1_univariate/mmd_only
+          predictors: "flow_mmd,dino_mmd"
+          prediction_target: auc_delta_rank
+
+      # ============================================================
+      # STAGE 2: Stability Selection
+      # ============================================================
+      - name: stage2_stability_flow
+        args:
+          output_dir: analysis/clean/stage2_stability/flow
+          predictors: "flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mean_dist_asymmetry,flow_mmd"
+          prediction_target: auc_delta_rank
+          run_stability_selection: true
+          stability_n_bootstrap: 200
+          stability_threshold: 0.7
+          skip_prediction: true
+
+      - name: stage2_stability_dino
+        args:
+          output_dir: analysis/clean/stage2_stability/dino
+          predictors: "dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mean_dist_asymmetry,dino_mmd"
+          prediction_target: auc_delta_rank
+          run_stability_selection: true
+          stability_n_bootstrap: 200
+          stability_threshold: 0.7
+          skip_prediction: true
+
+      # ============================================================
+      # STAGE 3: Horse Race (after stability selection)
+      # ============================================================
+      - name: stage3_horse_race_all
+        args:
+          output_dir: analysis/clean/stage3_horse_race/all_predictors
+          predictors: "flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,flow_mmd,dino_mmd"
+          prediction_target: auc_delta_rank
+          run_family_comparison: true
+
+      # This will use stable predictors identified in stage 2
+      # (manually update after running stage 2)
+      - name: stage3_horse_race_stable
+        args:
+          output_dir: analysis/clean/stage3_horse_race/stable_only
+          predictors: ""  # Fill in after stage 2
+          prediction_target: auc_delta_rank
+
+      # ============================================================
+      # STAGE 4: Robustness Checks
+      # ============================================================
+      
+      # Different target (peak_pck instead of auc)
+      - name: stage4_robustness_peak_pck
+        args:
+          output_dir: analysis/clean/stage4_robustness/peak_pck_rank
+          predictors: ""  # Use stable predictors from stage 2
+          rank_target_source: peak_pck
+          rank_target_col: peak_pck_rank
+          prediction_target: peak_pck_rank
+
+      # Permutation test (negative control)
+      - name: stage4_robustness_permutation
+        args:
+          output_dir: analysis/clean/stage4_robustness/permutation
+          predictors: ""  # Use stable predictors
+          prediction_target: auc_delta_rank
+          sanity_permutation: true
+          sanity_permute_group: benchmark
+          sanity_permute_seed: 42
+
+      # Different regularization strength
+      - name: stage4_robustness_high_regularization
+        args:
+          output_dir: analysis/clean/stage4_robustness/ridge_alpha_5
+          predictors: ""  # Use stable predictors
+          prediction_target: auc_delta_rank
+          ridge_alpha: 5.0
+
+      # ============================================================
+      # PUBLICATION READY: Minimal Model
+      # ============================================================
+      - name: paper_main_result
+        args:
+          output_dir: analysis/paper_main
+          predictors: ""  # Manually set to top 2-3 stable flow predictors
+          prediction_target: auc_delta_rank
+          per_encoder: true  # Validate universality
+          run_summary: true

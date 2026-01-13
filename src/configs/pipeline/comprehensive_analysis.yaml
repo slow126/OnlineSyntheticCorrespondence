@@ -1,0 +1,187 @@
+# Comprehensive Analysis Pipeline
+# Runs stability selection and univariate comparison with all predictors
+# Usage: python scripts/run_experiment_pipeline.py --config src/configs/pipeline/comprehensive_analysis.yaml
+
+steps:
+  # Step 1: Stability Selection (200 bootstraps)
+  leakage_free_eval:
+    runs:
+      - name: "Stability Selection - All Predictors (200 bootstraps)"
+        args:
+          snapshots_dir:
+            - snapshots
+            - snapshots_mixed
+            - snapshots_raft
+          mode: auc
+          metric: pck
+          auc_steps: 5000
+          auc_pad: true
+          
+          # Coverage and MMD CSVs
+          coverage_csv: coverage_faiss_flow_results_fast.csv
+          coverage_dino_csv: coverage_faiss_dino_results_fast.csv
+          flow_mmd_csv: flow_mmd_results_fast.csv
+          dino_mmd_csv: dino_mmd_results_fast.csv
+          
+          # Target configuration
+          relative_target_baseline: spair
+          rank_target: true
+          rank_target_source: auc_delta
+          rank_target_col: auc_delta_rank
+          rank_target_group: benchmark
+          rank_target_with_encoder: true
+          
+          # Predictor transformations
+          logit_coverage: true
+          rename_coverage: true
+          radius_transform: log
+          
+          # Model configuration
+          linear_model: ridge
+          ridge_alpha: 0.5
+          standardize: true
+          cv_standardize_mode: global
+          
+          # Target demeaning (uses new fixed model_family_encoder)
+          cv_demean_target_by_encoder: true
+          cv_demean_target_by_benchmark: true
+          
+          # Exclude encoder effects from predictors
+          encoder_main_effects: false
+          encoder_interactions: false
+          
+          # Per-encoder reports
+          per_encoder: true
+          run_summary: true
+          
+          # Comprehensive predictor list (26 predictors)
+          predictors: "flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_eval_to_train_mean_dist,flow_train_to_eval_mean_dist,flow_eval_to_train_kl_div,flow_train_to_eval_kl_div,flow_eval_to_train_kl_div_hist,flow_train_to_eval_kl_div_hist,flow_eval_to_train_kl_div_hist_log1p_linear,flow_train_to_eval_kl_div_hist_log1p_linear,flow_mmd,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_eval_to_train_mean_dist,dino_train_to_eval_mean_dist,dino_eval_to_train_kl_div,dino_train_to_eval_kl_div,dino_eval_to_train_kl_div_hist,dino_train_to_eval_kl_div_hist,dino_eval_to_train_kl_div_hist_log1p_linear,dino_train_to_eval_kl_div_hist_log1p_linear,dino_mmd"
+          
+          prediction_target: auc_delta_rank
+          
+          # Stability selection configuration
+          run_stability_selection: true
+          stability_n_bootstrap: 200
+          stability_threshold: 0.7
+          
+          output_dir: analysis/comprehensive/stability_all_predictors
+      
+      # Step 2: Univariate Comparison
+      - name: "Univariate Comparison - All Predictors"
+        args:
+          snapshots_dir:
+            - snapshots
+            - snapshots_mixed
+            - snapshots_raft
+          mode: auc
+          metric: pck
+          auc_steps: 5000
+          auc_pad: true
+          
+          # Coverage and MMD CSVs
+          coverage_csv: coverage_faiss_flow_results_fast.csv
+          coverage_dino_csv: coverage_faiss_dino_results_fast.csv
+          flow_mmd_csv: flow_mmd_results_fast.csv
+          dino_mmd_csv: dino_mmd_results_fast.csv
+          
+          # Target configuration
+          relative_target_baseline: spair
+          rank_target: true
+          rank_target_source: auc_delta
+          rank_target_col: auc_delta_rank
+          rank_target_group: benchmark
+          rank_target_with_encoder: true
+          
+          # Predictor transformations
+          logit_coverage: true
+          rename_coverage: true
+          radius_transform: log
+          
+          # Model configuration
+          linear_model: ridge
+          ridge_alpha: 0.5
+          standardize: true
+          cv_standardize_mode: global
+          
+          # Target demeaning (uses new fixed model_family_encoder)
+          cv_demean_target_by_encoder: true
+          cv_demean_target_by_benchmark: true
+          
+          # Exclude encoder effects from predictors
+          encoder_main_effects: false
+          encoder_interactions: false
+          
+          # Per-encoder reports
+          per_encoder: true
+          run_summary: true
+          
+          # Comprehensive predictor list (26 predictors)
+          predictors: "flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_eval_to_train_mean_dist,flow_train_to_eval_mean_dist,flow_eval_to_train_kl_div,flow_train_to_eval_kl_div,flow_eval_to_train_kl_div_hist,flow_train_to_eval_kl_div_hist,flow_eval_to_train_kl_div_hist_log1p_linear,flow_train_to_eval_kl_div_hist_log1p_linear,flow_mmd,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_eval_to_train_mean_dist,dino_train_to_eval_mean_dist,dino_eval_to_train_kl_div,dino_train_to_eval_kl_div,dino_eval_to_train_kl_div_hist,dino_train_to_eval_kl_div_hist,dino_eval_to_train_kl_div_hist_log1p_linear,dino_train_to_eval_kl_div_hist_log1p_linear,dino_mmd"
+          
+          prediction_target: auc_delta_rank
+          
+          # Univariate comparison configuration
+          run_univariate_comparison: true
+          
+          output_dir: analysis/comprehensive/univariate_all_predictors
+
+      # Step 3: Univariate Comparison (Per-Encoder Options)
+      - name: "Univariate Comparison - All Predictors (Per-Encoder Options)"
+        args:
+          snapshots_dir:
+            - snapshots
+            - snapshots_mixed
+            - snapshots_raft
+          mode: auc
+          metric: pck
+          auc_steps: 5000
+          auc_pad: true
+          
+          # Coverage and MMD CSVs
+          coverage_csv: coverage_faiss_flow_results_fast.csv
+          coverage_dino_csv: coverage_faiss_dino_results_fast.csv
+          flow_mmd_csv: flow_mmd_results_fast.csv
+          dino_mmd_csv: dino_mmd_results_fast.csv
+          
+          # Target configuration
+          relative_target_baseline: spair
+          rank_target: true
+          rank_target_source: auc_delta
+          rank_target_col: auc_delta_rank
+          rank_target_group: benchmark
+          rank_target_with_encoder: true
+          rank_target_with_model: true
+          
+          # Predictor transformations
+          logit_coverage: true
+          rename_coverage: true
+          radius_transform: log
+          
+          # Model configuration
+          linear_model: ridge
+          ridge_alpha: 0.5
+          standardize: true
+          cv_standardize_mode: global
+          
+          # Target demeaning (uses new fixed model_family_encoder)
+          cv_demean_target_by_encoder: true
+          cv_demean_target_by_benchmark: true
+          
+          # Exclude encoder effects from predictors
+          encoder_main_effects: false
+          encoder_interactions: false
+          
+          # Per-encoder reports
+          per_encoder: true
+          run_summary: true
+          
+          # Comprehensive predictor list (26 predictors)
+          predictors: "flow_train_to_eval_over_eval_recall_logit,flow_eval_to_train_over_train_precision_logit,flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_eval_to_train_mean_dist,flow_train_to_eval_mean_dist,flow_eval_to_train_kl_div,flow_train_to_eval_kl_div,flow_eval_to_train_kl_div_hist,flow_train_to_eval_kl_div_hist,flow_eval_to_train_kl_div_hist_log1p_linear,flow_train_to_eval_kl_div_hist_log1p_linear,flow_mmd,dino_train_to_eval_over_eval_recall_logit,dino_eval_to_train_over_train_precision_logit,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_eval_to_train_mean_dist,dino_train_to_eval_mean_dist,dino_eval_to_train_kl_div,dino_train_to_eval_kl_div,dino_eval_to_train_kl_div_hist,dino_train_to_eval_kl_div_hist,dino_eval_to_train_kl_div_hist_log1p_linear,dino_train_to_eval_kl_div_hist_log1p_linear,dino_mmd"
+          
+          prediction_target: auc_delta_rank
+          ranking_group: train_dataset_model_family_encoder
+          
+          # Univariate comparison configuration
+          run_univariate_comparison: true
+          
+          output_dir: analysis/comprehensive/univariate_all_predictors_per_encoder_options

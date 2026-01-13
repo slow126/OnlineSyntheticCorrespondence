@@ -3,16 +3,16 @@ encoder: dino
 batch_size: 16
 num_workers: 4
 sampling:
-  max_vectors: 50000
-  dense_threshold: 100000
-  dense_fraction: 0.05
-  dense_min_keep: 2000
+  max_vectors: 100000
+  dense_threshold: 8000
+  dense_fraction: 0.25
+  dense_min_keep: 4096
   seed: 42
 pca:
   enabled: true
   output_dim: 256
   fit_on: train
-  max_train_vectors: 50000
+  max_train_vectors: 100000
   whiten: false
 faiss:
   index_factory: HNSW32
@@ -25,9 +25,9 @@ coverage:
   self_radius_k: 5
   radius_quantile: 0.99
   kl_method: knn
-  kl_knn_k: 5
+  kl_knn_k: 20
   kl_bins: 50
-  kl_eps: 1.0e-8
+  kl_eps: 1.0e-6
 output:
   results_file: coverage_faiss_dino_results_fast.csv
 dataset_params:

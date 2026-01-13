@@ -3,10 +3,10 @@ encoder: resnet101
 batch_size: 16
 num_workers: 4
 sampling:
-  max_vectors: 200000
-  dense_threshold: 100000
-  dense_fraction: 0.05
-  dense_min_keep: 2000
+  max_vectors: 1000000
+  dense_threshold: 300000
+  dense_fraction: 0.1
+  dense_min_keep: 20000
   seed: 42
 pca:
   enabled: false
@@ -23,9 +23,9 @@ coverage:
   k: 1
   radius_quantile: 0.95
   kl_method: knn
-  kl_knn_k: 5
+  kl_knn_k: 20
   kl_bins: 50
-  kl_eps: 1.0e-8
+  kl_eps: 1.0e-6
 output:
   results_file: coverage_faiss_flow_results_fast.csv
 dataset_params:

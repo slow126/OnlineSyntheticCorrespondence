@@ -56,11 +56,11 @@ steps:
       benchmark_normalize_predictors: none
       benchmark_normalize_target: none
       benchmark_normalize_scope: none
-      cv_normalize_predictors_by_benchmark: none
+      cv_normalize_predictors_by_benchmark: center
       cv_within_benchmark_predictor_norm: none
-      cv_normalize_predictors_by_encoder: none
-      cv_demean_target_by_encoder: false
-      cv_demean_target_by_benchmark: false
+      cv_normalize_predictors_by_encoder: center
+      cv_demean_target_by_encoder: true
+      cv_demean_target_by_benchmark: true
       cv_min_predictor_std: 1.0e-8
       sanity_permutation: true
       sanity_permute_group: benchmark
@@ -85,7 +85,7 @@ steps:
       rank_target_source: auc_delta
       rank_target_col: auc_delta_rank
       rank_target_group: benchmark
-      rank_target_with_encoder: false
+      rank_target_with_encoder: true
       prediction_clip: true
       per_encoder: false
       run_summary: true
@@ -94,6 +94,7 @@ steps:
       allow_unsplit_coverage: false
       allow_unsplit_mmd: false
       train_datasets_mode: all
+      include_kl: false
     runs:
     - name: all_auc_delta_rank_per_encoder
       args:
@@ -372,6 +373,99 @@ steps:
         model_family_main_effects: true
         model_family_interactions: true
         predictors: flow_mmd,dino_mmd
+    - name: all_auc_delta_rank_kl_hist_only_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_kl_hist_only/full_interactions
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_kl_div_hist,flow_eval_to_train_kl_div_hist,dino_train_to_eval_kl_div_hist,dino_eval_to_train_kl_div_hist
+    - name: all_auc_delta_rank_kl_hist_only_main_effects
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_kl_hist_only/main_effects
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_kl_div_hist,flow_eval_to_train_kl_div_hist,dino_train_to_eval_kl_div_hist,dino_eval_to_train_kl_div_hist
+    - name: all_auc_delta_rank_kl_hist_log1p_only_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_kl_hist_log1p_only/full_interactions
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_kl_div_hist_log1p_linear,flow_eval_to_train_kl_div_hist_log1p_linear,dino_train_to_eval_kl_div_hist_log1p_linear,dino_eval_to_train_kl_div_hist_log1p_linear
+    - name: all_auc_delta_rank_kl_hist_log1p_only_main_effects
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_kl_hist_log1p_only/main_effects
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_kl_div_hist_log1p_linear,flow_eval_to_train_kl_div_hist_log1p_linear,dino_train_to_eval_kl_div_hist_log1p_linear,dino_eval_to_train_kl_div_hist_log1p_linear
+    - name: all_auc_delta_rank_kl_hist_pairwise_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_kl_hist_pairwise/full_interactions
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        prediction_model: pairwise_rank
+        predictors: flow_train_to_eval_kl_div_hist,flow_eval_to_train_kl_div_hist,dino_train_to_eval_kl_div_hist,dino_eval_to_train_kl_div_hist
+    - name: all_auc_delta_rank_kl_hist_log1p_pairwise_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_kl_hist_log1p_pairwise/full_interactions
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        prediction_model: pairwise_rank
+        predictors: flow_train_to_eval_kl_div_hist_log1p_linear,flow_eval_to_train_kl_div_hist_log1p_linear,dino_train_to_eval_kl_div_hist_log1p_linear,dino_eval_to_train_kl_div_hist_log1p_linear
+    - name: all_auc_delta_rank_mmd_pairwise_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_mmd_pairwise/full_interactions
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        prediction_model: pairwise_rank
+        predictors: flow_mmd,dino_mmd
+    - name: all_auc_delta_rank_kl_hist_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_kl_hist/full_interactions
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_mmd,dino_mmd,flow_train_to_eval_kl_div_hist,flow_eval_to_train_kl_div_hist,dino_train_to_eval_kl_div_hist,dino_eval_to_train_kl_div_hist
+    - name: all_auc_delta_rank_kl_hist_log1p_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_kl_hist_log1p/full_interactions
+        rank_target: true
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_mmd,dino_mmd,flow_train_to_eval_kl_div_hist_log1p_linear,flow_eval_to_train_kl_div_hist_log1p_linear,dino_train_to_eval_kl_div_hist_log1p_linear,dino_eval_to_train_kl_div_hist_log1p_linear
     - name: all_auc_delta_rank_coverage_per_encoder
       args:
         output_dir: analysis/leakage_free_local_fast_dino_faiss/all/auc_delta_rank_coverage/per_encoder
@@ -848,6 +942,135 @@ steps:
         model_family_main_effects: true
         model_family_interactions: true
         predictors: flow_mmd,dino_mmd
+    - name: all_peak_pck_rank_kl_hist_only_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_kl_hist_only/full_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_kl_div_hist,flow_eval_to_train_kl_div_hist,dino_train_to_eval_kl_div_hist,dino_eval_to_train_kl_div_hist
+    - name: all_peak_pck_rank_kl_hist_only_main_effects
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_kl_hist_only/main_effects
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_kl_div_hist,flow_eval_to_train_kl_div_hist,dino_train_to_eval_kl_div_hist,dino_eval_to_train_kl_div_hist
+    - name: all_peak_pck_rank_kl_hist_log1p_only_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_kl_hist_log1p_only/full_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_train_to_eval_kl_div_hist_log1p_linear,flow_eval_to_train_kl_div_hist_log1p_linear,dino_train_to_eval_kl_div_hist_log1p_linear,dino_eval_to_train_kl_div_hist_log1p_linear
+    - name: all_peak_pck_rank_kl_hist_log1p_only_main_effects
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_kl_hist_log1p_only/main_effects
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: false
+        model_family_main_effects: true
+        model_family_interactions: false
+        predictors: flow_train_to_eval_kl_div_hist_log1p_linear,flow_eval_to_train_kl_div_hist_log1p_linear,dino_train_to_eval_kl_div_hist_log1p_linear,dino_eval_to_train_kl_div_hist_log1p_linear
+    - name: all_peak_pck_rank_kl_hist_pairwise_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_kl_hist_pairwise/full_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        prediction_model: pairwise_rank
+        predictors: flow_train_to_eval_kl_div_hist,flow_eval_to_train_kl_div_hist,dino_train_to_eval_kl_div_hist,dino_eval_to_train_kl_div_hist
+    - name: all_peak_pck_rank_kl_hist_log1p_pairwise_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_kl_hist_log1p_pairwise/full_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        prediction_model: pairwise_rank
+        predictors: flow_train_to_eval_kl_div_hist_log1p_linear,flow_eval_to_train_kl_div_hist_log1p_linear,dino_train_to_eval_kl_div_hist_log1p_linear,dino_eval_to_train_kl_div_hist_log1p_linear
+    - name: all_peak_pck_rank_mmd_pairwise_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_mmd_pairwise/full_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        prediction_model: pairwise_rank
+        predictors: flow_mmd,dino_mmd
+    - name: all_peak_pck_rank_kl_hist_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_kl_hist/full_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_mmd,dino_mmd,flow_train_to_eval_kl_div_hist,flow_eval_to_train_kl_div_hist,dino_train_to_eval_kl_div_hist,dino_eval_to_train_kl_div_hist
+    - name: all_peak_pck_rank_kl_hist_log1p_full_interactions
+      args:
+        output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_kl_hist_log1p/full_interactions
+        target: peak_pck
+        prediction_target: peak_pck
+        rank_target: true
+        rank_target_source: peak_pck
+        rank_target_col: peak_pck_rank
+        per_encoder: false
+        encoder_main_effects: true
+        encoder_interactions: true
+        model_family_main_effects: true
+        model_family_interactions: true
+        predictors: flow_mmd,dino_mmd,flow_train_to_eval_kl_div_hist_log1p_linear,flow_eval_to_train_kl_div_hist_log1p_linear,dino_train_to_eval_kl_div_hist_log1p_linear,dino_eval_to_train_kl_div_hist_log1p_linear
     - name: all_peak_pck_rank_coverage_per_encoder
       args:
         output_dir: analysis/leakage_free_local_fast_dino_faiss/all/peak_pck_rank_coverage/per_encoder
