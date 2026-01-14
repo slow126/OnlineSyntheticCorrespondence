@@ -15,6 +15,8 @@ steps:
           metric: pck
           auc_steps: 5000
           auc_pad: true
+          fixed_steps: 3000
+          fixed_policy: exact
 
           # Coverage and MMD CSVs
           coverage_csv: coverage_faiss_flow_results_fast.csv
@@ -23,8 +25,11 @@ steps:
           dino_mmd_csv: dino_mmd_results_fast.csv
 
           # Target configuration
-          target: peak_pck
-          prediction_target: peak_pck
+          target: pck_at_3000
+          prediction_target: pck_at_3000
+          relative_target_baseline: spair
+          additional_targets: auc_delta
+          additional_target_dirs: pck_at_3000_delta
 
           # Predictor transformations
           logit_coverage: false

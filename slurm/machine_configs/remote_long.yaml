@@ -1,0 +1,26 @@
+# Machine-specific configuration for SLURM job generation (long wall time)
+
+machine:
+  name: "remote_long"
+  project_root: "/home/slow1/Projects/OnlineSyntheticCorrespondence"
+  conda_env: "cuda"
+  python_path: "python3"
+
+datasets:
+  flyingthings_root: "/home/slow1/Data/FlyingThings3D_Pytorch"
+  pointodyssey_root: "/home/slow1/Data/PointOdyssey"
+  tss_root: "/home/slow1/Data/correspondence/TSS_CVPR2016"
+  kitti_root: "/home/slow1/Data/correspondence/kitti-split"
+  kitti_unsplit_root: "/home/slow1/Data/correspondence/kitti"
+  datapath: "./models/Datasets_CATs"
+  hf_cache_dir: "/home/slow1/Data/hf_cache/datasets"
+
+slurm:
+  time: "23:59:00"
+  nodes: 1
+  ntasks: 1
+  cpus_per_task: 32
+  gpus: 1
+  qos: "cs"
+  mem_default: "128g"
+  mem_large: "128g"

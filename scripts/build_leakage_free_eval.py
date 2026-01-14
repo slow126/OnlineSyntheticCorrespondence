@@ -4444,6 +4444,38 @@ def main():
         run_info["run_id"] = str(snapshot_dir)
         run_info["train_dataset"] = normalize_dataset_name(run_info.get("train_dataset"))
 
+        fixed_step = None
+        fixed_df = None
+        fixed_step_map = {}
+        fixed_step_col = None
+        if args.fixed_steps is not None:
+            fixed_step_col = f"{args.metric}_at_{int(args.fixed_steps)}"
+            fixed_step = args.fixed_steps
+            if args.fixed_policy == "nearest":
+                fixed_step = find_nearest_step(df, args.fixed_steps)
+            if fixed_step is None:
+                print(f"Skipping {snapshot_dir}: no steps for fixed selection")
+                continue
+            fixed_df = df[df["training_steps"] == fixed_step].copy()
+            if fixed_df.empty:
+                print(f"Skipping {snapshot_dir}: fixed step {fixed_step} missing")
+                if args.fixed_policy == "exact":
+                    continue
+            else:
+                if args.fixed_policy == "exact":
+                    expected_benchmarks = set(df["benchmark"].unique())
+                    found_benchmarks = set(fixed_df["benchmark"].unique())
+                    missing_benchmarks = expected_benchmarks - found_benchmarks
+                    if missing_benchmarks:
+                        missing_str = ", ".join(sorted(missing_benchmarks))
+                        print(
+                            f"Skipping {snapshot_dir}: fixed step {fixed_step} missing benchmarks {missing_str}"
+                        )
+                        continue
+                fixed_step_map = (
+                    fixed_df.groupby("benchmark")[args.metric].mean().to_dict()
+                )
+
         if args.mode == "all":
             dev_step, dev_score, dev_count = select_dev_step(df, dev_benchmarks, args.metric)
             if dev_step is None:
@@ -4478,27 +4510,17 @@ def main():
                             }
                         )
 
-            if args.fixed_steps is not None:
-                fixed_step = args.fixed_steps
-                if args.fixed_policy == "nearest":
-                    fixed_step = find_nearest_step(df, args.fixed_steps)
-                if fixed_step is None:
-                    print(f"Skipping {snapshot_dir}: no steps for fixed selection")
-                else:
-                    fixed_df = df[df["training_steps"] == fixed_step].copy()
-                    if fixed_df.empty:
-                        print(f"Skipping {snapshot_dir}: fixed step {fixed_step} missing")
-                    else:
-                        for _, row in fixed_df.iterrows():
-                            fixed_rows.append(
-                                {
-                                    **run_info,
-                                    "fixed_training_steps": int(fixed_step),
-                                    "requested_training_steps": int(args.fixed_steps),
-                                    "benchmark": row["benchmark"],
-                                    args.metric: float(row[args.metric]),
-                                }
-                            )
+            if args.fixed_steps is not None and fixed_df is not None and not fixed_df.empty:
+                for _, row in fixed_df.iterrows():
+                    fixed_rows.append(
+                        {
+                            **run_info,
+                            "fixed_training_steps": int(fixed_step),
+                            "requested_training_steps": int(args.fixed_steps),
+                            "benchmark": row["benchmark"],
+                            args.metric: float(row[args.metric]),
+                        }
+                    )
 
         curve_stats = compute_curve_stats(df, args.metric)
         curve_map = {row["benchmark"]: row for row in curve_stats}
@@ -4510,17 +4532,22 @@ def main():
                 )
             curve_info = curve_map.get(bench, {})
             curve_extra = {k: v for k, v in curve_info.items() if k != "benchmark"}
-            auc_rows.append(
-                {
-                    **run_info,
-                    "benchmark": bench,
-                    "auc_steps": int(args.auc_steps),
-                    "auc": auc,
-                    "auc_normalized": auc / args.auc_steps if args.auc_steps else np.nan,
-                    "auc_points": int(n_points),
-                    **curve_extra,
-                }
-            )
+            row = {
+                **run_info,
+                "benchmark": bench,
+                "auc_steps": int(args.auc_steps),
+                "auc": auc,
+                "auc_normalized": auc / args.auc_steps if args.auc_steps else np.nan,
+                "auc_points": int(n_points),
+                **curve_extra,
+            }
+            if fixed_step_col is not None:
+                row[fixed_step_col] = (
+                    float(fixed_step_map.get(bench, np.nan)) if fixed_step_map else np.nan
+                )
+                row["fixed_training_steps"] = int(fixed_step) if fixed_step is not None else np.nan
+                row["requested_training_steps"] = int(args.fixed_steps)
+            auc_rows.append(row)
 
         for row in curve_stats:
             curve_rows.append({**run_info, **row})
