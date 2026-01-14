@@ -1,0 +1,109 @@
+# Minimal Comprehensive Analysis (Log1p Mixed)
+# Runs only the 3+3 predictor subset with mixed normalization.
+# Usage: python scripts/run_experiment_pipeline.py --config src/configs/pipeline/comprehensive_analysis_minimal_log1p_mixed.yaml
+
+steps:
+  leakage_free_eval:
+    runs:
+      - name: "Stability Selection - Minimal Log1p Mixed (200 bootstraps)"
+        args: &minimal_base
+          snapshots_dir:
+            - snapshots
+            - snapshots_mixed
+            - snapshots_raft
+          mode: auc
+          metric: pck
+          auc_steps: 5000
+          auc_pad: true
+
+          # Coverage and MMD CSVs
+          coverage_csv: coverage_faiss_flow_results_fast.csv
+          coverage_dino_csv: coverage_faiss_dino_results_fast.csv
+          flow_mmd_csv: flow_mmd_results_fast.csv
+          dino_mmd_csv: dino_mmd_results_fast.csv
+
+          # Target configuration
+          relative_target_baseline: spair
+          rank_target: true
+          rank_target_source: auc_delta
+          rank_target_col: auc_delta_rank
+          rank_target_group: benchmark
+          rank_target_with_encoder: true
+
+          # Predictor transformations
+          logit_coverage: false
+          radius_transform: log
+          distance_ratio_transform: log1p
+
+          # Model configuration
+          linear_model: ridge
+          ridge_alpha: 0.5
+          standardize: true
+          cv_standardize_mode: global
+
+          # Target demeaning (uses new fixed model_family_encoder)
+          cv_demean_target_by_encoder: true
+          cv_demean_target_by_benchmark: true
+
+          # LOBO/LOTO centering preferences
+          # LOBO: model_family_encoder only; LOTO: benchmark + model_family_encoder
+          lobo_model_centered: true
+          loto_benchmark_centered: true
+
+          # Exclude encoder effects from predictors
+          encoder_main_effects: false
+          encoder_interactions: false
+
+          # Per-encoder reports
+          per_encoder: true
+          run_summary: true
+
+          # Minimal predictor list (log1p distance ratios, mixed normalization)
+          predictors: "flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mmd,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mmd"
+
+          prediction_target: auc_delta_rank
+
+          # Stability selection configuration
+          run_stability_selection: true
+          stability_n_bootstrap: 200
+          stability_threshold: 0.7
+
+          output_dir: analysis/comprehensive/stability_minimal_log1p_mixed
+
+      - name: "Univariate Comparison - Minimal Log1p Mixed"
+        args:
+          <<: *minimal_base
+          run_univariate_comparison: true
+          output_dir: analysis/comprehensive/univariate_minimal_log1p_mixed
+
+      - name: "Univariate Comparison - Minimal Log1p Mixed (Per-Encoder Options)"
+        args:
+          <<: *minimal_base
+          rank_target_with_model: true
+          prediction_target: auc_delta_rank
+          ranking_group: train_dataset_model_family_encoder
+          run_univariate_comparison: true
+          output_dir: analysis/comprehensive/univariate_minimal_per_encoder_log1p_mixed
+
+      - name: "Stability Selection - Minimal Log1p Mixed (No SPAIR) (200 bootstraps)"
+        args:
+          <<: *minimal_base
+          exclude_train_datasets: spair
+          output_dir: analysis/comprehensive/stability_minimal_log1p_mixed_no_spair
+
+      - name: "Univariate Comparison - Minimal Log1p Mixed (No SPAIR)"
+        args:
+          <<: *minimal_base
+          exclude_train_datasets: spair
+          run_univariate_comparison: true
+          output_dir: analysis/comprehensive/univariate_minimal_log1p_mixed_no_spair
+
+      - name: "Univariate Comparison - Minimal Log1p Mixed (Per-Encoder, No SPAIR)"
+        args:
+          <<: *minimal_base
+          exclude_train_datasets: spair
+          rank_target_with_model: true
+          prediction_target: auc_delta_rank
+          ranking_group: train_dataset_model_family_encoder
+          run_univariate_comparison: true
+          output_dir: analysis/comprehensive/univariate_minimal_per_encoder_log1p_mixed_no_spair

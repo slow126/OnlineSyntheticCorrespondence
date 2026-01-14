@@ -187,8 +187,9 @@ def run_inference_on_benchmark(
     model: torch.nn.Module,
     dataloader: DataLoader,
     device: torch.device,
-    benchmark_name: str
-) -> List[Dict[str, float]]:
+    benchmark_name: str,
+    include_gt: bool = False,
+) -> Tuple[List[Dict[str, float]], List[Dict[str, float]]]:
     """
     Run inference on a benchmark dataset and compute smoothness metrics.
     
@@ -205,6 +206,7 @@ def run_inference_on_benchmark(
     model.eval()
     
     smoothness_metrics = []
+    gt_smoothness_metrics = []
     
     print(f"\nRunning inference on {benchmark_name}...", flush=True)
     
@@ -271,14 +273,24 @@ def run_inference_on_benchmark(
                 if isinstance(pred_flow, (list, tuple)):
                     pred_flow = pred_flow[-1]  # Take last prediction
             
-            # Always ensure prediction matches source image resolution
-            if pred_flow.shape[-2:] != src.shape[-2:]:
-                pred_flow = F.interpolate(
-                    pred_flow,
-                    size=src.shape[-2:],
+            def resize_flow(flow, target_h, target_w):
+                orig_h, orig_w = flow.shape[-2:]
+                if (orig_h, orig_w) == (target_h, target_w):
+                    return flow
+                flow = F.interpolate(
+                    flow,
+                    size=(target_h, target_w),
                     mode='bilinear',
                     align_corners=False
                 )
+                scale_h = target_h / orig_h
+                scale_w = target_w / orig_w
+                flow = flow * torch.tensor([scale_w, scale_h], device=flow.device).view(1, 2, 1, 1)
+                return flow
+
+            # Always ensure prediction matches source image resolution
+            if pred_flow.shape[-2:] != src.shape[-2:]:
+                pred_flow = resize_flow(pred_flow, src.shape[-2], src.shape[-1])
             
             # Get ground truth flow if available
             if flow_key in batch:
@@ -286,12 +298,7 @@ def run_inference_on_benchmark(
                 
                 # Resize prediction to match ground truth if needed
                 if pred_flow.shape[-2:] != gt_flow.shape[-2:]:
-                    pred_flow = F.interpolate(
-                        pred_flow,
-                        size=gt_flow.shape[-2:],
-                        mode='bilinear',
-                        align_corners=False
-                    )
+                    pred_flow = resize_flow(pred_flow, gt_flow.shape[-2], gt_flow.shape[-1])
                 
                 # Handle invalid flow (inf values)
                 if torch.isinf(gt_flow).any():
@@ -306,8 +313,9 @@ def run_inference_on_benchmark(
             # Compute smoothness immediately (streaming - avoid memory accumulation)
             # Move to CPU and process each sample in batch
             pred_flow_cpu = pred_flow.cpu()
+            gt_flow_cpu = gt_flow.cpu() if include_gt and gt_flow is not None else None
             B = pred_flow_cpu.shape[0]
-            
+
             for b in range(B):
                 flow = pred_flow_cpu[b]  # (2, H, W)
                 
@@ -320,14 +328,22 @@ def run_inference_on_benchmark(
                 laplacian = calculate_laplacian_smoothness(flow)
                 
                 smoothness_metrics.append({'tv': tv, 'laplacian': laplacian})
+
+                if gt_flow_cpu is not None:
+                    gt_flow_sample = gt_flow_cpu[b]
+                    gt_tv = calculate_total_variation(gt_flow_sample)
+                    gt_laplacian = calculate_laplacian_smoothness(gt_flow_sample)
+                    gt_smoothness_metrics.append({'tv': gt_tv, 'laplacian': gt_laplacian})
             
             # Free memory immediately
             del pred_flow_cpu, pred_flow
+            if gt_flow_cpu is not None:
+                del gt_flow_cpu
             if gt_flow is not None:
                 del gt_flow
     
     print(f"  ✓ Completed {len(smoothness_metrics)} predictions on {benchmark_name}", flush=True)
-    return smoothness_metrics
+    return smoothness_metrics, gt_smoothness_metrics
 
 
 def calculate_smoothness_metrics(flow_metrics: List[Dict[str, float]]) -> Dict[str, float]:
@@ -409,6 +425,11 @@ def main():
         type=str,
         default='cuda' if torch.cuda.is_available() else 'cpu',
         help='Device to use (cuda/cpu)'
+    )
+    parser.add_argument(
+        '--include-gt',
+        action='store_true',
+        help='Also compute smoothness on ground-truth flow when available.'
     )
     
     args = parser.parse_args()
@@ -540,12 +561,13 @@ def main():
                 dataloader = val_dataloaders[benchmark]
                 
                 # Run inference
-                smoothness_metrics = run_inference_on_benchmark(
-                    model, dataloader, device, benchmark
+                smoothness_metrics, gt_smoothness_metrics = run_inference_on_benchmark(
+                    model, dataloader, device, benchmark, include_gt=args.include_gt
                 )
                 
                 # Calculate smoothness statistics
                 metrics = calculate_smoothness_metrics(smoothness_metrics)
+                gt_metrics = calculate_smoothness_metrics(gt_smoothness_metrics)
                 
                 # Store results
                 result = {
@@ -559,6 +581,14 @@ def main():
                     'std_laplacian': metrics['std_laplacian'],
                     'num_samples': metrics['num_samples']
                 }
+                if args.include_gt:
+                    result.update({
+                        'mean_tv_gt': gt_metrics['mean_tv'],
+                        'std_tv_gt': gt_metrics['std_tv'],
+                        'mean_laplacian_gt': gt_metrics['mean_laplacian'],
+                        'std_laplacian_gt': gt_metrics['std_laplacian'],
+                        'num_samples_gt': gt_metrics['num_samples'],
+                    })
                 all_results.append(result)
                 
                 print(f"    ✓ {benchmark}: TV={metrics['mean_tv']:.6f}, Laplacian={metrics['mean_laplacian']:.6f}", flush=True)
@@ -600,4 +630,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

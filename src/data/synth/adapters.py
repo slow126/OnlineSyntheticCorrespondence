@@ -452,6 +452,7 @@ ADAPTER_REGISTRY = {
     "kitti2012": KittiAdapter,
     "kitti2015": KittiAdapter,
     "synthetic": SyntheticAdapter,
+    "synthetic_2d_warp": SyntheticAdapter,
     "tss": TSSAdapter,
     "middlebury": MiddleburyAdapter,
     "monkaa": MonkaaAdapter,

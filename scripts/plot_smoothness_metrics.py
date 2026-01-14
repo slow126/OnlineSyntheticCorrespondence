@@ -10,6 +10,23 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
+def extract_gt_reference(df):
+    gt_cols = [
+        "mean_tv_gt",
+        "std_tv_gt",
+        "mean_laplacian_gt",
+        "std_laplacian_gt",
+        "num_samples_gt",
+    ]
+    if not all(col in df.columns for col in gt_cols):
+        return {}
+    gt_df = df.dropna(subset=["mean_tv_gt", "mean_laplacian_gt"])
+    if gt_df.empty:
+        return {}
+    grouped = gt_df.groupby("benchmark", dropna=False)[gt_cols].mean().reset_index()
+    return grouped.set_index("benchmark").to_dict(orient="index")
+
+
 def resolve_validation_results_path(checkpoint_path):
     if checkpoint_path is None or pd.isna(checkpoint_path):
         return None
@@ -231,6 +248,9 @@ def plot_metrics(df, benchmark, output_path):
         fontweight="bold",
     )
 
+    gt_reference = df.attrs.get("gt_reference", {})
+    gt_values = gt_reference.get(benchmark, {}) if gt_reference else {}
+
     for row_idx, group in enumerate(groups):
         group_df = bench_df[bench_df["encoder_group"] == group].copy()
         group_df = group_df.sort_values("sort_key")
@@ -261,6 +281,21 @@ def plot_metrics(df, benchmark, output_path):
             ax.grid(True, axis="y", alpha=0.3)
             for idx, value in enumerate(values):
                 ax.text(idx, value * 1.02, f"{value:.4f}", ha="center", va="bottom", fontsize=8)
+            if gt_values:
+                gt_metric = "mean_tv_gt" if metric == "mean_tv" else "mean_laplacian_gt"
+                gt_value = gt_values.get(gt_metric)
+                if gt_value is not None and not pd.isna(gt_value):
+                    ax.axhline(gt_value, color="black", linestyle="--", linewidth=1.0, alpha=0.6)
+                    ax.text(
+                        0.99,
+                        gt_value,
+                        "GT",
+                        transform=ax.get_yaxis_transform(),
+                        ha="right",
+                        va="bottom",
+                        fontsize=8,
+                        color="black",
+                    )
 
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     output_path = Path(output_path)
@@ -352,10 +387,29 @@ def write_summary_txt(df, benchmark, output_path):
     tv_table = format_table(pivot_metric("mean_tv"))
     lap_table = format_table(pivot_metric("mean_laplacian"))
 
+    def format_stat(value):
+        if value is None or pd.isna(value):
+            return "n/a"
+        return f"{value:.6f}"
+
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w") as f:
         f.write(f"Flow smoothness summary (benchmark: {benchmark})\n\n")
+        gt_reference = df.attrs.get("gt_reference", {})
+        gt_values = gt_reference.get(benchmark, {}) if gt_reference else {}
+        if gt_values:
+            tv_mean = gt_values.get("mean_tv_gt")
+            tv_std = gt_values.get("std_tv_gt")
+            lap_mean = gt_values.get("mean_laplacian_gt")
+            lap_std = gt_values.get("std_laplacian_gt")
+            num_samples = gt_values.get("num_samples_gt")
+            samples_text = f"{int(num_samples)}" if num_samples is not None and not pd.isna(num_samples) else "n/a"
+            f.write("Ground truth smoothness (ideal reference)\n")
+            f.write(f"  TV: {format_stat(tv_mean)} ± {format_stat(tv_std)} (n={samples_text})\n")
+            f.write(
+                f"  Laplacian: {format_stat(lap_mean)} ± {format_stat(lap_std)} (n={samples_text})\n\n"
+            )
         f.write("Values show metric; PCK delta in parentheses vs SPAIR only per encoder group.\n\n")
         f.write("Total Variation (lower = smoother)\n")
         f.write(tv_table.to_string())
@@ -401,8 +455,10 @@ def main():
     if df.empty:
         print("No rows found in input.")
         return
+    gt_reference = extract_gt_reference(df)
     df = add_pck_column(df)
     agg = aggregate(df)
+    agg.attrs["gt_reference"] = gt_reference
     plot_metrics(agg, args.benchmark, args.output)
     table_output = args.table_output
     if not table_output:

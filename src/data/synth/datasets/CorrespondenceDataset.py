@@ -1,5 +1,6 @@
 from typing import Optional, Tuple
 import torch
+import torch.nn.functional as F
 from torch.utils.data import Dataset
 from torch.utils.data.dataloader import default_collate
 
@@ -42,6 +43,11 @@ class CorrespondenceDataset(Dataset):
         self.dataset_name = dataset_name
         self.verbose = verbose
         self.debug = debug
+        self.synthetic_flow_warp = kwargs.get("synthetic_flow_warp", dataset_name == "synthetic_2d_warp")
+        self.synthetic_flow_warp_swap = kwargs.get(
+            "synthetic_flow_warp_swap", dataset_name == "synthetic_2d_warp"
+        )
+        self._flow_warp_grid_cache = {}
 
         self.size: Optional[Tuple[int, int]] = kwargs.get("size", (512, 512))
         if self.size is not None:
@@ -61,7 +67,7 @@ class CorrespondenceDataset(Dataset):
         if target_device_str:
             self.target_device = torch.device(target_device_str)
         else:
-            if dataset_name == "synthetic" and torch.cuda.is_available():
+            if dataset_name.startswith("synthetic") and torch.cuda.is_available():
                 self.target_device = torch.device(f"cuda:{torch.cuda.current_device()}")
             else:
                 self.target_device = torch.device("cpu")
@@ -84,9 +90,111 @@ class CorrespondenceDataset(Dataset):
             "normalize_images",
             "debug",
             "verbose",
+            "synthetic_flow_warp",
+            "synthetic_flow_warp_swap",
         }
         adapter_kwargs = {k: v for k, v in kwargs.items() if k not in adapter_excludes}
         self.adapter = build_adapter(dataset_name, **adapter_kwargs)
+
+    def _get_flow_warp_base_grid(
+        self,
+        height: int,
+        width: int,
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> torch.Tensor:
+        key = (height, width, device, dtype)
+        grid = self._flow_warp_grid_cache.get(key)
+        if grid is None:
+            y_coords, x_coords = torch.meshgrid(
+                torch.arange(height, device=device, dtype=dtype),
+                torch.arange(width, device=device, dtype=dtype),
+                indexing="ij",
+            )
+            grid = torch.stack((x_coords, y_coords), dim=0).unsqueeze(0)
+            self._flow_warp_grid_cache[key] = grid
+        return grid
+
+    def _warp_src_with_flow(self, src_img: torch.Tensor, flow: torch.Tensor) -> torch.Tensor:
+        if src_img is None or flow is None:
+            return src_img
+        squeeze = False
+        if src_img.dim() == 3:
+            src_img = src_img.unsqueeze(0)
+            flow = flow.unsqueeze(0)
+            squeeze = True
+
+        _, _, height, width = src_img.shape
+        base_grid = self._get_flow_warp_base_grid(height, width, flow.device, flow.dtype)
+        mapping = base_grid + flow
+
+        denom_w = max(width - 1, 1)
+        denom_h = max(height - 1, 1)
+        mapping[:, 0].mul_(2.0 / denom_w).sub_(1.0)
+        mapping[:, 1].mul_(2.0 / denom_h).sub_(1.0)
+        grid = mapping.permute(0, 2, 3, 1)
+
+        valid = torch.isfinite(flow).all(1)
+        if not valid.all():
+            grid = grid.clone()
+            grid[~valid] = 2.0
+
+        warped = F.grid_sample(
+            src_img,
+            grid,
+            mode="bilinear",
+            padding_mode="zeros",
+            align_corners=True,
+        )
+
+        if squeeze:
+            warped = warped.squeeze(0)
+        return warped
+
+    def _invert_flow(self, flow: torch.Tensor) -> torch.Tensor:
+        if flow is None:
+            return flow
+        squeeze = False
+        if flow.dim() == 3:
+            flow = flow.unsqueeze(0)
+            squeeze = True
+
+        batch_size, _, height, width = flow.shape
+        base_grid = self._get_flow_warp_base_grid(height, width, flow.device, flow.dtype)
+        src_x = base_grid[:, 0] + flow[:, 0]
+        src_y = base_grid[:, 1] + flow[:, 1]
+
+        valid = torch.isfinite(flow).all(1)
+        src_x_round = src_x.round().long()
+        src_y_round = src_y.round().long()
+        in_bounds = (
+            valid
+            & (src_x_round >= 0)
+            & (src_x_round < width)
+            & (src_y_round >= 0)
+            & (src_y_round < height)
+        )
+
+        inv_sum = flow.new_zeros((batch_size, 2, height * width))
+        inv_count = flow.new_zeros((batch_size, 1, height * width))
+
+        for b in range(batch_size):
+            mask = in_bounds[b]
+            if not mask.any():
+                continue
+            idx = (src_y_round[b][mask] * width + src_x_round[b][mask]).view(1, -1)
+            vals = -flow[b, :, mask]
+            inv_sum[b].scatter_add_(1, idx.expand(2, -1), vals)
+            inv_count[b].scatter_add_(1, idx, torch.ones_like(idx, dtype=flow.dtype))
+
+        inv_flow = inv_sum / inv_count.clamp(min=1.0)
+        inv_flow = inv_flow.view(batch_size, 2, height, width)
+        invalid = inv_count.view(batch_size, 1, height, width) == 0
+        inv_flow[invalid.expand_as(inv_flow)] = float("inf")
+
+        if squeeze:
+            inv_flow = inv_flow.squeeze(0)
+        return inv_flow
 
     def __len__(self):
         return len(self.adapter)
@@ -109,6 +217,43 @@ class CorrespondenceDataset(Dataset):
             collated_batch, self.adapter.dataset.processor.device
         )
         processed_batch = self.adapter.dataset.processor.process_scene(collated_batch)
+        if self.synthetic_flow_warp:
+            flow = processed_batch.get("flow_full")
+            if flow is None:
+                flow = processed_batch.get("flow")
+            src_img = processed_batch.get("src_img")
+            if flow is not None and src_img is not None:
+                processed_batch["trg_img"] = self._warp_src_with_flow(src_img, flow)
+            if self.synthetic_flow_warp_swap and src_img is not None:
+                swap_mask = torch.rand(batch_size, device=src_img.device) < 0.5
+                if swap_mask.any():
+                    trg_img = processed_batch.get("trg_img")
+                    if trg_img is not None:
+                        src_tmp = src_img[swap_mask].clone()
+                        trg_tmp = trg_img[swap_mask].clone()
+                        src_img[swap_mask] = trg_tmp
+                        trg_img[swap_mask] = src_tmp
+                        processed_batch["src_img"] = src_img
+                        processed_batch["trg_img"] = trg_img
+                    if processed_batch.get("src_kps") is not None and processed_batch.get("trg_kps") is not None:
+                        src_kps = processed_batch["src_kps"]
+                        trg_kps = processed_batch["trg_kps"]
+                        src_kps_tmp = src_kps[swap_mask].clone()
+                        trg_kps_tmp = trg_kps[swap_mask].clone()
+                        src_kps[swap_mask] = trg_kps_tmp
+                        trg_kps[swap_mask] = src_kps_tmp
+                        processed_batch["src_kps"] = src_kps
+                        processed_batch["trg_kps"] = trg_kps
+                    if processed_batch.get("flow_full") is not None:
+                        flow_full = processed_batch["flow_full"]
+                        inv_flow_full = self._invert_flow(flow_full)
+                        flow_full[swap_mask] = inv_flow_full[swap_mask]
+                        processed_batch["flow_full"] = flow_full
+                    if processed_batch.get("flow") is not None:
+                        flow = processed_batch["flow"]
+                        inv_flow = self._invert_flow(flow)
+                        flow[swap_mask] = inv_flow[swap_mask]
+                        processed_batch["flow"] = flow
 
         samples = []
         for i in range(batch_size):

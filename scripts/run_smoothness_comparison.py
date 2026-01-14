@@ -192,7 +192,15 @@ def collect_checkpoints(snapshot_dirs, allowed_prefixes=None):
     return pd.DataFrame(checkpoint_info)
 
 
-def run_smoothness_calculation(checkpoints_df, benchmarks, output_dir, batch_size=16, num_workers=4, device='cuda'):
+def run_smoothness_calculation(
+    checkpoints_df,
+    benchmarks,
+    output_dir,
+    batch_size=16,
+    num_workers=4,
+    device='cuda',
+    include_gt=False,
+):
     """Run smoothness calculation using calculate_flow_smoothness.py"""
     
     # Ensure output directory exists
@@ -212,6 +220,8 @@ def run_smoothness_calculation(checkpoints_df, benchmarks, output_dir, batch_siz
         '--num-workers', str(num_workers),
         '--device', device
     ]
+    if include_gt:
+        cmd.append('--include-gt')
     
     print(f"\nRunning smoothness calculation...")
     print(f"Command: {' '.join(cmd)}\n")
@@ -579,6 +589,8 @@ def main():
                        help='Directories to scan for base datasets (optional).')
     parser.add_argument('--base-prefixes', type=str, default='synthetic,imagenet2dwarp',
                        help='Comma-separated snapshot name prefixes to treat as base datasets.')
+    parser.add_argument('--include-gt', action='store_true',
+                       help='Also compute smoothness on ground-truth flow when available.')
     
     args = parser.parse_args()
     
@@ -617,7 +629,8 @@ def main():
             args.output_dir,
             batch_size=args.batch_size,
             num_workers=args.num_workers,
-            device=args.device
+            device=args.device,
+            include_gt=args.include_gt
         )
     else:
         print("Skipping smoothness calculation, loading existing results...")

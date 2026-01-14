@@ -1,0 +1,89 @@
+# Quick debug config for PointOdyssey normalization checks.
+# Run: python train_lightning.py --config src/configs/CorrespondenceConfigs/pointodyssey_fast.yaml
+
+model:
+  backbone: 'resnet101'
+  freeze: true
+  pretrained_backbone: true
+
+training:
+  epochs: 1
+  batch_size: 2
+  n_threads: 0
+  seed: 2021
+  lr: 3e-4
+  lr_backbone: 3e-6
+  weight_decay: 0.05
+  momentum: 0.9
+  scheduler: 'step'
+  step: '[70, 80, 90]'
+  step_gamma: 0.5
+  steps_per_epoch: 5
+  augmentation: false
+  min_flow_length: null
+  max_flow_length: null
+  mmd_every_n_epochs: 0
+
+  enable_debug: true
+  debug_visualization_benchmarks: pointodyssey
+  debug_visualization_persist: false
+  eval_initial: true
+
+dataset:
+  dataset_name: 'pointodyssey'
+  split: 'train'
+  size: [512, 512]
+  downsample_flow: 32
+  max_kps: null
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: true
+
+  # PointOdyssey-specific parameters
+  dataset_location: '/home/spencer/Data/PointOdyssey'
+  pointodyssey_use_augs: false
+  pointodyssey_sequence_length: 2
+  pointodyssey_num_pts_to_track: 32
+  pointodyssey_strides: [4]
+  pointodyssey_quick: true
+  reverse_flow: true
+  thres: 'img'
+  use_all_valid: true
+  pointodyssey_disable_motion_filter: true
+
+evaluation:
+  eval_benchmarks: ['pointodyssey']
+  eval_alphas: [0.1]
+  thres: 'img'
+  split_to_use_for_validation: 'val'
+  val_batch_size: 2
+  val_num_workers: 0
+  prefetch_factor: 2
+
+  use_motion_aware: false
+  min_motion_pixels: 5.0
+  zero_threshold: 0.5
+
+  datapath: './models/Datasets_CATs'
+  tss_root: '/home/spencer/Data/correspondence/TSS_CVPR2016'
+  kitti_root: '/home/spencer/Data/correspondence/kitti'
+  kitti_val_use_full_training: true
+  pointodyssey_root: '/home/spencer/Data/PointOdyssey'
+  flyingthings_root: '/home/spencer/Data/FlyingThings3D_tiny'
+
+  val_datasets:
+    pointodyssey:
+      pointodyssey_sequence_length: 2
+      pointodyssey_num_pts_to_track: 32
+      use_all_valid: true
+      val_sequence_fraction: 0.05
+      normalize_images: true
+      split: 'val'
+      pointodyssey_quick: true
+      pointodyssey_disable_motion_filter: true
+
+paths:
+  snapshots: './snapshots'
+  pretrained: null
+  start_epoch: 0

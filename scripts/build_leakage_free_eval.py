@@ -609,13 +609,35 @@ def add_distance_ratio_features(df, eps, radius_floor=0.0):
             eval_col = f"{prefix}_eval_to_train_{stat}_dist"
             if radius_eval is not None and train_col in df.columns:
                 df[f"{train_col}_over_radius_eval"] = df[train_col].astype(float) / radius_eval
+            if radius_train is not None and train_col in df.columns:
+                df[f"{train_col}_over_radius_train"] = (
+                    df[train_col].astype(float) / radius_train
+                )
             if radius_train is not None and eval_col in df.columns:
                 df[f"{eval_col}_over_radius_train"] = df[eval_col].astype(float) / radius_train
+            if radius_eval is not None and eval_col in df.columns:
+                df[f"{eval_col}_over_radius_eval"] = df[eval_col].astype(float) / radius_eval
             if train_col in df.columns and eval_col in df.columns:
                 denom = df[train_col].astype(float) + float(eps)
                 df[f"{prefix}_{stat}_dist_asymmetry"] = (
                     df[eval_col].astype(float) + float(eps)
                 ) / denom
+    return df
+
+
+def transform_distance_ratio_features(df, mode):
+    if mode == "none":
+        return df
+    df = df.copy()
+    ratio_cols = [col for col in df.columns if "_dist_over_radius_" in col]
+    if not ratio_cols:
+        return df
+    if mode == "log1p":
+        for col in ratio_cols:
+            values = pd.to_numeric(df[col], errors="coerce")
+            values = values.where(values >= 0)
+            df[col] = np.log1p(values)
+        return df
     return df
 
 
@@ -776,6 +798,7 @@ def build_auc_feature_table(
     allow_unsplit_coverage=True,
     allow_unsplit_mmd=True,
     distance_radius_norm="none",
+    distance_ratio_transform="none",
     radius_transform="keep",
     radius_eps=1e-6,
     radius_floor=0.0,
@@ -1005,6 +1028,8 @@ def build_auc_feature_table(
 
     df = pd.DataFrame(rows)
     df = add_distance_ratio_features(df, radius_eps, radius_floor)
+    if distance_ratio_transform != "none":
+        df = transform_distance_ratio_features(df, distance_ratio_transform)
     if distance_radius_norm == "divide":
         df = normalize_distances_by_radius(df, radius_eps, radius_floor)
     if radius_transform != "keep":
@@ -2670,6 +2695,18 @@ def _parse_benchmark_list(value):
     return items
 
 
+def _parse_dataset_list(value):
+    if not value:
+        return []
+    items = []
+    for raw in str(value).split(","):
+        token = normalize_dataset_name(raw)
+        if not token:
+            continue
+        items.append(token)
+    return items
+
+
 def demean_target_by_multiple_groups(train_df, test_df, target, group_cols):
     """
     Sequentially demean target by multiple grouping columns.
@@ -3233,6 +3270,38 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
     target_demean_groups = _select_target_demean_groups(args)
     target_group_demean = len(target_demean_groups) > 0
 
+    lobo_group_norm_mode = args.cv_normalize_predictors_by_benchmark
+    lobo_center_by_group = args.center_predictors_by_benchmark
+    lobo_center_group_col = "benchmark"
+    lobo_target_demean_groups = target_demean_groups
+    lobo_target_group_demean = target_group_demean
+    lobo_encoder_group_norm_mode = args.cv_normalize_predictors_by_encoder
+    lobo_encoder_group_col = "encoder_config"
+    if args.lobo_model_centered:
+        if "model_family_encoder" not in cv_df.columns:
+            cv_df = create_model_family_encoder_column(cv_df)
+        lobo_group_norm_mode = "center"
+        lobo_center_by_group = False
+        lobo_center_group_col = "model_family_encoder"
+        lobo_target_demean_groups = ["model_family_encoder"]
+        lobo_target_group_demean = True
+
+    loto_group_norm_mode = args.cv_normalize_predictors_by_benchmark
+    loto_center_by_group = args.center_predictors_by_benchmark
+    loto_center_group_col = "benchmark"
+    loto_target_demean_groups = target_demean_groups
+    loto_target_group_demean = target_group_demean
+    loto_encoder_group_norm_mode = args.cv_normalize_predictors_by_encoder
+    loto_encoder_group_col = "encoder_config"
+    if args.loto_benchmark_centered:
+        if "model_family_encoder" not in cv_df.columns:
+            cv_df = create_model_family_encoder_column(cv_df)
+        loto_group_norm_mode = "center"
+        loto_center_by_group = False
+        loto_center_group_col = "benchmark"
+        loto_target_demean_groups = ["benchmark", "model_family_encoder"]
+        loto_target_group_demean = True
+
     lobo_summary, lobo_preds = run_group_cv(
         cv_df,
         "benchmark",
@@ -3240,14 +3309,14 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
         pred_target,
         standardize=args.standardize,
         standardize_mode=args.cv_standardize_mode,
-        center_by_group=args.center_predictors_by_benchmark,
-        center_group_col="benchmark",
-        group_norm_mode=args.cv_normalize_predictors_by_benchmark,
+        center_by_group=lobo_center_by_group,
+        center_group_col=lobo_center_group_col,
+        group_norm_mode=lobo_group_norm_mode,
         within_benchmark_norm=args.cv_within_benchmark_predictor_norm,
-        encoder_group_norm_mode=args.cv_normalize_predictors_by_encoder,
-        encoder_group_col="encoder_config",
-        target_group_demean=target_group_demean,
-        target_group_col=target_demean_groups,
+        encoder_group_norm_mode=lobo_encoder_group_norm_mode,
+        encoder_group_col=lobo_encoder_group_col,
+        target_group_demean=lobo_target_group_demean,
+        target_group_col=lobo_target_demean_groups,
         min_predictor_std=args.cv_min_predictor_std,
         prediction_clip=args.prediction_clip,
         prediction_clip_min=args.prediction_clip_min,
@@ -3308,14 +3377,14 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
             random_slopes=random_slopes,
             standardize=args.standardize,
             standardize_mode=args.cv_standardize_mode,
-            center_by_group=args.center_predictors_by_benchmark,
-            center_group_col="benchmark",
-            group_norm_mode=args.cv_normalize_predictors_by_benchmark,
+            center_by_group=lobo_center_by_group,
+            center_group_col=lobo_center_group_col,
+            group_norm_mode=lobo_group_norm_mode,
             within_benchmark_norm=args.cv_within_benchmark_predictor_norm,
-            encoder_group_norm_mode=args.cv_normalize_predictors_by_encoder,
-            encoder_group_col="encoder_config",
-            target_group_demean=target_group_demean,
-            target_group_col=target_demean_groups,
+            encoder_group_norm_mode=lobo_encoder_group_norm_mode,
+            encoder_group_col=lobo_encoder_group_col,
+            target_group_demean=lobo_target_group_demean,
+            target_group_col=lobo_target_demean_groups,
             min_predictor_std=args.cv_min_predictor_std,
             prediction_clip=args.prediction_clip,
             prediction_clip_min=args.prediction_clip_min,
@@ -3353,14 +3422,14 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
         pred_target,
         standardize=args.standardize,
         standardize_mode=args.cv_standardize_mode,
-        center_by_group=args.center_predictors_by_benchmark,
-        center_group_col="benchmark",
-        group_norm_mode=args.cv_normalize_predictors_by_benchmark,
+        center_by_group=loto_center_by_group,
+        center_group_col=loto_center_group_col,
+        group_norm_mode=loto_group_norm_mode,
         within_benchmark_norm=args.cv_within_benchmark_predictor_norm,
-        encoder_group_norm_mode=args.cv_normalize_predictors_by_encoder,
-        encoder_group_col="encoder_config",
-        target_group_demean=target_group_demean,
-        target_group_col=target_demean_groups,
+        encoder_group_norm_mode=loto_encoder_group_norm_mode,
+        encoder_group_col=loto_encoder_group_col,
+        target_group_demean=loto_target_group_demean,
+        target_group_col=loto_target_demean_groups,
         min_predictor_std=args.cv_min_predictor_std,
         prediction_clip=args.prediction_clip,
         prediction_clip_min=args.prediction_clip_min,
@@ -3399,14 +3468,14 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
             pred_target,
             standardize=args.standardize,
             standardize_mode=args.cv_standardize_mode,
-            center_by_group=args.center_predictors_by_benchmark,
-            center_group_col="benchmark",
-            group_norm_mode=args.cv_normalize_predictors_by_benchmark,
+            center_by_group=lobo_center_by_group,
+            center_group_col=lobo_center_group_col,
+            group_norm_mode=lobo_group_norm_mode,
             within_benchmark_norm=args.cv_within_benchmark_predictor_norm,
-            encoder_group_norm_mode=args.cv_normalize_predictors_by_encoder,
-            encoder_group_col="encoder_config",
-            target_group_demean=target_group_demean,
-            target_group_col=target_demean_groups,
+            encoder_group_norm_mode=lobo_encoder_group_norm_mode,
+            encoder_group_col=lobo_encoder_group_col,
+            target_group_demean=lobo_target_group_demean,
+            target_group_col=lobo_target_demean_groups,
             min_predictor_std=args.cv_min_predictor_std,
             prediction_clip=args.prediction_clip,
             prediction_clip_min=args.prediction_clip_min,
@@ -3442,14 +3511,14 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
             pred_target,
             standardize=args.standardize,
             standardize_mode=args.cv_standardize_mode,
-            center_by_group=args.center_predictors_by_benchmark,
-            center_group_col="benchmark",
-            group_norm_mode=args.cv_normalize_predictors_by_benchmark,
+            center_by_group=loto_center_by_group,
+            center_group_col=loto_center_group_col,
+            group_norm_mode=loto_group_norm_mode,
             within_benchmark_norm=args.cv_within_benchmark_predictor_norm,
-            encoder_group_norm_mode=args.cv_normalize_predictors_by_encoder,
-            encoder_group_col="encoder_config",
-            target_group_demean=target_group_demean,
-            target_group_col=target_demean_groups,
+            encoder_group_norm_mode=loto_encoder_group_norm_mode,
+            encoder_group_col=loto_encoder_group_col,
+            target_group_demean=loto_target_group_demean,
+            target_group_col=loto_target_demean_groups,
             min_predictor_std=args.cv_min_predictor_std,
             prediction_clip=args.prediction_clip,
             prediction_clip_min=args.prediction_clip_min,
@@ -3481,14 +3550,14 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
             random_slopes=random_slopes,
             standardize=args.standardize,
             standardize_mode=args.cv_standardize_mode,
-            center_by_group=args.center_predictors_by_benchmark,
-            center_group_col="benchmark",
-            group_norm_mode=args.cv_normalize_predictors_by_benchmark,
+            center_by_group=loto_center_by_group,
+            center_group_col=loto_center_group_col,
+            group_norm_mode=loto_group_norm_mode,
             within_benchmark_norm=args.cv_within_benchmark_predictor_norm,
-            encoder_group_norm_mode=args.cv_normalize_predictors_by_encoder,
-            encoder_group_col="encoder_config",
-            target_group_demean=target_group_demean,
-            target_group_col=target_demean_groups,
+            encoder_group_norm_mode=loto_encoder_group_norm_mode,
+            encoder_group_col=loto_encoder_group_col,
+            target_group_demean=loto_target_group_demean,
+            target_group_col=loto_target_demean_groups,
             min_predictor_std=args.cv_min_predictor_std,
             prediction_clip=args.prediction_clip,
             prediction_clip_min=args.prediction_clip_min,
@@ -3796,6 +3865,12 @@ def main():
         help="Normalize distance predictors by the corresponding train radius.",
     )
     parser.add_argument(
+        "--distance-ratio-transform",
+        choices=["none", "log1p"],
+        default="none",
+        help="Transform distance/radius ratio predictors (e.g., log1p).",
+    )
+    parser.add_argument(
         "--radius-transform",
         choices=["keep", "log", "drop"],
         default="keep",
@@ -3964,6 +4039,16 @@ def main():
         choices=["none", "center", "zscore"],
         default="none",
         help="Apply train-only encoder-config normalization inside LOBO/LOTO folds.",
+    )
+    parser.add_argument(
+        "--lobo-model-centered",
+        action="store_true",
+        help="Center predictors and demean target by model_family_encoder for LOBO.",
+    )
+    parser.add_argument(
+        "--loto-benchmark-centered",
+        action="store_true",
+        help="Center predictors by benchmark and demean target by benchmark + model_family_encoder for LOTO.",
     )
     parser.add_argument(
         "--cv-demean-target-by-encoder",
@@ -4186,7 +4271,12 @@ def main():
     parser.add_argument(
         "--exclude-benchmarks",
         default="",
-        help="Comma-separated benchmarks to exclude from LOBO/LOTO prediction runs.",
+        help="Comma-separated benchmarks to exclude from analysis (including LOBO/LOTO).",
+    )
+    parser.add_argument(
+        "--exclude-train-datasets",
+        default="",
+        help="Comma-separated train_dataset values to exclude from analysis.",
     )
     parser.add_argument(
         "--ranking-group",
@@ -4484,6 +4574,7 @@ def main():
         allow_unsplit_coverage=args.allow_unsplit_coverage,
         allow_unsplit_mmd=args.allow_unsplit_mmd,
         distance_radius_norm=args.distance_radius_norm,
+        distance_ratio_transform=args.distance_ratio_transform,
         radius_transform=args.radius_transform,
         radius_eps=args.radius_eps,
         radius_floor=args.distance_radius_floor,
@@ -4506,6 +4597,34 @@ def main():
             baseline_path = out_dir / "missing_baseline.txt"
             baseline_path.write_text(
                 f"Missing baseline rows: {missing_baseline} (baseline={baseline_name})\n"
+            )
+
+    exclude_benchmarks = _parse_benchmark_list(args.exclude_benchmarks)
+    if exclude_benchmarks and "benchmark" in feature_df.columns and not feature_df.empty:
+        before = len(feature_df)
+        feature_df = feature_df[
+            ~feature_df["benchmark"].astype(str).str.lower().isin(exclude_benchmarks)
+        ].copy()
+        dropped = before - len(feature_df)
+        if dropped:
+            print(
+                "Dropped rows for benchmarks: "
+                + ", ".join(exclude_benchmarks)
+                + f" ({dropped} rows)"
+            )
+
+    exclude_train_datasets = _parse_dataset_list(args.exclude_train_datasets)
+    if exclude_train_datasets and "train_dataset" in feature_df.columns and not feature_df.empty:
+        before = len(feature_df)
+        feature_df = feature_df[
+            ~feature_df["train_dataset"].astype(str).str.lower().isin(exclude_train_datasets)
+        ].copy()
+        dropped = before - len(feature_df)
+        if dropped:
+            print(
+                "Dropped rows for train datasets: "
+                + ", ".join(exclude_train_datasets)
+                + f" ({dropped} rows)"
             )
 
     if args.rank_target and not feature_df.empty:

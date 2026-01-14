@@ -1,0 +1,98 @@
+# Comprehensive Analysis (Raw Distance Precision/Recall Proxies)
+# Uses raw mean distances (no normalization, no transform).
+# Usage: python scripts/run_experiment_pipeline.py --config src/configs/pipeline/comprehensive_analysis_precision_recall_raw.yaml
+
+steps:
+  leakage_free_eval:
+    runs:
+      - name: "Stability Selection - Raw Distance Precision/Recall (200 bootstraps)"
+        args: &raw_pr_base
+          snapshots_dir:
+            - snapshots
+            - snapshots_mixed
+            - snapshots_raft
+          mode: auc
+          metric: pck
+          auc_steps: 5000
+          auc_pad: true
+
+          # Coverage and MMD CSVs
+          coverage_csv: coverage_faiss_flow_results_fast.csv
+          coverage_dino_csv: coverage_faiss_dino_results_fast.csv
+          flow_mmd_csv: flow_mmd_results_fast.csv
+          dino_mmd_csv: dino_mmd_results_fast.csv
+
+          # Target configuration
+          target: peak_pck
+          prediction_target: peak_pck
+
+          # Predictor transformations (raw distances)
+          logit_coverage: false
+          distance_radius_norm: none
+          distance_ratio_transform: none
+          radius_transform: keep
+
+          # Model configuration
+          linear_model: ridge
+          ridge_alpha: 0.5
+          standardize: true
+          cv_standardize_mode: global
+
+          # Target demeaning (uses new fixed model_family_encoder)
+          cv_demean_target_by_encoder: true
+          cv_demean_target_by_benchmark: true
+
+          # LOBO/LOTO centering preferences
+          # LOBO: model_family_encoder only; LOTO: benchmark + model_family_encoder
+          lobo_model_centered: true
+          loto_benchmark_centered: true
+
+          # Exclude encoder effects from predictors
+          encoder_main_effects: false
+          encoder_interactions: false
+
+          # Per-encoder reports
+          per_encoder: true
+          run_summary: true
+
+          # Raw precision/recall proxies via mean distances
+          predictors: "flow_train_to_eval_mean_dist,flow_eval_to_train_mean_dist,dino_train_to_eval_mean_dist,dino_eval_to_train_mean_dist"
+
+          # Stability selection configuration
+          run_stability_selection: true
+          stability_n_bootstrap: 200
+          stability_threshold: 0.7
+
+          output_dir: analysis/comprehensive/stability_precision_recall_raw
+
+      - name: "Univariate Comparison - Raw Distance Precision/Recall"
+        args:
+          <<: *raw_pr_base
+          run_univariate_comparison: true
+          output_dir: analysis/comprehensive/univariate_precision_recall_raw
+
+      - name: "Univariate Comparison - Raw Distance Precision/Recall (Per-Encoder Options)"
+        args:
+          <<: *raw_pr_base
+          run_univariate_comparison: true
+          output_dir: analysis/comprehensive/univariate_precision_recall_raw_per_encoder
+
+      - name: "Stability Selection - Raw Distance Precision/Recall (No SPAIR) (200 bootstraps)"
+        args:
+          <<: *raw_pr_base
+          exclude_train_datasets: spair
+          output_dir: analysis/comprehensive/stability_precision_recall_raw_no_spair
+
+      - name: "Univariate Comparison - Raw Distance Precision/Recall (No SPAIR)"
+        args:
+          <<: *raw_pr_base
+          exclude_train_datasets: spair
+          run_univariate_comparison: true
+          output_dir: analysis/comprehensive/univariate_precision_recall_raw_no_spair
+
+      - name: "Univariate Comparison - Raw Distance Precision/Recall (Per-Encoder, No SPAIR)"
+        args:
+          <<: *raw_pr_base
+          exclude_train_datasets: spair
+          run_univariate_comparison: true
+          output_dir: analysis/comprehensive/univariate_precision_recall_raw_per_encoder_no_spair

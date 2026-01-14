@@ -1,0 +1,92 @@
+# Comprehensive Analysis (MMD Only)
+# Uses only flow/dino MMD predictors.
+# Usage: python scripts/run_experiment_pipeline.py --config src/configs/pipeline/comprehensive_analysis_mmd_only.yaml
+
+steps:
+  leakage_free_eval:
+    runs:
+      - name: "Stability Selection - MMD Only (200 bootstraps)"
+        args: &mmd_base
+          snapshots_dir:
+            - snapshots
+            - snapshots_mixed
+            - snapshots_raft
+          mode: auc
+          metric: pck
+          auc_steps: 5000
+          auc_pad: true
+
+          # Coverage and MMD CSVs
+          coverage_csv: coverage_faiss_flow_results_fast.csv
+          coverage_dino_csv: coverage_faiss_dino_results_fast.csv
+          flow_mmd_csv: flow_mmd_results_fast.csv
+          dino_mmd_csv: dino_mmd_results_fast.csv
+
+          # Target configuration
+          target: peak_pck
+          prediction_target: peak_pck
+
+          # Model configuration
+          linear_model: ridge
+          ridge_alpha: 0.5
+          standardize: true
+          cv_standardize_mode: global
+
+          # Target demeaning (uses new fixed model_family_encoder)
+          cv_demean_target_by_encoder: true
+          cv_demean_target_by_benchmark: true
+
+          # LOBO/LOTO centering preferences
+          # LOBO: model_family_encoder only; LOTO: benchmark + model_family_encoder
+          lobo_model_centered: true
+          loto_benchmark_centered: true
+
+          # Exclude encoder effects from predictors
+          encoder_main_effects: false
+          encoder_interactions: false
+
+          # Per-encoder reports
+          per_encoder: true
+          run_summary: true
+
+          # MMD-only predictors
+          predictors: "flow_mmd,dino_mmd"
+
+          # Stability selection configuration
+          run_stability_selection: true
+          stability_n_bootstrap: 200
+          stability_threshold: 0.7
+
+          output_dir: analysis/comprehensive/stability_mmd_only
+
+      - name: "Univariate Comparison - MMD Only"
+        args:
+          <<: *mmd_base
+          run_univariate_comparison: true
+          output_dir: analysis/comprehensive/univariate_mmd_only
+
+      - name: "Univariate Comparison - MMD Only (Per-Encoder Options)"
+        args:
+          <<: *mmd_base
+          run_univariate_comparison: true
+          output_dir: analysis/comprehensive/univariate_mmd_only_per_encoder
+
+      - name: "Stability Selection - MMD Only (No SPAIR) (200 bootstraps)"
+        args:
+          <<: *mmd_base
+          exclude_train_datasets: spair
+          output_dir: analysis/comprehensive/stability_mmd_only_no_spair
+
+      - name: "Univariate Comparison - MMD Only (No SPAIR)"
+        args:
+          <<: *mmd_base
+          exclude_train_datasets: spair
+          run_univariate_comparison: true
+          output_dir: analysis/comprehensive/univariate_mmd_only_no_spair
+
+      - name: "Univariate Comparison - MMD Only (Per-Encoder, No SPAIR)"
+        args:
+          <<: *mmd_base
+          exclude_train_datasets: spair
+          run_univariate_comparison: true
+          output_dir: analysis/comprehensive/univariate_mmd_only_per_encoder_no_spair

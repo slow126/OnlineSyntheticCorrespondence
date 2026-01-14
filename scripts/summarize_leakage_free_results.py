@@ -116,6 +116,76 @@ def _fit_standardized_model(df, predictors, target, model="ols", ridge_alpha=1.0
     return {"params": params, "pvalues": pvalues, "n": len(df_sub), "r2": result.rsquared}
 
 
+def _ensure_model_group(df):
+    if "model_family_encoder" in df.columns:
+        return "model_family_encoder"
+    if "model_family" in df.columns and "encoder_config" in df.columns:
+        df["model_family_encoder"] = (
+            df["model_family"].astype(str) + "_" + df["encoder_config"].astype(str)
+        )
+        return "model_family_encoder"
+    if "model_family" in df.columns:
+        return "model_family"
+    if "encoder_config" in df.columns:
+        return "encoder_config"
+    return None
+
+
+def _fit_benchmark_centered_model(df, predictors, target, model="ols", ridge_alpha=1.0):
+    df_sub = df[predictors + [target, "benchmark"]].dropna().copy()
+    if df_sub.empty:
+        return None
+    for col in [target] + predictors:
+        df_sub[col] = df_sub[col] - df_sub.groupby("benchmark")[col].transform("mean")
+    return _fit_standardized_model(df_sub, predictors, target, model=model, ridge_alpha=ridge_alpha)
+
+
+def _fit_group_centered_model(
+    df, predictors, target, groups, model="ols", ridge_alpha=1.0
+):
+    cols = predictors + [target] + groups
+    df_sub = df[cols].dropna().copy()
+    if df_sub.empty:
+        return None
+    overall = df_sub[[target] + predictors].mean()
+    if len(groups) == 1:
+        for col in [target] + predictors:
+            df_sub[col] = df_sub[col] - df_sub.groupby(groups[0])[col].transform("mean")
+    elif len(groups) == 2:
+        mean_a = df_sub.groupby(groups[0])[[target] + predictors].transform("mean")
+        mean_b = df_sub.groupby(groups[1])[[target] + predictors].transform("mean")
+        df_sub[[target] + predictors] = (
+            df_sub[[target] + predictors] - mean_a - mean_b + overall
+        )
+    else:
+        for group in groups:
+            for col in [target] + predictors:
+                df_sub[col] = df_sub[col] - df_sub.groupby(group)[col].transform("mean")
+    return _fit_standardized_model(df_sub, predictors, target, model=model, ridge_alpha=ridge_alpha)
+
+
+def _fit_per_benchmark_models(
+    df, predictors, target, model="ols", ridge_alpha=1.0, min_rows=12
+):
+    rows = []
+    for bench, sub in df.groupby("benchmark"):
+        sub = sub[predictors + [target]].dropna().copy()
+        if len(sub) < min_rows:
+            continue
+        fit = _fit_standardized_model(sub, predictors, target, model=model, ridge_alpha=ridge_alpha)
+        if fit is None:
+            continue
+        row = {
+            "benchmark": bench,
+            "n": fit.get("n", len(sub)),
+            "r2": fit.get("r2", np.nan),
+        }
+        for pred in predictors:
+            row[pred] = fit["params"].get(pred, np.nan)
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
 def _format_coef(name, coef, pval):
     if pval is None or np.isnan(pval):
         return f"{name}: {coef:+.3f}"
@@ -694,6 +764,10 @@ def main():
         out_lines.append("Model family counts:")
         for name, group in df.groupby("model_family", dropna=False):
             out_lines.append(f"  {name}: {len(group)} rows")
+    model_group_col = _ensure_model_group(df)
+    if model_group_col:
+        out_lines.append("")
+        out_lines.append(f"Model grouping column: {model_group_col}")
 
     out_lines.append("")
     out_lines.append("Analysis config:")
@@ -804,33 +878,118 @@ def main():
             coef = params.get(pred, np.nan)
             pval = pvals.get(pred, np.nan) if pvals else np.nan
             out_lines.append("  " + _format_coef(pred, coef, pval))
+    out_lines.append("")
+    out_lines.append(f"Benchmark-centered standardized {model_label} (all data):")
+    centered_model = _fit_benchmark_centered_model(
+        df,
+        predictors,
+        args.target,
+        model=args.linear_model,
+        ridge_alpha=args.ridge_alpha,
+    )
+    if centered_model is None:
+        out_lines.append("  Not enough complete rows to fit model.")
+    else:
+        out_lines.append(f"  N={centered_model['n']}")
+        if "r2" in centered_model:
+            out_lines.append(f"  R2={centered_model['r2']:.3f}")
+        params = centered_model["params"]
+        for pred in predictors:
+            coef = params.get(pred, np.nan)
+            out_lines.append("  " + _format_coef(pred, coef, np.nan))
 
-        if "r2" in model and not np.isnan(model["r2"]):
-            base_r2 = model["r2"]
-            drop_rows = []
+    if model_group_col:
+        out_lines.append("")
+        out_lines.append(f"Model-centered standardized {model_label} (all data):")
+        model_centered = _fit_group_centered_model(
+            df,
+            predictors,
+            args.target,
+            [model_group_col],
+            model=args.linear_model,
+            ridge_alpha=args.ridge_alpha,
+        )
+        if model_centered is None:
+            out_lines.append("  Not enough complete rows to fit model.")
+        else:
+            out_lines.append(f"  N={model_centered['n']}")
+            if "r2" in model_centered:
+                out_lines.append(f"  R2={model_centered['r2']:.3f}")
+            params = model_centered["params"]
             for pred in predictors:
-                reduced = [p for p in predictors if p != pred]
-                if not reduced:
-                    continue
-                reduced_model = _fit_standardized_model(
-                    df,
-                    reduced,
-                    args.target,
-                    model=args.linear_model,
-                    ridge_alpha=args.ridge_alpha,
-                )
-                if reduced_model is None or "r2" not in reduced_model:
-                    continue
-                reduced_r2 = reduced_model["r2"]
-                if np.isnan(reduced_r2):
-                    continue
-                drop_rows.append((pred, base_r2 - reduced_r2))
-            if drop_rows:
-                drop_rows.sort(key=lambda x: x[1], reverse=True)
-                out_lines.append("")
-                out_lines.append("Predictor drop-one sensitivity (delta R2):")
-                for pred, delta in drop_rows[:5]:
-                    out_lines.append(f"  {pred}: {delta:+.3f}")
+                coef = params.get(pred, np.nan)
+                out_lines.append("  " + _format_coef(pred, coef, np.nan))
+
+        out_lines.append("")
+        out_lines.append(
+            f"Benchmark+model-centered standardized {model_label} (all data):"
+        )
+        both_centered = _fit_group_centered_model(
+            df,
+            predictors,
+            args.target,
+            ["benchmark", model_group_col],
+            model=args.linear_model,
+            ridge_alpha=args.ridge_alpha,
+        )
+        if both_centered is None:
+            out_lines.append("  Not enough complete rows to fit model.")
+        else:
+            out_lines.append(f"  N={both_centered['n']}")
+            if "r2" in both_centered:
+                out_lines.append(f"  R2={both_centered['r2']:.3f}")
+            params = both_centered["params"]
+            for pred in predictors:
+                coef = params.get(pred, np.nan)
+                out_lines.append("  " + _format_coef(pred, coef, np.nan))
+
+    per_bench_df = _fit_per_benchmark_models(
+        df,
+        predictors,
+        args.target,
+        model=args.linear_model,
+        ridge_alpha=args.ridge_alpha,
+    )
+    if not per_bench_df.empty:
+        per_bench_path = Path(args.output_file).with_name("benchmark_ridge_coeffs.csv")
+        per_bench_df.to_csv(per_bench_path, index=False)
+        out_lines.append("")
+        out_lines.append("Per-benchmark standardized fits:")
+        out_lines.append(f"  Saved: {per_bench_path}")
+        for pred in predictors:
+            signs = per_bench_df[pred].dropna()
+            if signs.empty:
+                continue
+            pos = int((signs > 0).sum())
+            neg = int((signs < 0).sum())
+            out_lines.append(f"  {pred}: +{pos} / -{neg} across benchmarks")
+
+    if model is not None and "r2" in model and not np.isnan(model["r2"]):
+        base_r2 = model["r2"]
+        drop_rows = []
+        for pred in predictors:
+            reduced = [p for p in predictors if p != pred]
+            if not reduced:
+                continue
+            reduced_model = _fit_standardized_model(
+                df,
+                reduced,
+                args.target,
+                model=args.linear_model,
+                ridge_alpha=args.ridge_alpha,
+            )
+            if reduced_model is None or "r2" not in reduced_model:
+                continue
+            reduced_r2 = reduced_model["r2"]
+            if np.isnan(reduced_r2):
+                continue
+            drop_rows.append((pred, base_r2 - reduced_r2))
+        if drop_rows:
+            drop_rows.sort(key=lambda x: x[1], reverse=True)
+            out_lines.append("")
+            out_lines.append("Predictor drop-one sensitivity (delta R2):")
+            for pred, delta in drop_rows[:5]:
+                out_lines.append(f"  {pred}: {delta:+.3f}")
         family_scores = {}
         for pred in predictors:
             coef = params.get(pred, np.nan)

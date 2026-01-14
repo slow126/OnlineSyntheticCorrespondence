@@ -31,7 +31,15 @@ SEMANTIC_FAMILY = ["spair", "pfpascal", "pfwillow", "tss"]
 KITTI_BENCHMARKS = ["kitti2012", "kitti2015"]
 
 
-def load_distance_metrics(csv_path: Path, prefix: str = "flow") -> pd.DataFrame:
+def _parse_csv_list(value: str) -> List[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def load_distance_metrics(
+    csv_path: Path,
+    prefix: str = "flow",
+    distance_transform: str = "none",
+) -> pd.DataFrame:
     """Load and prepare distance metrics CSV with normalized columns.
     
     For coverage CSVs, creates ALL 4 normalized distance variants:
@@ -86,6 +94,23 @@ def load_distance_metrics(csv_path: Path, prefix: str = "flow") -> pd.DataFrame:
             # Also keep the old naming for backward compatibility with existing code
             df[f"{prefix}_train_to_eval_mean_dist_over_radius_eval"] = df[f"{prefix}_train_to_eval_norm_by_eval"]
             df[f"{prefix}_eval_to_train_mean_dist_over_radius_train"] = df[f"{prefix}_eval_to_train_norm_by_train"]
+
+        if distance_transform == "log1p":
+            # Log1p transform normalized distance ratios to reduce outlier leverage.
+            ratio_cols = [
+                f"{prefix}_eval_to_train_norm_by_eval",
+                f"{prefix}_eval_to_train_norm_by_train",
+                f"{prefix}_train_to_eval_norm_by_eval",
+                f"{prefix}_train_to_eval_norm_by_train",
+                f"{prefix}_train_to_eval_mean_dist_over_radius_eval",
+                f"{prefix}_eval_to_train_mean_dist_over_radius_train",
+            ]
+            for col in ratio_cols:
+                if col not in df.columns:
+                    continue
+                values = pd.to_numeric(df[col], errors="coerce")
+                values = values.where(values >= 0)
+                df[f"{col}_log1p"] = np.log1p(values)
     
     return df
 
@@ -104,6 +129,10 @@ def get_distance(df: pd.DataFrame, dataset: str, benchmark: str, metric_col: str
         return np.nan
     
     return float(match[metric_col].iloc[0])
+
+
+def _distance_col(name: str, transform: str) -> str:
+    return f"{name}_log1p" if transform == "log1p" else name
 
 
 def compute_correlations(x: np.ndarray, y: np.ndarray) -> Dict:
@@ -183,11 +212,13 @@ def analyze_complementarity(
     variants: List[str],
     baseline: str,
     benchmarks: List[str],
+    distance_transform: str,
 ) -> pd.DataFrame:
     """
     Test H1: Flow distances vary, DINO distances stay constant across zoom variants.
     """
     results = []
+    suffix = "_log1p" if distance_transform == "log1p" else ""
     
     for benchmark in benchmarks:
         flow_mmds = []
@@ -203,13 +234,21 @@ def analyze_complementarity(
             dino_mmds.append(dino_mmd)
             
             # Get eval→train mean distance (recall metric) - using NORMALIZED metric
+            flow_metric = _distance_col(
+                'flow_eval_to_train_mean_dist_over_radius_train',
+                distance_transform,
+            )
+            dino_metric = _distance_col(
+                'dino_eval_to_train_mean_dist_over_radius_train',
+                distance_transform,
+            )
             flow_recall = get_distance(
                 flow_coverage_df[flow_coverage_df['dataset1'] == variant],
-                variant, benchmark, 'flow_eval_to_train_mean_dist_over_radius_train'
+                variant, benchmark, flow_metric
             )
             dino_recall = get_distance(
                 dino_coverage_df[dino_coverage_df['dataset1'] == variant],
-                variant, benchmark, 'dino_eval_to_train_mean_dist_over_radius_train'
+                variant, benchmark, dino_metric
             )
             flow_eval_to_train.append(flow_recall)
             dino_eval_to_train.append(dino_recall)
@@ -243,52 +282,75 @@ def analyze_flow_prediction(
     flow_mmd_df: pd.DataFrame,
     variants: List[str],
     benchmarks: List[str],
+    group_cols: List[str],
     perf_metric: str = 'auc_delta',
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Test H2: Flow MMD predicts performance on target benchmarks.
     """
-    # Aggregate performance per variant-benchmark
-    agg_perf = perf_df.groupby(['train_dataset', 'benchmark'])[perf_metric].mean().reset_index()
+    # Aggregate performance per variant-benchmark (optionally stratified)
+    agg_cols = group_cols + ['train_dataset', 'benchmark']
+    agg_perf = perf_df.groupby(agg_cols)[perf_metric].mean().reset_index()
+    if group_cols:
+        group_records = agg_perf[group_cols].drop_duplicates().to_dict('records')
+    else:
+        group_records = [{}]
     
     rows = []
-    for variant in variants:
-        for benchmark in benchmarks:
-            flow_mmd = get_distance(flow_mmd_df, variant, benchmark, 'mmd2')
-            
-            perf_match = agg_perf[
-                (agg_perf['train_dataset'] == variant) &
-                (agg_perf['benchmark'] == benchmark)
-            ]
-            
-            if perf_match.empty:
-                perf = np.nan
-            else:
-                perf = float(perf_match[perf_metric].iloc[0])
-            
-            rows.append({
-                'variant': variant,
-                'benchmark': benchmark,
-                'flow_mmd': flow_mmd,
-                'performance': perf,
-            })
+    for group in group_records:
+        if group_cols:
+            mask = np.ones(len(agg_perf), dtype=bool)
+            for col, val in group.items():
+                mask &= agg_perf[col] == val
+            group_perf = agg_perf[mask]
+        else:
+            group_perf = agg_perf
+        for variant in variants:
+            for benchmark in benchmarks:
+                flow_mmd = get_distance(flow_mmd_df, variant, benchmark, 'mmd2')
+                
+                perf_match = group_perf[
+                    (group_perf['train_dataset'] == variant) &
+                    (group_perf['benchmark'] == benchmark)
+                ]
+                
+                if perf_match.empty:
+                    perf = np.nan
+                else:
+                    perf = float(perf_match[perf_metric].iloc[0])
+                
+                rows.append({
+                    **group,
+                    'variant': variant,
+                    'benchmark': benchmark,
+                    'flow_mmd': flow_mmd,
+                    'performance': perf,
+                })
     
     detail_df = pd.DataFrame(rows)
     
     # Compute correlations per benchmark
     corr_results = []
     for benchmark in benchmarks:
-        bench_data = detail_df[detail_df['benchmark'] == benchmark]
-        
-        corr_stats = compute_correlations(
-            bench_data['flow_mmd'].values,
-            bench_data['performance'].values
-        )
-        
-        corr_results.append({
-            'benchmark': benchmark,
-            **corr_stats,
-        })
+        for group in group_records:
+            if group_cols:
+                mask = np.ones(len(detail_df), dtype=bool)
+                for col, val in group.items():
+                    mask &= detail_df[col] == val
+                bench_data = detail_df[mask & (detail_df['benchmark'] == benchmark)]
+            else:
+                bench_data = detail_df[detail_df['benchmark'] == benchmark]
+            
+            corr_stats = compute_correlations(
+                bench_data['flow_mmd'].values,
+                bench_data['performance'].values
+            )
+            
+            corr_results.append({
+                **group,
+                'benchmark': benchmark,
+                **corr_stats,
+            })
     
     corr_df = pd.DataFrame(corr_results)
     
@@ -301,7 +363,9 @@ def analyze_asymmetry(
     variants: List[str],
     baseline: str,
     benchmarks: List[str],
+    group_cols: List[str],
     perf_metric: str = 'auc',
+    distance_transform: str = "none",
 ) -> pd.DataFrame:
     """
     Test H3: Eval→train vs train→eval asymmetry analysis with ALL 4 normalization variants.
@@ -322,59 +386,88 @@ def analyze_asymmetry(
     - Performance: POSITIVE delta = improvement (variant > baseline, better performance)
     """
     results = []
+    suffix = "_log1p" if distance_transform == "log1p" else ""
     
-    # Aggregate performance per variant-benchmark
-    agg_perf = perf_df.groupby(['train_dataset', 'benchmark'])[perf_metric].mean().reset_index()
+    # Aggregate performance per variant-benchmark (optionally stratified)
+    agg_cols = group_cols + ['train_dataset', 'benchmark']
+    agg_perf = perf_df.groupby(agg_cols)[perf_metric].mean().reset_index()
+    if group_cols:
+        group_records = agg_perf[group_cols].drop_duplicates().to_dict('records')
+    else:
+        group_records = [{}]
     
-    for variant in variants:
-        for benchmark in benchmarks:
-            # Get directional distances from coverage CSV
-            match = flow_coverage_df[
-                (flow_coverage_df['dataset1'] == variant) &
-                (flow_coverage_df['dataset2'] == benchmark)
-            ]
-            
-            # Get performance
-            perf_match = agg_perf[
-                (agg_perf['train_dataset'] == variant) &
-                (agg_perf['benchmark'] == benchmark)
-            ]
-            performance = float(perf_match[perf_metric].iloc[0]) if not perf_match.empty else np.nan
-            
-            if match.empty:
-                row = {
-                    'variant': variant,
-                    'benchmark': benchmark,
-                    'performance': performance,
-                }
-                # Add NaN for all metrics
-                for metric in ['eval_to_train_norm_by_eval', 'eval_to_train_norm_by_train',
-                               'train_to_eval_norm_by_eval', 'train_to_eval_norm_by_train',
-                               'eval_to_train_kl', 'train_to_eval_kl', 'recall', 'precision']:
-                    row[metric] = np.nan
-            else:
-                # Get ALL 4 normalized distance variants
-                row = {
-                    'variant': variant,
-                    'benchmark': benchmark,
-                    'performance': performance,
-                    # Eval→train normalized by eval radius
-                    'eval_to_train_norm_by_eval': float(match['flow_eval_to_train_norm_by_eval'].iloc[0]),
-                    # Eval→train normalized by train radius
-                    'eval_to_train_norm_by_train': float(match['flow_eval_to_train_norm_by_train'].iloc[0]),
-                    # Train→eval normalized by eval radius
-                    'train_to_eval_norm_by_eval': float(match['flow_train_to_eval_norm_by_eval'].iloc[0]),
-                    # Train→eval normalized by train radius
-                    'train_to_eval_norm_by_train': float(match['flow_train_to_eval_norm_by_train'].iloc[0]),
-                    # KL divergence metrics (lower = better)
-                    'eval_to_train_kl': float(match['kl_eval_to_train'].iloc[0]) if 'kl_eval_to_train' in match.columns else np.nan,
-                    'train_to_eval_kl': float(match['kl_train_to_eval'].iloc[0]) if 'kl_train_to_eval' in match.columns else np.nan,
-                    # Coverage metrics (higher = better)
-                    'recall': float(match['recall'].iloc[0]) if 'recall' in match.columns else np.nan,
-                    'precision': float(match['precision'].iloc[0]) if 'precision' in match.columns else np.nan,
-                }
-            
-            results.append(row)
+    for group in group_records:
+        if group_cols:
+            mask = np.ones(len(agg_perf), dtype=bool)
+            for col, val in group.items():
+                mask &= agg_perf[col] == val
+            group_perf = agg_perf[mask]
+        else:
+            group_perf = agg_perf
+        for variant in variants:
+            for benchmark in benchmarks:
+                # Get directional distances from coverage CSV
+                match = flow_coverage_df[
+                    (flow_coverage_df['dataset1'] == variant) &
+                    (flow_coverage_df['dataset2'] == benchmark)
+                ]
+                
+                # Get performance
+                perf_match = group_perf[
+                    (group_perf['train_dataset'] == variant) &
+                    (group_perf['benchmark'] == benchmark)
+                ]
+                performance = float(perf_match[perf_metric].iloc[0]) if not perf_match.empty else np.nan
+                if match.empty:
+                    row = {
+                        **group,
+                        'variant': variant,
+                        'benchmark': benchmark,
+                        'performance': performance,
+                    }
+                    # Add NaN for all metrics
+                    for metric in [
+                        'eval_to_train_mean_dist', 'train_to_eval_mean_dist',
+                        f'eval_to_train_norm_by_eval{suffix}', f'eval_to_train_norm_by_train{suffix}',
+                        f'train_to_eval_norm_by_eval{suffix}', f'train_to_eval_norm_by_train{suffix}',
+                        'eval_to_train_kl', 'train_to_eval_kl', 'recall', 'precision',
+                    ]:
+                        row[metric] = np.nan
+                else:
+                    # Get ALL 4 normalized distance variants + raw mean distances
+                    row = {
+                        **group,
+                        'variant': variant,
+                        'benchmark': benchmark,
+                        'performance': performance,
+                        # Raw mean distances (no normalization)
+                        'eval_to_train_mean_dist': float(match['flow_eval_to_train_mean_dist'].iloc[0]),
+                        'train_to_eval_mean_dist': float(match['flow_train_to_eval_mean_dist'].iloc[0]),
+                        # Eval→train normalized by eval radius
+                        f'eval_to_train_norm_by_eval{suffix}': float(
+                            match[_distance_col('flow_eval_to_train_norm_by_eval', distance_transform)].iloc[0]
+                        ),
+                        # Eval→train normalized by train radius
+                        f'eval_to_train_norm_by_train{suffix}': float(
+                            match[_distance_col('flow_eval_to_train_norm_by_train', distance_transform)].iloc[0]
+                        ),
+                        # Train→eval normalized by eval radius
+                        f'train_to_eval_norm_by_eval{suffix}': float(
+                            match[_distance_col('flow_train_to_eval_norm_by_eval', distance_transform)].iloc[0]
+                        ),
+                        # Train→eval normalized by train radius
+                        f'train_to_eval_norm_by_train{suffix}': float(
+                            match[_distance_col('flow_train_to_eval_norm_by_train', distance_transform)].iloc[0]
+                        ),
+                        # KL divergence metrics (lower = better)
+                        'eval_to_train_kl': float(match['kl_eval_to_train'].iloc[0]) if 'kl_eval_to_train' in match.columns else np.nan,
+                        'train_to_eval_kl': float(match['kl_train_to_eval'].iloc[0]) if 'kl_train_to_eval' in match.columns else np.nan,
+                        # Coverage metrics (higher = better)
+                        'recall': float(match['recall'].iloc[0]) if 'recall' in match.columns else np.nan,
+                        'precision': float(match['precision'].iloc[0]) if 'precision' in match.columns else np.nan,
+                    }
+
+                results.append(row)
     
     df = pd.DataFrame(results)
     
@@ -385,15 +478,16 @@ def analyze_asymmetry(
     if not baseline_df.empty and not variant_df.empty:
         # Metrics to compute deltas for
         distance_metrics = [
-            'eval_to_train_norm_by_eval', 'eval_to_train_norm_by_train',
-            'train_to_eval_norm_by_eval', 'train_to_eval_norm_by_train',
-            'eval_to_train_kl', 'train_to_eval_kl'
+            'eval_to_train_mean_dist', 'train_to_eval_mean_dist',
+            f'eval_to_train_norm_by_eval{suffix}', f'eval_to_train_norm_by_train{suffix}',
+            f'train_to_eval_norm_by_eval{suffix}', f'train_to_eval_norm_by_train{suffix}',
+            'eval_to_train_kl', 'train_to_eval_kl',
         ]
         
-        merge_cols = ['benchmark', 'performance'] + distance_metrics
+        merge_cols = group_cols + ['benchmark', 'performance'] + distance_metrics
         merged = variant_df.merge(
             baseline_df[merge_cols],
-            on='benchmark',
+            on=group_cols + ['benchmark'],
             suffixes=('', '_baseline')
         )
         
@@ -405,8 +499,14 @@ def analyze_asymmetry(
         merged['delta_performance'] = merged['performance'] - merged['performance_baseline']
         
         # Add asymmetry metrics for each normalization variant
-        merged['asymmetry_norm_by_eval'] = merged['train_to_eval_norm_by_eval'] - merged['eval_to_train_norm_by_eval']
-        merged['asymmetry_norm_by_train'] = merged['train_to_eval_norm_by_train'] - merged['eval_to_train_norm_by_train']
+        merged[f'asymmetry_norm_by_eval{suffix}'] = (
+            merged[f'train_to_eval_norm_by_eval{suffix}']
+            - merged[f'eval_to_train_norm_by_eval{suffix}']
+        )
+        merged[f'asymmetry_norm_by_train{suffix}'] = (
+            merged[f'train_to_eval_norm_by_train{suffix}']
+            - merged[f'eval_to_train_norm_by_train{suffix}']
+        )
         merged['asymmetry_kl'] = merged['train_to_eval_kl'] - merged['eval_to_train_kl']
         
         return merged
@@ -418,13 +518,15 @@ def analyze_semantic_improvement(
     perf_df: pd.DataFrame,
     variants: List[str],
     baseline: str,
+    group_cols: List[str],
     perf_metric: str = 'auc_delta',
 ) -> pd.DataFrame:
     """
     Test H4: Unexpected semantic improvement from scale invariance.
     """
-    # Aggregate performance
-    agg_perf = perf_df.groupby(['train_dataset', 'benchmark'])[perf_metric].mean().reset_index()
+    # Aggregate performance (optionally stratified)
+    agg_cols = group_cols + ['train_dataset', 'benchmark']
+    agg_perf = perf_df.groupby(agg_cols)[perf_metric].mean().reset_index()
     
     # Get baseline performance
     baseline_perf = agg_perf[agg_perf['train_dataset'] == baseline].copy()
@@ -434,9 +536,10 @@ def analyze_semantic_improvement(
     variant_perf = agg_perf[agg_perf['train_dataset'].isin(variants) & (agg_perf['train_dataset'] != baseline)]
     
     # Merge to compute deltas
+    merge_cols = group_cols + ['benchmark']
     merged = variant_perf.merge(
-        baseline_perf[['benchmark', f'{perf_metric}_baseline']],
-        on='benchmark',
+        baseline_perf[merge_cols + [f'{perf_metric}_baseline']],
+        on=merge_cols,
         how='left'
     )
     merged['delta_perf'] = merged[perf_metric] - merged[f'{perf_metric}_baseline']
@@ -494,6 +597,11 @@ def main():
         help='Performance metric to analyze'
     )
     parser.add_argument(
+        '--group-cols',
+        default='',
+        help='Comma-separated perf CSV columns to stratify (e.g., encoder_config,model_family).',
+    )
+    parser.add_argument(
         '--variants',
         nargs='+',
         default=['synthetic', 'synthetic_large_zoom', 'synthetic_small_zoom', 'synthetic_random_flipping'],
@@ -503,6 +611,12 @@ def main():
         '--baseline',
         default='synthetic',
         help='Baseline variant'
+    )
+    parser.add_argument(
+        '--distance-transform',
+        choices=['none', 'log1p'],
+        default='none',
+        help='Transform normalized distance ratios before analysis.'
     )
     
     args = parser.parse_args()
@@ -515,6 +629,12 @@ def main():
     perf_df = pd.read_csv(args.perf_csv)
     perf_df['train_dataset'] = perf_df['train_dataset'].astype(str).str.lower()
     perf_df['benchmark'] = perf_df['benchmark'].astype(str).str.lower()
+    group_cols = _parse_csv_list(args.group_cols)
+    if group_cols:
+        missing = [col for col in group_cols if col not in perf_df.columns]
+        if missing:
+            print(f"Warning: Missing group columns in perf CSV: {missing}")
+            group_cols = [col for col in group_cols if col in perf_df.columns]
     
     # Check if metric exists
     if args.perf_metric not in perf_df.columns:
@@ -522,8 +642,16 @@ def main():
         print(f"Available metrics: {[c for c in perf_df.columns if 'auc' in c or 'pck' in c]}")
         raise ValueError(f"Performance metric '{args.perf_metric}' not found")
     
-    flow_coverage_df = load_distance_metrics(args.flow_coverage_csv, prefix="flow")
-    dino_coverage_df = load_distance_metrics(args.dino_coverage_csv, prefix="dino")
+    flow_coverage_df = load_distance_metrics(
+        args.flow_coverage_csv,
+        prefix="flow",
+        distance_transform=args.distance_transform,
+    )
+    dino_coverage_df = load_distance_metrics(
+        args.dino_coverage_csv,
+        prefix="dino",
+        distance_transform=args.distance_transform,
+    )
     flow_mmd_df = load_distance_metrics(args.flow_mmd_csv, prefix="flow")
     dino_mmd_df = load_distance_metrics(args.dino_mmd_csv, prefix="dino")
     
@@ -531,21 +659,22 @@ def main():
     variants = [v.lower() for v in args.variants]
     baseline = args.baseline.lower()
     
-    all_benchmarks = KITTI_BENCHMARKS + SEMANTIC_FAMILY
+    all_benchmarks = sorted(perf_df["benchmark"].dropna().unique().tolist())
     
     # Run analyses
     print("\n=== H1: Testing Complementarity (Flow varies, DINO constant) ===")
     complementarity_df = analyze_complementarity(
         perf_df, flow_coverage_df, dino_coverage_df,
         flow_mmd_df, dino_mmd_df,
-        variants, baseline, all_benchmarks
+        variants, baseline, all_benchmarks,
+        args.distance_transform,
     )
     complementarity_df.to_csv(args.output_dir / 'h1_complementarity.csv', index=False)
     print(complementarity_df.to_string(index=False))
     
     print("\n=== H2: Flow MMD Predicts Performance ===")
     flow_pred_detail, flow_pred_corr = analyze_flow_prediction(
-        perf_df, flow_mmd_df, variants, all_benchmarks, args.perf_metric
+        perf_df, flow_mmd_df, variants, all_benchmarks, group_cols, args.perf_metric
     )
     flow_pred_detail.to_csv(args.output_dir / 'h2_flow_prediction_detail.csv', index=False)
     flow_pred_corr.to_csv(args.output_dir / 'h2_flow_prediction_correlations.csv', index=False)
@@ -558,18 +687,28 @@ def main():
     print("\nNormalization variants tested:")
     print("  norm_by_eval: distance / radius_eval")
     print("  norm_by_train: distance / radius_train")
+    if args.distance_transform == "log1p":
+        print("  distance_transform: log1p (applied to normalized distances)")
     asymmetry_df = analyze_asymmetry(
-        flow_coverage_df, perf_df, variants, baseline, all_benchmarks, args.perf_metric
+        flow_coverage_df,
+        perf_df,
+        variants,
+        baseline,
+        all_benchmarks,
+        group_cols,
+        args.perf_metric,
+        args.distance_transform,
     )
     asymmetry_df.to_csv(args.output_dir / 'h3_asymmetry.csv', index=False)
     
     # Correlation analysis: which normalization best predicts performance?
     print("\n--- Which normalization variant best predicts performance? ---")
+    suffix = "_log1p" if args.distance_transform == "log1p" else ""
     distance_metrics = [
-        'delta_eval_to_train_norm_by_eval',
-        'delta_eval_to_train_norm_by_train',
-        'delta_train_to_eval_norm_by_eval',
-        'delta_train_to_eval_norm_by_train',
+        f'delta_eval_to_train_norm_by_eval{suffix}',
+        f'delta_eval_to_train_norm_by_train{suffix}',
+        f'delta_train_to_eval_norm_by_eval{suffix}',
+        f'delta_train_to_eval_norm_by_train{suffix}',
         'delta_eval_to_train_kl',
         'delta_train_to_eval_kl'
     ]
@@ -596,30 +735,41 @@ def main():
                 'abs_spearman': abs(spearman_r)
             })
     
-    corr_df = pd.DataFrame(corr_results).sort_values('abs_spearman', ascending=False)
+    corr_columns = [
+        'metric', 'pearson_r', 'pearson_p', 'spearman_r', 'spearman_p', 'n',
+        'abs_spearman',
+    ]
+    corr_df = pd.DataFrame(corr_results, columns=corr_columns)
+    if not corr_df.empty:
+        corr_df = corr_df.sort_values('abs_spearman', ascending=False)
     print(corr_df[['metric', 'pearson_r', 'pearson_p', 'spearman_r', 'spearman_p', 'n']].to_string(index=False))
     print("\nInterpretation: Negative correlation = metric correctly predicts performance")
     print("                (lower distance → better performance)")
     corr_df.to_csv(args.output_dir / 'h3_normalization_correlations.csv', index=False)
     
-    # Show KITTI and semantic separately for clarity
+    # Show KITTI, semantic, and remaining benchmarks separately for clarity
     kitti_asymmetry = asymmetry_df[asymmetry_df['benchmark'].isin(KITTI_BENCHMARKS)]
     semantic_asymmetry = asymmetry_df[asymmetry_df['benchmark'].isin(SEMANTIC_FAMILY)]
+    other_mask = ~asymmetry_df['benchmark'].isin(KITTI_BENCHMARKS + SEMANTIC_FAMILY)
+    other_asymmetry = asymmetry_df[other_mask]
     
     print("\n--- KITTI benchmarks (Performance & Distance Deltas) ---")
-    kitti_compact_cols = [
+    base_compact_cols = [
         'variant', 'benchmark', 'delta_performance',
-        'delta_eval_to_train_norm_by_eval', 'delta_eval_to_train_norm_by_train',
-        'delta_train_to_eval_norm_by_eval', 'delta_train_to_eval_norm_by_train',
+        f'delta_eval_to_train_norm_by_eval{suffix}', f'delta_eval_to_train_norm_by_train{suffix}',
+        f'delta_train_to_eval_norm_by_eval{suffix}', f'delta_train_to_eval_norm_by_train{suffix}',
         'delta_eval_to_train_kl', 'delta_train_to_eval_kl'
     ]
-    kitti_compact = kitti_asymmetry[kitti_compact_cols].copy()
-    # Shorten column names for display
-    kitti_compact.columns = [
+    base_compact_names = [
         'variant', 'benchmark', 'Δperf',
         'Δe2t_by_e', 'Δe2t_by_t', 'Δt2e_by_e', 'Δt2e_by_t',
         'Δkl_e2t', 'Δkl_t2e'
     ]
+    compact_cols = group_cols + base_compact_cols
+    compact_names = group_cols + base_compact_names
+    kitti_compact = kitti_asymmetry[compact_cols].copy()
+    # Shorten column names for display
+    kitti_compact.columns = compact_names
     print(kitti_compact.to_string(index=False))
     print("\nLegend:")
     print("  Δperf: performance delta (positive = better)")
@@ -630,24 +780,31 @@ def main():
     print("  Δkl_e2t/t2e: KL divergence deltas (negative = closer)")
     
     print("\n--- Semantic benchmarks (Performance & Distance Deltas) ---")
-    semantic_compact_cols = [
-        'variant', 'benchmark', 'delta_performance',
-        'delta_eval_to_train_norm_by_eval', 'delta_eval_to_train_norm_by_train',
-        'delta_train_to_eval_norm_by_eval', 'delta_train_to_eval_norm_by_train',
-        'delta_eval_to_train_kl', 'delta_train_to_eval_kl'
-    ]
-    semantic_compact = semantic_asymmetry[semantic_compact_cols].copy()
+    semantic_compact = semantic_asymmetry[compact_cols].copy()
     # Shorten column names for display
-    semantic_compact.columns = [
-        'variant', 'benchmark', 'Δperf',
-        'Δe2t_by_e', 'Δe2t_by_t', 'Δt2e_by_e', 'Δt2e_by_t',
-        'Δkl_e2t', 'Δkl_t2e'
-    ]
+    semantic_compact.columns = compact_names
     print(semantic_compact.to_string(index=False))
+    if not other_asymmetry.empty:
+        print("\n--- Other benchmarks (Performance & Distance Deltas) ---")
+        other_compact = other_asymmetry[compact_cols].copy()
+        other_compact.columns = compact_names
+        print(other_compact.to_string(index=False))
+
+    abs_cols = group_cols + [
+        'variant', 'benchmark', 'delta_performance',
+        'delta_eval_to_train_mean_dist', 'delta_train_to_eval_mean_dist',
+    ]
+    abs_names = group_cols + [
+        'variant', 'benchmark', 'Δperf', 'Δe2t_raw', 'Δt2e_raw',
+    ]
+    abs_compact = asymmetry_df[abs_cols].copy()
+    abs_compact.columns = abs_names
+    print("\n--- Absolute distance deltas (mean_nn, unnormalized) ---")
+    print(abs_compact.to_string(index=False))
     
     print("\n=== H4: Semantic Improvement (Scale Invariance) ===")
     semantic_df = analyze_semantic_improvement(
-        perf_df, variants, baseline, args.perf_metric
+        perf_df, variants, baseline, group_cols, args.perf_metric
     )
     # Rename train_dataset to variant for consistency
     semantic_df = semantic_df.rename(columns={'train_dataset': 'variant'})
@@ -666,6 +823,10 @@ def main():
     summary_lines.append(f"Variants: {', '.join(variants)}")
     summary_lines.append(f"Baseline: {baseline}")
     summary_lines.append(f"Performance metric: {args.perf_metric}")
+    summary_lines.append(
+        f"Group columns: {', '.join(group_cols) if group_cols else 'none'}"
+    )
+    summary_lines.append(f"Distance transform: {args.distance_transform}")
     summary_lines.append("")
     
     # H1 summary
@@ -706,8 +867,12 @@ def main():
             for _, row in kitti_data.iterrows():
                 summary_lines.append(f"  {row['benchmark']}:")
                 summary_lines.append(f"    Δperf: {row['delta_performance']:+.0f}")
-                summary_lines.append(f"    Δt2e_by_e: {row['delta_train_to_eval_norm_by_eval']:+.2f} (strongest signal)")
-                summary_lines.append(f"    Δe2t_by_e: {row['delta_eval_to_train_norm_by_eval']:+.2f}")
+                summary_lines.append(
+                    f"    Δt2e_by_e: {row[f'delta_train_to_eval_norm_by_eval{suffix}']:+.2f} (strongest signal)"
+                )
+                summary_lines.append(
+                    f"    Δe2t_by_e: {row[f'delta_eval_to_train_norm_by_eval{suffix}']:+.2f}"
+                )
                 summary_lines.append(f"    ΔKL_e2t: {row['delta_eval_to_train_kl']:+.2f}, ΔKL_t2e: {row['delta_train_to_eval_kl']:+.2f}")
             summary_lines.append("")
     
@@ -752,7 +917,7 @@ def main():
         total_zoom = len(kitti_zoom)
         
         # Check if train→eval distance improved (negative = closer)
-        t2e_improved = (kitti_zoom['delta_train_to_eval_norm_by_eval'] < 0).sum()
+        t2e_improved = (kitti_zoom[f'delta_train_to_eval_norm_by_eval{suffix}'] < 0).sum()
         
         summary_lines.append(f"✓ H3: Zoom variants improved performance in {perf_improved}/{total_zoom} KITTI cases")
         summary_lines.append(f"     Train→eval distance closer in {t2e_improved}/{total_zoom} cases (better coverage)")
@@ -774,6 +939,10 @@ def main():
     detailed_lines.append(f"Variants: {', '.join(variants)}")
     detailed_lines.append(f"Baseline: {baseline}")
     detailed_lines.append(f"Performance metric: {args.perf_metric}")
+    detailed_lines.append(
+        f"Group columns: {', '.join(group_cols) if group_cols else 'none'}"
+    )
+    detailed_lines.append(f"Distance transform: {args.distance_transform}")
     detailed_lines.append("")
     
     detailed_lines.append("=" * 80)
@@ -798,6 +967,8 @@ def main():
     detailed_lines.append("Normalization variants tested:")
     detailed_lines.append("  norm_by_eval: distance / radius_eval")
     detailed_lines.append("  norm_by_train: distance / radius_train")
+    if args.distance_transform == "log1p":
+        detailed_lines.append("  distance_transform: log1p (applied to normalized distances)")
     detailed_lines.append("")
     detailed_lines.append("--- KITTI benchmarks (Performance & Distance Deltas) ---")
     detailed_lines.append(kitti_compact.to_string(index=False))
@@ -812,6 +983,13 @@ def main():
     detailed_lines.append("")
     detailed_lines.append("--- Semantic benchmarks (Performance & Distance Deltas) ---")
     detailed_lines.append(semantic_compact.to_string(index=False))
+    detailed_lines.append("")
+    if not other_asymmetry.empty:
+        detailed_lines.append("--- Other benchmarks (Performance & Distance Deltas) ---")
+        detailed_lines.append(other_compact.to_string(index=False))
+        detailed_lines.append("")
+    detailed_lines.append("--- Absolute distance deltas (mean_nn, unnormalized) ---")
+    detailed_lines.append(abs_compact.to_string(index=False))
     detailed_lines.append("")
     
     # Add correlation analysis

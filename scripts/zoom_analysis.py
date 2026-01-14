@@ -21,7 +21,7 @@ DEFAULT_AUC_TABLE = (
     "analysis/leakage_free_local_fast_dino_faiss/"
     "all/peak_pck_rank_trimmed/full_interactions/auc_with_features.csv"
 )
-DEFAULT_BENCHMARKS = ["kitti2012", "kitti2015", "pfpascal", "pfwillow", "tss"]
+DEFAULT_BENCHMARKS = ["all"]
 DEFAULT_ZOOM_DATASETS = ["synthetic_large_zoom", "synthetic_small_zoom"]
 DEFAULT_BASE_DATASET = "synthetic"
 
@@ -186,7 +186,7 @@ def main() -> None:
     parser.add_argument(
         "--benchmarks",
         default=",".join(DEFAULT_BENCHMARKS),
-        help="Comma-separated list of benchmarks to include.",
+        help="Comma-separated list of benchmarks to include ('all' for every benchmark).",
     )
     parser.add_argument(
         "--zoom-datasets",
@@ -261,6 +261,8 @@ def main() -> None:
     zoom_datasets = _parse_csv_list(args.zoom_datasets)
     if not benchmarks:
         raise SystemExit("No benchmarks provided.")
+    if "all" in {b.lower() for b in benchmarks}:
+        benchmarks = sorted(df["benchmark"].dropna().unique().tolist())
     if not zoom_datasets:
         raise SystemExit("No zoom datasets provided.")
 

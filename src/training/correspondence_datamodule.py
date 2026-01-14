@@ -66,18 +66,20 @@ class CorrespondenceDataModule(pl.LightningDataModule):
         
         batch_size = self.training_config['batch_size']
         n_threads = self.training_config.get('n_threads', 0)
+        def is_synthetic_name(name: str) -> bool:
+            return isinstance(name, str) and name.startswith("synthetic")
         
         # Check if dataset is mixed or single
         is_mixed = self.dataset_config.get('mixed', False) or 'datasets' in self.dataset_config
         if is_mixed:
             # For mixed datasets, check if any sub-dataset is synthetic
             datasets_list = self.dataset_config.get('datasets', [])
-            has_synthetic = 'synthetic' in datasets_list
+            has_synthetic = any(is_synthetic_name(name) for name in datasets_list)
             train_num_workers = 0 if has_synthetic else n_threads
         else:
             train_dataset_name = self.dataset_config.get('dataset_name', '')
             # Use num_workers=0 for synthetic dataset (GPU-bound rendering)
-            train_num_workers = 0 if train_dataset_name == 'synthetic' else n_threads
+            train_num_workers = 0 if is_synthetic_name(train_dataset_name) else n_threads
         
         return DataLoader(
             self.train_dataset,
