@@ -1,0 +1,112 @@
+# Clean Comprehensive Analysis Pipeline
+# Fixed config with proper LOBO settings (relative targets, no over-demeaning)
+# Usage: python scripts/run_experiment_pipeline.py --config src/configs/pipeline/comprehensive_analysis_clean.yaml
+
+steps:
+  leakage_free_eval:
+    runs:
+      # ================================================================
+      # Main Analysis: Asymmetric Distance Metrics (Flow + DINO)
+      # ================================================================
+      - name: "Main Analysis - Asymmetric Mean Distances (Flow + DINO)"
+        args: &main_base
+          snapshots_dir:
+            - snapshots
+            - snapshots_mixed
+            - snapshots_raft
+          mode: auc
+          metric: pck
+          auc_steps: 5000
+          auc_pad: true
+          fixed_steps: 3000
+          fixed_policy: exact
+
+          # Coverage and MMD CSVs
+          coverage_csv: coverage_faiss_flow_results_fast.csv
+          coverage_dino_csv: coverage_faiss_dino_results_fast.csv
+          flow_mmd_csv: flow_mmd_results_fast.csv
+          dino_mmd_csv: dino_mmd_results_fast.csv
+
+          # Target: Relative performance (removes benchmark difficulty bias)
+          target: pck_at_3000
+          prediction_target: auc_delta
+          relative_target_baseline: spair
+
+          # Predictor transformations
+          logit_coverage: false
+          distance_ratio_transform: log1p
+          radius_transform: log
+
+          # Model configuration
+          linear_model: ridge
+          ridge_alpha: 0.5
+          standardize: true
+          cv_standardize_mode: global
+
+          # Target demeaning: Only by encoder (relative targets don't need benchmark/model demeaning)
+          cv_demean_target_by_encoder: true
+          cv_demean_target_by_benchmark: false
+          # Note: lobo_model_centered and loto_benchmark_centered default to false, so we omit them
+
+          # Exclude encoder effects from predictors (already in demeaning)
+          encoder_main_effects: false
+          encoder_interactions: false
+
+          # Per-encoder breakdown
+          per_encoder: true
+          run_summary: true
+
+          # Asymmetric directional mean distances (log1p normalized by radius)
+          # These capture distinct train→eval vs eval→train failure modes
+          predictors: "flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train"
+
+          # Stability selection
+          run_stability_selection: true
+          stability_n_bootstrap: 200
+          stability_threshold: 0.7
+
+          output_dir: analysis/comprehensive_clean/asymmetric_distances
+
+      # ================================================================
+      # Comparison: MMD Only (Symmetric Metrics)
+      # ================================================================
+      - name: "Comparison Analysis - MMD Only (Flow + DINO)"
+        args:
+          <<: *main_base
+          
+          # MMD-only predictors (symmetric, may collapse directional information)
+          predictors: "flow_mmd,dino_mmd"
+          
+          output_dir: analysis/comprehensive_clean/mmd_only
+
+      # ================================================================
+      # Combined: Asymmetric + MMD
+      # ================================================================
+      - name: "Combined Analysis - Asymmetric + MMD"
+        args:
+          <<: *main_base
+          
+          # Both asymmetric distances and MMD
+          predictors: "flow_train_to_eval_mean_dist_over_radius_eval,flow_eval_to_train_mean_dist_over_radius_train,flow_mmd,dino_train_to_eval_mean_dist_over_radius_eval,dino_eval_to_train_mean_dist_over_radius_train,dino_mmd"
+          
+          output_dir: analysis/comprehensive_clean/asymmetric_and_mmd
+
+      # ================================================================
+      # Ablation: Exclude SPAIR (test generalization)
+      # ================================================================
+      - name: "Ablation - Asymmetric Distances (No SPAIR)"
+        args:
+          <<: *main_base
+          
+          exclude_train_datasets: spair
+          
+          output_dir: analysis/comprehensive_clean/asymmetric_distances_no_spair
+
+      - name: "Ablation - MMD Only (No SPAIR)"
+        args:
+          <<: *main_base
+          
+          predictors: "flow_mmd,dino_mmd"
+          exclude_train_datasets: spair
+          
+          output_dir: analysis/comprehensive_clean/mmd_only_no_spair

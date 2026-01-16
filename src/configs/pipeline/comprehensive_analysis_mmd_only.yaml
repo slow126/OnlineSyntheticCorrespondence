@@ -24,7 +24,8 @@ steps:
 
           # Target configuration
           target: peak_pck
-          prediction_target: peak_pck
+          prediction_target: auc_delta           # ← Fixed: predict relative performance!
+          relative_target_baseline: spair        # Creates auc_delta baseline
 
           # Model configuration
           linear_model: ridge
@@ -34,12 +35,12 @@ steps:
 
           # Target demeaning (uses new fixed model_family_encoder)
           cv_demean_target_by_encoder: true
-          cv_demean_target_by_benchmark: true
+          cv_demean_target_by_benchmark: false  # ← Don't demean by benchmark for relative targets!
 
           # LOBO/LOTO centering preferences
-          # LOBO: model_family_encoder only; LOTO: benchmark + model_family_encoder
-          lobo_model_centered: true
-          loto_benchmark_centered: true
+          # DON'T demean relative targets (auc_delta already removes baseline intercept)
+          lobo_model_centered: false  # ← Fixed: don't demean relative targets!
+          loto_benchmark_centered: false  # ← Fixed: don't demean relative targets!
 
           # Exclude encoder effects from predictors
           encoder_main_effects: false

@@ -1,0 +1,56 @@
+# PointOdyssey mixes with CATs++ encoder grid + RAFT (RC)
+
+project_root: "/home/slow1/Projects/OnlineSyntheticCorrespondence"
+
+training_base: "src/configs/lightning/training_base_rc.yaml"
+eval_base: "src/configs/lightning/eval_base_rc.yaml"
+
+training_datasets:
+  - name: "pointodyssey"
+    dataset_config: "src/configs/lightning/datasets/pointodyssey_rc.yaml"
+    overrides:
+      training.batch_size: 8
+
+  - name: "pointodyssey_synthetic_70_30"
+    dataset_config: "src/configs/lightning/datasets/pointodyssey_synthetic_70_30_rc.yaml"
+    overrides:
+      training.batch_size: 8
+
+  - name: "pointodyssey_synthetic_50_50"
+    dataset_config: "src/configs/lightning/datasets/pointodyssey_synthetic_50_50_rc.yaml"
+    overrides:
+      training.batch_size: 8
+
+  - name: "pointodyssey_synthetic_30_70"
+    dataset_config: "src/configs/lightning/datasets/pointodyssey_synthetic_30_70_rc.yaml"
+    overrides:
+      training.batch_size: 8
+
+output_dir: "/home/slow1/Projects/OnlineSyntheticCorrespondence/slurm/experiment_configs/generated_pointodyssey_mixes_rc"
+
+sweeps:
+  # CATs++ encoder grid (4 runs)
+  - name: "cats_encoder_grid"
+    parameters:
+      model.type: cats
+      training.steps_per_epoch: 100
+      training.check_val_every_n_epoch: 10
+      paths.snapshots: "/home/slow1/Projects/OnlineSyntheticCorrespondence/snapshots_ptody_fix"
+      model.pretrained_backbone: [True, False]
+      model.freeze: [True, False]
+    name_template: "cats_steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"
+
+  # RAFT full run (1 run)
+  - name: "raft_full"
+    parameters:
+      model.type: raft
+      model.small: false
+      model.iters: 12
+      model.alternate_corr: false
+      model.mixed_precision: false
+      model.dropout: 0.0
+      dataset.downsample_flow: null
+      training.check_val_every_n_epoch: 10
+      training.steps_per_epoch: 100
+      paths.snapshots: "/home/slow1/Projects/OnlineSyntheticCorrespondence/snapshots_ptody_fix"
+    name_template: "raft_full"

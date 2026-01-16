@@ -18,8 +18,11 @@ DINO_MMD="${DINO_MMD:-dino_mmd_results_fast.csv}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-insample_analysis/sweeps}"
 
 STANDARDIZE_MODES=(global none benchmark encoder model_family)
-PREDICTOR_SETS=(all trimmed)
-EFFECTS_MODES=(none effects interactions both)
+# Focus on asymmetric (directional mean_dist) vs mmd (symmetric) comparison
+# Also include 'all' for comprehensive baseline
+PREDICTOR_SETS=(all asymmetric mmd)
+# Focus on random effects only (no interactions to avoid overfitting)
+EFFECTS_MODES=(effects)
 
 mkdir -p "${OUTPUT_ROOT}"
 
@@ -30,21 +33,8 @@ for std_mode in "${STANDARDIZE_MODES[@]}"; do
       output_dir="${OUTPUT_ROOT}/${std_mode}/${pred_set}/${effects_mode}"
       mkdir -p "${output_dir}"
 
-      extra_flags=()
-      case "${effects_mode}" in
-        effects)
-          extra_flags+=(--encoder-offsets --model-family-offsets)
-          ;;
-        interactions)
-          extra_flags+=(--encoder-interactions --model-family-interactions)
-          ;;
-        both)
-          extra_flags+=(
-            --encoder-offsets --model-family-offsets
-            --encoder-interactions --model-family-interactions
-          )
-          ;;
-      esac
+      # Random effects: encoder and model_family offsets only (no interactions)
+      extra_flags=(--encoder-offsets --model-family-offsets)
 
       echo "Running: std=${std_mode} predictors=${pred_set} effects=${effects_mode}"
       python plot3d.py \

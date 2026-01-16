@@ -116,6 +116,7 @@ slurm/experiment_configs/generated/
 benchmark_plots/
 plots3d/
 analysis/
+analysis*
 snapshots_mixed_plots/
 
 # Slurm Jobs
@@ -127,3 +128,4 @@ coresets/
 
 # Insample
 insample_analysis/
+insample_analysis*

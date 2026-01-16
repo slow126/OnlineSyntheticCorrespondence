@@ -200,6 +200,8 @@ def run_smoothness_calculation(
     num_workers=4,
     device='cuda',
     include_gt=False,
+    mask_by_gt=False,
+    tss_root=None,
 ):
     """Run smoothness calculation using calculate_flow_smoothness.py"""
     
@@ -222,6 +224,10 @@ def run_smoothness_calculation(
     ]
     if include_gt:
         cmd.append('--include-gt')
+    if mask_by_gt:
+        cmd.append('--mask-by-gt')
+    if tss_root:
+        cmd += ['--tss-root', str(tss_root)]
     
     print(f"\nRunning smoothness calculation...")
     print(f"Command: {' '.join(cmd)}\n")
@@ -394,6 +400,27 @@ def plot_smoothness_comparison(df, output_dir, benchmark='spair'):
 def load_pck_from_snapshots(df):
     """Load PCK metrics from validation_results.csv for each snapshot + benchmark combo"""
     pck_data = []
+    df = df.copy()
+
+    def derive_snapshot_dir(checkpoint_path):
+        if not isinstance(checkpoint_path, str):
+            return None
+        path = Path(checkpoint_path)
+        snapshot_dir = path.parent
+        if snapshot_dir.name in {'checkpoints', 'snapshots'}:
+            snapshot_dir = snapshot_dir.parent
+        return str(snapshot_dir)
+
+    if 'snapshot_dir' not in df.columns:
+        if 'checkpoint_path' in df.columns:
+            df['snapshot_dir'] = df['checkpoint_path'].apply(derive_snapshot_dir)
+            if 'snapshot_name' not in df.columns:
+                df['snapshot_name'] = df['snapshot_dir'].apply(
+                    lambda p: Path(p).name if isinstance(p, str) else None
+                )
+        else:
+            print("Warning: snapshot_dir missing and checkpoint_path unavailable; skipping PCK merge.")
+            return pd.DataFrame()
     
     # Get unique snapshot_dir + benchmark combinations
     unique_combos = df[['snapshot_dir', 'benchmark', 'snapshot_name']].drop_duplicates()
@@ -591,6 +618,10 @@ def main():
                        help='Comma-separated snapshot name prefixes to treat as base datasets.')
     parser.add_argument('--include-gt', action='store_true',
                        help='Also compute smoothness on ground-truth flow when available.')
+    parser.add_argument('--mask-by-gt', action='store_true',
+                       help='Compute smoothness only over valid GT pixels (mask invalid regions).')
+    parser.add_argument('--tss-root', type=str, default=None,
+                       help='Path to TSS dataset root (overrides config).')
     
     args = parser.parse_args()
     
@@ -630,7 +661,9 @@ def main():
             batch_size=args.batch_size,
             num_workers=args.num_workers,
             device=args.device,
-            include_gt=args.include_gt
+            include_gt=args.include_gt,
+            mask_by_gt=args.mask_by_gt,
+            tss_root=args.tss_root,
         )
     else:
         print("Skipping smoothness calculation, loading existing results...")

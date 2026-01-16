@@ -59,6 +59,13 @@ dataset_overrides:
     processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
     normalize_images: false
     device: cuda
+  synthetic_2d_warp:
+    geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
+    processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
+    normalize_images: false
+    synthetic_flow_warp: true
+    synthetic_flow_warp_swap: true
+    device: cuda
   imagenet2dwarp:
     datapath: hf://ILSVRC/imagenet-1k
     hf_streaming: false
@@ -135,6 +142,12 @@ datasets:
   num_batches: 100
   is_eval: false
   output: coresets/synthetic_train_dino.pt
+- name: synthetic_2d_warp
+  split: train
+  representation: dino
+  num_batches: 100
+  is_eval: false
+  output: coresets/synthetic_2d_warp_train_dino.pt
 - name: synthetic_small_zoom
   dataset_name: synthetic
   split: train

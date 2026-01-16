@@ -29,7 +29,28 @@ from train_lightning import create_model, load_config
 from train_cats_unified import create_validation_datasets
 
 
-def calculate_total_variation(flow: torch.Tensor) -> float:
+def _normalize_valid_mask(
+    valid_mask: Optional[torch.Tensor],
+    flow: torch.Tensor
+) -> Optional[torch.Tensor]:
+    if valid_mask is None:
+        return None
+    if valid_mask.dim() == 2:
+        valid_mask = valid_mask.unsqueeze(0).unsqueeze(0)
+    elif valid_mask.dim() == 3:
+        if valid_mask.shape[0] == flow.shape[0]:
+            valid_mask = valid_mask.unsqueeze(1)
+        else:
+            valid_mask = valid_mask.unsqueeze(0).unsqueeze(0)
+    elif valid_mask.dim() == 4 and valid_mask.shape[1] != 1:
+        valid_mask = valid_mask.all(dim=1, keepdim=True)
+    return valid_mask.bool()
+
+
+def calculate_total_variation(
+    flow: torch.Tensor,
+    valid_mask: Optional[torch.Tensor] = None
+) -> float:
     """
     Calculate Total Variation (TV) of flow field.
     
@@ -40,10 +61,11 @@ def calculate_total_variation(flow: torch.Tensor) -> float:
         flow: Flow tensor of shape (B, 2, H, W) or (2, H, W)
         
     Returns:
-        Mean TV across batch and spatial dimensions
+        Mean TV across batch and spatial dimensions (masked if provided)
     """
     if flow.dim() == 3:
         flow = flow.unsqueeze(0)  # Add batch dimension
+    valid_mask = _normalize_valid_mask(valid_mask, flow)
     
     # Calculate gradients in x and y directions
     # flow is (B, 2, H, W) where channel 0 is x-flow, channel 1 is y-flow
@@ -60,17 +82,34 @@ def calculate_total_variation(flow: torch.Tensor) -> float:
     grad_y_v = torch.abs(flow_y[:, :, 1:, :] - flow_y[:, :, :-1, :])  # (B, 1, H-1, W)
     
     # Total variation is the sum of all gradients
-    tv = grad_x_h.sum() + grad_y_h.sum() + grad_x_v.sum() + grad_y_v.sum()
-    
-    # Normalize by number of pixels
-    B, _, H, W = flow.shape
-    num_pixels = B * H * W
-    tv_normalized = tv.item() / num_pixels
+    if valid_mask is not None:
+        valid_mask = valid_mask.to(flow.device)
+        mask_h = valid_mask[:, :, :, 1:] & valid_mask[:, :, :, :-1]
+        mask_v = valid_mask[:, :, 1:, :] & valid_mask[:, :, :-1, :]
+        tv = (
+            (grad_x_h * mask_h).sum()
+            + (grad_y_h * mask_h).sum()
+            + (grad_x_v * mask_v).sum()
+            + (grad_y_v * mask_v).sum()
+        )
+        num_pixels = valid_mask.sum().item()
+        if num_pixels == 0:
+            return 0.0
+        tv_normalized = tv.item() / num_pixels
+    else:
+        tv = grad_x_h.sum() + grad_y_h.sum() + grad_x_v.sum() + grad_y_v.sum()
+        # Normalize by number of pixels
+        B, _, H, W = flow.shape
+        num_pixels = B * H * W
+        tv_normalized = tv.item() / num_pixels
     
     return tv_normalized
 
 
-def calculate_laplacian_smoothness(flow: torch.Tensor) -> float:
+def calculate_laplacian_smoothness(
+    flow: torch.Tensor,
+    valid_mask: Optional[torch.Tensor] = None
+) -> float:
     """
     Calculate Laplacian smoothness of flow field.
     
@@ -81,10 +120,11 @@ def calculate_laplacian_smoothness(flow: torch.Tensor) -> float:
         flow: Flow tensor of shape (B, 2, H, W) or (2, H, W)
         
     Returns:
-        Mean Laplacian magnitude across batch and spatial dimensions
+        Mean Laplacian magnitude across batch and spatial dimensions (masked if provided)
     """
     if flow.dim() == 3:
         flow = flow.unsqueeze(0)  # Add batch dimension
+    valid_mask = _normalize_valid_mask(valid_mask, flow)
     
     # Laplacian kernel (approximation using second-order finite differences)
     # This is a 3x3 kernel that computes the Laplacian
@@ -97,6 +137,13 @@ def calculate_laplacian_smoothness(flow: torch.Tensor) -> float:
     # Apply Laplacian to each flow component
     flow_x = flow[:, 0:1, :, :]  # (B, 1, H, W)
     flow_y = flow[:, 1:2, :, :]  # (B, 1, H, W)
+    if valid_mask is not None:
+        valid_mask = valid_mask.to(flow.device)
+        invalid = ~valid_mask.expand_as(flow_x)
+        flow_x = flow_x.clone()
+        flow_y = flow_y.clone()
+        flow_x[invalid] = 0.0
+        flow_y[invalid] = 0.0
     
     # Pad for convolution
     flow_x_padded = F.pad(flow_x, (1, 1, 1, 1), mode='reflect')
@@ -109,6 +156,17 @@ def calculate_laplacian_smoothness(flow: torch.Tensor) -> float:
     # Compute magnitude of Laplacian
     laplacian_mag = torch.sqrt(laplacian_x**2 + laplacian_y**2)  # (B, 1, H, W)
     
+    if valid_mask is not None:
+        valid_up = F.pad(valid_mask[:, :, 1:, :], (0, 0, 0, 1), value=False)
+        valid_down = F.pad(valid_mask[:, :, :-1, :], (0, 0, 1, 0), value=False)
+        valid_left = F.pad(valid_mask[:, :, :, 1:], (0, 1, 0, 0), value=False)
+        valid_right = F.pad(valid_mask[:, :, :, :-1], (1, 0, 0, 0), value=False)
+        valid_neighbors = valid_mask & valid_up & valid_down & valid_left & valid_right
+        denom = valid_neighbors.sum().item()
+        if denom == 0:
+            return 0.0
+        return (laplacian_mag * valid_neighbors).sum().item() / denom
+
     # Return mean magnitude
     return laplacian_mag.mean().item()
 
@@ -189,6 +247,7 @@ def run_inference_on_benchmark(
     device: torch.device,
     benchmark_name: str,
     include_gt: bool = False,
+    mask_by_gt: bool = False,
 ) -> Tuple[List[Dict[str, float]], List[Dict[str, float]]]:
     """
     Run inference on a benchmark dataset and compute smoothness metrics.
@@ -301,44 +360,51 @@ def run_inference_on_benchmark(
                     pred_flow = resize_flow(pred_flow, gt_flow.shape[-2], gt_flow.shape[-1])
                 
                 # Handle invalid flow (inf values)
-                if torch.isinf(gt_flow).any():
+                valid_mask = torch.isfinite(gt_flow).all(dim=1, keepdim=True)
+                if torch.isinf(gt_flow).any() or torch.isnan(gt_flow).any():
                     # Create mask for valid pixels
-                    valid_mask = torch.isfinite(gt_flow).all(dim=1, keepdim=True)
                     # Only keep valid regions
                     pred_flow = pred_flow * valid_mask.float()
                     gt_flow = torch.where(torch.isfinite(gt_flow), gt_flow, torch.zeros_like(gt_flow))
             else:
                 gt_flow = None
+                valid_mask = None
             
             # Compute smoothness immediately (streaming - avoid memory accumulation)
             # Move to CPU and process each sample in batch
             pred_flow_cpu = pred_flow.cpu()
             gt_flow_cpu = gt_flow.cpu() if include_gt and gt_flow is not None else None
+            valid_mask_cpu = valid_mask.cpu() if mask_by_gt and valid_mask is not None else None
             B = pred_flow_cpu.shape[0]
 
             for b in range(B):
                 flow = pred_flow_cpu[b]  # (2, H, W)
+                sample_mask = valid_mask_cpu[b] if valid_mask_cpu is not None else None
                 
                 # Skip if flow is all zeros or invalid
+                if sample_mask is not None and sample_mask.sum().item() == 0:
+                    continue
                 if flow.abs().max() < 1e-6:
                     continue
                 
                 # Compute smoothness for this flow
-                tv = calculate_total_variation(flow)
-                laplacian = calculate_laplacian_smoothness(flow)
+                tv = calculate_total_variation(flow, valid_mask=sample_mask)
+                laplacian = calculate_laplacian_smoothness(flow, valid_mask=sample_mask)
                 
                 smoothness_metrics.append({'tv': tv, 'laplacian': laplacian})
 
                 if gt_flow_cpu is not None:
                     gt_flow_sample = gt_flow_cpu[b]
-                    gt_tv = calculate_total_variation(gt_flow_sample)
-                    gt_laplacian = calculate_laplacian_smoothness(gt_flow_sample)
+                    gt_tv = calculate_total_variation(gt_flow_sample, valid_mask=sample_mask)
+                    gt_laplacian = calculate_laplacian_smoothness(gt_flow_sample, valid_mask=sample_mask)
                     gt_smoothness_metrics.append({'tv': gt_tv, 'laplacian': gt_laplacian})
             
             # Free memory immediately
             del pred_flow_cpu, pred_flow
             if gt_flow_cpu is not None:
                 del gt_flow_cpu
+            if valid_mask_cpu is not None:
+                del valid_mask_cpu
             if gt_flow is not None:
                 del gt_flow
     
@@ -427,25 +493,69 @@ def main():
         help='Device to use (cuda/cpu)'
     )
     parser.add_argument(
+        '--tss-root',
+        type=str,
+        default='/home/spencer/Data/correspondence/TSS_CVPR2016',
+        help='Path to TSS dataset root'
+    )
+    parser.add_argument(
         '--include-gt',
         action='store_true',
         help='Also compute smoothness on ground-truth flow when available.'
     )
+    parser.add_argument(
+        '--mask-by-gt',
+        action='store_true',
+        help='Compute smoothness only over valid GT pixels (mask invalid regions).'
+    )
+    parser.add_argument(
+        '--use-checkpoint-paths',
+        action='store_true',
+        help='Interpret --checkpoints as explicit checkpoint paths (skip best-checkpoint selection).'
+    )
     
     args = parser.parse_args()
     
-    # Parse snapshot directories
+    # Parse snapshot directories or explicit checkpoint paths
+    checkpoint_items = None
     snapshot_dirs = []
-    if len(args.checkpoints) == 1 and args.checkpoints[0].endswith('.csv'):
-        # Load from CSV
-        df = pd.read_csv(args.checkpoints[0])
-        if 'snapshot_dir' in df.columns:
-            snapshot_dirs = df['snapshot_dir'].dropna().unique().tolist()
+    if args.use_checkpoint_paths:
+        checkpoint_items = []
+        if len(args.checkpoints) == 1 and args.checkpoints[0].endswith('.csv'):
+            df = pd.read_csv(args.checkpoints[0])
+            if 'checkpoint_path' not in df.columns:
+                raise ValueError("CSV must have 'checkpoint_path' column when using --use-checkpoint-paths")
+            checkpoint_paths = df['checkpoint_path'].dropna().tolist()
         else:
-            raise ValueError("CSV must have 'snapshot_dir' column")
+            checkpoint_paths = args.checkpoints
+
+        for checkpoint_path in checkpoint_paths:
+            path = Path(checkpoint_path)
+            if not path.exists():
+                print(f"Warning: Checkpoint not found: {path}")
+                continue
+            snapshot_dir = path.parent
+            if snapshot_dir.name in {'checkpoints', 'snapshots'}:
+                snapshot_dir = snapshot_dir.parent
+            checkpoint_items.append({
+                'checkpoint_path': str(path),
+                'snapshot_dir': str(snapshot_dir),
+                'snapshot_name': snapshot_dir.name,
+                'checkpoint_file': path.name,
+            })
+
+        snapshot_dirs = list({item['snapshot_dir'] for item in checkpoint_items})
     else:
-        # Assume args are checkpoint paths, extract parent directories
-        snapshot_dirs = list(set([str(Path(p).parent) for p in args.checkpoints]))
+        if len(args.checkpoints) == 1 and args.checkpoints[0].endswith('.csv'):
+            # Load from CSV
+            df = pd.read_csv(args.checkpoints[0])
+            if 'snapshot_dir' in df.columns:
+                snapshot_dirs = df['snapshot_dir'].dropna().unique().tolist()
+            else:
+                raise ValueError("CSV must have 'snapshot_dir' column")
+        else:
+            # Assume args are checkpoint paths, extract parent directories
+            snapshot_dirs = list(set([str(Path(p).parent) for p in args.checkpoints]))
     
     # Filter out non-existent directories
     valid_snapshot_dirs = [d for d in snapshot_dirs if Path(d).exists()]
@@ -454,6 +564,8 @@ def main():
     
     if not valid_snapshot_dirs:
         raise ValueError("No valid snapshot directories found")
+    if args.use_checkpoint_paths and not checkpoint_items:
+        raise ValueError("No valid checkpoints found")
     
     print(f"\nFound {len(valid_snapshot_dirs)} snapshot(s) to evaluate", flush=True)
     
@@ -498,6 +610,7 @@ def main():
     base_config['evaluation']['kitti_root'] = '/home/spencer/Data/correspondence/kitti'
     base_config['evaluation']['middlebury_root'] = '/home/spencer/Data/middlebury/all'
     base_config['evaluation']['datapath'] = './models/Datasets_CATs'
+    base_config['evaluation']['tss_root'] = args.tss_root
     
     # Create validation dataloaders
     device = torch.device(args.device)
@@ -513,9 +626,17 @@ def main():
     print(f"Processing {len(valid_snapshot_dirs)} snapshot(s) x {len(args.benchmarks)} benchmark(s)", flush=True)
     print(f"{'='*80}\n", flush=True)
     
-    for idx, checkpoint_path in enumerate(valid_snapshot_dirs, 1):
-        snapshot_dir = Path(checkpoint_path)
-        print(f"\n[{idx}/{len(valid_snapshot_dirs)}] Processing: {snapshot_dir.name}", flush=True)
+    if args.use_checkpoint_paths:
+        processing_items = checkpoint_items
+    else:
+        processing_items = [{'snapshot_dir': d} for d in valid_snapshot_dirs]
+
+    for idx, item in enumerate(processing_items, 1):
+        snapshot_dir = Path(item['snapshot_dir'])
+        checkpoint_path = Path(item['checkpoint_path']) if args.use_checkpoint_paths else None
+        checkpoint_file = item.get('checkpoint_file')
+        total_items = len(processing_items)
+        print(f"\n[{idx}/{total_items}] Processing: {snapshot_dir.name}", flush=True)
         print(f"-" * 80, flush=True)
         
         # Try to get training dataset info from config
@@ -542,9 +663,12 @@ def main():
             print(f"\n  Benchmark: {benchmark}", flush=True)
             
             try:
-                # Find benchmark-specific checkpoint
-                from scripts.run_smoothness_comparison import find_best_checkpoint
-                benchmark_checkpoint = find_best_checkpoint(snapshot_dir, benchmark)
+                if args.use_checkpoint_paths:
+                    benchmark_checkpoint = checkpoint_path
+                else:
+                    # Find benchmark-specific checkpoint
+                    from scripts.run_smoothness_comparison import find_best_checkpoint
+                    benchmark_checkpoint = find_best_checkpoint(snapshot_dir, benchmark)
                 
                 if benchmark_checkpoint is None:
                     print(f"    ✗ No valid checkpoint found for {benchmark}", flush=True)
@@ -562,7 +686,12 @@ def main():
                 
                 # Run inference
                 smoothness_metrics, gt_smoothness_metrics = run_inference_on_benchmark(
-                    model, dataloader, device, benchmark, include_gt=args.include_gt
+                    model,
+                    dataloader,
+                    device,
+                    benchmark,
+                    include_gt=args.include_gt,
+                    mask_by_gt=args.mask_by_gt,
                 )
                 
                 # Calculate smoothness statistics
@@ -573,8 +702,11 @@ def main():
                 result = {
                     'checkpoint_path': str(benchmark_checkpoint),
                     'checkpoint_name': snapshot_dir.name,
+                    'checkpoint_file': checkpoint_file or benchmark_checkpoint.name,
+                    'snapshot_dir': str(snapshot_dir),
                     'train_dataset': train_dataset,
                     'benchmark': benchmark,
+                    'mask_by_gt': bool(args.mask_by_gt),
                     'mean_tv': metrics['mean_tv'],
                     'std_tv': metrics['std_tv'],
                     'mean_laplacian': metrics['mean_laplacian'],

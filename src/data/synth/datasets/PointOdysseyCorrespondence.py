@@ -158,6 +158,10 @@ class PointOdysseySimpleDataset(torch.utils.data.Dataset):
         # Read-only cache: sorted list for fast indexing
         self._valid_indices_list = None  # Sorted list of valid indices
         self._invalid_indices_set = None  # Set for fast lookup
+        # In-memory fallback when cache is unavailable (per-worker instance).
+        self._fallback_valid_indices = []
+        self._fallback_invalid_indices = set()
+        self._fallback_max_tries = 50
         
         # Load existing cache (read-only, no locks needed)
         self._load_cache()
@@ -269,29 +273,48 @@ class PointOdysseySimpleDataset(torch.utils.data.Dataset):
                 # Index out of range for cache - shouldn't happen if __len__ is correct
                 gotit = False
         else:
-            # No cache - will grab first valid index
-            gotit = False
+            # No cache - try requested index first, then fall back to random sampling
+            actual_index = index
+            sample, gotit = self.base_dataset[actual_index]
+            if gotit:
+                self._fallback_valid_indices.append(actual_index)
+            else:
+                self._fallback_invalid_indices.add(actual_index)
         
-        # If cache lookup failed or no cache exists, grab the first valid index
+        # If cache lookup failed or no cache exists, sample additional indices
         if not gotit:
-            # If we have a cache with valid indices, use the first one
             if self._valid_indices_list is not None and len(self._valid_indices_list) > 0:
                 actual_index = self._valid_indices_list[0]
                 sample, gotit = self.base_dataset[actual_index]
             else:
-                # No cache - iterate through indices to find first valid one
-                for idx in range(len(self.base_dataset)):
-                    # Skip known-invalid indices if we have invalid set
-                    if self._invalid_indices_set is not None and idx in self._invalid_indices_set:
-                        continue
-                    
-                    # Try this index
-                    sample, gotit = self.base_dataset[idx]
-                    if gotit:
-                        break
-            
+                if self._fallback_valid_indices:
+                    actual_index = _random.choice(self._fallback_valid_indices)
+                    sample, gotit = self.base_dataset[actual_index]
+                    if not gotit:
+                        self._fallback_invalid_indices.add(actual_index)
+                if not gotit:
+                    max_tries = min(self._fallback_max_tries, len(self.base_dataset))
+                    for _ in range(max_tries):
+                        candidate = _random.randrange(len(self.base_dataset))
+                        if candidate in self._fallback_invalid_indices:
+                            continue
+                        sample, gotit = self.base_dataset[candidate]
+                        if gotit:
+                            actual_index = candidate
+                            self._fallback_valid_indices.append(candidate)
+                            break
+                        self._fallback_invalid_indices.add(candidate)
+                if not gotit:
+                    for idx in range(len(self.base_dataset)):
+                        if idx in self._fallback_invalid_indices:
+                            continue
+                        sample, gotit = self.base_dataset[idx]
+                        if gotit:
+                            actual_index = idx
+                            self._fallback_valid_indices.append(idx)
+                            break
             if not gotit:
-                raise RuntimeError(f"Failed to get valid sample - no valid indices found")
+                raise RuntimeError("Failed to get valid sample - no valid indices found")
         
         # Keep everything on CPU - DataLoader will handle GPU transfer
         # Extract the data we need (keep on CPU)
@@ -1573,4 +1596,3 @@ if __name__ == "__main__":
     else:
         # Test without visualization
         sample = test_dataset()
-

@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 def extract_gt_reference(df):
@@ -219,7 +220,7 @@ def aggregate(df):
     return agg
 
 
-def plot_metrics(df, benchmark, output_path):
+def plot_metrics(df, benchmark, output_path, dual_pck=False):
     bench_df = df[df["benchmark"] == benchmark].copy()
     if bench_df.empty:
         print(f"No rows found for benchmark '{benchmark}'.")
@@ -263,10 +264,13 @@ def plot_metrics(df, benchmark, output_path):
                 condition_colors.get(cond, "#7f7f7f")
                 for cond in group_df["condition"]
             ]
-            x_pos = range(len(values))
-            ax.bar(
-                x_pos,
+            x_pos = np.arange(len(values))
+            bar_width = 0.38 if dual_pck else 0.6
+            smooth_positions = x_pos - (bar_width / 2 if dual_pck else 0)
+            bars = ax.bar(
+                smooth_positions,
                 values,
+                width=bar_width,
                 color=colors,
                 alpha=0.8,
                 edgecolor="black",
@@ -280,7 +284,30 @@ def plot_metrics(df, benchmark, output_path):
             ax.set_title(f"{group} - {title}", fontsize=12, fontweight="bold")
             ax.grid(True, axis="y", alpha=0.3)
             for idx, value in enumerate(values):
-                ax.text(idx, value * 1.02, f"{value:.4f}", ha="center", va="bottom", fontsize=8)
+                if value is None or pd.isna(value):
+                    continue
+                ax.text(smooth_positions[idx], value * 1.02, f"{value:.4f}", ha="center", va="bottom", fontsize=8)
+            if dual_pck and "mean_pck" in group_df.columns:
+                pck_values = pd.to_numeric(group_df["mean_pck"], errors="coerce").to_numpy()
+                if np.isfinite(pck_values).any():
+                    ax2 = ax.twinx()
+                    pck_positions = x_pos + bar_width / 2
+                    pck_bar = ax2.bar(
+                        pck_positions,
+                        pck_values,
+                        width=bar_width,
+                        color="#4d4d4d",
+                        alpha=0.55,
+                        edgecolor="black",
+                        linewidth=0.8,
+                        hatch="//",
+                        label="PCK",
+                    )
+                    max_pck = np.nanmax(pck_values)
+                    y_max = max_pck * 1.2 if max_pck > 0 else 1.0
+                    ax2.set_ylim(0, y_max)
+                    ax2.set_ylabel("PCK (higher = better)", fontsize=10)
+                    ax2.legend(handles=[pck_bar], loc="upper right", fontsize=8, frameon=False)
             if gt_values:
                 gt_metric = "mean_tv_gt" if metric == "mean_tv" else "mean_laplacian_gt"
                 gt_value = gt_values.get(gt_metric)
@@ -396,6 +423,8 @@ def write_summary_txt(df, benchmark, output_path):
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w") as f:
         f.write(f"Flow smoothness summary (benchmark: {benchmark})\n\n")
+        mask_status = df.attrs.get("mask_by_gt", "unknown")
+        f.write(f"Label mask (valid GT pixels only): {mask_status}\n\n")
         gt_reference = df.attrs.get("gt_reference", {})
         gt_values = gt_reference.get(benchmark, {}) if gt_reference else {}
         if gt_values:
@@ -440,6 +469,11 @@ def main():
         help="Output image path.",
     )
     parser.add_argument(
+        "--dual-pck",
+        action="store_true",
+        help="Plot paired bars with a secondary PCK axis.",
+    )
+    parser.add_argument(
         "--table-output",
         default=None,
         help="Optional CSV table output path.",
@@ -455,11 +489,19 @@ def main():
     if df.empty:
         print("No rows found in input.")
         return
+    mask_status = "unknown"
+    if "mask_by_gt" in df.columns:
+        mask_vals = df["mask_by_gt"].dropna().unique().tolist()
+        if len(mask_vals) == 1:
+            mask_status = "on" if bool(mask_vals[0]) else "off"
+        elif len(mask_vals) > 1:
+            mask_status = "mixed"
     gt_reference = extract_gt_reference(df)
     df = add_pck_column(df)
     agg = aggregate(df)
     agg.attrs["gt_reference"] = gt_reference
-    plot_metrics(agg, args.benchmark, args.output)
+    agg.attrs["mask_by_gt"] = mask_status
+    plot_metrics(agg, args.benchmark, args.output, dual_pck=args.dual_pck)
     table_output = args.table_output
     if not table_output:
         table_output = str(Path(args.output).with_suffix("")) + "_table.csv"

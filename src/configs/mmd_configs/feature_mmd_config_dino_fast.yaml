@@ -9,6 +9,9 @@ datasets:
 - name: synthetic
   split: train
   num_batches: 100
+- name: synthetic_2d_warp
+  split: train
+  num_batches: 100
 - name: synthetic_small_zoom
   dataset_name: synthetic
   split: train
@@ -211,6 +214,12 @@ dataset_overrides:
     geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
     processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
     normalize_images: false
+  synthetic_2d_warp:
+    geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
+    processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
+    normalize_images: false
+    synthetic_flow_warp: true
+    synthetic_flow_warp_swap: true
   pointodyssey:
     dataset_location: /home/spencer/Data/PointOdyssey
     normalize_images: true

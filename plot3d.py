@@ -61,7 +61,15 @@ MODEL_FAMILY_ALIASES = {
 }
 
 STANDARDIZE_MODES = ("global", "none", "benchmark", "encoder", "model_family")
-PREDICTOR_SETS = ("all", "trimmed")
+PREDICTOR_SETS = ("all", "trimmed", "asymmetric", "mmd")
+
+# NOTE ON MEAN_DIST NORMALIZATION:
+# - All *_mean_dist metrics are computed on L2-normalized feature/flow vectors
+# - The distances themselves are RAW L2 distances (not normalized by radius/median)
+# - train_to_eval_mean_dist: mean distance from train samples to nearest eval neighbors
+# - eval_to_train_mean_dist: mean distance from eval samples to nearest train neighbors
+# - These asymmetric metrics capture directional distribution mismatch
+# - MMD metrics are symmetric and may collapse distinct failure modes
 
 ALL_PREDICTORS = [
     "flow_mmd",
@@ -90,6 +98,22 @@ TRIMMED_PREDICTORS = [
     "dino_eval_to_train_mean_dist",
 ]
 
+# Asymmetric directional metrics only (flow + DINO mean distances)
+# Tests hypothesis: asymmetric metrics capture distinct directional failure modes
+ASYMMETRIC_PREDICTORS = [
+    "flow_train_to_eval_mean_dist",
+    "flow_eval_to_train_mean_dist",
+    "dino_train_to_eval_mean_dist",
+    "dino_eval_to_train_mean_dist",
+]
+
+# Symmetric MMD metrics only (flow + DINO)
+# Tests hypothesis: symmetric metrics collapse directional information
+MMD_PREDICTORS = [
+    "flow_mmd",
+    "dino_mmd",
+]
+
 
 def derive_model_family(snapshot_path: Path) -> str:
     for part in snapshot_path.parts:
@@ -109,9 +133,23 @@ def derive_model_family(snapshot_path: Path) -> str:
 
 
 def select_predictor_candidates(predictor_set: str) -> List[str]:
+    """
+    Select predictor variables based on the specified set.
+    
+    Args:
+        predictor_set: One of 'all', 'trimmed', 'asymmetric', 'mmd'
+        
+    Returns:
+        List of predictor column names
+    """
     if predictor_set == "trimmed":
         return list(TRIMMED_PREDICTORS)
-    return list(ALL_PREDICTORS)
+    elif predictor_set == "asymmetric":
+        return list(ASYMMETRIC_PREDICTORS)
+    elif predictor_set == "mmd":
+        return list(MMD_PREDICTORS)
+    else:  # 'all' or default
+        return list(ALL_PREDICTORS)
 
 
 def _standardize_predictors_insample(
@@ -1361,6 +1399,9 @@ def compare_predictors_with_mixed_effects(
     print(f"{'='*80}")
     print(f"\nData: {len(df)} observations across {df['benchmark'].nunique()} benchmarks")
     print(f"Benchmarks: {', '.join(sorted(df['benchmark'].unique()))}")
+    print(f"\nPredictor set: {predictor_set}")
+    print(f"Standardize mode: {standardize_mode}")
+    print("\nNOTE: *_mean_dist = RAW L2 distances (in L2-normalized feature space)")
     encoder_term = ""
     use_encoder_offsets = False
     model_family_term = ""
@@ -2076,6 +2117,11 @@ def compare_predictors_with_mixed_effects(
                 f.write(f"Encoder offsets: C({encoder_column})\n")
             if use_model_family_offsets:
                 f.write(f"Model family offsets: C({model_family_column})\n")
+            f.write("\nNOTE ON METRIC NORMALIZATION:\n")
+            f.write("- *_mean_dist metrics: RAW L2 distances in L2-normalized feature/flow space\n")
+            f.write("  (NOT normalized by radius or median; directional asymmetric metrics)\n")
+            f.write("- *_mmd metrics: Maximum Mean Discrepancy (symmetric)\n")
+            f.write("- *_coverage metrics: Fraction within learned radius threshold\n")
             if use_encoder_interactions:
                 f.write(f"Encoder interactions: predictors:C({encoder_column})\n")
             if use_model_family_interactions:
