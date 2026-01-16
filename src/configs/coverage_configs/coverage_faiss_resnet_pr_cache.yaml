@@ -1,33 +1,41 @@
-representation: flow
+representation: resnet
 encoder: resnet101
 batch_size: 16
 num_workers: 4
 sampling:
-  max_vectors: 1000000
-  dense_threshold: 300000
-  dense_fraction: 0.1
-  dense_min_keep: 20000
+  max_vectors: 200000
+  dense_threshold: 100000
+  dense_fraction: 0.05
+  dense_min_keep: 2000
   seed: 42
+  batch_limit: 1000
+  shuffle: true
 pca:
-  enabled: false
+  enabled: true
   output_dim: 256
   fit_on: train
   max_train_vectors: 200000
   whiten: false
 faiss:
   index_factory: HNSW32
-  metric: l2
+  metric: cosine
   use_gpu: false
   nprobe: 16
 coverage:
   k: 1
+  support_mode: per_point_radius
+  neighbor_agg: kth
+  self_radius_k: 3
   radius_quantile: 0.95
-  kl_method: knn
-  kl_knn_k: 20
-  kl_bins: 50
-  kl_eps: 1.0e-6
+cache:
+  dir: /mnt/nvme_1tb_b/coverage_vectors
+  mode: read_write
+  format: npy
+  mmap: true
+  mix_from_cache: true
+  pairwise: true
 output:
-  results_file: coverage_faiss_flow_results_fast.csv
+  results_file: coverage_faiss_resnet_results_pr_cache.csv
 dataset_params:
   size:
   - 512
@@ -57,26 +65,6 @@ dataset_overrides:
     processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
     normalize_images: false
     device: cuda
-  synthetic_2d_warp:
-    geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
-    processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
-    normalize_images: false
-    synthetic_flow_warp: true
-    synthetic_flow_warp_swap: true
-    device: cuda
-  imagenet2dwarp:
-    datapath: hf://ILSVRC/imagenet-1k
-    hf_streaming: false
-    hf_max_samples: 5000
-    hf_cache_dir: /home/spencer/.cache/huggingface/datasets
-    normalize_images: true
-    rotation_range: [-30.0, 30.0]
-    scale_range: [0.5, 2.5]
-    translation_range: [-0.1, 0.1]
-    shear_range: [-0.2, 0.2]
-    cache_warp_params: true
-    cache_dir: ./cache/imagenet2dwarp
-    seed: 42
   pointodyssey:
     dataset_location: /home/spencer/Data/PointOdyssey
     normalize_images: true
@@ -99,57 +87,16 @@ dataset_overrides:
     datapath: /home/spencer/Data/middlebury/all
     normalize_images: true
 datasets:
-- name: imagenet2dwarp
-  split: train
-  representation: flow
-  num_batches: 100
-  is_eval: false
-- name: spair_2d_warp_70_30
-  split: train
-  num_batches: 5
-  mixed: true
-  datasets:
-  - spair
-  - imagenet2dwarp
-  percentages:
-  - 0.7
-  - 0.3
-- name: spair_2d_warp_50_50
-  split: train
-  num_batches: 5
-  mixed: true
-  datasets:
-  - spair
-  - imagenet2dwarp
-  percentages:
-  - 0.5
-  - 0.5
-- name: spair_2d_warp_30_70
-  split: train
-  num_batches: 5
-  mixed: true
-  datasets:
-  - spair
-  - imagenet2dwarp
-  percentages:
-  - 0.3
-  - 0.7
 - name: synthetic
   split: train
-  representation: flow
+  representation: resnet
   num_batches: 100
   is_eval: false
-  output: coresets/synthetic_train_flow.pt
-- name: synthetic_2d_warp
-  split: train
-  representation: flow
-  num_batches: 100
-  is_eval: false
-  output: coresets/synthetic_2d_warp_train_flow.pt
+  output: coresets/synthetic_train_resnet.pt
 - name: synthetic_small_zoom
   dataset_name: synthetic
   split: train
-  representation: flow
+  representation: resnet
   num_batches: 100
   is_eval: false
   overrides:
@@ -167,11 +114,11 @@ datasets:
         rel_components:
           loc: -0.1
           scale: 0.2
-  output: coresets/synthetic_small_zoom_train_flow.pt
+  output: coresets/synthetic_small_zoom_train_resnet.pt
 - name: synthetic_large_zoom
   dataset_name: synthetic
   split: train
-  representation: flow
+  representation: resnet
   num_batches: 100
   is_eval: false
   overrides:
@@ -189,95 +136,95 @@ datasets:
         rel_components:
           loc: -0.35
           scale: 0.5
-  output: coresets/synthetic_large_zoom_train_flow.pt
+  output: coresets/synthetic_large_zoom_train_resnet.pt
 - name: synthetic_random_flipping
   dataset_name: synthetic
   split: train
-  representation: flow
+  representation: resnet
   num_batches: 100
   is_eval: false
   overrides:
     geometry_config_overrides:
       random_flip: 0.5
-  output: coresets/synthetic_random_flipping_train_flow.pt
+  output: coresets/synthetic_random_flipping_train_resnet.pt
 - name: sintel
   split: train
-  representation: flow
+  representation: resnet
   num_batches: 100
   is_eval: false
-  output: coresets/sintel_train_flow.pt
+  output: coresets/sintel_train_resnet.pt
 - name: spair
   split: train
-  representation: flow
+  representation: resnet
   num_batches: 100
   is_eval: false
-  output: coresets/spair_train_flow.pt
+  output: coresets/spair_train_resnet.pt
 - name: flyingthings
   split: train
-  representation: flow
+  representation: resnet
   num_batches: 100
   is_eval: false
-  output: coresets/flyingthings_train_flow.pt
+  output: coresets/flyingthings_train_resnet.pt
 - name: pointodyssey
   split: train
-  representation: flow
+  representation: resnet
   num_batches: 100
   is_eval: false
-  output: coresets/pointodyssey_train_flow.pt
+  output: coresets/pointodyssey_train_resnet.pt
 - name: kitti2015
   split: val
-  representation: flow
+  representation: resnet
   num_batches: 100
   is_eval: true
-  output: coresets/kitti_val_flow.pt
+  output: coresets/kitti_val_resnet.pt
 - name: kitti2012
   split: val
-  representation: flow
+  representation: resnet
   num_batches: 100
   is_eval: true
-  output: coresets/kitti2012_val_flow.pt
+  output: coresets/kitti2012_val_resnet.pt
 - name: spair
   split: test
-  representation: flow
+  representation: resnet
   num_batches: 100
   is_eval: true
-  output: coresets/spair_val_flow.pt
+  output: coresets/spair_val_resnet.pt
 - name: pfpascal
   split: test
-  representation: flow
+  representation: resnet
   num_batches: 100
   is_eval: true
-  output: coresets/pfpascal_val_flow.pt
+  output: coresets/pfpascal_val_resnet.pt
 - name: pfwillow
   split: test
-  representation: flow
+  representation: resnet
   num_batches: 100
   is_eval: true
-  output: coresets/pfwillow_val_flow.pt
+  output: coresets/pfwillow_val_resnet.pt
 - name: pointodyssey
   split: test
-  representation: flow
+  representation: resnet
   num_batches: 100
   is_eval: true
-  output: coresets/pointodyssey_val_flow.pt
+  output: coresets/pointodyssey_val_resnet.pt
 - name: flyingthings
   split: test
-  representation: flow
+  representation: resnet
   num_batches: 100
   is_eval: true
-  output: coresets/flyingthings_val_flow.pt
+  output: coresets/flyingthings_val_resnet.pt
 - name: tss
   split: val
-  representation: flow
+  representation: resnet
   num_batches: 100
   is_eval: true
-  output: coresets/tss_val_flow.pt
+  output: coresets/tss_val_resnet.pt
 - name: middlebury
   split: val
-  representation: flow
+  representation: resnet
   num_batches: 100
   is_eval: true
-  output: coresets/middlebury_val_flow.pt
+  output: coresets/middlebury_val_resnet.pt
 - name: spair_synthetic_30_70
   split: train
   num_batches: 5

@@ -195,8 +195,21 @@ class PointOdysseyDataset(torch.utils.data.Dataset):
         # This avoids reloading the same annotation file when processing multiple clips from the same sequence
         self._cached_annotation_path = None
         self._cached_annotations = None
+        
+        # Optimization: Skip edge computation if not needed (for correspondence tasks)
+        # Edge computation is only needed for filtering trajectories on segmentation boundaries
+        # If disable_motion_filter is True, we're likely doing correspondence and can skip edges
+        self.skip_edge_computation = disable_motion_filter
 
     def getitem_helper(self, index):
+        """
+        Get a sample from the dataset with optimizations for speed:
+        1. Annotation caching: Reuses memory-mapped annotation files across clips from same sequence
+        2. Optimized array operations: Uses vectorized numpy operations instead of loops
+        3. Edge computation skipping: Skips expensive Canny edge detection when disable_motion_filter=True
+        4. Fast image loading: Uses cv2.imread instead of PIL for faster JPEG/PNG loading
+        5. Optimized motion filtering: Uses np.diff and vectorized norm computations
+        """
         sample = None
         gotit = False
 
@@ -210,6 +223,7 @@ class PointOdysseyDataset(torch.utils.data.Dataset):
             if annotations_path != self._cached_annotation_path:
                 # Load new annotation file
                 try:
+                    # Try memory mapping first (fastest for large files)
                     annotations = np.load(annotations_path, allow_pickle=True, mmap_mode='r')
                     # Cache the mmap object for reuse (mmap allows concurrent reads)
                     self._cached_annotations = annotations
@@ -223,22 +237,41 @@ class PointOdysseyDataset(torch.utils.data.Dataset):
                 # Reuse cached annotation
                 annotations = self._cached_annotations
             
-            # Copy the slices we need immediately
-            trajs = np.array(annotations['trajs_2d'][full_idx]).astype(np.float32)
-            visibs = np.array(annotations['visibs'][full_idx]).astype(np.float32)
-            valids = np.array(annotations['valids'][full_idx]).astype(np.float32)
+            # Optimized: Extract slices directly from mmap without intermediate array conversion
+            # This avoids unnecessary memory copies when using mmap_mode='r'
+            if isinstance(annotations, np.lib.npyio.NpzFile):
+                # For .npz files, we need to access the arrays
+                trajs_2d = annotations['trajs_2d']
+                visibs_arr = annotations['visibs']
+                valids_arr = annotations['valids']
+                
+                # Extract slices - use direct indexing for better performance
+                if hasattr(trajs_2d, '__getitem__'):
+                    trajs = np.asarray(trajs_2d[full_idx], dtype=np.float32)
+                    visibs = np.asarray(visibs_arr[full_idx], dtype=np.float32)
+                    valids = np.asarray(valids_arr[full_idx], dtype=np.float32)
+                else:
+                    # Fallback for non-array objects
+                    trajs = np.array(trajs_2d[full_idx]).astype(np.float32)
+                    visibs = np.array(visibs_arr[full_idx]).astype(np.float32)
+                    valids = np.array(valids_arr[full_idx]).astype(np.float32)
+            else:
+                # Fallback for other formats
+                trajs = np.array(annotations['trajs_2d'][full_idx]).astype(np.float32)
+                visibs = np.array(annotations['visibs'][full_idx]).astype(np.float32)
+                valids = np.array(annotations['valids'][full_idx]).astype(np.float32)
             # Don't delete annotations here - we're caching it for reuse
 
             # some data is valid in 3d but invalid in 2d
             # here we will filter to the data which is valid in 2d
-            valids_xy = np.ones_like(trajs)
-            inf_idx = np.where(np.isinf(trajs))
-            trajs[inf_idx] = 0
-            valids_xy[inf_idx] = 0
-            nan_idx = np.where(np.isnan(trajs))
-            trajs[nan_idx] = 0
-            valids_xy[nan_idx] = 0
-            inv_idx = np.where(np.sum(valids_xy, axis=2)<2) # S,N
+            # Optimized: Use vectorized operations instead of np.where
+            valids_xy = np.ones_like(trajs, dtype=np.float32)
+            # Check for inf/nan in one pass
+            invalid_mask = ~np.isfinite(trajs)
+            trajs[invalid_mask] = 0
+            valids_xy[invalid_mask] = 0
+            # Check if both x and y are valid (sum along last axis should be 2)
+            inv_idx = np.sum(valids_xy, axis=2) < 2  # S,N boolean mask
             visibs[inv_idx] = 0
             valids[inv_idx] = 0
             
@@ -263,53 +296,74 @@ class PointOdysseyDataset(torch.utils.data.Dataset):
                     print('returning before cropping: N=%d; need at least N=%d' % (N, min_N))
                 return None, False
 
+            # Optimized: Use cv2.imread for faster loading (BGR->RGB conversion needed)
             rgbs = []
             for rgb_path in rgb_paths:
-                with Image.open(rgb_path) as im:
-                    rgbs.append(np.array(im)[:, :, :3]) # H,W,3
+                # cv2.imread is typically faster than PIL for JPEG files
+                img_bgr = cv2.imread(rgb_path, cv2.IMREAD_COLOR)
+                if img_bgr is None:
+                    # Fallback to PIL if cv2 fails
+                    with Image.open(rgb_path) as im:
+                        img_bgr = np.array(im)[:, :, :3]
+                    rgb = img_bgr
+                else:
+                    # Convert BGR to RGB
+                    rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+                rgbs.append(rgb)  # H,W,3
 
             H,W,C = rgbs[0].shape
             
             masks = []
             for mask_path in mask_paths:
-                with Image.open(mask_path) as im:
-                    mask = np.array(im)
-                    if np.sum(mask==0) > 128:
-                        # fill holes caused by fog/smoke
-                        mask_filled = cv2.medianBlur(mask, 7)
-                        mask[mask==0] = mask_filled[mask==0]
-                    masks.append(mask) # H,W
+                # cv2.imread is faster for PNG files too
+                mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+                if mask is None:
+                    # Fallback to PIL if cv2 fails
+                    with Image.open(mask_path) as im:
+                        mask = np.array(im)
+                # Only do median blur if needed (optimization: check first)
+                if np.sum(mask==0) > 128:
+                    # fill holes caused by fog/smoke
+                    mask_filled = cv2.medianBlur(mask, 7)
+                    mask[mask==0] = mask_filled[mask==0]
+                masks.append(mask)  # H,W
 
             # discard pixels that are OOB on frame0
-            for si in range(S):
-                oob_inds = np.logical_or(
-                    np.logical_or(trajs[si,:,0] < 0, trajs[si,:,0] > W-1),
-                    np.logical_or(trajs[si,:,1] < 0, trajs[si,:,1] > H-1))
-                visibs[si,oob_inds] = 0
+            # Optimized: Vectorize across all frames at once
+            oob_mask = ((trajs[:,:,0] < 0) | (trajs[:,:,0] > W-1) | 
+                       (trajs[:,:,1] < 0) | (trajs[:,:,1] > H-1))
+            visibs[oob_mask] = 0
             vis0 = visibs[0] > 0
             trajs = trajs[:,vis0]
             visibs = visibs[:,vis0]
             valids = valids[:,vis0]
 
-            # compute edge map 
+            # compute edge map (skip if not needed for correspondence tasks)
             edges = []
-            kernel = np.ones((3,3), np.uint8)
-            dilate_iters = max(int(H/self.resize_size[0]),1)
-            for si in range(S):
-                edge = cv2.Canny(masks[si], 1, 1)
-                # block apparent edges from fog/smoke
-                keep = 1 - cv2.dilate((masks[si]==0).astype(np.uint8), kernel, iterations=1) 
-                edge = edge * keep
-                edge = cv2.dilate(edge, kernel, iterations=dilate_iters)
-                edges.append(edge)
+            if not self.skip_edge_computation:
+                kernel = np.ones((3,3), np.uint8)
+                dilate_iters = max(int(H/self.resize_size[0]),1)
+                for si in range(S):
+                    edge = cv2.Canny(masks[si], 1, 1)
+                    # block apparent edges from fog/smoke
+                    keep = 1 - cv2.dilate((masks[si]==0).astype(np.uint8), kernel, iterations=1) 
+                    edge = edge * keep
+                    edge = cv2.dilate(edge, kernel, iterations=dilate_iters)
+                    edges.append(edge)
                 
-            # discard trajs that begin exactly on segmentation boundaries
-            # since their labels are ambiguous
-            x0, y0 = trajs[0,:,0].astype(np.int32), trajs[0,:,1].astype(np.int32)
-            on_edge = edges[0][y0,x0] > 0
-            trajs = trajs[:,~on_edge]
-            visibs = visibs[:,~on_edge]
-            valids = valids[:,~on_edge]
+                # discard trajs that begin exactly on segmentation boundaries
+                # since their labels are ambiguous
+                x0, y0 = trajs[0,:,0].astype(np.int32), trajs[0,:,1].astype(np.int32)
+                # Clamp indices to valid range to avoid out-of-bounds access
+                x0_clamped = np.clip(x0, 0, edges[0].shape[1] - 1)
+                y0_clamped = np.clip(y0, 0, edges[0].shape[0] - 1)
+                on_edge = edges[0][y0_clamped, x0_clamped] > 0
+                trajs = trajs[:,~on_edge]
+                visibs = visibs[:,~on_edge]
+                valids = valids[:,~on_edge]
+            else:
+                # Create dummy edges for compatibility (not used when skip_edge_computation=True)
+                edges = [np.zeros((H, W), dtype=np.uint8) for _ in range(S)]
             
             N = trajs.shape[1]
 
@@ -371,18 +425,16 @@ class PointOdysseyDataset(torch.utils.data.Dataset):
             assert(C==3)
             
             # update visibility annotations
-            for si in range(S):
-                # avoid 1px edge
-                oob_inds = np.logical_or(
-                    np.logical_or(trajs[si,:,0] < 1, trajs[si,:,0] > W-2),
-                    np.logical_or(trajs[si,:,1] < 1, trajs[si,:,1] > H-2))
-                visibs[si,oob_inds] = 0
+            # Optimized: Vectorize across all frames at once
+            # avoid 1px edge
+            oob_inds = ((trajs[:,:,0] < 1) | (trajs[:,:,0] > W-2) |
+                       (trajs[:,:,1] < 1) | (trajs[:,:,1] > H-2))
+            visibs[oob_inds] = 0
 
-                # when a point moves far oob, don't supervise with it
-                very_oob_inds = np.logical_or(
-                    np.logical_or(trajs[si,:,0] < -64, trajs[si,:,0] > W+64),
-                    np.logical_or(trajs[si,:,1] < -64, trajs[si,:,1] > H+64))
-                valids[si,very_oob_inds] = 0
+            # when a point moves far oob, don't supervise with it
+            very_oob_inds = ((trajs[:,:,0] < -64) | (trajs[:,:,0] > W+64) |
+                           (trajs[:,:,1] < -64) | (trajs[:,:,1] > H+64))
+            valids[very_oob_inds] = 0
 
             # ensure that the point is good in frame0
             vis_and_val = valids * visibs
@@ -420,23 +472,35 @@ class PointOdysseyDataset(torch.utils.data.Dataset):
                 mot_ok = np.ones(N, dtype=bool)
             elif self.S > 2:
                 # Full motion filtering for longer sequences
-                trajs_norm = trajs / max(H,W)
-                vel = trajs_norm[1:] - trajs_norm[:-1]
-                accel = vel[1:] - vel[:-1]
-                jerk = accel[1:] - accel[:-1]
+                # Optimized: Pre-compute normalization factor once
+                norm_factor = max(H, W)
+                trajs_norm = trajs / norm_factor
+                
+                # Compute velocity, acceleration, jerk in one pass where possible
+                vel = np.diff(trajs_norm, axis=0)  # (S-1, N, 2) - equivalent to trajs_norm[1:] - trajs_norm[:-1]
+                accel = np.diff(vel, axis=0)  # (S-2, N, 2)
+                jerk = np.diff(accel, axis=0)  # (S-3, N, 2)
+                
+                # Optimized: Compute norms more efficiently
+                # Use np.linalg.norm with axis=-1 to get per-trajectory norms, then max across time
+                vel_norms = np.linalg.norm(vel, axis=-1)  # (S-1, N)
+                accel_norms = np.linalg.norm(accel, axis=-1)  # (S-2, N)
+                jerk_norms = np.linalg.norm(jerk, axis=-1)  # (S-3, N)
                 
                 # Filter based on motion smoothness
-                vel_ok = np.max(np.linalg.norm(vel, axis=-1), axis=0) < 0.4 # N
-                accel_ok = np.max(np.linalg.norm(accel, axis=-1), axis=0) < 0.3 # N
-                jerk_ok = np.max(np.linalg.norm(jerk, axis=-1), axis=0) < 0.1 # N
+                vel_ok = np.max(vel_norms, axis=0) < 0.4  # N
+                accel_ok = np.max(accel_norms, axis=0) < 0.3  # N
+                jerk_ok = np.max(jerk_norms, axis=0) < 0.1  # N
                 mot_ok = vel_ok & accel_ok & jerk_ok
             else:
                 # For S <= 2, only do basic velocity check if possible
                 if self.S == 2:
-                    trajs_norm = trajs / max(H,W)
+                    norm_factor = max(H, W)
+                    trajs_norm = trajs / norm_factor
                     vel = trajs_norm[1:] - trajs_norm[:-1]  # Shape: (1, N, 2)
                     # Filter out trajectories with excessive velocity (outliers)
-                    vel_ok = np.max(np.linalg.norm(vel, axis=-1), axis=0) < 0.4 # N
+                    vel_norms = np.linalg.norm(vel, axis=-1)  # (1, N)
+                    vel_ok = np.max(vel_norms, axis=0) < 0.4  # N
                     mot_ok = vel_ok
                 else:
                     # S == 1, no motion to filter

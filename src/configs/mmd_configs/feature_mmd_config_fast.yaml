@@ -133,6 +133,16 @@ datasets:
   percentages:
   - 0.3
   - 0.7
+- name: pointodyssey_synthetic_50_50
+  split: train
+  num_batches: 100
+  mixed: true
+  datasets:
+  - pointodyssey
+  - synthetic
+  percentages:
+  - 0.5
+  - 0.5
 - name: pointodyssey_synthetic_70_30
   split: train
   num_batches: 100

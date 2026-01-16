@@ -1,0 +1,60 @@
+# Minimal test config for SPair dataset
+# Just to check dataloader length
+
+model:
+  backbone: 'resnet101'
+  freeze: true
+  pretrained_backbone: true
+
+training:
+  epochs: 1
+  batch_size: 2
+  n_threads: 4
+  seed: 2021
+  lr: 3e-4
+  lr_backbone: 3e-6
+  weight_decay: 0.05
+  momentum: 0.9
+  scheduler: 'step'
+  step: '[70, 80, 90]'
+  step_gamma: 0.5
+  steps_per_epoch: 10
+  check_val_every_n_epoch: 1
+  augmentation: false
+  min_flow_length: null
+  max_flow_length: null
+  mmd_every_n_epochs: 0
+  enable_debug: false
+  debug_visualization_benchmarks: null
+  debug_visualization_persist: false
+  eval_initial: false
+
+dataset:
+  dataset_name: 'spair'
+  split: 'train'
+  size: [512, 512]
+  downsample_flow: 32
+  max_kps: null
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: false  # SPair already normalized
+  datapath: './models/Datasets_CATs'
+
+evaluation:
+  eval_benchmarks: ['spair']
+  eval_alphas: [0.05]
+  thres: 'img'
+  split_to_use_for_validation: 'test'
+  val_batch_size: 2
+  val_num_workers: 4
+  prefetch_factor: 2
+  use_motion_aware: false
+  min_motion_pixels: 5.0
+  zero_threshold: 0.5
+  datapath: './models/Datasets_CATs'
+
+paths:
+  snapshots: './snapshots'
+  pretrained: null
+  start_epoch: 0

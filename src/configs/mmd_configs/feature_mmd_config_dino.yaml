@@ -232,6 +232,9 @@ dataset_overrides:
   middlebury:
     datapath: /home/spencer/Data/middlebury/all
     normalize_images: true
+sampling:
+  batch_limit: 1000
+  shuffle: true
 output:
   save_results: true
   results_file: dino_mmd_results.csv

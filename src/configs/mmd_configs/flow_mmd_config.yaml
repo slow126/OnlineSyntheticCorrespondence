@@ -1,17 +1,17 @@
 datasets:
 - name: sintel
   split: train
-  num_batches: 100
+  num_batches: 500
 - name: pointodyssey
   split: train
-  num_batches: 100
+  num_batches: 500
 - name: synthetic
   split: train
-  num_batches: 100
+  num_batches: 500
 - name: synthetic_small_zoom
   dataset_name: synthetic
   split: train
-  num_batches: 100
+  num_batches: 500
   overrides:
     geometry_config_overrides:
       angle_sampler:
@@ -30,7 +30,7 @@ datasets:
 - name: synthetic_large_zoom
   dataset_name: synthetic
   split: train
-  num_batches: 100
+  num_batches: 500
   overrides:
     geometry_config_overrides:
       angle_sampler:
@@ -49,49 +49,49 @@ datasets:
 - name: synthetic_random_flipping
   dataset_name: synthetic
   split: train
-  num_batches: 100
+  num_batches: 500
   overrides:
     geometry_config_overrides:
       random_flip: 0.5
 - name: spair
   split: train
-  num_batches: 100
+  num_batches: 500
 - name: flyingthings
   split: train
-  num_batches: 100
+  num_batches: 500
 - name: pointodyssey
   split: test
-  num_batches: 100
+  num_batches: 500
 - name: synthetic
   split: val
-  num_batches: 100
+  num_batches: 500
 - name: kitti2012
   split: val
-  num_batches: 100
+  num_batches: 500
 - name: kitti2015
   split: val
-  num_batches: 100
+  num_batches: 500
 - name: spair
   split: test
-  num_batches: 100
+  num_batches: 500
 - name: pfpascal
   split: test
-  num_batches: 100
+  num_batches: 500
 - name: pfwillow
   split: test
-  num_batches: 100
+  num_batches: 500
 - name: flyingthings
   split: test
-  num_batches: 100
+  num_batches: 500
 - name: tss
   split: val
-  num_batches: 100
+  num_batches: 500
 - name: middlebury
   split: val
-  num_batches: 100
+  num_batches: 500
 - name: spair_synthetic_30_70
   split: train
-  num_batches: 100
+  num_batches: 500
   mixed: true
   datasets:
   - spair
@@ -108,7 +108,7 @@ datasets:
   - 0.5
   - 0.5
   split: train
-  num_batches: 100
+  num_batches: 500
 - name: spair_synthetic_70_30
   mixed: true
   datasets:
@@ -118,10 +118,10 @@ datasets:
   - 0.7
   - 0.3
   split: train
-  num_batches: 100
+  num_batches: 500
 - name: pointodyssey_synthetic_30_70
   split: train
-  num_batches: 100
+  num_batches: 500
   mixed: true
   datasets:
   - pointodyssey
@@ -131,7 +131,7 @@ datasets:
   - 0.7
 - name: pointodyssey_synthetic_70_30
   split: train
-  num_batches: 100
+  num_batches: 500
   mixed: true
   datasets:
   - pointodyssey
@@ -141,7 +141,7 @@ datasets:
   - 0.3
 - name: flyingthings_synthetic_30_70
   split: train
-  num_batches: 100
+  num_batches: 500
   mixed: true
   datasets:
   - flyingthings
@@ -151,7 +151,7 @@ datasets:
   - 0.7
 - name: flyingthings_synthetic_70_30
   split: train
-  num_batches: 100
+  num_batches: 500
   mixed: true
   datasets:
   - flyingthings
@@ -161,7 +161,7 @@ datasets:
   - 0.3
 - name: sintel_synthetic_30_70
   split: train
-  num_batches: 100
+  num_batches: 500
   mixed: true
   datasets:
   - sintel
@@ -171,7 +171,7 @@ datasets:
   - 0.7
 - name: sintel_synthetic_70_30
   split: train
-  num_batches: 100
+  num_batches: 500
   mixed: true
   datasets:
   - sintel
@@ -231,6 +231,9 @@ dataset_overrides:
   middlebury:
     datapath: /home/spencer/Data/middlebury/all
     normalize_images: true
+sampling:
+  batch_limit: 1000
+  shuffle: true
 output:
   save_results: true
   results_file: flow_mmd_results.csv

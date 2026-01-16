@@ -1,0 +1,72 @@
+# Minimal test config for PointOdyssey dataset
+# Tests dataset loading optimizations
+
+model:
+  backbone: 'resnet101'
+  freeze: true
+  pretrained_backbone: true
+
+training:
+  epochs: 1  # Just 1 epoch for testing
+  batch_size: 2  # Small batch for quick test
+  n_threads: 4  # Fewer workers for testing
+  seed: 2021
+  lr: 3e-4
+  lr_backbone: 3e-6
+  weight_decay: 0.05
+  momentum: 0.9
+  scheduler: 'step'
+  step: '[70, 80, 90]'
+  step_gamma: 0.5
+  steps_per_epoch: 10  # Only 10 steps for quick test
+  check_val_every_n_epoch: 1
+  augmentation: false
+  min_flow_length: null
+  max_flow_length: null
+  mmd_every_n_epochs: 0
+  enable_debug: true  # Enable debug for visualization
+  debug_visualization_benchmarks: ['pointodyssey']  # Visualize PointOdyssey
+  debug_visualization_persist: true  # Save visualizations
+  eval_initial: false  # Skip initial eval for speed
+
+dataset:
+  dataset_name: 'pointodyssey'
+  split: 'train'
+  size: [512, 512]
+  downsample_flow: 32
+  max_kps: null
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: true
+  
+  # PointOdyssey-specific parameters
+  dataset_location: '/home/spencer/Data/PointOdyssey'
+  pointodyssey_use_augs: false
+  pointodyssey_sequence_length: 2
+  pointodyssey_num_pts_to_track: 32
+  pointodyssey_strides: [1, 2, 4]
+  pointodyssey_quick: false
+  reverse_flow: true
+  thres: 'img'
+  use_all_valid: true
+  pointodyssey_disable_motion_filter: true  # Uses optimized path
+
+evaluation:
+  eval_benchmarks: ['pointodyssey']  # Only test on PointOdyssey
+  eval_alphas: [0.05]
+  thres: 'img'
+  split_to_use_for_validation: 'test'
+  val_batch_size: 2
+  val_num_workers: 4
+  prefetch_factor: 2
+  use_motion_aware: false
+  min_motion_pixels: 5.0
+  zero_threshold: 0.5
+  datapath: './models/Datasets_CATs'
+  pointodyssey_root: '/home/spencer/Data/PointOdyssey'
+
+paths:
+  snapshots: './snapshots'
+  pretrained: null
+  start_epoch: 0

@@ -34,6 +34,10 @@ from src.mmd import (
 )
 
 
+def _is_synthetic_dataset(name: Optional[str]) -> bool:
+    return isinstance(name, str) and name.startswith("synthetic")
+
+
 def extract_features_from_batch(
     batch: dict,
     encoder: BaseFeatureEncoder,
@@ -72,7 +76,7 @@ def extract_features_from_batch(
 
 def stream_features_to_mmd(
     dataloader: DataLoader,
-    num_batches: int,
+    num_batches: Optional[int],
     dataset_name: str,
     encoder: BaseFeatureEncoder,
     streaming_mmd,
@@ -84,7 +88,7 @@ def stream_features_to_mmd(
     
     Args:
         dataloader: DataLoader for the dataset
-        num_batches: Number of batches to process
+        num_batches: Number of batches to process (None = full dataset)
         dataset_name: Name of dataset (for logging)
         encoder: Feature encoder instance
         streaming_mmd: StreamingMMD or StreamingMMDTorch instance to update
@@ -100,7 +104,7 @@ def stream_features_to_mmd(
     print(f"  Streaming features from {dataset_name} to MMD...")
     
     for batch_idx, batch in enumerate(dataloader):
-        if batches_processed >= num_batches:
+        if num_batches is not None and batches_processed >= num_batches:
             break
         
         try:
@@ -290,6 +294,9 @@ def main():
     encoder_name = config.get('encoder', 'resnet101')
     common_params = config['dataset_params']
     dataset_overrides = config.get('dataset_overrides', {})
+    sampling_cfg = config.get('sampling', {})
+    batch_limit_default = sampling_cfg.get('batch_limit', 500)
+    shuffle_default = bool(sampling_cfg.get('shuffle', True))
     output_config = config.get('output', {})
     
     # Load MMD config
@@ -339,7 +346,7 @@ def main():
     for ds_config in datasets_config:
         is_mixed = ds_config.get('mixed', False) or 'datasets' in ds_config
         split = ds_config['split']
-        num_batches = ds_config['num_batches']
+        num_batches = ds_config.get('num_batches', batch_limit_default)
         entry_overrides = ds_config.get('overrides', None)
 
         if is_mixed:
@@ -363,7 +370,7 @@ def main():
                 epoch_size=ds_config.get('epoch_size', None),
                 seed=ds_config.get('seed', None),
             )
-            has_synthetic = 'synthetic' in datasets_list
+            has_synthetic = any(_is_synthetic_dataset(ds_name) for ds_name in datasets_list)
             workers = 0 if has_synthetic else num_workers
         else:
             label = ds_config['name']
@@ -372,13 +379,14 @@ def main():
             dataset = create_dataset_from_config(
                 dataset_name, split, common_params, dataset_overrides, entry_overrides
             )
-            workers = 0 if dataset_name == 'synthetic' else num_workers
+            workers = 0 if _is_synthetic_dataset(dataset_name) else num_workers
         
+        shuffle = bool(ds_config.get('shuffle', shuffle_default))
         dataloader = DataLoader(
             dataset,
             batch_size=batch_size,
             num_workers=workers,
-            shuffle=False,
+            shuffle=shuffle,
             collate_fn=dataset.collate_fn,
             pin_memory=False
         )

@@ -17,7 +17,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -25,6 +25,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.data.synth.datasets.CorrespondenceDataset import CorrespondenceDataset
 from src.data.synth.datasets.MixedCorrespondenceDataset import MixedCorrespondenceDataset
 from src.mmd import load_config_from_yaml, StreamingMMD, StreamingMMDTorch, mmd2_rff
+
+
+def _is_synthetic_dataset(name: Optional[str]) -> bool:
+    return isinstance(name, str) and name.startswith("synthetic")
 
 
 def extract_flow_vectors(flow_full: torch.Tensor) -> np.ndarray:
@@ -287,6 +291,9 @@ def main():
     mmd_preset = config['mmd_preset']
     common_params = config['dataset_params']
     dataset_overrides = config.get('dataset_overrides', {})
+    sampling_cfg = config.get('sampling', {})
+    batch_limit_default = sampling_cfg.get('batch_limit', 500)
+    shuffle_default = bool(sampling_cfg.get('shuffle', True))
     output_config = config.get('output', {})
     
     # Load MMD config
@@ -332,7 +339,7 @@ def main():
     for ds_config in datasets_config:
         is_mixed = ds_config.get('mixed', False) or 'datasets' in ds_config
         split = ds_config['split']
-        num_batches = ds_config['num_batches']
+        num_batches = ds_config.get('num_batches', batch_limit_default)
         entry_overrides = ds_config.get('overrides', None)
 
         if is_mixed:
@@ -356,7 +363,7 @@ def main():
                 epoch_size=ds_config.get('epoch_size', None),
                 seed=ds_config.get('seed', None),
             )
-            has_synthetic = 'synthetic' in datasets_list
+            has_synthetic = any(_is_synthetic_dataset(ds_name) for ds_name in datasets_list)
             workers = 0 if has_synthetic else num_workers
         else:
             label = ds_config['name']
@@ -365,13 +372,14 @@ def main():
             dataset = create_dataset_from_config(
                 dataset_name, split, common_params, dataset_overrides, entry_overrides
             )
-            workers = 0 if dataset_name == 'synthetic' else num_workers
+            workers = 0 if _is_synthetic_dataset(dataset_name) else num_workers
         
+        shuffle = bool(ds_config.get('shuffle', shuffle_default))
         dataloader = DataLoader(
             dataset,
             batch_size=batch_size,
             num_workers=workers,
-            shuffle=False,
+            shuffle=shuffle,
             collate_fn=dataset.collate_fn,
             pin_memory=False
         )

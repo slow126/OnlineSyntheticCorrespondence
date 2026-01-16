@@ -1,20 +1,21 @@
+encoder: dino
 datasets:
 - name: sintel
   split: train
-  num_batches: 100
+  num_batches: null
 - name: pointodyssey
   split: train
-  num_batches: 100
+  num_batches: null
 - name: synthetic
   split: train
-  num_batches: 100
+  num_batches: null
 - name: synthetic_2d_warp
   split: train
-  num_batches: 100
+  num_batches: null
 - name: synthetic_small_zoom
   dataset_name: synthetic
   split: train
-  num_batches: 100
+  num_batches: null
   overrides:
     geometry_config_overrides:
       angle_sampler:
@@ -33,7 +34,7 @@ datasets:
 - name: synthetic_large_zoom
   dataset_name: synthetic
   split: train
-  num_batches: 100
+  num_batches: null
   overrides:
     geometry_config_overrides:
       angle_sampler:
@@ -52,49 +53,49 @@ datasets:
 - name: synthetic_random_flipping
   dataset_name: synthetic
   split: train
-  num_batches: 100
+  num_batches: null
   overrides:
     geometry_config_overrides:
       random_flip: 0.5
 - name: spair
   split: train
-  num_batches: 100
+  num_batches: null
 - name: flyingthings
   split: train
-  num_batches: 100
+  num_batches: null
 - name: pointodyssey
   split: test
-  num_batches: 100
+  num_batches: null
 - name: synthetic
   split: val
-  num_batches: 100
+  num_batches: null
 - name: kitti2012
   split: val
-  num_batches: 100
+  num_batches: null
 - name: kitti2015
   split: val
-  num_batches: 100
+  num_batches: null
 - name: spair
   split: test
-  num_batches: 100
+  num_batches: null
 - name: pfpascal
   split: test
-  num_batches: 100
+  num_batches: null
 - name: pfwillow
   split: test
-  num_batches: 100
+  num_batches: null
 - name: flyingthings
   split: test
-  num_batches: 100
+  num_batches: null
 - name: tss
   split: val
-  num_batches: 100
+  num_batches: null
 - name: middlebury
   split: val
-  num_batches: 100
+  num_batches: null
 - name: spair_synthetic_30_70
   split: train
-  num_batches: 100
+  num_batches: null
   mixed: true
   datasets:
   - spair
@@ -111,7 +112,7 @@ datasets:
   - 0.5
   - 0.5
   split: train
-  num_batches: 100
+  num_batches: null
 - name: spair_synthetic_70_30
   mixed: true
   datasets:
@@ -121,10 +122,10 @@ datasets:
   - 0.7
   - 0.3
   split: train
-  num_batches: 100
+  num_batches: null
 - name: pointodyssey_synthetic_30_70
   split: train
-  num_batches: 100
+  num_batches: null
   mixed: true
   datasets:
   - pointodyssey
@@ -134,7 +135,7 @@ datasets:
   - 0.7
 - name: pointodyssey_synthetic_50_50
   split: train
-  num_batches: 100
+  num_batches: null
   mixed: true
   datasets:
   - pointodyssey
@@ -144,7 +145,7 @@ datasets:
   - 0.5
 - name: pointodyssey_synthetic_70_30
   split: train
-  num_batches: 100
+  num_batches: null
   mixed: true
   datasets:
   - pointodyssey
@@ -154,7 +155,7 @@ datasets:
   - 0.3
 - name: flyingthings_synthetic_30_70
   split: train
-  num_batches: 100
+  num_batches: null
   mixed: true
   datasets:
   - flyingthings
@@ -164,7 +165,7 @@ datasets:
   - 0.7
 - name: flyingthings_synthetic_70_30
   split: train
-  num_batches: 100
+  num_batches: null
   mixed: true
   datasets:
   - flyingthings
@@ -174,7 +175,7 @@ datasets:
   - 0.3
 - name: sintel_synthetic_30_70
   split: train
-  num_batches: 100
+  num_batches: null
   mixed: true
   datasets:
   - sintel
@@ -184,7 +185,7 @@ datasets:
   - 0.7
 - name: sintel_synthetic_70_30
   split: train
-  num_batches: 100
+  num_batches: null
   mixed: true
   datasets:
   - sintel
@@ -193,8 +194,8 @@ datasets:
   - 0.7
   - 0.3
 batch_size: 16
-num_workers: 16
-mmd_preset: flow_vectors
+num_workers: 32
+mmd_preset: dino_features
 dataset_params:
   size:
   - 512
@@ -252,5 +253,5 @@ dataset_overrides:
     normalize_images: true
 output:
   save_results: true
-  results_file: flow_mmd_results_fast.csv
+  results_file: dino_mmd_results_fast.csv
   print_pairs: true

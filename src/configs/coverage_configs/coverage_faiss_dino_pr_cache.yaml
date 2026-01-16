@@ -1,33 +1,45 @@
-representation: flow
-encoder: resnet101
+representation: dino
+encoder: dino
 batch_size: 16
 num_workers: 4
 sampling:
-  max_vectors: 1000000
-  dense_threshold: 300000
-  dense_fraction: 0.1
-  dense_min_keep: 20000
+  max_vectors: 100000
+  dense_threshold: 8000
+  dense_fraction: 0.25
+  dense_min_keep: 4096
   seed: 42
+  batch_limit: 1000
+  shuffle: true
 pca:
-  enabled: false
+  enabled: true
   output_dim: 256
   fit_on: train
-  max_train_vectors: 200000
+  max_train_vectors: 100000
   whiten: false
 faiss:
   index_factory: HNSW32
-  metric: l2
+  metric: cosine
   use_gpu: false
   nprobe: 16
 coverage:
   k: 1
-  radius_quantile: 0.95
+  support_mode: per_point_radius
+  neighbor_agg: kth
+  self_radius_k: 3
+  radius_quantile: 0.99
   kl_method: knn
   kl_knn_k: 20
   kl_bins: 50
   kl_eps: 1.0e-6
+cache:
+  dir: /mnt/nvme_1tb_b/coverage_vectors
+  mode: read_write
+  format: npy
+  mmap: true
+  mix_from_cache: true
+  pairwise: true
 output:
-  results_file: coverage_faiss_flow_results_fast.csv
+  results_file: coverage_faiss_dino_results_pr_cache.csv
 dataset_params:
   size:
   - 512
@@ -101,12 +113,12 @@ dataset_overrides:
 datasets:
 - name: imagenet2dwarp
   split: train
-  representation: flow
-  num_batches: 100
+  representation: dino
+  num_batches: null
   is_eval: false
 - name: spair_2d_warp_70_30
   split: train
-  num_batches: 5
+  num_batches: null
   mixed: true
   datasets:
   - spair
@@ -116,7 +128,7 @@ datasets:
   - 0.3
 - name: spair_2d_warp_50_50
   split: train
-  num_batches: 5
+  num_batches: null
   mixed: true
   datasets:
   - spair
@@ -126,7 +138,7 @@ datasets:
   - 0.5
 - name: spair_2d_warp_30_70
   split: train
-  num_batches: 5
+  num_batches: null
   mixed: true
   datasets:
   - spair
@@ -136,21 +148,21 @@ datasets:
   - 0.7
 - name: synthetic
   split: train
-  representation: flow
-  num_batches: 100
+  representation: dino
+  num_batches: null
   is_eval: false
-  output: coresets/synthetic_train_flow.pt
+  output: coresets/synthetic_train_dino.pt
 - name: synthetic_2d_warp
   split: train
-  representation: flow
-  num_batches: 100
+  representation: dino
+  num_batches: null
   is_eval: false
-  output: coresets/synthetic_2d_warp_train_flow.pt
+  output: coresets/synthetic_2d_warp_train_dino.pt
 - name: synthetic_small_zoom
   dataset_name: synthetic
   split: train
-  representation: flow
-  num_batches: 100
+  representation: dino
+  num_batches: null
   is_eval: false
   overrides:
     geometry_config_overrides:
@@ -167,12 +179,12 @@ datasets:
         rel_components:
           loc: -0.1
           scale: 0.2
-  output: coresets/synthetic_small_zoom_train_flow.pt
+  output: coresets/synthetic_small_zoom_train_dino.pt
 - name: synthetic_large_zoom
   dataset_name: synthetic
   split: train
-  representation: flow
-  num_batches: 100
+  representation: dino
+  num_batches: null
   is_eval: false
   overrides:
     geometry_config_overrides:
@@ -189,98 +201,98 @@ datasets:
         rel_components:
           loc: -0.35
           scale: 0.5
-  output: coresets/synthetic_large_zoom_train_flow.pt
+  output: coresets/synthetic_large_zoom_train_dino.pt
 - name: synthetic_random_flipping
   dataset_name: synthetic
   split: train
-  representation: flow
-  num_batches: 100
+  representation: dino
+  num_batches: null
   is_eval: false
   overrides:
     geometry_config_overrides:
       random_flip: 0.5
-  output: coresets/synthetic_random_flipping_train_flow.pt
+  output: coresets/synthetic_random_flipping_train_dino.pt
 - name: sintel
   split: train
-  representation: flow
-  num_batches: 100
+  representation: dino
+  num_batches: null
   is_eval: false
-  output: coresets/sintel_train_flow.pt
+  output: coresets/sintel_train_dino.pt
 - name: spair
   split: train
-  representation: flow
-  num_batches: 100
+  representation: dino
+  num_batches: null
   is_eval: false
-  output: coresets/spair_train_flow.pt
+  output: coresets/spair_train_dino.pt
 - name: flyingthings
   split: train
-  representation: flow
-  num_batches: 100
+  representation: dino
+  num_batches: null
   is_eval: false
-  output: coresets/flyingthings_train_flow.pt
+  output: coresets/flyingthings_train_dino.pt
 - name: pointodyssey
   split: train
-  representation: flow
-  num_batches: 100
+  representation: dino
+  num_batches: null
   is_eval: false
-  output: coresets/pointodyssey_train_flow.pt
+  output: coresets/pointodyssey_train_dino.pt
 - name: kitti2015
   split: val
-  representation: flow
-  num_batches: 100
+  representation: dino
+  num_batches: null
   is_eval: true
-  output: coresets/kitti_val_flow.pt
+  output: coresets/kitti_val_dino.pt
 - name: kitti2012
   split: val
-  representation: flow
-  num_batches: 100
+  representation: dino
+  num_batches: null
   is_eval: true
-  output: coresets/kitti2012_val_flow.pt
+  output: coresets/kitti2012_val_dino.pt
 - name: spair
   split: test
-  representation: flow
-  num_batches: 100
+  representation: dino
+  num_batches: null
   is_eval: true
-  output: coresets/spair_val_flow.pt
+  output: coresets/spair_val_dino.pt
 - name: pfpascal
   split: test
-  representation: flow
-  num_batches: 100
+  representation: dino
+  num_batches: null
   is_eval: true
-  output: coresets/pfpascal_val_flow.pt
+  output: coresets/pfpascal_val_dino.pt
 - name: pfwillow
   split: test
-  representation: flow
-  num_batches: 100
+  representation: dino
+  num_batches: null
   is_eval: true
-  output: coresets/pfwillow_val_flow.pt
+  output: coresets/pfwillow_val_dino.pt
 - name: pointodyssey
   split: test
-  representation: flow
-  num_batches: 100
+  representation: dino
+  num_batches: null
   is_eval: true
-  output: coresets/pointodyssey_val_flow.pt
+  output: coresets/pointodyssey_val_dino.pt
 - name: flyingthings
   split: test
-  representation: flow
-  num_batches: 100
+  representation: dino
+  num_batches: null
   is_eval: true
-  output: coresets/flyingthings_val_flow.pt
+  output: coresets/flyingthings_val_dino.pt
 - name: tss
   split: val
-  representation: flow
-  num_batches: 100
+  representation: dino
+  num_batches: null
   is_eval: true
-  output: coresets/tss_val_flow.pt
+  output: coresets/tss_val_dino.pt
 - name: middlebury
   split: val
-  representation: flow
-  num_batches: 100
+  representation: dino
+  num_batches: null
   is_eval: true
-  output: coresets/middlebury_val_flow.pt
+  output: coresets/middlebury_val_dino.pt
 - name: spair_synthetic_30_70
   split: train
-  num_batches: 5
+  num_batches: null
   mixed: true
   datasets:
   - spair
@@ -290,7 +302,7 @@ datasets:
   - 0.7
 - name: spair_synthetic_50_50
   split: train
-  num_batches: 5
+  num_batches: null
   mixed: true
   datasets:
   - spair
@@ -300,7 +312,7 @@ datasets:
   - 0.5
 - name: spair_synthetic_70_30
   split: train
-  num_batches: 5
+  num_batches: null
   mixed: true
   datasets:
   - spair
@@ -310,7 +322,7 @@ datasets:
   - 0.3
 - name: pointodyssey_synthetic_30_70
   split: train
-  num_batches: 5
+  num_batches: null
   mixed: true
   datasets:
   - pointodyssey
@@ -320,7 +332,7 @@ datasets:
   - 0.7
 - name: pointodyssey_synthetic_50_50
   split: train
-  num_batches: 5
+  num_batches: null
   mixed: true
   datasets:
   - pointodyssey
@@ -330,7 +342,7 @@ datasets:
   - 0.5
 - name: pointodyssey_synthetic_70_30
   split: train
-  num_batches: 5
+  num_batches: null
   mixed: true
   datasets:
   - pointodyssey
@@ -340,7 +352,7 @@ datasets:
   - 0.3
 - name: flyingthings_synthetic_30_70
   split: train
-  num_batches: 5
+  num_batches: null
   mixed: true
   datasets:
   - flyingthings
@@ -350,7 +362,7 @@ datasets:
   - 0.7
 - name: flyingthings_synthetic_70_30
   split: train
-  num_batches: 5
+  num_batches: null
   mixed: true
   datasets:
   - flyingthings
@@ -360,7 +372,7 @@ datasets:
   - 0.3
 - name: sintel_synthetic_30_70
   split: train
-  num_batches: 5
+  num_batches: null
   mixed: true
   datasets:
   - sintel
@@ -370,7 +382,7 @@ datasets:
   - 0.7
 - name: sintel_synthetic_70_30
   split: train
-  num_batches: 5
+  num_batches: null
   mixed: true
   datasets:
   - sintel
