@@ -16,7 +16,7 @@ Usage:
         --split train
 
 Default paths (from remote.yaml):
-    source: /home/slow1/Data/FlyingThings3D_Pytorch
+    source: /home/slow1/Data/FlyingThings3D_Pytorch/FlyingThings3D
     output: /home/slow1/Data/FlyingThings3D_subsampled_10k
 """
 
@@ -134,7 +134,9 @@ def copy_pair(src_root, dst_root, img1_path, img2_path, flow_path, rel_img1, rel
 
 def main():
     # Default paths from remote.yaml
-    DEFAULT_SOURCE = "/home/slow1/Data/FlyingThings3D_Pytorch"
+    # Note: The actual dataset is nested: FlyingThings3D_Pytorch/FlyingThings3D/
+    # The source should point to the inner FlyingThings3D directory
+    DEFAULT_SOURCE = "/home/slow1/Data/FlyingThings3D_Pytorch/FlyingThings3D"
     DEFAULT_OUTPUT = "/home/slow1/Data/FlyingThings3D_subsampled_10k"
     
     parser = argparse.ArgumentParser(description='Subsample FlyingThings dataset')
