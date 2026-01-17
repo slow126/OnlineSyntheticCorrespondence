@@ -4,6 +4,7 @@ batch_size: 8
 num_workers: 4
 sampling:
   max_vectors: 8000000  # 8M vectors: 1024 patches/image (32x32) * 8000 images
+  batch_limit: 1000  # Max batches per dataset (batch_size=8, so up to 8000 images)
   dense_threshold: 100000
   dense_fraction: 0.05
   dense_min_keep: 2000
@@ -66,7 +67,7 @@ dataset_overrides:
     datapath: /home/spencer/Data/correspondence/kitti
     normalize_images: true
   flyingthings:
-    datapath: /home/spencer/Data/FlyingThings3D_tiny
+    datapath: /home/spencer/Data/FlyingThings3D_10k/FlyingThings3D
     normalize_images: true
   tss:
     datapath: /home/spencer/Data/correspondence/TSS_CVPR2016

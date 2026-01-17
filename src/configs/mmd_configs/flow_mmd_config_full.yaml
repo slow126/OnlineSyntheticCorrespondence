@@ -1,20 +1,20 @@
 datasets:
 - name: sintel
   split: train
-  num_batches: null
+
 - name: pointodyssey
   split: train
-  num_batches: null
+
 - name: synthetic
   split: train
-  num_batches: null
+
 - name: synthetic_2d_warp
   split: train
-  num_batches: null
+
 - name: synthetic_small_zoom
   dataset_name: synthetic
   split: train
-  num_batches: null
+
   overrides:
     geometry_config_overrides:
       angle_sampler:
@@ -33,7 +33,7 @@ datasets:
 - name: synthetic_large_zoom
   dataset_name: synthetic
   split: train
-  num_batches: null
+
   overrides:
     geometry_config_overrides:
       angle_sampler:
@@ -52,49 +52,49 @@ datasets:
 - name: synthetic_random_flipping
   dataset_name: synthetic
   split: train
-  num_batches: null
+
   overrides:
     geometry_config_overrides:
       random_flip: 0.5
 - name: spair
   split: train
-  num_batches: null
+
 - name: flyingthings
   split: train
-  num_batches: null
+
 - name: pointodyssey
   split: test
-  num_batches: null
+
 - name: synthetic
   split: val
-  num_batches: null
+
 - name: kitti2012
   split: val
-  num_batches: null
+
 - name: kitti2015
   split: val
-  num_batches: null
+
 - name: spair
   split: test
-  num_batches: null
+
 - name: pfpascal
   split: test
-  num_batches: null
+
 - name: pfwillow
   split: test
-  num_batches: null
+
 - name: flyingthings
   split: test
-  num_batches: null
+
 - name: tss
   split: val
-  num_batches: null
+
 - name: middlebury
   split: val
-  num_batches: null
+
 - name: spair_synthetic_30_70
   split: train
-  num_batches: null
+
   mixed: true
   datasets:
   - spair
@@ -111,7 +111,7 @@ datasets:
   - 0.5
   - 0.5
   split: train
-  num_batches: null
+
 - name: spair_synthetic_70_30
   mixed: true
   datasets:
@@ -121,10 +121,10 @@ datasets:
   - 0.7
   - 0.3
   split: train
-  num_batches: null
+
 - name: pointodyssey_synthetic_30_70
   split: train
-  num_batches: null
+
   mixed: true
   datasets:
   - pointodyssey
@@ -134,7 +134,7 @@ datasets:
   - 0.7
 - name: pointodyssey_synthetic_50_50
   split: train
-  num_batches: null
+
   mixed: true
   datasets:
   - pointodyssey
@@ -144,7 +144,7 @@ datasets:
   - 0.5
 - name: pointodyssey_synthetic_70_30
   split: train
-  num_batches: null
+
   mixed: true
   datasets:
   - pointodyssey
@@ -154,7 +154,7 @@ datasets:
   - 0.3
 - name: flyingthings_synthetic_30_70
   split: train
-  num_batches: null
+
   mixed: true
   datasets:
   - flyingthings
@@ -164,7 +164,7 @@ datasets:
   - 0.7
 - name: flyingthings_synthetic_70_30
   split: train
-  num_batches: null
+
   mixed: true
   datasets:
   - flyingthings
@@ -174,7 +174,7 @@ datasets:
   - 0.3
 - name: sintel_synthetic_30_70
   split: train
-  num_batches: null
+
   mixed: true
   datasets:
   - sintel
@@ -184,7 +184,7 @@ datasets:
   - 0.7
 - name: sintel_synthetic_70_30
   split: train
-  num_batches: null
+
   mixed: true
   datasets:
   - sintel
@@ -245,7 +245,7 @@ dataset_overrides:
     datapath: /home/spencer/Data/correspondence/kitti
     normalize_images: true
   flyingthings:
-    datapath: /home/spencer/Data/FlyingThings3D_tiny
+    datapath: /home/spencer/Data/FlyingThings3D_10k/FlyingThings3D
     normalize_images: true
   tss:
     datapath: /home/spencer/Data/correspondence/TSS_CVPR2016

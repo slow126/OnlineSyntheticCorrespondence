@@ -5,6 +5,7 @@ num_workers: 4
 sampling:
   max_vectors: 16000000  # 16M vectors: 2000 flows/image * 8000 images
   flow_per_image_max: 2000  # Max flows per image
+  batch_limit: 1000  # Max batches per dataset (batch_size=8, so up to 8000 images)
   dense_threshold: 300000
   dense_fraction: 0.1
   dense_min_keep: 20000
@@ -91,7 +92,7 @@ dataset_overrides:
     datapath: /home/spencer/Data/correspondence/kitti
     normalize_images: true
   flyingthings:
-    datapath: /home/spencer/Data/FlyingThings3D_tiny
+    datapath: /home/spencer/Data/FlyingThings3D_10k/FlyingThings3D
     normalize_images: true
   tss:
     datapath: /home/spencer/Data/correspondence/TSS_CVPR2016
@@ -103,11 +104,11 @@ datasets:
 - name: imagenet2dwarp
   split: train
   representation: flow
-  num_batches: null
+
   is_eval: false
 - name: spair_2d_warp_70_30
   split: train
-  num_batches: null
+
   mixed: true
   datasets:
   - spair
@@ -117,7 +118,7 @@ datasets:
   - 0.3
 - name: spair_2d_warp_50_50
   split: train
-  num_batches: null
+
   mixed: true
   datasets:
   - spair
@@ -127,7 +128,7 @@ datasets:
   - 0.5
 - name: spair_2d_warp_30_70
   split: train
-  num_batches: null
+
   mixed: true
   datasets:
   - spair
@@ -138,20 +139,20 @@ datasets:
 - name: synthetic
   split: train
   representation: flow
-  num_batches: null
+
   is_eval: false
   output: coresets/synthetic_train_flow.pt
 - name: synthetic_2d_warp
   split: train
   representation: flow
-  num_batches: null
+
   is_eval: false
   output: coresets/synthetic_2d_warp_train_flow.pt
 - name: synthetic_small_zoom
   dataset_name: synthetic
   split: train
   representation: flow
-  num_batches: null
+
   is_eval: false
   overrides:
     geometry_config_overrides:
@@ -173,7 +174,7 @@ datasets:
   dataset_name: synthetic
   split: train
   representation: flow
-  num_batches: null
+
   is_eval: false
   overrides:
     geometry_config_overrides:
@@ -195,7 +196,7 @@ datasets:
   dataset_name: synthetic
   split: train
   representation: flow
-  num_batches: null
+
   is_eval: false
   overrides:
     geometry_config_overrides:
@@ -204,84 +205,84 @@ datasets:
 - name: sintel
   split: train
   representation: flow
-  num_batches: null
+
   is_eval: false
   output: coresets/sintel_train_flow.pt
 - name: spair
   split: train
   representation: flow
-  num_batches: null
+
   is_eval: false
   output: coresets/spair_train_flow.pt
 - name: flyingthings
   split: train
   representation: flow
-  num_batches: null
+
   is_eval: false
   output: coresets/flyingthings_train_flow.pt
 - name: pointodyssey
   split: train
   representation: flow
-  num_batches: null
+
   is_eval: false
   output: coresets/pointodyssey_train_flow.pt
 - name: kitti2015
   split: val
   representation: flow
-  num_batches: null
+
   is_eval: true
   output: coresets/kitti_val_flow.pt
 - name: kitti2012
   split: val
   representation: flow
-  num_batches: null
+
   is_eval: true
   output: coresets/kitti2012_val_flow.pt
 - name: spair
   split: test
   representation: flow
-  num_batches: null
+
   is_eval: true
   output: coresets/spair_val_flow.pt
 - name: pfpascal
   split: test
   representation: flow
-  num_batches: null
+
   is_eval: true
   output: coresets/pfpascal_val_flow.pt
 - name: pfwillow
   split: test
   representation: flow
-  num_batches: null
+
   is_eval: true
   output: coresets/pfwillow_val_flow.pt
 - name: pointodyssey
   split: test
   representation: flow
-  num_batches: null
+
   is_eval: true
   output: coresets/pointodyssey_val_flow.pt
 - name: flyingthings
   split: test
   representation: flow
-  num_batches: null
+
   is_eval: true
   output: coresets/flyingthings_val_flow.pt
 - name: tss
   split: val
   representation: flow
-  num_batches: null
+
   is_eval: true
   output: coresets/tss_val_flow.pt
 - name: middlebury
   split: val
   representation: flow
-  num_batches: null
+
   is_eval: true
   output: coresets/middlebury_val_flow.pt
 - name: spair_synthetic_30_70
   split: train
-  num_batches: null
+
   mixed: true
   datasets:
   - spair
@@ -291,7 +292,7 @@ datasets:
   - 0.7
 - name: spair_synthetic_50_50
   split: train
-  num_batches: null
+
   mixed: true
   datasets:
   - spair
@@ -301,7 +302,7 @@ datasets:
   - 0.5
 - name: spair_synthetic_70_30
   split: train
-  num_batches: null
+
   mixed: true
   datasets:
   - spair
@@ -311,7 +312,7 @@ datasets:
   - 0.3
 - name: pointodyssey_synthetic_30_70
   split: train
-  num_batches: null
+
   mixed: true
   datasets:
   - pointodyssey
@@ -321,7 +322,7 @@ datasets:
   - 0.7
 - name: pointodyssey_synthetic_50_50
   split: train
-  num_batches: null
+
   mixed: true
   datasets:
   - pointodyssey
@@ -331,7 +332,7 @@ datasets:
   - 0.5
 - name: pointodyssey_synthetic_70_30
   split: train
-  num_batches: null
+
   mixed: true
   datasets:
   - pointodyssey
@@ -341,7 +342,7 @@ datasets:
   - 0.3
 - name: flyingthings_synthetic_30_70
   split: train
-  num_batches: null
+
   mixed: true
   datasets:
   - flyingthings
@@ -351,7 +352,7 @@ datasets:
   - 0.7
 - name: flyingthings_synthetic_70_30
   split: train
-  num_batches: null
+
   mixed: true
   datasets:
   - flyingthings
@@ -361,7 +362,7 @@ datasets:
   - 0.3
 - name: sintel_synthetic_30_70
   split: train
-  num_batches: null
+
   mixed: true
   datasets:
   - sintel
@@ -371,7 +372,7 @@ datasets:
   - 0.7
 - name: sintel_synthetic_70_30
   split: train
-  num_batches: null
+
   mixed: true
   datasets:
   - sintel

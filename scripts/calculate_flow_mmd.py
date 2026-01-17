@@ -112,7 +112,7 @@ def stream_flows_to_mmd(
     print(f"  Streaming flows from {dataset_name} to MMD...")
     
     for batch_idx, batch in enumerate(dataloader):
-        if batches_processed >= num_batches:
+        if num_batches is not None and batches_processed >= num_batches:
             break
         
         # Get flow_full from batch
