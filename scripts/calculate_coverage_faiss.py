@@ -525,29 +525,98 @@ def _build_index(
     use_gpu: bool,
     nprobe: Optional[int],
 ) -> "faiss.Index":
+    """
+    Build a FAISS index, using GPU-friendly types when GPU is enabled.
+    
+    For GPU, HNSW indices are not natively supported. The function will:
+    - Use Flat for exact search (very fast on GPU)
+    - Use IVF indices for approximate search (GPU-friendly)
+    - Convert HNSW to IVF when GPU is enabled
+    """
     dim = vectors.shape[1]
     if metric == "cosine":
         metric_type = faiss.METRIC_INNER_PRODUCT
     else:
         metric_type = faiss.METRIC_L2
 
-    if index_factory.lower() == "flat":
-        if metric_type == faiss.METRIC_INNER_PRODUCT:
-            index = faiss.IndexFlatIP(dim)
-        else:
-            index = faiss.IndexFlatL2(dim)
-    else:
-        index = faiss.index_factory(dim, index_factory, metric_type)
-
-    if index.is_trained is False:
-        index.train(vectors)
-    index.add(vectors)
-
-    if nprobe is not None and hasattr(index, "nprobe"):
-        index.nprobe = nprobe
-
+    # Handle GPU-friendly index selection
     if use_gpu and faiss.get_num_gpus() > 0:
-        index = faiss.index_cpu_to_all_gpus(index)
+        index_factory_lower = index_factory.lower()
+        
+        # HNSW is not GPU-native - convert to GPU-friendly alternatives
+        if "hnsw" in index_factory_lower:
+            # Extract HNSW parameter if present (e.g., HNSW32 -> 32)
+            import re
+            match = re.search(r'hnsw(\d+)', index_factory_lower)
+            if match:
+                # Use IVF with similar memory/accuracy tradeoff
+                # For HNSW32, use IVF1024 or IVF2048 depending on dataset size
+                n_vectors = vectors.shape[0]
+                if n_vectors < 100000:
+                    nlist = 256
+                elif n_vectors < 1000000:
+                    nlist = 1024
+                else:
+                    nlist = 2048
+                print(f"  GPU mode: Converting HNSW to GPU-friendly IVF{nlist},Flat")
+                index_factory = f"IVF{nlist},Flat"
+            else:
+                # Default to IVF1024 for GPU
+                print(f"  GPU mode: Converting HNSW to GPU-friendly IVF1024,Flat")
+                index_factory = "IVF1024,Flat"
+        
+        # Build index on CPU first (required for training)
+        if index_factory.lower() == "flat":
+            if metric_type == faiss.METRIC_INNER_PRODUCT:
+                index = faiss.IndexFlatIP(dim)
+            else:
+                index = faiss.IndexFlatL2(dim)
+        else:
+            index = faiss.index_factory(dim, index_factory, metric_type)
+
+        # Train and add vectors on CPU
+        if index.is_trained is False:
+            index.train(vectors)
+        index.add(vectors)
+
+        # Set nprobe before GPU transfer (if applicable)
+        if nprobe is not None and hasattr(index, "nprobe"):
+            index.nprobe = nprobe
+
+        # Transfer to GPU using proper resource management
+        # Use first available GPU (index 0) for single-GPU usage
+        # For multi-GPU, you can use index_cpu_to_gpus_list
+        gpu_id = 0  # Use first GPU
+        res = faiss.StandardGpuResources()
+        # Set temporary memory to avoid fragmentation (1GB should be enough for most cases)
+        # Can be increased for very large datasets
+        res.setTempMemory(1024 * 1024 * 1024)  # 1GB temp memory
+        
+        # Convert to GPU index
+        index = faiss.index_cpu_to_gpu(res, gpu_id, index)
+        
+        # Set nprobe again after GPU transfer (in case it was reset)
+        if nprobe is not None and hasattr(index, "nprobe"):
+            index.nprobe = nprobe
+        
+        print(f"  Index transferred to GPU {gpu_id} ({vectors.shape[0]:,} vectors, dim={dim})")
+            
+    else:
+        # CPU mode - use original index factory
+        if index_factory.lower() == "flat":
+            if metric_type == faiss.METRIC_INNER_PRODUCT:
+                index = faiss.IndexFlatIP(dim)
+            else:
+                index = faiss.IndexFlatL2(dim)
+        else:
+            index = faiss.index_factory(dim, index_factory, metric_type)
+
+        if index.is_trained is False:
+            index.train(vectors)
+        index.add(vectors)
+
+        if nprobe is not None and hasattr(index, "nprobe"):
+            index.nprobe = nprobe
 
     return index
 
@@ -1039,6 +1108,7 @@ def _run_pairwise_cached(
             }
         )
 
+    # Cache all vectors first if in write mode
     if cache_mode in ("write", "read_write"):
         for spec in specs:
             if spec["is_mixed"]:
@@ -1059,8 +1129,37 @@ def _run_pairwise_cached(
                 cache_cfg,
             )
             gc.collect()
+    
+    # Pre-load all vectors to ensure encoder is no longer needed
+    # This allows us to delete the encoder before FAISS operations
+    print("\n  Pre-loading all vectors...")
+    all_vectors_loaded = {}
+    for spec in specs:
+        key = f"{spec['label']}_{spec['split']}"
+        vectors = load_vectors(spec)
+        if vectors is not None:
+            all_vectors_loaded[key] = vectors
+            print(f"    Loaded {vectors.shape[0]} vectors for {key}")
+    
+    # Delete encoder after all vectors are loaded to free GPU memory
+    if encoder is not None:
+        print("\n  Deleting encoder model to free GPU memory...")
+        del encoder
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
+        print("  Encoder deleted and memory freed.")
+    
+    # Replace load_vectors to use pre-loaded vectors
+    def load_vectors_cached(spec: dict) -> Optional[np.ndarray]:
+        key = f"{spec['label']}_{spec['split']}"
+        return all_vectors_loaded.get(key)
+    
+    # Replace the original load_vectors with cached version
+    load_vectors = load_vectors_cached
 
-    def load_vectors(spec: dict) -> Optional[np.ndarray]:
+    # Original load_vectors definition (now replaced above, but kept for reference)
+    def _load_vectors_original(spec: dict) -> Optional[np.ndarray]:
         if spec["is_mixed"]:
             if mix_from_cache:
                 return _mix_vectors_from_cache(
@@ -1489,6 +1588,16 @@ def main() -> None:
         key = f"{label}_{split}"
         vectors_by_name[key] = info
         print(f"  Collected {info['vectors'].shape[0]} vectors for {key}")
+
+    # Delete encoder from memory after all vector extraction is complete
+    # This frees GPU memory before FAISS operations
+    if encoder is not None:
+        print("\n  Deleting encoder model to free GPU memory...")
+        del encoder
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
+        print("  Encoder deleted and memory freed.")
 
     _apply_pca(vectors_by_name, config.get("pca", {}), metric)
 

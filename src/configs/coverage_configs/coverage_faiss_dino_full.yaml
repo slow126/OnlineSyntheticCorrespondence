@@ -1,9 +1,9 @@
 representation: dino
 encoder: dino
-batch_size: 16
+batch_size: 8
 num_workers: 4
 sampling:
-  max_vectors: 100000
+  max_vectors: 8000000  # 8M vectors: 1024 patches/image (32x32) * 8000 images
   dense_threshold: 8000
   dense_fraction: 0.25
   dense_min_keep: 4096
@@ -17,7 +17,7 @@ pca:
 faiss:
   index_factory: HNSW32
   metric: cosine
-  use_gpu: false
+  use_gpu: true
   nprobe: 16
 coverage:
   k: 5

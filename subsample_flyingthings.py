@@ -3,8 +3,8 @@
 Create a subsampled version of FlyingThings dataset.
 
 This script:
-1. Enumerates all pairs in the full FlyingThings dataset
-2. Randomly samples N pairs (default: 10,000)
+1. Enumerates all pairs in both TRAIN and TEST splits
+2. Randomly samples up to N pairs from each split (default: 10,000 per split)
 3. Copies the corresponding image and flow files to a new directory
 4. Maintains the same directory structure so it works with existing loaders
 
@@ -12,8 +12,7 @@ Usage:
     python subsample_flyingthings.py \
         --source /path/to/FlyingThings3D \
         --output /path/to/FlyingThings3D_subsampled \
-        --num_pairs 10000 \
-        --split train
+        --num_pairs 10000
 
 Default paths (from remote.yaml):
     source: /home/slow1/Data/FlyingThings3D_Pytorch/FlyingThings3D
@@ -145,10 +144,10 @@ def main():
     parser.add_argument('--output', type=str, default=DEFAULT_OUTPUT,
                        help=f'Path to output subsampled dataset (default: {DEFAULT_OUTPUT})')
     parser.add_argument('--num_pairs', type=int, default=10000,
-                       help='Number of pairs to sample (default: 10000)')
-    parser.add_argument('--split', type=str, default='train',
-                       choices=['train', 'training', 'test', 'TEST'],
-                       help='Dataset split to subsample (default: train)')
+                       help='Number of pairs to sample per split (default: 10000)')
+    parser.add_argument('--splits', type=str, nargs='+', default=['test'],
+                       choices=['train', 'test'],
+                       help='Which splits to process (default: test only). Use --splits train test for both.')
     parser.add_argument('--seed', type=int, default=42,
                        help='Random seed for reproducibility (default: 42)')
     
@@ -162,8 +161,8 @@ def main():
     print("="*60)
     print(f"Source: {args.source}")
     print(f"Output: {args.output}")
-    print(f"Number of pairs: {args.num_pairs}")
-    print(f"Split: {args.split}")
+    print(f"Number of pairs per split: {args.num_pairs}")
+    print(f"Processing splits: {', '.join([s.upper() for s in args.splits])}")
     print(f"Seed: {args.seed}")
     print("="*60)
     
@@ -174,30 +173,49 @@ def main():
     # Create output directory
     os.makedirs(args.output, exist_ok=True)
     
-    # Enumerate all pairs
-    print("\nEnumerating all pairs...")
-    all_pairs = enumerate_pairs(args.source, args.split)
+    total_copied = 0
+    split_counts = {}
     
-    print(f"\nFound {len(all_pairs):,} total pairs")
-    
-    if len(all_pairs) < args.num_pairs:
-        print(f"Warning: Only {len(all_pairs)} pairs available, but {args.num_pairs} requested.")
-        print(f"Using all {len(all_pairs)} pairs.")
-        selected_pairs = all_pairs
-    else:
-        # Randomly sample pairs
-        print(f"\nRandomly sampling {args.num_pairs:,} pairs...")
-        selected_pairs = random.sample(all_pairs, args.num_pairs)
-    
-    # Copy selected pairs
-    print(f"\nCopying {len(selected_pairs):,} pairs to output directory...")
-    for img1, img2, flow, rel_img1, rel_img2, rel_flow in tqdm(selected_pairs, desc="Copying files"):
-        copy_pair(args.source, args.output, img1, img2, flow, rel_img1, rel_img2, rel_flow)
+    # Process specified splits
+    for split_name in args.splits:
+        print(f"\n{'='*60}")
+        print(f"Processing {split_name.upper()} split")
+        print(f"{'='*60}")
+        
+        # Enumerate all pairs for this split
+        print(f"\nEnumerating all pairs in {split_name} split...")
+        all_pairs = enumerate_pairs(args.source, split_name)
+        
+        print(f"\nFound {len(all_pairs):,} total pairs in {split_name} split")
+        
+        if len(all_pairs) == 0:
+            print(f"Warning: No pairs found in {split_name} split, skipping...")
+            continue
+        
+        if len(all_pairs) < args.num_pairs:
+            print(f"Warning: Only {len(all_pairs)} pairs available in {split_name}, but {args.num_pairs} requested.")
+            print(f"Using all {len(all_pairs)} pairs.")
+            selected_pairs = all_pairs
+        else:
+            # Randomly sample pairs
+            print(f"\nRandomly sampling {args.num_pairs:,} pairs from {split_name} split...")
+            selected_pairs = random.sample(all_pairs, args.num_pairs)
+        
+        # Copy selected pairs
+        print(f"\nCopying {len(selected_pairs):,} pairs from {split_name} split to output directory...")
+        for img1, img2, flow, rel_img1, rel_img2, rel_flow in tqdm(selected_pairs, desc=f"Copying {split_name}"):
+            copy_pair(args.source, args.output, img1, img2, flow, rel_img1, rel_img2, rel_flow)
+        
+        split_counts[split_name] = len(selected_pairs)
+        total_copied += len(selected_pairs)
+        print(f"✓ Copied {len(selected_pairs):,} pairs from {split_name} split")
     
     print("\n" + "="*60)
     print("Done!")
     print(f"Subsampled dataset created at: {args.output}")
-    print(f"Total pairs copied: {len(selected_pairs):,}")
+    print(f"Total pairs copied: {total_copied:,}")
+    print(f"  - TRAIN: {split_counts.get('train', 0):,} pairs")
+    print(f"  - TEST: {split_counts.get('test', 0):,} pairs")
     print("="*60)
     
     # Print usage instructions

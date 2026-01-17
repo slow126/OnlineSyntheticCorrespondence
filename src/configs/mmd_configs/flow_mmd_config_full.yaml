@@ -192,7 +192,10 @@ datasets:
   percentages:
   - 0.7
   - 0.3
-batch_size: 16
+sampling:
+  batch_limit: 1000  # Max batches per dataset (batch_size=8, so up to 8000 images)
+  shuffle: true
+batch_size: 8
 num_workers: 16
 mmd_preset: flow_vectors
 dataset_params:

@@ -1,9 +1,10 @@
 representation: flow
 encoder: resnet101
-batch_size: 16
+batch_size: 8
 num_workers: 4
 sampling:
-  max_vectors: 1000000
+  max_vectors: 16000000  # 16M vectors: 2000 flows/image * 8000 images
+  flow_per_image_max: 2000  # Max flows per image
   dense_threshold: 300000
   dense_fraction: 0.1
   dense_min_keep: 20000
@@ -17,7 +18,7 @@ pca:
 faiss:
   index_factory: HNSW32
   metric: l2
-  use_gpu: false
+  use_gpu: true
   nprobe: 16
 coverage:
   k: 1
