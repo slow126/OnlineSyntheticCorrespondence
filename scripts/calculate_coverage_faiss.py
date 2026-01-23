@@ -51,6 +51,12 @@ def create_dataset_from_config(
         dataset_config.update(dataset_overrides[dataset_name])
     if entry_overrides:
         dataset_config.update(entry_overrides)
+    adapter_name = dataset_name
+    if entry_overrides and "dataset_name" in entry_overrides:
+        adapter_name = str(entry_overrides["dataset_name"])
+        dataset_config.pop("dataset_name", None)
+    if adapter_name in dataset_overrides and dataset_name not in dataset_overrides:
+        dataset_config.update(dataset_overrides[adapter_name])
 
     if "size" in dataset_config and isinstance(dataset_config["size"], list):
         dataset_config["size"] = tuple(dataset_config["size"])
@@ -58,24 +64,24 @@ def create_dataset_from_config(
     if "max_kps" in dataset_config and dataset_config["max_kps"] is None:
         dataset_config["max_kps"] = None
 
-    if dataset_name == "tss":
+    if adapter_name == "tss":
         dataset_config["thres"] = dataset_config.get("thres", "img")
         dataset_config["reverse_flow"] = dataset_config.get("reverse_flow", False)
-    elif dataset_name == "middlebury":
+    elif adapter_name == "middlebury":
         dataset_config["reverse_flow"] = dataset_config.get("reverse_flow", False)
-    elif dataset_name == "pointodyssey":
+    elif adapter_name == "pointodyssey":
         dataset_config["reverse_flow"] = dataset_config.get("reverse_flow", True)
         dataset_config["thres"] = dataset_config.get("thres", "img")
-    elif dataset_name in ["kitti2012", "kitti2015"]:
+    elif adapter_name in ["kitti2012", "kitti2015"]:
         dataset_config["reverse_flow"] = dataset_config.get("reverse_flow", False)
         dataset_config["thres"] = dataset_config.get("thres", "img")
         if dataset_config.get("kitti_val_use_full_training", False) and split == "val":
             dataset_config["split"] = "training"
-    elif dataset_name == "flyingthings":
+    elif adapter_name == "flyingthings":
         dataset_config["reverse_flow"] = dataset_config.get("reverse_flow", True)
 
     print(f"Creating dataset: {dataset_name} (split: {split})")
-    return CorrespondenceDataset(dataset_name, **dataset_config)
+    return CorrespondenceDataset(adapter_name, **dataset_config)
 
 
 def create_mixed_dataset_from_config(
@@ -215,6 +221,107 @@ def _cache_key(label: str, split: str, representation: str, ext: str) -> str:
     safe_split = re.sub(r"[^A-Za-z0-9_.-]+", "_", split)
     safe_repr = re.sub(r"[^A-Za-z0-9_.-]+", "_", representation)
     return f"{safe_label}_{safe_split}_{safe_repr}.{ext}"
+
+
+def _radius_cache_key(
+    label: str,
+    split: str,
+    representation: str,
+    metric: str,
+    support_mode: str,
+    k: int,
+    quantile: float,
+    agg: str,
+    norm_mode: str = "none",
+    norm_by_label: Optional[str] = None,
+) -> str:
+    """Generate cache key for self-radius calculations.
+    
+    Args:
+        norm_by_label: If using train_zscore, this is the train set that provided normalization stats.
+                       For train sets, this is None (they normalize themselves).
+                       For eval sets, this is the train label (eval normalized by that train's stats).
+    """
+    safe_label = re.sub(r"[^A-Za-z0-9_.-]+", "_", label)
+    safe_split = re.sub(r"[^A-Za-z0-9_.-]+", "_", split)
+    safe_repr = re.sub(r"[^A-Za-z0-9_.-]+", "_", representation)
+    safe_metric = re.sub(r"[^A-Za-z0-9_.-]+", "_", metric)
+    safe_mode = re.sub(r"[^A-Za-z0-9_.-]+", "_", support_mode)
+    safe_agg = re.sub(r"[^A-Za-z0-9_.-]+", "_", agg)
+    safe_norm = re.sub(r"[^A-Za-z0-9_.-]+", "_", norm_mode)
+    
+    # Base key - ALWAYS include normalization mode to prevent cache collisions
+    base = f"radius_{safe_label}_{safe_split}_{safe_repr}_{safe_metric}_{safe_mode}_{safe_norm}"
+    
+    # Add train-specific label if using train_zscore with a specific train normalizer
+    if norm_mode == "train_zscore" and norm_by_label is not None:
+        safe_norm_by = re.sub(r"[^A-Za-z0-9_.-]+", "_", norm_by_label)
+        base = f"{base}_normby_{safe_norm_by}"
+    
+    if support_mode == "per_point_radius":
+        # Per-point radius: depends on k and agg only
+        return f"{base}_k{k}_{safe_agg}.npy"
+    else:
+        # Global radius: depends on k, quantile, and agg
+        return f"{base}_k{k}_q{quantile:.3f}_{safe_agg}.npy"
+
+
+def _load_cached_radius(
+    cache_dir: Path,
+    label: str,
+    split: str,
+    representation: str,
+    metric: str,
+    support_mode: str,
+    k: int,
+    quantile: float,
+    agg: str,
+    norm_mode: str = "none",
+    norm_by_label: Optional[str] = None,
+) -> Optional[np.ndarray]:
+    """Load cached self-radius from disk.
+    
+    Args:
+        norm_by_label: If using train_zscore, the train set that provided normalization.
+                       None for train sets (self-normalized) or when not using train_zscore.
+    """
+    if not cache_dir:
+        return None
+    key = _radius_cache_key(label, split, representation, metric, support_mode, 
+                           k, quantile, agg, norm_mode, norm_by_label)
+    path = cache_dir / key
+    if path.exists():
+        return np.load(path)
+    return None
+
+
+def _save_cached_radius(
+    cache_dir: Path,
+    label: str,
+    split: str,
+    representation: str,
+    metric: str,
+    support_mode: str,
+    k: int,
+    quantile: float,
+    agg: str,
+    radius_data: np.ndarray,
+    norm_mode: str = "none",
+    norm_by_label: Optional[str] = None,
+) -> None:
+    """Save self-radius to disk cache.
+    
+    Args:
+        norm_by_label: If using train_zscore, the train set that provided normalization.
+                       None for train sets (self-normalized) or when not using train_zscore.
+    """
+    if not cache_dir:
+        return
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    key = _radius_cache_key(label, split, representation, metric, support_mode, 
+                           k, quantile, agg, norm_mode, norm_by_label)
+    path = cache_dir / key
+    np.save(path, radius_data)
 
 
 def _cache_exists(cache_dir: Path, label: str, split: str, representation: str) -> bool:
@@ -448,6 +555,181 @@ def _apply_zscore(vectors: np.ndarray, mean: np.ndarray, std: np.ndarray) -> np.
     return ((vectors - mean) / std).astype(np.float32, copy=False)
 
 
+def _compute_mad_scale(vectors: np.ndarray) -> float:
+    """Compute Median Absolute Deviation (MAD) as a robust scale estimator.
+    
+    MAD = median(|x - median(x)|) / 0.6745
+    The 0.6745 factor makes MAD consistent with std for Gaussian data.
+    """
+    if vectors.size == 0:
+        return 1.0
+    median = np.median(vectors)
+    mad = np.median(np.abs(vectors - median))
+    # Convert MAD to std-equivalent scale (for Gaussian data)
+    scale = mad / 0.6745
+    return float(scale) if scale > 1e-10 else 1.0
+
+
+def _compute_global_alpha(
+    train_vectors_dict: Dict[str, np.ndarray],
+    pos_dims: tuple = (0, 1),
+    flow_dims: tuple = (2, 3),
+    eps: float = 1e-6
+) -> float:
+    """Compute global alpha parameter for block balancing.
+    
+    α = mean_i(scale_i^pos) / (mean_i(scale_i^flow) + ε)
+    
+    Each dataset contributes equally regardless of size.
+    Uses MAD for robust scale estimation.
+    """
+    if not train_vectors_dict:
+        return 1.0
+    
+    pos_scales = []
+    flow_scales = []
+    
+    for train_vecs in train_vectors_dict.values():
+        if train_vecs.size == 0 or train_vecs.shape[1] < 4:
+            continue
+        
+        # Position scale: MAD of [x, y]
+        pos_data = train_vecs[:, list(pos_dims)].ravel()
+        pos_scale = _compute_mad_scale(pos_data)
+        pos_scales.append(pos_scale)
+        
+        # Flow scale: MAD of [dx, dy]
+        flow_data = train_vecs[:, list(flow_dims)].ravel()
+        flow_scale = _compute_mad_scale(flow_data)
+        flow_scales.append(flow_scale)
+    
+    if not pos_scales or not flow_scales:
+        return 1.0
+    
+    mean_pos = np.mean(pos_scales)
+    mean_flow = np.mean(flow_scales)
+    
+    alpha = mean_pos / (mean_flow + eps)
+    
+    print(f"\n{'='*80}")
+    print(f"Global α computation (equal-weighted across {len(pos_scales)} train sets):")
+    print(f"  Position scales (MAD): {pos_scales}")
+    print(f"  Flow scales (MAD): {flow_scales}")
+    print(f"  Mean position scale: {mean_pos:.6f}")
+    print(f"  Mean flow scale: {mean_flow:.6f}")
+    print(f"  α = {alpha:.6f}")
+    print(f"{'='*80}\n")
+    
+    return float(alpha)
+
+
+def _apply_global_alpha(
+    vectors: np.ndarray,
+    alpha: float,
+    pos_dims: tuple = (0, 1),
+    flow_dims: tuple = (2, 3)
+) -> np.ndarray:
+    """Apply global alpha balancing: v' = [x, y, α·dx, α·dy]"""
+    if vectors.size == 0:
+        return vectors
+    
+    result = vectors.copy()
+    for dim in flow_dims:
+        if dim < vectors.shape[1]:
+            result[:, dim] *= alpha
+    
+    return result.astype(np.float32, copy=False)
+
+
+def _save_global_alpha(
+    cache_dir: Path,
+    representation: str,
+    alpha: float,
+    train_labels: list,
+    pos_dims: tuple = (0, 1),
+    flow_dims: tuple = (2, 3)
+) -> None:
+    """Save global alpha to disk cache with metadata.
+    
+    Cache includes:
+    - alpha value
+    - list of train set labels used to compute it
+    - dimension configuration
+    
+    This allows validating the cache is still valid on subsequent runs.
+    """
+    if not cache_dir:
+        return
+    
+    cache_dir = Path(cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Create cache filename
+    safe_repr = re.sub(r"[^A-Za-z0-9_.-]+", "_", representation)
+    cache_file = cache_dir / f"global_alpha_{safe_repr}.npz"
+    
+    # Save with metadata
+    np.savez(
+        cache_file,
+        alpha=np.array([alpha], dtype=np.float32),
+        train_labels=np.array(train_labels, dtype=object),
+        pos_dims=np.array(pos_dims, dtype=np.int32),
+        flow_dims=np.array(flow_dims, dtype=np.int32)
+    )
+    print(f"  Saved global α={alpha:.6f} to cache: {cache_file.name}")
+
+
+def _load_global_alpha(
+    cache_dir: Path,
+    representation: str,
+    train_labels: list,
+    pos_dims: tuple = (0, 1),
+    flow_dims: tuple = (2, 3)
+) -> Optional[float]:
+    """Load global alpha from disk cache.
+    
+    Returns None if:
+    - Cache doesn't exist
+    - Train set labels don't match (different datasets)
+    - Dimension configuration changed
+    """
+    if not cache_dir:
+        return None
+    
+    cache_dir = Path(cache_dir)
+    safe_repr = re.sub(r"[^A-Za-z0-9_.-]+", "_", representation)
+    cache_file = cache_dir / f"global_alpha_{safe_repr}.npz"
+    
+    if not cache_file.exists():
+        return None
+    
+    try:
+        data = np.load(cache_file, allow_pickle=True)
+        
+        # Validate metadata
+        cached_labels = set(data['train_labels'].tolist())
+        current_labels = set(train_labels)
+        
+        if cached_labels != current_labels:
+            print(f"  ⚠️  Cached α invalid: train set labels changed")
+            return None
+        
+        cached_pos = tuple(data['pos_dims'].tolist())
+        cached_flow = tuple(data['flow_dims'].tolist())
+        
+        if cached_pos != pos_dims or cached_flow != flow_dims:
+            print(f"  ⚠️  Cached α invalid: dimension configuration changed")
+            return None
+        
+        alpha = float(data['alpha'].item())
+        print(f"  ✓ Loaded cached global α={alpha:.6f} from {cache_file.name}")
+        return alpha
+        
+    except Exception as e:
+        print(f"  ⚠️  Error loading cached α: {e}")
+        return None
+
+
 def _nn_first(
     index: "faiss.Index",
     vectors: np.ndarray,
@@ -469,6 +751,7 @@ def _pointwise_radius(
     metric: str,
     k: int,
     agg: str = "kth",
+    batch_size: Optional[int] = None,
 ) -> np.ndarray:
     if vectors.size == 0:
         return np.array([], dtype=np.float32)
@@ -478,7 +761,34 @@ def _pointwise_radius(
     search_k = min(vectors.shape[0], k + 1)
     if search_k <= 1:
         return np.full((vectors.shape[0],), float("nan"), dtype=np.float32)
-    dists, _ = index.search(vectors, search_k)
+    
+    # Auto-adjust batch size based on dimensionality
+    if batch_size is None:
+        dim = vectors.shape[1]
+        if dim <= 4:
+            batch_size = 500000  # Flow vectors (4D)
+        elif dim <= 64:
+            batch_size = 100000  # Medium dimensions
+        elif dim <= 256:
+            batch_size = 50000   # High dimensions (ResNet/DINO after PCA)
+        else:
+            batch_size = 20000   # Very high dimensions
+    
+    # Batch search for GPU indices to avoid OOM
+    is_gpu = _is_gpu_index(index)
+    if is_gpu and len(vectors) > batch_size:
+        print(f"    Computing pointwise radius: {len(vectors):,} vectors in batches of {batch_size:,}")
+        all_dists = []
+        for i in range(0, len(vectors), batch_size):
+            batch = vectors[i:i+batch_size]
+            batch_dists, _ = index.search(batch, search_k)
+            all_dists.append(batch_dists)
+            if (i // batch_size + 1) % 5 == 0:  # Print every 5 batches (was 10)
+                print(f"      Processed {i+len(batch):,}/{len(vectors):,} vectors")
+        dists = np.vstack(all_dists)
+    else:
+        dists, _ = index.search(vectors, search_k)
+    
     if metric == "cosine":
         dists = 1.0 - dists
     else:
@@ -518,12 +828,20 @@ def _filter_vectors(
     return vectors, dropped_non_finite, dropped_zero
 
 
+def _is_gpu_index(index: "faiss.Index") -> bool:
+    """Check if an index is a GPU index."""
+    # More robust GPU detection
+    index_type = type(index).__name__
+    return 'Gpu' in index_type or 'GPU' in index_type
+
+
 def _build_index(
     vectors: np.ndarray,
     index_factory: str,
     metric: str,
     use_gpu: bool,
     nprobe: Optional[int],
+    gpu_resources: Optional["faiss.StandardGpuResources"] = None,
 ) -> "faiss.Index":
     """
     Build a FAISS index, using GPU-friendly types when GPU is enabled.
@@ -532,6 +850,9 @@ def _build_index(
     - Use Flat for exact search (very fast on GPU)
     - Use IVF indices for approximate search (GPU-friendly)
     - Convert HNSW to IVF when GPU is enabled
+    
+    Args:
+        gpu_resources: Optional pre-created StandardGpuResources to reuse
     """
     dim = vectors.shape[1]
     if metric == "cosine":
@@ -542,6 +863,20 @@ def _build_index(
     # Handle GPU-friendly index selection
     if use_gpu and faiss.get_num_gpus() > 0:
         index_factory_lower = index_factory.lower()
+        n_vectors = vectors.shape[0]
+        
+        # Check if we have enough vectors for IVF training
+        # IVF needs ~40x the number of centroids
+        if "ivf" in index_factory_lower:
+            import re
+            match = re.search(r'ivf(\d+)', index_factory_lower)
+            if match:
+                nlist = int(match.group(1))
+                min_vectors_needed = nlist * 40
+                if n_vectors < min_vectors_needed:
+                    print(f"  WARNING: Only {n_vectors:,} vectors, too few for IVF{nlist} (needs {min_vectors_needed:,})")
+                    print(f"  Falling back to Flat index for exact search")
+                    index_factory = "Flat"
         
         # HNSW is not GPU-native - convert to GPU-friendly alternatives
         if "hnsw" in index_factory_lower:
@@ -549,21 +884,31 @@ def _build_index(
             import re
             match = re.search(r'hnsw(\d+)', index_factory_lower)
             if match:
-                # Use IVF with similar memory/accuracy tradeoff
-                # For HNSW32, use IVF1024 or IVF2048 depending on dataset size
-                n_vectors = vectors.shape[0]
+                # Use IVF with similar memory/accuracy tradeoff, but check vector count
                 if n_vectors < 100000:
-                    nlist = 256
+                    if n_vectors < 10000:
+                        print(f"  GPU mode: Too few vectors ({n_vectors:,}), using Flat instead of HNSW")
+                        index_factory = "Flat"
+                    else:
+                        nlist = 256
+                        print(f"  GPU mode: Converting HNSW to GPU-friendly IVF{nlist},Flat")
+                        index_factory = f"IVF{nlist},Flat"
                 elif n_vectors < 1000000:
                     nlist = 1024
+                    print(f"  GPU mode: Converting HNSW to GPU-friendly IVF{nlist},Flat")
+                    index_factory = f"IVF{nlist},Flat"
                 else:
                     nlist = 2048
-                print(f"  GPU mode: Converting HNSW to GPU-friendly IVF{nlist},Flat")
-                index_factory = f"IVF{nlist},Flat"
+                    print(f"  GPU mode: Converting HNSW to GPU-friendly IVF{nlist},Flat")
+                    index_factory = f"IVF{nlist},Flat"
             else:
-                # Default to IVF1024 for GPU
-                print(f"  GPU mode: Converting HNSW to GPU-friendly IVF1024,Flat")
-                index_factory = "IVF1024,Flat"
+                # Default fallback
+                if n_vectors < 10000:
+                    print(f"  GPU mode: Too few vectors ({n_vectors:,}), using Flat instead of HNSW")
+                    index_factory = "Flat"
+                else:
+                    print(f"  GPU mode: Converting HNSW to GPU-friendly IVF1024,Flat")
+                    index_factory = "IVF1024,Flat"
         
         # Build index on CPU first (required for training)
         if index_factory.lower() == "flat":
@@ -584,16 +929,19 @@ def _build_index(
             index.nprobe = nprobe
 
         # Transfer to GPU using proper resource management
-        # Use first available GPU (index 0) for single-GPU usage
-        # For multi-GPU, you can use index_cpu_to_gpus_list
         gpu_id = 0  # Use first GPU
-        res = faiss.StandardGpuResources()
-        # Set temporary memory to avoid fragmentation (1GB should be enough for most cases)
-        # Can be increased for very large datasets
-        res.setTempMemory(1024 * 1024 * 1024)  # 1GB temp memory
+        
+        # Reuse gpu_resources if provided, otherwise create new one
+        if gpu_resources is None:
+            gpu_resources = faiss.StandardGpuResources()
+            # Optimized temp memory: 18GB for faster searches (6GB headroom)
+            # FAISS will use this for search operations
+            temp_memory_gb = 18
+            gpu_resources.setTempMemory(temp_memory_gb * 1024 * 1024 * 1024)
+            print(f"  Created new GPU resources with {temp_memory_gb}GB temp memory")
         
         # Convert to GPU index
-        index = faiss.index_cpu_to_gpu(res, gpu_id, index)
+        index = faiss.index_cpu_to_gpu(gpu_resources, gpu_id, index)
         
         # Set nprobe again after GPU transfer (in case it was reset)
         if nprobe is not None and hasattr(index, "nprobe"):
@@ -602,7 +950,21 @@ def _build_index(
         print(f"  Index transferred to GPU {gpu_id} ({vectors.shape[0]:,} vectors, dim={dim})")
             
     else:
-        # CPU mode - use original index factory
+        # CPU mode - check if we have enough vectors for IVF
+        n_vectors = vectors.shape[0]
+        if "ivf" in index_factory.lower():
+            import re
+            match = re.search(r'ivf(\d+)', index_factory.lower())
+            if match:
+                nlist = int(match.group(1))
+                min_vectors_needed = nlist * 40
+                if n_vectors < min_vectors_needed:
+                    print(f"  WARNING: Only {n_vectors:,} vectors, too few for IVF{nlist} (needs {min_vectors_needed:,})")
+                    print(f"  Falling back to Flat index for exact search")
+                    index_factory = "Flat"
+        
+        print(f"  Building CPU index (type={index_factory}, vectors={vectors.shape[0]:,}, dim={dim})...")
+        
         if index_factory.lower() == "flat":
             if metric_type == faiss.METRIC_INNER_PRODUCT:
                 index = faiss.IndexFlatIP(dim)
@@ -612,8 +974,13 @@ def _build_index(
             index = faiss.index_factory(dim, index_factory, metric_type)
 
         if index.is_trained is False:
+            print(f"    Training index...")
             index.train(vectors)
+            print(f"    Training complete.")
+        
+        print(f"    Adding {vectors.shape[0]:,} vectors to index...")
         index.add(vectors)
+        print(f"    Index built successfully.")
 
         if nprobe is not None and hasattr(index, "nprobe"):
             index.nprobe = nprobe
@@ -627,10 +994,37 @@ def _nn_distances(
     metric: str,
     k: int,
     agg: str = "first",
+    batch_size: Optional[int] = None,
 ) -> np.ndarray:
     if vectors.size == 0:
         return np.array([], dtype=np.float32)
-    dists, _ = index.search(vectors, k)
+    
+    # Auto-adjust batch size based on dimensionality
+    if batch_size is None:
+        dim = vectors.shape[1]
+        if dim <= 4:
+            batch_size = 500000  # Flow vectors (4D)
+        elif dim <= 64:
+            batch_size = 100000  # Medium dimensions
+        elif dim <= 256:
+            batch_size = 50000   # High dimensions (ResNet/DINO after PCA)
+        else:
+            batch_size = 20000   # Very high dimensions
+    
+    # Batch search for GPU indices to avoid OOM
+    is_gpu = _is_gpu_index(index)
+    if is_gpu and len(vectors) > batch_size:
+        print(f"    Batched GPU search: {len(vectors):,} vectors in batches of {batch_size:,}")
+        all_dists = []
+        for i in range(0, len(vectors), batch_size):
+            batch = vectors[i:i+batch_size]
+            batch_dists, _ = index.search(batch, k)
+            all_dists.append(batch_dists)
+            if (i // batch_size + 1) % 5 == 0:  # Print every 5 batches (was 10)
+                print(f"      Processed {i+len(batch):,}/{len(vectors):,} vectors")
+        dists = np.vstack(all_dists)
+    else:
+        dists, _ = index.search(vectors, k)
     if metric == "cosine":
         dists = 1.0 - dists
     else:
@@ -744,6 +1138,7 @@ def _kth_neighbor_distances(
     metric: str,
     k: int,
     exclude_self: bool,
+    batch_size: Optional[int] = None,
 ) -> Optional[np.ndarray]:
     if vectors.size == 0 or k < 1:
         return None
@@ -756,7 +1151,34 @@ def _kth_neighbor_distances(
     search_k = min(search_k, n)
     if exclude_self and search_k <= k:
         return None
-    dists, _ = index.search(vectors, search_k)
+    
+    # Auto-adjust batch size based on dimensionality
+    if batch_size is None:
+        dim = vectors.shape[1]
+        if dim <= 4:
+            batch_size = 500000  # Flow vectors (4D)
+        elif dim <= 64:
+            batch_size = 100000  # Medium dimensions
+        elif dim <= 256:
+            batch_size = 50000   # High dimensions (ResNet/DINO after PCA)
+        else:
+            batch_size = 20000   # Very high dimensions
+    
+    # Batch search for GPU indices to avoid OOM
+    is_gpu = _is_gpu_index(index)
+    if is_gpu and len(vectors) > batch_size:
+        print(f"    Computing KL k-NN distances: {len(vectors):,} vectors in batches of {batch_size:,}")
+        all_dists = []
+        for i in range(0, len(vectors), batch_size):
+            batch = vectors[i:i+batch_size]
+            batch_dists, _ = index.search(batch, search_k)
+            all_dists.append(batch_dists)
+            if (i // batch_size + 1) % 5 == 0:  # Print every 5 batches (was 10)
+                print(f"      Processed {i+len(batch):,}/{len(vectors):,} vectors")
+        dists = np.vstack(all_dists)
+    else:
+        dists, _ = index.search(vectors, search_k)
+    
     dists = _convert_search_distances(dists, metric)
     if exclude_self:
         tiny = 1e-12
@@ -804,6 +1226,7 @@ def _self_radius(
     quantile: float,
     k: int = 1,
     agg: str = "first",
+    batch_size: Optional[int] = None,
 ) -> float:
     if vectors.shape[0] < 2:
         return float("nan")
@@ -811,7 +1234,34 @@ def _self_radius(
     search_k = min(vectors.shape[0], k + 1)
     if search_k <= 1:
         return float("nan")
-    dists, _ = index.search(vectors, search_k)
+    
+    # Auto-adjust batch size based on dimensionality
+    if batch_size is None:
+        dim = vectors.shape[1]
+        if dim <= 4:
+            batch_size = 500000  # Flow vectors (4D)
+        elif dim <= 64:
+            batch_size = 100000  # Medium dimensions
+        elif dim <= 256:
+            batch_size = 50000   # High dimensions (ResNet/DINO after PCA)
+        else:
+            batch_size = 20000   # Very high dimensions
+    
+    # Batch search for GPU indices to avoid OOM
+    is_gpu = _is_gpu_index(index)
+    if is_gpu and len(vectors) > batch_size:
+        print(f"    Computing self-radius: {len(vectors):,} vectors in batches of {batch_size:,}")
+        all_dists = []
+        for i in range(0, len(vectors), batch_size):
+            batch = vectors[i:i+batch_size]
+            batch_dists, _ = index.search(batch, search_k)
+            all_dists.append(batch_dists)
+            if (i // batch_size + 1) % 5 == 0:  # Print every 5 batches (was 10)
+                print(f"      Processed {i+len(batch):,}/{len(vectors):,} vectors")
+        dists = np.vstack(all_dists)
+    else:
+        dists, _ = index.search(vectors, search_k)
+    
     if metric == "cosine":
         dists = 1.0 - dists
     else:
@@ -1078,7 +1528,8 @@ def _run_pairwise_cached(
     kl_eps: float,
     extra_kl_variants: bool,
     rng: np.random.Generator,
-) -> list:
+    output_file: str,
+) -> dict:
     cache_dir = cache_cfg.get("dir")
     cache_mode = str(cache_cfg.get("mode", "off")).lower()
     cache_mmap = bool(cache_cfg.get("mmap", False))
@@ -1130,36 +1581,8 @@ def _run_pairwise_cached(
             )
             gc.collect()
     
-    # Pre-load all vectors to ensure encoder is no longer needed
-    # This allows us to delete the encoder before FAISS operations
-    print("\n  Pre-loading all vectors...")
-    all_vectors_loaded = {}
-    for spec in specs:
-        key = f"{spec['label']}_{spec['split']}"
-        vectors = load_vectors(spec)
-        if vectors is not None:
-            all_vectors_loaded[key] = vectors
-            print(f"    Loaded {vectors.shape[0]} vectors for {key}")
-    
-    # Delete encoder after all vectors are loaded to free GPU memory
-    if encoder is not None:
-        print("\n  Deleting encoder model to free GPU memory...")
-        del encoder
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        gc.collect()
-        print("  Encoder deleted and memory freed.")
-    
-    # Replace load_vectors to use pre-loaded vectors
-    def load_vectors_cached(spec: dict) -> Optional[np.ndarray]:
-        key = f"{spec['label']}_{spec['split']}"
-        return all_vectors_loaded.get(key)
-    
-    # Replace the original load_vectors with cached version
-    load_vectors = load_vectors_cached
-
-    # Original load_vectors definition (now replaced above, but kept for reference)
-    def _load_vectors_original(spec: dict) -> Optional[np.ndarray]:
+    # Define load_vectors function for loading/caching vectors
+    def load_vectors(spec: dict) -> Optional[np.ndarray]:
         if spec["is_mixed"]:
             if mix_from_cache:
                 return _mix_vectors_from_cache(
@@ -1215,6 +1638,32 @@ def _run_pairwise_cached(
         )
         return info["vectors"]
 
+    # Pre-load all vectors to ensure encoder is no longer needed
+    # This allows us to delete the encoder before FAISS operations
+    print("\n  Pre-loading all vectors...")
+    all_vectors_loaded = {}
+    for spec in specs:
+        key = f"{spec['label']}_{spec['split']}"
+        vectors = load_vectors(spec)
+        if vectors is not None:
+            all_vectors_loaded[key] = vectors
+            print(f"    Loaded {vectors.shape[0]} vectors for {key}")
+    
+    # Delete encoder after all vectors are loaded to free GPU memory
+    if encoder is not None:
+        print("\n  Deleting encoder model to free GPU memory...")
+        del encoder
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
+        print("  Encoder deleted and memory freed.")
+    
+    # Replace load_vectors to use pre-loaded vectors
+    original_load_vectors = load_vectors
+    def load_vectors(spec: dict) -> Optional[np.ndarray]:
+        key = f"{spec['label']}_{spec['split']}"
+        return all_vectors_loaded.get(key)
+
     train_specs = [s for s in specs if not s["is_eval"]]
     eval_specs = [s for s in specs if s["is_eval"]]
 
@@ -1228,8 +1677,94 @@ def _run_pairwise_cached(
     if norm_mode == "train_zscore" and metric == "cosine":
         print("Warning: train_zscore with cosine metric disables L2 normalization.")
         apply_l2 = False
+    
+    # Compute global alpha if using global_block_alpha mode
+    global_alpha = None
+    if norm_mode == "global_block_alpha":
+        if metric == "cosine":
+            print("Warning: global_block_alpha with cosine metric disables L2 normalization.")
+            apply_l2 = False
+        
+        print("\n  Setting up global α for block balancing...")
+        
+        # Collect train specs that need alpha
+        train_labels_for_alpha = []
+        representation_for_alpha = None
+        for train_spec in train_specs:
+            should_apply = not norm_apply_to or train_spec["representation"] in norm_apply_to
+            if should_apply:
+                train_labels_for_alpha.append(train_spec["label"])
+                if representation_for_alpha is None:
+                    representation_for_alpha = train_spec["representation"]
+        
+        if train_labels_for_alpha and representation_for_alpha:
+            # Try to load cached alpha
+            global_alpha = _load_global_alpha(
+                cache_path if cache_dir else None,
+                representation_for_alpha,
+                train_labels_for_alpha,
+                pos_dims=(0, 1),
+                flow_dims=(2, 3)
+            )
+            
+            # Compute if not cached
+            if global_alpha is None:
+                print("  Computing α from train set statistics...")
+                train_vectors_for_alpha = {}
+                for train_spec in train_specs:
+                    if train_spec["label"] in train_labels_for_alpha:
+                        train_raw = load_vectors(train_spec)
+                        if train_raw is not None and train_raw.size > 0 and train_raw.shape[1] >= 4:
+                            train_vectors_for_alpha[train_spec["label"]] = np.asarray(train_raw)
+                
+                if train_vectors_for_alpha:
+                    global_alpha = _compute_global_alpha(
+                        train_vectors_for_alpha,
+                        pos_dims=(0, 1),
+                        flow_dims=(2, 3),
+                        eps=norm_eps
+                    )
+                    # Save to cache
+                    if cache_dir:
+                        _save_global_alpha(
+                            cache_path,
+                            representation_for_alpha,
+                            global_alpha,
+                            train_labels_for_alpha,
+                            pos_dims=(0, 1),
+                            flow_dims=(2, 3)
+                        )
+                else:
+                    global_alpha = 1.0
+                    print("  Warning: No suitable train vectors for alpha computation, using α=1.0")
+        else:
+            global_alpha = 1.0
+            print("  Warning: No train sets found for alpha computation, using α=1.0")
 
+    # Setup incremental CSV writing for checkpointing
+    output_path = Path(output_file)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Load existing results if resuming
+    existing_results = {}
+    if output_path.exists():
+        print(f"\n⚠️  Found existing results file: {output_path}")
+        print(f"   Loading to resume from checkpoint...")
+        import csv
+        with output_path.open("r", newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                key = (row["dataset1"], row["split1"], row["dataset2"], row["split2"])
+                existing_results[key] = row
+        print(f"   Loaded {len(existing_results)} existing results")
+        print(f"   Will skip already-computed pairs\n")
+    
     results = []
+    total_pairs = len(train_specs) * len(eval_specs)
+    computed_pairs = 0
+    skipped_pairs = 0
+    pair_idx = 0
+    
     for train_spec in train_specs:
         train_raw = load_vectors(train_spec)
         if train_raw is None or train_raw.size == 0:
@@ -1243,54 +1778,178 @@ def _run_pairwise_cached(
                 continue
 
             eval_vecs = np.asarray(eval_raw)
+            
+            pair_idx += 1
+            
+            # Check if this pair was already computed
+            pair_key = (train_spec["label"], train_spec["split"], 
+                       eval_spec["label"], eval_spec["split"])
+            if pair_key in existing_results:
+                skipped_pairs += 1
+                print(f"\n[Pair {pair_idx}/{total_pairs}] ✓ Skipping (already computed): "
+                      f"{train_spec['label']} -> {eval_spec['label']}")
+                continue
+            
+            print(f"\n{'='*80}")
+            print(f"Processing pair {pair_idx}/{total_pairs}: {train_spec['label']} -> {eval_spec['label']}")
+            print(f"  Train: {train_vecs.shape[0]:,} vectors")
+            print(f"  Eval: {eval_vecs.shape[0]:,} vectors")
+            print(f"  Progress: {computed_pairs} computed, {skipped_pairs} skipped")
+            print(f"{'='*80}")
 
             train_proc, eval_proc = _apply_pairwise_pca(
                 train_vecs, eval_vecs, pca_cfg, rng
             )
 
+            # Apply normalization based on mode
             do_zscore = norm_mode == "train_zscore" and (
                 not norm_apply_to or train_spec["representation"] in norm_apply_to
             )
+            do_global_alpha = norm_mode == "global_block_alpha" and (
+                not norm_apply_to or train_spec["representation"] in norm_apply_to
+            )
+            
             if do_zscore:
                 mean, std = _compute_zscore_params(train_proc, norm_eps)
                 train_proc = _apply_zscore(train_proc, mean, std)
                 eval_proc = _apply_zscore(eval_proc, mean, std)
+            elif do_global_alpha and global_alpha is not None:
+                train_proc = _apply_global_alpha(train_proc, global_alpha)
+                eval_proc = _apply_global_alpha(eval_proc, global_alpha)
 
             if apply_l2:
                 train_proc = _l2_normalize(train_proc)
                 eval_proc = _l2_normalize(eval_proc)
 
+            # Create shared GPU resources if using GPU
+            # This prevents memory fragmentation from creating multiple resources
+            gpu_resources = None
+            if use_gpu and faiss.get_num_gpus() > 0:
+                print(f"  [1/5] Setting up shared GPU resources")
+                gpu_resources = faiss.StandardGpuResources()
+                # Optimized temp memory: 18GB for faster searches (6GB headroom for indices)
+                temp_memory_gb = 18
+                gpu_resources.setTempMemory(temp_memory_gb * 1024 * 1024 * 1024)
+                # Batch size is auto-adjusted based on vector dimensionality
+                dim = train_proc.shape[1]
+                if dim <= 4:
+                    batch_info = "500k (4D flow)"
+                elif dim <= 64:
+                    batch_info = "100k (64D)"
+                elif dim <= 256:
+                    batch_info = "50k (256D features)"
+                else:
+                    batch_info = f"20k ({dim}D)"
+                print(f"        GPU temp memory: {temp_memory_gb}GB, batch size: {batch_info}")
+            
+            # Build indices directly with GPU (or CPU if not using GPU)
+            print(f"  [2/5] Building FAISS indices...")
             train_idx = _build_index(
                 train_proc.astype(np.float32, copy=False),
                 index_factory,
                 metric,
-                use_gpu,
-                nprobe,
+                use_gpu=use_gpu,
+                nprobe=nprobe,
+                gpu_resources=gpu_resources,
             )
             eval_idx = _build_index(
                 eval_proc.astype(np.float32, copy=False),
                 index_factory,
                 metric,
-                use_gpu,
-                nprobe,
+                use_gpu=use_gpu,
+                nprobe=nprobe,
+                gpu_resources=gpu_resources,
             )
 
+            print(f"  [3/5] Computing coverage metrics...")
             if support_mode == "per_point_radius":
-                train_radii = _pointwise_radius(
-                    train_idx,
-                    train_proc,
-                    metric,
-                    self_radius_k,
-                    agg=neighbor_agg,
-                )
-                eval_radii = _pointwise_radius(
-                    eval_idx,
-                    eval_proc,
-                    metric,
-                    self_radius_k,
-                    agg=neighbor_agg,
-                )
+                # Determine normalization mode for cache keys
+                # train_zscore: eval depends on which train (train-specific cache)
+                # global_block_alpha: same normalization for all (global cache)
+                # none: no normalization
+                cache_norm_mode = "none"
+                cache_norm_by_label = None
+                
+                if do_zscore:
+                    cache_norm_mode = "train_zscore"
+                    cache_norm_by_label = None  # For train (self-normalized)
+                elif do_global_alpha:
+                    cache_norm_mode = "global_block_alpha"
+                    cache_norm_by_label = None  # Global α same for everyone
+                
+                # Try to load cached train radii
+                train_radii = None
+                if cache_dir:
+                    train_radii = _load_cached_radius(
+                        cache_path, train_spec["label"], train_spec["split"],
+                        train_spec["representation"], metric, support_mode,
+                        self_radius_k, radius_quantile, neighbor_agg,
+                        norm_mode=cache_norm_mode,
+                        norm_by_label=None  # Train always self-normalized
+                    )
+                    if train_radii is not None:
+                        print(f"    Loaded cached train radii")
+                
+                if train_radii is None:
+                    train_radii = _pointwise_radius(
+                        train_idx,
+                        train_proc,
+                        metric,
+                        self_radius_k,
+                        agg=neighbor_agg,
+                    )
+                    if cache_dir:
+                        _save_cached_radius(
+                            cache_path, train_spec["label"], train_spec["split"],
+                            train_spec["representation"], metric, support_mode,
+                            self_radius_k, radius_quantile, neighbor_agg, train_radii,
+                            norm_mode=cache_norm_mode,
+                            norm_by_label=None  # Train always self-normalized
+                        )
+                        print(f"    Cached train radii for future runs")
+                
                 dist_eval_to_train, idx_eval_to_train = _nn_first(train_idx, eval_proc, metric)
+                
+                # Try to load cached eval radii
+                # For train_zscore: eval depends on train set (train-specific)
+                # For global_block_alpha: eval has same α as everyone (globally cached)
+                eval_radii = None
+                eval_cache_norm_by = train_spec["label"] if do_zscore else None
+                if cache_dir:
+                    eval_radii = _load_cached_radius(
+                        cache_path, eval_spec["label"], eval_spec["split"],
+                        eval_spec["representation"], metric, support_mode,
+                        self_radius_k, radius_quantile, neighbor_agg,
+                        norm_mode=cache_norm_mode,
+                        norm_by_label=eval_cache_norm_by
+                    )
+                    if eval_radii is not None:
+                        if do_zscore:
+                            print(f"    Loaded cached eval radii (normalized by {train_spec['label']})")
+                        else:
+                            print(f"    Loaded cached eval radii")
+                
+                if eval_radii is None:
+                    eval_radii = _pointwise_radius(
+                        eval_idx,
+                        eval_proc,
+                        metric,
+                        self_radius_k,
+                        agg=neighbor_agg,
+                    )
+                    if cache_dir:
+                        _save_cached_radius(
+                            cache_path, eval_spec["label"], eval_spec["split"],
+                            eval_spec["representation"], metric, support_mode,
+                            self_radius_k, radius_quantile, neighbor_agg, eval_radii,
+                            norm_mode=cache_norm_mode,
+                            norm_by_label=eval_cache_norm_by
+                        )
+                        if do_zscore:
+                            print(f"    Cached eval radii for future runs (normalized by {train_spec['label']})")
+                        else:
+                            print(f"    Cached eval radii for future runs")
+                
                 dist_train_to_eval, idx_train_to_eval = _nn_first(eval_idx, train_proc, metric)
 
                 mask_eval = (
@@ -1318,24 +1977,98 @@ def _run_pairwise_cached(
                 radius_train = float(np.nanmedian(train_radii)) if train_radii.size else float("nan")
                 radius_eval = float(np.nanmedian(eval_radii)) if eval_radii.size else float("nan")
             else:
+                # Global radius mode
+                # Determine normalization mode for cache keys
+                cache_norm_mode = "none"
+                if do_zscore:
+                    cache_norm_mode = "train_zscore"
+                elif do_global_alpha:
+                    cache_norm_mode = "global_block_alpha"
+                
                 dist_eval_to_train = _nn_distances(train_idx, eval_proc, metric, k, agg=neighbor_agg)
+                
+                # Try to load cached train radius (train normalizes itself)
+                cached_train_radius = None
+                if cache_dir:
+                    cached = _load_cached_radius(
+                        cache_path, train_spec["label"], train_spec["split"],
+                        train_spec["representation"], metric, support_mode,
+                        self_radius_k, radius_quantile, neighbor_agg,
+                        norm_mode=cache_norm_mode,
+                        norm_by_label=None  # Train normalizes itself
+                    )
+                    if cached is not None:
+                        cached_train_radius = float(cached.item() if hasattr(cached, 'item') else cached)
+                        print(f"    Loaded cached train radius: {cached_train_radius:.6f}")
+                
+                if cached_train_radius is not None:
+                    radius_train = cached_train_radius
+                else:
+                    radius_train = _self_radius(
+                        train_idx,
+                        train_proc,
+                        metric,
+                        radius_quantile,
+                        k=self_radius_k,
+                        agg=neighbor_agg,
+                    )
+                    if cache_dir:
+                        _save_cached_radius(
+                            cache_path, train_spec["label"], train_spec["split"],
+                            train_spec["representation"], metric, support_mode,
+                            self_radius_k, radius_quantile, neighbor_agg,
+                            np.array([radius_train]),
+                            norm_mode=cache_norm_mode,
+                            norm_by_label=None  # Train normalizes itself
+                        )
+                        print(f"    Cached train radius for future runs")
+                
                 dist_train_to_eval = _nn_distances(eval_idx, train_proc, metric, k, agg=neighbor_agg)
-                radius_train = _self_radius(
-                    train_idx,
-                    train_proc,
-                    metric,
-                    radius_quantile,
-                    k=self_radius_k,
-                    agg=neighbor_agg,
-                )
-                radius_eval = _self_radius(
-                    eval_idx,
-                    eval_proc,
-                    metric,
-                    radius_quantile,
-                    k=self_radius_k,
-                    agg=neighbor_agg,
-                )
+                
+                # Try to load cached eval radius
+                # For train_zscore: eval depends on train set (train-specific)
+                # For global_block_alpha: eval has same α as everyone (globally cached)
+                cached_eval_radius = None
+                eval_cache_norm_by = train_spec["label"] if do_zscore else None
+                if cache_dir:
+                    cached = _load_cached_radius(
+                        cache_path, eval_spec["label"], eval_spec["split"],
+                        eval_spec["representation"], metric, support_mode,
+                        self_radius_k, radius_quantile, neighbor_agg,
+                        norm_mode=cache_norm_mode,
+                        norm_by_label=eval_cache_norm_by
+                    )
+                    if cached is not None:
+                        cached_eval_radius = float(cached.item() if hasattr(cached, 'item') else cached)
+                        if do_zscore:
+                            print(f"    Loaded cached eval radius: {cached_eval_radius:.6f} (normalized by {train_spec['label']})")
+                        else:
+                            print(f"    Loaded cached eval radius: {cached_eval_radius:.6f}")
+                
+                if cached_eval_radius is not None:
+                    radius_eval = cached_eval_radius
+                else:
+                    radius_eval = _self_radius(
+                        eval_idx,
+                        eval_proc,
+                        metric,
+                        radius_quantile,
+                        k=self_radius_k,
+                        agg=neighbor_agg,
+                    )
+                    if cache_dir:
+                        _save_cached_radius(
+                            cache_path, eval_spec["label"], eval_spec["split"],
+                            eval_spec["representation"], metric, support_mode,
+                            self_radius_k, radius_quantile, neighbor_agg,
+                            np.array([radius_eval]),
+                            norm_mode=cache_norm_mode,
+                            norm_by_label=eval_cache_norm_by
+                        )
+                        if do_zscore:
+                            print(f"    Cached eval radius for future runs (normalized by {train_spec['label']})")
+                        else:
+                            print(f"    Cached eval radius for future runs")
                 recall = (
                     float(np.mean(dist_eval_to_train <= radius_train))
                     if np.isfinite(radius_train) and dist_eval_to_train.size
@@ -1347,6 +2080,7 @@ def _run_pairwise_cached(
                     else float("nan")
                 )
 
+            print(f"  [4/5] Computing KL divergence...")
             kl_eval_to_train = float("nan")
             kl_train_to_eval = float("nan")
             if kl_enabled:
@@ -1437,19 +2171,44 @@ def _run_pairwise_cached(
             }
             if extra_kl:
                 result.update(extra_kl)
-            results.append(result)
+            
+            computed_pairs += 1
+            
+            print(f"  [5/5] Results computed!")
             print(
-                f"[{train_spec['label']} -> {eval_spec['label']}] "
-                f"train->eval={recall:.3f} eval->train={precision:.3f}"
+                f"  ✓ [{train_spec['label']} -> {eval_spec['label']}] "
+                f"Recall={recall:.3f} Precision={precision:.3f}"
             )
+            
+            # Save incrementally after each pair (checkpoint)
+            import csv
+            write_header = not output_path.exists() or output_path.stat().st_size == 0
+            with output_path.open("a", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=list(result.keys()))
+                if write_header:
+                    writer.writeheader()
+                writer.writerow(result)
+            print(f"  💾 Checkpoint saved ({computed_pairs}/{total_pairs - skipped_pairs} new pairs)")
 
+            # Clean up eval data and index
             del eval_raw, eval_vecs, eval_proc, eval_idx
             gc.collect()
 
-        del train_raw, train_vecs
+        # Clean up train data, indices, and GPU resources
+        del train_raw, train_vecs, train_proc, train_idx
+        if gpu_resources is not None:
+            del gpu_resources
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         gc.collect()
 
-    return results
+    # Return summary info (results already saved incrementally)
+    return {
+        "total_pairs": total_pairs,
+        "computed": computed_pairs,
+        "skipped": skipped_pairs,
+        "output_file": str(output_path)
+    }
 
 
 def main() -> None:
@@ -1524,7 +2283,7 @@ def main() -> None:
         encoder = create_encoder(encoder_name, device)
 
     if cache_cfg.get("pairwise", False):
-        results = _run_pairwise_cached(
+        summary = _run_pairwise_cached(
             datasets_config,
             representation,
             encoder,
@@ -1552,20 +2311,18 @@ def main() -> None:
             kl_eps,
             extra_kl_variants,
             rng,
+            output_file,
         )
-        output_path = Path(output_file)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        if results:
-            import csv
-
-            fieldnames = list(results[0].keys())
-            with output_path.open("w", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=fieldnames)
-                writer.writeheader()
-                writer.writerows(results)
-            print(f"\nSaved {len(results)} results to: {output_path}")
-        else:
-            print("No results to save.")
+        
+        # Results were saved incrementally during computation
+        print(f"\n{'='*80}")
+        print(f"✅ COVERAGE COMPUTATION COMPLETE!")
+        print(f"{'='*80}")
+        print(f"  Total pairs: {summary['total_pairs']}")
+        print(f"  Computed: {summary['computed']}")
+        print(f"  Skipped (resumed): {summary['skipped']}")
+        print(f"  Output file: {summary['output_file']}")
+        print(f"{'='*80}\n")
         return
 
     vectors_by_name: Dict[str, Dict[str, object]] = {}
@@ -1623,6 +2380,15 @@ def main() -> None:
 
     results = []
     if support_mode == "per_point_radius":
+        # Create shared GPU resources for per_point_radius mode
+        gpu_resources = None
+        if use_gpu and faiss.get_num_gpus() > 0:
+            print("\n  Setting up shared GPU resources for per_point_radius mode")
+            gpu_resources = faiss.StandardGpuResources()
+            temp_memory_gb = 18
+            gpu_resources.setTempMemory(temp_memory_gb * 1024 * 1024 * 1024)
+            print(f"  GPU temp memory: {temp_memory_gb}GB")
+        
         for train_key in train_keys:
             train_info = vectors_by_name[train_key]
             train_vecs_raw = train_info["vectors"]
@@ -1645,6 +2411,7 @@ def main() -> None:
                 metric,
                 use_gpu,
                 nprobe,
+                gpu_resources=gpu_resources,
             )
             train_radii = _pointwise_radius(
                 train_idx,
@@ -1674,6 +2441,7 @@ def main() -> None:
                     metric,
                     use_gpu,
                     nprobe,
+                    gpu_resources=gpu_resources,
                 )
                 eval_radii = _pointwise_radius(
                     eval_idx,
@@ -1876,6 +2644,15 @@ def main() -> None:
                     f"train->eval={recall:.3f} eval->train={precision:.3f}"
                 )
     else:
+        # Create shared GPU resources for all indices
+        gpu_resources = None
+        if use_gpu and faiss.get_num_gpus() > 0:
+            print("\n  Setting up shared GPU resources for all indices")
+            gpu_resources = faiss.StandardGpuResources()
+            temp_memory_gb = 18
+            gpu_resources.setTempMemory(temp_memory_gb * 1024 * 1024 * 1024)
+            print(f"  GPU temp memory: {temp_memory_gb}GB")
+        
         indices = {}
         radii = {}
         for key, info in vectors_by_name.items():
@@ -1890,6 +2667,7 @@ def main() -> None:
                 metric,
                 use_gpu,
                 nprobe,
+                gpu_resources=gpu_resources,
             )
             indices[key] = index
             radii[key] = _self_radius(

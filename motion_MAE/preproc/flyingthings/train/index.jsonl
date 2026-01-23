@@ -1,0 +1,4 @@
+{"file": "000000.pt", "n_valid": 65536, "orig_h": 540, "orig_w": 960, "dataset": "flyingthings", "sample_id": "000000", "max_mag": 0.2447497695684433}
+{"file": "000001.pt", "n_valid": 65536, "orig_h": 540, "orig_w": 960, "dataset": "flyingthings", "sample_id": "000001", "max_mag": 0.2749454081058502}
+{"file": "000002.pt", "n_valid": 65536, "orig_h": 540, "orig_w": 960, "dataset": "flyingthings", "sample_id": "000002", "max_mag": 0.30356037616729736}
+{"file": "000003.pt", "n_valid": 65536, "orig_h": 540, "orig_w": 960, "dataset": "flyingthings", "sample_id": "000003", "max_mag": 0.11285699903964996}

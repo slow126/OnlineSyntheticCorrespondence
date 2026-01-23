@@ -1,0 +1,450 @@
+"""
+Unified FAISS operations for coverage metrics.
+
+All representations (flow, dino, resnet) use L2 metric:
+- Flow: L2 on raw/α-scaled coordinates
+- Dino/ResNet: L2 on unit-normalized vectors (equivalent to cosine)
+
+This module provides reusable building blocks:
+- build_index: Create FAISS index with GPU support
+- compute_knn_distances: Generic kNN distance computation
+- compute_self_radius: Self-radius using kNN
+- compute_directed_distances: Cross-dataset NN distances
+"""
+
+from typing import Dict, Optional, Tuple
+import numpy as np
+
+try:
+    import faiss
+except ImportError as exc:
+    raise SystemExit(
+        "faiss is required. Install faiss-cpu or faiss-gpu."
+    ) from exc
+
+
+def _is_gpu_index(index: faiss.Index) -> bool:
+    """Check if an index is a GPU index."""
+    index_type = type(index).__name__
+    return 'Gpu' in index_type or 'GPU' in index_type
+
+
+def _auto_batch_size(dim: int) -> int:
+    """Automatically determine batch size based on dimensionality."""
+    if dim <= 4:
+        return 500000  # Flow vectors (4D)
+    elif dim <= 64:
+        return 100000  # Medium dimensions
+    elif dim <= 256:
+        return 50000   # High dimensions (ResNet/DINO after PCA)
+    else:
+        return 20000   # Very high dimensions
+
+
+def build_index(
+    vectors: np.ndarray,
+    use_gpu: bool = True,
+    index_factory: str = "Flat",
+    nprobe: Optional[int] = None,
+    verbose: bool = True,
+) -> faiss.Index:
+    """
+    Build FAISS index (always L2 metric).
+    
+    Args:
+        vectors: (N, D) array of vectors
+        use_gpu: Whether to use GPU acceleration
+        index_factory: FAISS index type ("Flat", "IVF1024,Flat", "HNSW32", etc.)
+        nprobe: Number of clusters to probe for IVF indices
+        verbose: Print progress messages
+        
+    Returns:
+        FAISS index
+    """
+    if vectors.size == 0 or vectors.shape[0] == 0:
+        raise ValueError("Cannot build index from empty vectors")
+        
+    n_vectors, dim = vectors.shape
+    vectors = np.ascontiguousarray(vectors, dtype=np.float32)
+    
+    if verbose:
+        print(f"  Building index: {n_vectors:,} vectors, {dim} dims, type={index_factory}, gpu={use_gpu}")
+    
+    # Convert HNSW to IVF for GPU (HNSW not GPU-compatible)
+    if use_gpu and "hnsw" in index_factory.lower():
+        if n_vectors < 10000:
+            index_factory = "Flat"
+            if verbose:
+                print(f"    GPU mode: Too few vectors for IVF, using Flat")
+        else:
+            nlist = min(2048, max(256, n_vectors // 100))
+            index_factory = f"IVF{nlist},Flat"
+            if verbose:
+                print(f"    GPU mode: Converting HNSW to IVF{nlist},Flat")
+    
+    # Check IVF has enough vectors
+    if "ivf" in index_factory.lower():
+        import re
+        match = re.search(r'ivf(\d+)', index_factory.lower())
+        if match:
+            nlist = int(match.group(1))
+            min_needed = nlist * 40
+            if n_vectors < min_needed:
+                if verbose:
+                    print(f"    WARNING: Only {n_vectors:,} vectors, too few for IVF{nlist} (needs {min_needed:,})")
+                    print(f"    Falling back to Flat")
+                index_factory = "Flat"
+    
+    # Build index (always L2 metric)
+    if index_factory.lower() == "flat":
+        index = faiss.IndexFlatL2(dim)
+    else:
+        index = faiss.index_factory(dim, index_factory, faiss.METRIC_L2)
+    
+    # Train if needed
+    if not index.is_trained:
+        if verbose:
+            print(f"    Training index...")
+        index.train(vectors)
+        if verbose:
+            print(f"    Training complete")
+    
+    # Add vectors
+    if verbose:
+        print(f"    Adding {n_vectors:,} vectors...")
+    index.add(vectors)
+    
+    # Set nprobe
+    if nprobe is not None and hasattr(index, "nprobe"):
+        index.nprobe = nprobe
+    
+    # Transfer to GPU
+    if use_gpu:
+        try:
+            gpu_resources = faiss.StandardGpuResources()
+            gpu_resources.setTempMemory(2 * 1024 * 1024 * 1024)  # 2GB temp memory
+            index = faiss.index_cpu_to_gpu(gpu_resources, 0, index)
+            if verbose:
+                print(f"    Transferred to GPU")
+        except Exception as e:
+            if verbose:
+                print(f"    WARNING: GPU transfer failed ({e}), using CPU")
+    
+    if verbose:
+        print(f"    Index ready: {index.ntotal:,} vectors")
+    
+    return index
+
+
+def compute_knn_distances(
+    index: faiss.Index,
+    query_vectors: np.ndarray,
+    k: int,
+    exclude_self: bool = False,
+    batch_size: Optional[int] = None,
+    verbose: bool = False,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Compute k-nearest neighbor distances (L2 metric).
+    
+    Args:
+        index: FAISS index to search
+        query_vectors: (N, D) query vectors
+        k: Number of neighbors
+        exclude_self: If True, exclude the first neighbor (assumed to be self with dist~0)
+        batch_size: Batch size for GPU searches (auto if None)
+        verbose: Print progress
+        
+    Returns:
+        distances: (N, K) L2 distances to k nearest neighbors
+        indices: (N, K) indices of k nearest neighbors
+    """
+    if query_vectors.size == 0:
+        return np.array([], dtype=np.float32).reshape(0, k), np.array([], dtype=np.int64).reshape(0, k)
+    
+    n_query = query_vectors.shape[0]
+    query_vectors = np.ascontiguousarray(query_vectors, dtype=np.float32)
+    
+    # Adjust k if excluding self/duplicates
+    # Search for extra neighbors to account for duplicates
+    if exclude_self:
+        # Search for extra neighbors to skip over duplicates (e.g., same XY position from different images)
+        # Use a moderate buffer (k + 32) to balance memory usage and duplicate handling
+        search_k = min(k + 32, index.ntotal)
+    else:
+        search_k = min(k, index.ntotal)
+    
+    if search_k < 1:
+        raise ValueError(f"Not enough vectors in index for k={k} (index has {index.ntotal})")
+    
+    # Auto batch size
+    if batch_size is None:
+        batch_size = _auto_batch_size(query_vectors.shape[1])
+    
+    # For large datasets with exclude_self, reduce batch size to avoid OOM
+    # (searching k+32 neighbors uses more memory, especially with sorting)
+    if exclude_self and n_query > 5_000_000:
+        batch_size = min(batch_size, 100_000)  # Very conservative batch size for huge datasets with duplicate filtering
+    
+    # Batched search for GPU
+    is_gpu = _is_gpu_index(index)
+    if is_gpu and n_query > batch_size:
+        if verbose:
+            print(f"    Batched GPU search: {n_query:,} queries, batch_size={batch_size:,}, k={search_k}")
+        
+        all_dists = []
+        all_indices = []
+        
+        # Use tqdm for progress bar
+        from tqdm import tqdm
+        batch_iter = range(0, n_query, batch_size)
+        if verbose:
+            batch_iter = tqdm(batch_iter, desc="      Batches", unit="batch", 
+                            total=(n_query + batch_size - 1) // batch_size)
+        
+        for i in batch_iter:
+            batch = query_vectors[i:i+batch_size]
+            batch_dists, batch_indices = index.search(batch, search_k)
+            all_dists.append(batch_dists)
+            all_indices.append(batch_indices)
+        
+        raw_dists = np.vstack(all_dists)
+        raw_indices = np.vstack(all_indices)
+    else:
+        raw_dists, raw_indices = index.search(query_vectors, search_k)
+    
+    # Keep squared L2 distances (do NOT take sqrt for consistency)
+    # FAISS returns squared L2 by default - this is what we want throughout
+    distances = raw_dists
+    
+    # Handle exclude_self (robust to exact duplicates)
+    if exclude_self:
+        # Exclude ALL neighbors with distance ~ 0 (self + exact duplicates)
+        # This is critical when pooling vectors from multiple images
+        tiny = 1e-12
+        
+        # Don't modify FAISS arrays in-place - work with a view instead
+        # Create a copy for sorting to avoid corrupting GPU memory
+        distances_copy = distances.copy()
+        
+        # Mark duplicates and set to inf so they sort to end
+        is_duplicate = distances_copy <= tiny
+        distances_copy[is_duplicate] = np.inf
+        
+        # Sort by distance to get non-duplicates first
+        sort_idx = np.argsort(distances_copy, axis=1)
+        
+        # Take first k (non-duplicates will be first after filtering)
+        row_idx = np.arange(n_query)[:, None]
+        result_indices = raw_indices[row_idx, sort_idx[:, :k]]
+        result_dists = distances_copy[row_idx, sort_idx[:, :k]]
+        
+        # Replace inf back with large value for queries with insufficient non-duplicates
+        result_dists[~np.isfinite(result_dists)] = 1e10
+        
+        return result_dists, result_indices
+    
+    return distances, raw_indices
+
+
+def compute_self_radius(
+    vectors: np.ndarray,
+    k: int = 5,
+    radius_quantile: float = 0.95,
+    neighbor_agg: str = "kth",
+    use_gpu: bool = True,
+    index_factory: str = "Flat",
+    nprobe: Optional[int] = None,
+    batch_size: Optional[int] = None,
+    verbose: bool = True,
+) -> Dict[str, float]:
+    """
+    Compute self-radius: typical distance to k-th nearest neighbor within a dataset.
+    
+    Args:
+        vectors: (N, D) vectors
+        k: Number of neighbors to consider
+        radius_quantile: Quantile for radius (0.95 = p95)
+        neighbor_agg: How to aggregate k neighbors ("kth", "first", "mean", "median")
+        use_gpu: Use GPU acceleration
+        index_factory: FAISS index type
+        batch_size: Batch size for searches
+        verbose: Print progress
+        
+    Returns:
+        Dictionary with:
+            - radius: self-radius (quantile of distances)
+            - median: median distance
+            - p90: 90th percentile
+            - p95: 95th percentile
+            - mean: mean distance
+    """
+    if vectors.shape[0] < 2:
+        return {
+            'radius': float('nan'),
+            'median': float('nan'),
+            'p90': float('nan'),
+            'p95': float('nan'),
+            'mean': float('nan'),
+        }
+    
+    if verbose:
+        print(f"  Computing self-radius: {vectors.shape[0]:,} vectors, k={k}, quantile={radius_quantile}")
+    
+    # Build index
+    index = build_index(vectors, use_gpu=use_gpu, index_factory=index_factory, nprobe=nprobe, verbose=verbose)
+    
+    # Search for k+1 neighbors (including self)
+    distances, _ = compute_knn_distances(
+        index, vectors, k=k, exclude_self=True, batch_size=batch_size, verbose=verbose
+    )
+    
+    if distances.size == 0:
+        return {
+            'radius': float('nan'),
+            'median': float('nan'),
+            'p90': float('nan'),
+            'p95': float('nan'),
+            'mean': float('nan'),
+        }
+    
+    # Aggregate across k neighbors
+    if neighbor_agg in ("first", "min"):
+        sample = distances[:, 0]
+    elif neighbor_agg in ("kth", "last", "max"):
+        sample = distances[:, -1]
+    elif neighbor_agg == "mean":
+        sample = distances.mean(axis=1)
+    elif neighbor_agg == "median":
+        sample = np.median(distances, axis=1)
+    else:
+        raise ValueError(f"Unsupported neighbor_agg: {neighbor_agg}")
+    
+    # Compute statistics
+    sample = sample[np.isfinite(sample)]
+    if sample.size == 0:
+        return {
+            'radius': float('nan'),
+            'median': float('nan'),
+            'p90': float('nan'),
+            'p95': float('nan'),
+            'mean': float('nan'),
+        }
+    
+    result = {
+        'radius': float(np.quantile(sample, radius_quantile)),
+        'median': float(np.median(sample)),
+        'p90': float(np.quantile(sample, 0.90)),
+        'p95': float(np.quantile(sample, 0.95)),
+        'mean': float(np.mean(sample)),
+    }
+    
+    if verbose:
+        print(f"    Self-radius: {result['radius']:.6f} (median={result['median']:.6f}, p90={result['p90']:.6f})")
+    
+    return result
+
+
+def compute_directed_distances(
+    train_vectors: np.ndarray,
+    eval_vectors: np.ndarray,
+    k: int = 5,
+    use_gpu: bool = True,
+    index_factory: str = "Flat",
+    batch_size: Optional[int] = None,
+    verbose: bool = True,
+) -> Dict[str, np.ndarray]:
+    """
+    Compute directed nearest-neighbor distances between train and eval.
+    
+    Args:
+        train_vectors: (N_train, D) training vectors
+        eval_vectors: (N_eval, D) eval vectors
+        k: Number of neighbors to search
+        use_gpu: Use GPU acceleration
+        index_factory: FAISS index type
+        batch_size: Batch size for searches
+        verbose: Print progress
+        
+    Returns:
+        Dictionary with:
+            - eval_to_train: (N_eval, k) distances from eval to nearest train
+            - train_to_eval: (N_train, k) distances from train to nearest eval
+    """
+    if verbose:
+        print(f"  Computing directed distances: train={train_vectors.shape[0]:,}, eval={eval_vectors.shape[0]:,}, k={k}")
+    
+    # Build indices
+    if verbose:
+        print(f"  Building train index...")
+    train_index = build_index(train_vectors, use_gpu=use_gpu, index_factory=index_factory, verbose=verbose)
+    
+    if verbose:
+        print(f"  Building eval index...")
+    eval_index = build_index(eval_vectors, use_gpu=use_gpu, index_factory=index_factory, verbose=verbose)
+    
+    # Compute eval → train distances
+    if verbose:
+        print(f"  Computing eval→train distances...")
+    eval_to_train, _ = compute_knn_distances(
+        train_index, eval_vectors, k=k, exclude_self=False, batch_size=batch_size, verbose=verbose
+    )
+    
+    # Compute train → eval distances
+    if verbose:
+        print(f"  Computing train→eval distances...")
+    train_to_eval, _ = compute_knn_distances(
+        eval_index, train_vectors, k=k, exclude_self=False, batch_size=batch_size, verbose=verbose
+    )
+    
+    if verbose:
+        print(f"  Directed distances complete")
+    
+    return {
+        'eval_to_train': eval_to_train,
+        'train_to_eval': train_to_eval,
+    }
+
+
+def distance_statistics(distances: np.ndarray) -> Dict[str, float]:
+    """
+    Compute summary statistics for distance array.
+    
+    Args:
+        distances: (N,) or (N, k) distance array
+        
+    Returns:
+        Dictionary with mean, median, p90, p95, min, max
+    """
+    if distances.size == 0:
+        return {
+            'mean': float('nan'),
+            'median': float('nan'),
+            'p90': float('nan'),
+            'p95': float('nan'),
+            'min': float('nan'),
+            'max': float('nan'),
+        }
+    
+    # Flatten if needed
+    dists_flat = distances.flatten()
+    dists_flat = dists_flat[np.isfinite(dists_flat)]
+    
+    if dists_flat.size == 0:
+        return {
+            'mean': float('nan'),
+            'median': float('nan'),
+            'p90': float('nan'),
+            'p95': float('nan'),
+            'min': float('nan'),
+            'max': float('nan'),
+        }
+    
+    return {
+        'mean': float(np.mean(dists_flat)),
+        'median': float(np.median(dists_flat)),
+        'p90': float(np.quantile(dists_flat, 0.90)),
+        'p95': float(np.quantile(dists_flat, 0.95)),
+        'min': float(np.min(dists_flat)),
+        'max': float(np.max(dists_flat)),
+    }

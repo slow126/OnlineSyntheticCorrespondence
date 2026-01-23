@@ -1,27 +1,48 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LOG_DIR="analysis/full_mmd_coverage_logs"
+# MMD Pipeline v2.0 - Full Run
+# Aligned with coverage pipeline v2.0
+
+LOG_DIR="analysis/mmd_v2_logs"
 mkdir -p "$LOG_DIR"
 
 export CUDA_VISIBLE_DEVICES=1
-python scripts/calculate_flow_mmd.py \
-  --config src/configs/mmd_configs/flow_mmd_config_full.yaml \
-  |& tee "$LOG_DIR/flow_mmd_full.log"
 
-python scripts/calculate_feature_mmd.py \
-  --config src/configs/mmd_configs/feature_mmd_config_full.yaml \
-  |& tee "$LOG_DIR/feature_mmd_full.log"
+echo "========================================="
+echo "MMD Pipeline v2.0 - Starting"
+echo "========================================="
+echo ""
 
-python scripts/calculate_feature_mmd.py \
-  --config src/configs/mmd_configs/feature_mmd_config_dino_full.yaml \
-  |& tee "$LOG_DIR/dino_mmd_full.log"
+# Run Flow MMD (raw flow space, normalized)
+echo "Running Flow MMD (flow space, normalized)..."
+python -u scripts/calculate_mmd_v2.py \
+  --config src/configs/mmd_configs/mmd_flow_v2.yaml \
+  |& tee "$LOG_DIR/mmd_flow_v2.log"
 
-python scripts/calculate_coverage_faiss.py \
-  --config src/configs/coverage_configs/coverage_faiss_flow_full.yaml \
-  |& tee "$LOG_DIR/coverage_flow_full.log"
+# # Run ResNet MMD (with PCA + L2 norm)
+# echo ""
+# echo "Running ResNet MMD..."
+# python -u scripts/calculate_mmd_v2.py \
+#   --config src/configs/mmd_configs/mmd_resnet_v2.yaml \
+#   |& tee "$LOG_DIR/mmd_resnet_v2.log"
 
-python scripts/calculate_coverage_faiss.py \
-  --config src/configs/coverage_configs/coverage_faiss_dino_full.yaml \
-  |& tee "$LOG_DIR/coverage_dino_full.log"
-
+# Run DINO MMD (with PCA + L2 norm)
+echo ""
+echo "Running DINO MMD..."
+python -u scripts/calculate_mmd_v2.py \
+  --config src/configs/mmd_configs/mmd_dino_v2.yaml \
+  |& tee "$LOG_DIR/mmd_dino_v2.log"
+echo ""
+echo "========================================="
+echo "All MMD runs complete!"
+echo "========================================="
+echo ""
+echo "Results:"
+echo "  - Flow:   analysis/mmd_v2_flow_joint.csv"
+echo "  - ResNet: analysis/mmd_v2_resnet.csv"
+echo "  - DINO:   analysis/mmd_v2_dino.csv"
+echo ""
+echo "Logs:"
+echo "  - $LOG_DIR/"
+echo ""

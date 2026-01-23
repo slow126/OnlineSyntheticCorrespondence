@@ -82,7 +82,9 @@ def parse_checkpoint_name(name):
     condition = "unknown"
     mix_ratio = None
 
-    if text.startswith("synthetic"):
+    if "synthetic_2d" in text or "synthetic2d" in text or "synthetic2dwarp" in text or "synthetic_2dwarp" in text:
+        condition = "synthetic_2dwarp"
+    elif text.startswith("synthetic"):
         condition = "synthetic_only"
     elif text.startswith("imagenet2dwarp") or text.startswith("2dwarp"):
         condition = "2dwarp_only"
@@ -132,6 +134,8 @@ def format_mix_label(condition, mix_ratio, name):
         return "SPAIR only"
     if condition == "synthetic_only":
         return "Synthetic only"
+    if condition == "synthetic_2dwarp":
+        return "Synthetic 2D Warp only"
     if condition == "2dwarp_only":
         return "2D Warp only"
     if condition == "spair_synthetic":
@@ -166,6 +170,7 @@ def sort_key(condition, mix_ratio, name):
         "spair_2dwarp": 2,
         "synthetic_only": 3,
         "2dwarp_only": 4,
+        "synthetic_2dwarp": 5,
     }
     base = cond_order.get(condition, 9)
     if condition == "spair_only":
@@ -220,6 +225,29 @@ def aggregate(df):
     return agg
 
 
+def build_raw_table(df):
+    rows = []
+    for _, row in df.iterrows():
+        condition, mix_ratio, model_type, pretrained, freeze = parse_checkpoint_name(
+            row["checkpoint_name"]
+        )
+        label = format_mix_label(condition, mix_ratio, row["checkpoint_name"])
+        group = encoder_group_label(model_type, pretrained, freeze)
+        rows.append({
+            "benchmark": row["benchmark"],
+            "checkpoint_name": row["checkpoint_name"],
+            "encoder_group": group,
+            "condition": condition,
+            "mix_ratio": mix_ratio,
+            "label": label,
+            "mean_tv": row["mean_tv"],
+            "mean_laplacian": row["mean_laplacian"],
+            "best_pck": row.get("best_pck"),
+            "n": 1,
+        })
+    return pd.DataFrame(rows)
+
+
 def plot_metrics(df, benchmark, output_path, dual_pck=False):
     bench_df = df[df["benchmark"] == benchmark].copy()
     if bench_df.empty:
@@ -237,6 +265,7 @@ def plot_metrics(df, benchmark, output_path, dual_pck=False):
         "spair_2dwarp": "#ff7f0e",
         "synthetic_only": "#1f77b4",
         "2dwarp_only": "#9467bd",
+        "synthetic_2dwarp": "#8c564b",
     }
 
     fig, axes = plt.subplots(len(groups), 2, figsize=(16, 4 * len(groups)))
@@ -339,7 +368,7 @@ def write_table(df, benchmark, output_path):
         return
 
     table_df = bench_df.sort_values(["encoder_group", "sort_key"]).copy()
-    table_df = table_df[[
+    table_cols = [
         "encoder_group",
         "condition",
         "mix_ratio",
@@ -349,7 +378,10 @@ def write_table(df, benchmark, output_path):
         "mean_laplacian",
         "std_laplacian",
         "n",
-    ]]
+    ]
+    if "mean_pck" in table_df.columns:
+        table_cols += ["mean_pck", "std_pck"]
+    table_df = table_df[table_cols]
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     table_df.to_csv(output_path, index=False)
@@ -505,7 +537,14 @@ def main():
     table_output = args.table_output
     if not table_output:
         table_output = str(Path(args.output).with_suffix("")) + "_table.csv"
-    write_table(agg, args.benchmark, table_output)
+    if "checkpoint_name" in df.columns:
+        raw_table = build_raw_table(df)
+        raw_table = raw_table[raw_table["benchmark"] == args.benchmark]
+        raw_table.to_csv(table_output, index=False)
+        agg_table_output = str(Path(table_output).with_suffix("")) + "_agg.csv"
+        write_table(agg, args.benchmark, agg_table_output)
+    else:
+        write_table(agg, args.benchmark, table_output)
     summary_output = args.summary_output
     if not summary_output:
         summary_output = str(Path(args.output).with_suffix("")) + "_summary.txt"

@@ -27,7 +27,8 @@ flow_features:
 # For comparing raw flow vectors as [x, y, dx, dy] from flow_full
 flow_vectors:
   input_dim: 4  # [x, y, dx, dy]
-  sigmas: [1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0]
+  # Log-ish spacing in normalized units for 512x512 (sigma_px * 2/512).
+  sigmas: [0.001953125, 0.0029296875, 0.00390625, 0.005859375, 0.0078125, 0.01171875, 0.015625, 0.0234375, 0.03125, 0.046875, 0.0625, 0.09375, 0.125, 0.1875, 0.25]
   # Multi-scale RBF bandwidths
   features_per_sigma: 256  # RFF features per sigma (total: 256 features)
   seed: 42

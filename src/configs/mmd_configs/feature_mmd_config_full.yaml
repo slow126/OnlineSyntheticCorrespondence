@@ -1,5 +1,9 @@
 encoder: resnet101
 datasets:
+# FlyingThings first for fast failure detection
+- name: flyingthings
+  split: train
+
 - name: sintel
   split: train
 
@@ -60,8 +64,9 @@ datasets:
 - name: spair
   split: train
 
+# FlyingThings test for fast failure detection
 - name: flyingthings
-  split: train
+  split: test
 
 - name: pointodyssey
   split: test
@@ -82,9 +87,6 @@ datasets:
   split: test
 
 - name: pfwillow
-  split: test
-
-- name: flyingthings
   split: test
 
 - name: tss
@@ -246,7 +248,7 @@ dataset_overrides:
     datapath: /home/spencer/Data/correspondence/kitti
     normalize_images: true
   flyingthings:
-    datapath: /home/spencer/Data/FlyingThings3D_10k/FlyingThings3D
+    datapath: /home/spencer/Data/FlyingThings3D_10k
     normalize_images: true
   tss:
     datapath: /home/spencer/Data/correspondence/TSS_CVPR2016

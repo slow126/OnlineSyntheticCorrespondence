@@ -647,6 +647,16 @@ def main():
         default="analysis/leakage_free/within_benchmark_slopes.csv",
         help="Within-benchmark slope CSV.",
     )
+    parser.add_argument(
+        "--within-benchmark-slopes-univariate",
+        default="analysis/leakage_free/within_benchmark_slopes_univariate.csv",
+        help="Within-benchmark univariate slope CSV.",
+    )
+    parser.add_argument(
+        "--within-train-dataset-slopes-univariate",
+        default="analysis/leakage_free/within_train_dataset_slopes_univariate.csv",
+        help="Within-train-dataset univariate slope CSV.",
+    )
     args = parser.parse_args()
 
     output_dir_path = Path(args.output_dir)
@@ -673,6 +683,13 @@ def main():
     _swap_default("loto_rank_summary", "prediction_loto_rank_summary.csv")
     _swap_default("loto_mixed_summary", "prediction_loto_mixed_summary.csv")
     _swap_default("within_benchmark_slopes", "within_benchmark_slopes.csv")
+    _swap_default(
+        "within_benchmark_slopes_univariate", "within_benchmark_slopes_univariate.csv"
+    )
+    _swap_default(
+        "within_train_dataset_slopes_univariate",
+        "within_train_dataset_slopes_univariate.csv",
+    )
 
     _resolve_path("lobo_rows", "prediction_lobo_rows.csv")
     _resolve_path("lobo_rank_detail", "prediction_lobo_rank_detail.csv")
@@ -1364,6 +1381,101 @@ def main():
 
             _write_family_slope_summary("flow family", flow_family)
             _write_family_slope_summary("semantic family", semantic_family)
+
+    uni_slopes_path = Path(args.within_benchmark_slopes_univariate)
+    if uni_slopes_path.exists():
+        uni_df = pd.read_csv(uni_slopes_path)
+        if not uni_df.empty:
+            flow_family = ["kitti2012", "kitti2015", "middlebury", "flyingthings", "pointodyssey"]
+            semantic_family = ["spair", "pfpascal", "pfwillow", "tss"]
+            out_lines.append("")
+            out_lines.append("Within-benchmark slope consistency (univariate OLS):")
+            for pred in [p for p in predictors if p in uni_df.columns]:
+                signs = uni_df[pred].dropna()
+                if signs.empty:
+                    continue
+                pos = int((signs > 0).sum())
+                neg = int((signs < 0).sum())
+                out_lines.append(f"  {pred}: +{pos} / -{neg} across benchmarks")
+
+            def _write_family_uni_summary(title, benchmarks):
+                family_df = uni_df[uni_df["benchmark"].isin(benchmarks)]
+                if family_df.empty:
+                    return
+                out_lines.append("")
+                out_lines.append(f"Within-benchmark slope consistency (univariate, {title}):")
+                for pred in [p for p in predictors if p in family_df.columns]:
+                    signs = family_df[pred].dropna()
+                    if signs.empty:
+                        continue
+                    pos = int((signs > 0).sum())
+                    neg = int((signs < 0).sum())
+                    out_lines.append(f"  {pred}: +{pos} / -{neg} across benchmarks")
+
+            _write_family_uni_summary("flow family", flow_family)
+            _write_family_uni_summary("semantic family", semantic_family)
+
+    train_uni_path = Path(args.within_train_dataset_slopes_univariate)
+    if train_uni_path.exists():
+        train_uni_df = pd.read_csv(train_uni_path)
+        if not train_uni_df.empty:
+            out_lines.append("")
+            out_lines.append("Within-train-dataset slope consistency (univariate OLS):")
+            for pred in [p for p in predictors if p in train_uni_df.columns]:
+                signs = train_uni_df[pred].dropna()
+                if signs.empty:
+                    continue
+                pos = int((signs > 0).sum())
+                neg = int((signs < 0).sum())
+                out_lines.append(f"  {pred}: +{pos} / -{neg} across train datasets")
+
+    def _format_coeff_table(df_in, title, group_col):
+        if df_in is None or df_in.empty:
+            return
+        cols = [group_col] + [p for p in predictors if p in df_in.columns]
+        if len(cols) <= 1:
+            return
+        out_lines.append("")
+        out_lines.append(title + ":")
+        def _fmt_value(val):
+            if pd.isna(val):
+                return "nan"
+            return f"{val:+.3f}"
+
+        rows = []
+        for _, row in df_in[cols].iterrows():
+            values = [str(row[group_col])]
+            for pred in cols[1:]:
+                values.append(_fmt_value(row.get(pred, np.nan)))
+            rows.append(values)
+
+        widths = [len(col) for col in cols]
+        for row in rows:
+            widths = [max(widths[i], len(str(cell))) for i, cell in enumerate(row)]
+
+        def _format_row(values):
+            return "  " + " | ".join(
+                str(val).ljust(widths[i]) for i, val in enumerate(values)
+            )
+
+        out_lines.append(_format_row(cols))
+        out_lines.append(
+            "  " + "-+-".join("-" * widths[i] for i in range(len(widths)))
+        )
+        for row in rows:
+            out_lines.append(_format_row(row))
+
+    if slopes_path.exists() and "slopes_df" in locals() and not slopes_df.empty:
+        _format_coeff_table(slopes_df, "Per-benchmark slopes (multivariate coefficients)", "benchmark")
+    if uni_slopes_path.exists() and "uni_df" in locals() and not uni_df.empty:
+        _format_coeff_table(uni_df, "Per-benchmark slopes (univariate coefficients)", "benchmark")
+    if train_uni_path.exists() and "train_uni_df" in locals() and not train_uni_df.empty:
+        group_col = "train_dataset_group" if "train_dataset_group" in train_uni_df.columns else "train_dataset"
+        _format_coeff_table(
+            train_uni_df,
+            "Per-train-dataset slopes (univariate coefficients)",
+            group_col,
+        )
 
     out_lines.append("")
     out_lines.append("Takeaways (auto-generated):")

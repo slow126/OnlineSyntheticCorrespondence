@@ -14,15 +14,17 @@ from .metrics import (
 )
 
 
-def extract_flow_vectors_from_batch(batch: Dict[str, Any]) -> Optional[np.ndarray]:
+def extract_flow_vectors_from_batch(batch: Dict[str, Any], return_per_image: bool = False, max_flow_magnitude: Optional[float] = None):
     """
     Extract flow vectors as [x, y, dx, dy] from batch.
     
     Args:
         batch: Batch dict with 'flow_full' or 'flow' key
+        return_per_image: If True, return list of per-image arrays instead of stacked
     
     Returns:
-        (N, 4) array of flow vectors, or None if no valid flows
+        If return_per_image=False: (N, 4) array of flow vectors, or None if no valid flows
+        If return_per_image=True: List of (N_i, 4) arrays (one per image), or None if no valid flows
     """
     # Get flow_full from batch
     if 'flow_full' in batch:
@@ -57,12 +59,24 @@ def extract_flow_vectors_from_batch(batch: Dict[str, Any]) -> Optional[np.ndarra
         dx_flat = dx.flatten()
         dy_flat = dy.flatten()
         
-        # Filter invalid flows (inf/nan and zero flows)
-        valid_mask = (
-            np.isfinite(dx_flat) & 
-            np.isfinite(dy_flat) & 
-            ~((dx_flat == 0) & (dy_flat == 0))
-        )
+        # Filter invalid flows (inf/nan, zero flows, and extreme values)
+        # Optical flow magnitude should be <= image diagonal (pixels can't move farther than that)
+        if max_flow_magnitude is None:
+            # Default: no magnitude filtering (only inf/nan/zero)
+            valid_mask = (
+                np.isfinite(dx_flat) & 
+                np.isfinite(dy_flat) & 
+                ~((dx_flat == 0) & (dy_flat == 0))
+            )
+        else:
+            # Filter by magnitude (reject flow > image diagonal)
+            valid_mask = (
+                np.isfinite(dx_flat) & 
+                np.isfinite(dy_flat) & 
+                ~((dx_flat == 0) & (dy_flat == 0)) &
+                (np.abs(dx_flat) <= max_flow_magnitude) &
+                (np.abs(dy_flat) <= max_flow_magnitude)
+            )
         
         # Stack to [N, 4] format: [x, y, dx, dy]
         if valid_mask.any():
@@ -73,11 +87,19 @@ def extract_flow_vectors_from_batch(batch: Dict[str, Any]) -> Optional[np.ndarra
                 dy_flat[valid_mask]
             ], axis=1).astype(np.float32)
             all_vectors.append(flow_vectors)
+        else:
+            # Add empty array to maintain batch structure if return_per_image=True
+            if return_per_image:
+                all_vectors.append(np.empty((0, 4), dtype=np.float32))
     
     if len(all_vectors) == 0:
         return None
     
-    return np.vstack(all_vectors)
+    # Return per-image or stacked
+    if return_per_image:
+        return all_vectors
+    else:
+        return np.vstack(all_vectors) if all_vectors else None
 
 
 def build_coreset_from_dataloader(

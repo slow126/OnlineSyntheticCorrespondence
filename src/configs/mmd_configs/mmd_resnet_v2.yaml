@@ -1,0 +1,183 @@
+# MMD Pipeline v2.0 - ResNet Representation
+# Aligned with coverage_faiss_resnet_v2.yaml
+
+representation: resnet
+batch_size: 8
+num_workers: 4
+
+# Vector sampling
+sampling:
+  max_vectors: 16000000  # 16M feature vectors
+  flow_per_image_max: 2000  # Not used for features
+  batch_limit: 1000
+  seed: 42
+
+# Alpha calibration (disabled for features)
+calibration:
+  enabled: false
+
+# Flow normalization (disabled for features)
+flow_normalization:
+  enabled: false
+
+# PCA configuration (same as coverage!)
+pca:
+  enabled: true
+  output_dim: 256
+  fit_on: train
+  whiten: false
+  l2_normalize: true  # Important: same as coverage
+  max_train_vectors: 500000
+  use_cached: true  # Prefer cached PCA+L2 vectors when available
+
+# MMD configuration
+mmd_config_path: src/configs/mmd_configs/mmd_config.yaml
+mmd_preset: resnet_features  # Will be updated to dim=256 after PCA
+mmd_batch_size: 20000  # Stream vectors in chunks to avoid GPU OOM
+
+# Cache configuration (shared with coverage!)
+cache:
+  dir: /mnt/nvme_1tb_b/coverage_vectors
+  mode: read_write
+  format: npy
+  mmap: true
+
+# Output configuration
+output:
+  results_file: analysis/mmd_v2_resnet.csv
+
+# Dataset parameters (same as coverage)
+dataset_params:
+  size: [512, 512]
+  downsample_flow: 32
+  max_kps: null
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: true  # ResNet expects normalized images
+  kitti_val_use_full_training: true
+
+# Dataset overrides (same as coverage)
+dataset_overrides:
+  sintel:
+    sintel_root: /home/spencer/Data
+    normalize_images: true
+  spair:
+    datapath: ./models/Datasets_CATs
+    normalize_images: true
+  pfpascal:
+    datapath: ./models/Datasets_CATs
+    normalize_images: true
+  pfwillow:
+    datapath: ./models/Datasets_CATs
+    normalize_images: true
+  synthetic:
+    geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
+    processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
+    normalize_images: true
+    device: cuda
+  synthetic_2d_warp:
+    geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
+    processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
+    normalize_images: true
+    synthetic_flow_warp: true
+    synthetic_flow_warp_swap: true
+    device: cuda
+  imagenet2dwarp:
+    datapath: hf://ILSVRC/imagenet-1k
+    hf_streaming: false
+    hf_max_samples: 5000
+    hf_cache_dir: /home/spencer/.cache/huggingface/datasets
+    normalize_images: true
+    rotation_range: [-30.0, 30.0]
+    scale_range: [0.5, 2.5]
+    translation_range: [-0.1, 0.1]
+    shear_range: [-0.2, 0.2]
+    cache_warp_params: true
+    cache_dir: ./cache/imagenet2dwarp
+    seed: 42
+  pointodyssey:
+    dataset_location: /home/spencer/Data/PointOdyssey
+    normalize_images: true
+    pointodyssey_sequence_length: 2
+    pointodyssey_num_pts_to_track: 32
+    use_all_valid: true
+  kitti2012:
+    datapath: /home/spencer/Data/correspondence/kitti
+    normalize_images: true
+  kitti2015:
+    datapath: /home/spencer/Data/correspondence/kitti
+    normalize_images: true
+  flyingthings:
+    datapath: /home/spencer/Data/FlyingThings3D_10k
+    normalize_images: true
+  tss:
+    datapath: /home/spencer/Data/correspondence/TSS_CVPR2016
+    normalize_images: true
+  middlebury:
+    datapath: /home/spencer/Data/middlebury/all
+    normalize_images: true
+
+# Dataset list (same as coverage - with is_eval flags!)
+datasets:
+  # Training sets
+  - name: flyingthings
+    split: train
+    is_eval: false
+  
+  - name: imagenet2dwarp
+    split: train
+    is_eval: false
+  
+  - name: synthetic
+    split: train
+    is_eval: false
+  
+  - name: spair
+    split: train
+    is_eval: false
+  
+  - name: pointodyssey
+    split: train
+    is_eval: false
+  
+  - name: sintel
+    split: train
+    is_eval: false
+  
+  # Evaluation sets
+  - name: flyingthings
+    split: test
+    is_eval: true
+  
+  - name: kitti2015
+    split: val
+    is_eval: true
+  
+  - name: kitti2012
+    split: val
+    is_eval: true
+  
+  - name: spair
+    split: test
+    is_eval: true
+  
+  - name: pfpascal
+    split: test
+    is_eval: true
+  
+  - name: pfwillow
+    split: test
+    is_eval: true
+  
+  - name: pointodyssey
+    split: test
+    is_eval: true
+  
+  - name: tss
+    split: val
+    is_eval: true
+  
+  - name: middlebury
+    split: val
+    is_eval: true

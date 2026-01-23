@@ -17,17 +17,45 @@ pca:
   max_train_vectors: 200000
   whiten: false
 faiss:
-  index_factory: HNSW32
+  index_factory: IVF4096,Flat
   metric: l2
   use_gpu: true
-  nprobe: 16
+  nprobe: 64
+normalization:
+  mode: global_block_alpha  # Options: 'none', 'train_zscore', 'global_block_alpha'
+  # none: No normalization (just [-1,1] pixel coords)
+  # train_zscore: Per-train whitening (each train defines its own metric - hard to compare across trains)
+  # global_block_alpha: Global α-balancing [x, y, α·dx, α·dy] for cross-train comparability
+  apply_to:
+  - flow  # Apply normalization to flow representation
+  eps: 1.0e-6  # Small epsilon to avoid division by zero
 coverage:
-  k: 1
+  k: 5  # Use 5-NN for coverage (more robust than 1-NN)
+  self_radius_k: 5  # Use 5th NN for robust self-radius estimation
   radius_quantile: 0.95
+  neighbor_agg: first
   kl_method: knn
   kl_knn_k: 20
   kl_bins: 50
   kl_eps: 1.0e-6
+cache:
+  dir: /mnt/nvme_1tb_b/coverage_vectors
+  mode: read_write  # 'read', 'write', 'read_write', or 'off'
+  format: npy
+  mmap: true
+  mix_from_cache: true
+  pairwise: true
+  # AUTOMATIC CACHING (saved in same directory):
+  # 1. Vectors: {dataset}_{split}_{repr}.npy
+  # 2. Global α: global_alpha_{repr}.npz (computed once, validated by train set list)
+  # 3. Self-radii: radius_{dataset}_{split}_{repr}_{metric}_{mode}_k{k}_q{q}_{agg}.npy
+  #
+  # SPEEDUP WITH global_block_alpha:
+  #   - 1st run: Compute α (~2s) + all radii (~5-10 min)
+  #   - 2nd+ runs: Load α + all radii → only 1-NN searches (~10-15 min total)
+  #   - Eval radii are globally cached (not train-specific!)
+  #
+  # Delete caches if you change: k, quantile, neighbor_agg, normalization mode, or train set list
 output:
   results_file: coverage_faiss_flow_results_fast.csv
 dataset_params:
@@ -92,7 +120,7 @@ dataset_overrides:
     datapath: /home/spencer/Data/correspondence/kitti
     normalize_images: true
   flyingthings:
-    datapath: /home/spencer/Data/FlyingThings3D_10k/FlyingThings3D
+    datapath: /home/spencer/Data/FlyingThings3D_10k
     normalize_images: true
   tss:
     datapath: /home/spencer/Data/correspondence/TSS_CVPR2016
@@ -101,6 +129,13 @@ dataset_overrides:
     datapath: /home/spencer/Data/middlebury/all
     normalize_images: true
 datasets:
+# FlyingThings first for fast failure detection
+- name: flyingthings
+  split: train
+  representation: flow
+
+  is_eval: false
+  output: coresets/flyingthings_train_flow.pt
 - name: imagenet2dwarp
   split: train
   representation: flow
@@ -214,18 +249,19 @@ datasets:
 
   is_eval: false
   output: coresets/spair_train_flow.pt
-- name: flyingthings
-  split: train
-  representation: flow
-
-  is_eval: false
-  output: coresets/flyingthings_train_flow.pt
 - name: pointodyssey
   split: train
   representation: flow
 
   is_eval: false
   output: coresets/pointodyssey_train_flow.pt
+# FlyingThings test first for fast failure detection
+- name: flyingthings
+  split: test
+  representation: flow
+
+  is_eval: true
+  output: coresets/flyingthings_val_flow.pt
 - name: kitti2015
   split: val
   representation: flow
@@ -262,12 +298,6 @@ datasets:
 
   is_eval: true
   output: coresets/pointodyssey_val_flow.pt
-- name: flyingthings
-  split: test
-  representation: flow
-
-  is_eval: true
-  output: coresets/flyingthings_val_flow.pt
 - name: tss
   split: val
   representation: flow

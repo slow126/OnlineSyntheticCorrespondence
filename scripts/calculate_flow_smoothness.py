@@ -359,12 +359,14 @@ def run_inference_on_benchmark(
                 if pred_flow.shape[-2:] != gt_flow.shape[-2:]:
                     pred_flow = resize_flow(pred_flow, gt_flow.shape[-2], gt_flow.shape[-1])
                 
-                # Handle invalid flow (inf values)
-                valid_mask = torch.isfinite(gt_flow).all(dim=1, keepdim=True)
+                # Handle invalid flow (inf/NaN and optionally zero-flow pixels)
+                finite_mask = torch.isfinite(gt_flow).all(dim=1, keepdim=True)
+                # Treat exact (0,0) flow as invalid (common convention in datasets)
+                nonzero_mask = gt_flow.abs().sum(dim=1, keepdim=True) > 1e-6
+                valid_mask = finite_mask & nonzero_mask
                 if torch.isinf(gt_flow).any() or torch.isnan(gt_flow).any():
-                    # Create mask for valid pixels
-                    # Only keep valid regions
-                    pred_flow = pred_flow * valid_mask.float()
+                    # Only keep finite regions for downstream metrics
+                    pred_flow = pred_flow * finite_mask.float()
                     gt_flow = torch.where(torch.isfinite(gt_flow), gt_flow, torch.zeros_like(gt_flow))
             else:
                 gt_flow = None
@@ -452,8 +454,15 @@ def main():
         '--checkpoints',
         type=str,
         nargs='+',
-        required=True,
-        help='Paths to checkpoint files (.pth) or CSV file with checkpoint_path column'
+        required=False,
+        help='Checkpoint paths or snapshot dirs (use --use-checkpoint-paths for explicit checkpoints)'
+    )
+    parser.add_argument(
+        '--snapshot-dirs',
+        type=str,
+        nargs='+',
+        default=None,
+        help='Explicit snapshot directories to search for best checkpoints'
     )
     parser.add_argument(
         '--benchmarks',
@@ -516,10 +525,42 @@ def main():
     
     args = parser.parse_args()
     
+    def _is_snapshot_dir(path: Path) -> bool:
+        if not path.exists() or not path.is_dir():
+            return False
+        if (path / "validation_results.csv").exists():
+            return True
+        if list(path.glob("*.pth")):
+            return True
+        snapshots_subdir = path / "snapshots"
+        if snapshots_subdir.exists() and list(snapshots_subdir.glob("*.pth")):
+            return True
+        return False
+
+    def _expand_snapshot_dirs(dirs: List[str]) -> List[str]:
+        expanded = []
+        for d in dirs:
+            root = Path(d)
+            if _is_snapshot_dir(root):
+                expanded.append(str(root))
+                continue
+            if not root.exists() or not root.is_dir():
+                expanded.append(str(root))
+                continue
+            subdirs = [p for p in root.iterdir() if p.is_dir()]
+            matches = [str(p) for p in subdirs if _is_snapshot_dir(p)]
+            if matches:
+                expanded.extend(matches)
+            else:
+                expanded.append(str(root))
+        return list(dict.fromkeys(expanded))
+
     # Parse snapshot directories or explicit checkpoint paths
     checkpoint_items = None
     snapshot_dirs = []
     if args.use_checkpoint_paths:
+        if not args.checkpoints:
+            raise ValueError("--checkpoints is required when using --use-checkpoint-paths")
         checkpoint_items = []
         if len(args.checkpoints) == 1 and args.checkpoints[0].endswith('.csv'):
             df = pd.read_csv(args.checkpoints[0])
@@ -546,17 +587,32 @@ def main():
 
         snapshot_dirs = list({item['snapshot_dir'] for item in checkpoint_items})
     else:
-        if len(args.checkpoints) == 1 and args.checkpoints[0].endswith('.csv'):
+        if args.snapshot_dirs:
+            snapshot_dirs = args.snapshot_dirs
+        elif not args.checkpoints:
+            raise ValueError("Provide --snapshot-dirs or --checkpoints")
+        if args.checkpoints and len(args.checkpoints) == 1 and args.checkpoints[0].endswith('.csv'):
             # Load from CSV
             df = pd.read_csv(args.checkpoints[0])
             if 'snapshot_dir' in df.columns:
                 snapshot_dirs = df['snapshot_dir'].dropna().unique().tolist()
             else:
                 raise ValueError("CSV must have 'snapshot_dir' column")
-        else:
-            # Assume args are checkpoint paths, extract parent directories
-            snapshot_dirs = list(set([str(Path(p).parent) for p in args.checkpoints]))
+        elif args.checkpoints:
+            # Interpret args as snapshot dirs or checkpoint paths
+            inferred_dirs = []
+            for item in args.checkpoints:
+                path = Path(item)
+                if path.is_dir():
+                    inferred_dirs.append(str(path))
+                else:
+                    inferred_dirs.append(str(path.parent))
+            snapshot_dirs = list(set(inferred_dirs))
     
+    # Expand snapshot directories (if they contain subdirectories of runs)
+    if args.snapshot_dirs:
+        snapshot_dirs = _expand_snapshot_dirs(snapshot_dirs)
+
     # Filter out non-existent directories
     valid_snapshot_dirs = [d for d in snapshot_dirs if Path(d).exists()]
     if len(valid_snapshot_dirs) < len(snapshot_dirs):

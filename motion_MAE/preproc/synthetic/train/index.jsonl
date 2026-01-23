@@ -1,0 +1,4 @@
+{"file": "000000.pt", "n_valid": 16159, "orig_h": 512, "orig_w": 512, "dataset": "synthetic", "sample_id": "000000", "max_mag": 0.3459016978740692}
+{"file": "000001.pt", "n_valid": 24485, "orig_h": 512, "orig_w": 512, "dataset": "synthetic", "sample_id": "000001", "max_mag": 0.42987388372421265}
+{"file": "000002.pt", "n_valid": 30953, "orig_h": 512, "orig_w": 512, "dataset": "synthetic", "sample_id": "000002", "max_mag": 0.15423274040222168}
+{"file": "000003.pt", "n_valid": 13838, "orig_h": 512, "orig_w": 512, "dataset": "synthetic", "sample_id": "000003", "max_mag": 0.4145987927913666}

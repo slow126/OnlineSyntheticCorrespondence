@@ -89,6 +89,20 @@ def _run_calculate_coverage_faiss(step: Dict[str, Any], python_bin: str, dry_run
         _run_command(cmd, dry_run, cwd)
 
 
+def _run_calculate_coverage_faiss_v2(step: Dict[str, Any], python_bin: str, dry_run: bool, cwd: Path) -> None:
+    configs = step.get("configs", [])
+    for config_path in configs:
+        cmd = [python_bin, "scripts/calculate_coverage_faiss_v2.py", "--config", config_path]
+        _run_command(cmd, dry_run, cwd)
+
+
+def _run_calculate_coverage_flow_eps(step: Dict[str, Any], python_bin: str, dry_run: bool, cwd: Path) -> None:
+    configs = step.get("configs", [])
+    for config_path in configs:
+        cmd = [python_bin, "scripts/calculate_coverage_faiss_flow_eps.py", "--config", config_path]
+        _run_command(cmd, dry_run, cwd)
+
+
 def _run_mmd(step: Dict[str, Any], python_bin: str, dry_run: bool, cwd: Path) -> None:
     configs = step.get("configs", {})
     flow_config = configs.get("flow")
@@ -148,6 +162,8 @@ STEP_HANDLERS = {
     "build_coresets": _run_build_coresets,
     "calculate_coverage": _run_calculate_coverage,
     "calculate_coverage_faiss": _run_calculate_coverage_faiss,
+    "calculate_coverage_faiss_v2": _run_calculate_coverage_faiss_v2,
+    "calculate_coverage_flow_eps": _run_calculate_coverage_flow_eps,
     "mmd": _run_mmd,
     "leakage_free_eval": _run_leakage_free_eval,
     "select_checkpoints": _run_select_checkpoints,

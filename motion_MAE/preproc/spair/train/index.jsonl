@@ -1,0 +1,4 @@
+{"file": "000000.pt", "n_valid": 83, "orig_h": 512, "orig_w": 512, "dataset": "spair", "sample_id": "000000", "max_mag": 0.46288368105888367}
+{"file": "000001.pt", "n_valid": 52, "orig_h": 512, "orig_w": 512, "dataset": "spair", "sample_id": "000001", "max_mag": 0.8401821851730347}
+{"file": "000002.pt", "n_valid": 69, "orig_h": 512, "orig_w": 512, "dataset": "spair", "sample_id": "000002", "max_mag": 0.29141417145729065}
+{"file": "000003.pt", "n_valid": 78, "orig_h": 512, "orig_w": 512, "dataset": "spair", "sample_id": "000003", "max_mag": 0.46909594535827637}

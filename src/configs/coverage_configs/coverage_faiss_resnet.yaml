@@ -16,13 +16,22 @@ pca:
   max_train_vectors: 200000
   whiten: false
 faiss:
-  index_factory: HNSW32
+  index_factory: IVF4096,Flat
   metric: cosine
   use_gpu: true
-  nprobe: 16
+  nprobe: 64
 coverage:
-  k: 1
+  k: 5  # Use 5-NN for coverage (more robust than 1-NN)
+  self_radius_k: 5  # Use 5th NN for robust self-radius estimation
   radius_quantile: 0.95
+  neighbor_agg: first
+cache:
+  dir: /mnt/nvme_1tb_b/coverage_vectors
+  mode: read_write
+  format: npy
+  mmap: true
+  mix_from_cache: true
+  pairwise: true
 output:
   results_file: coverage_faiss_resnet_results.csv
 dataset_params:
@@ -67,7 +76,7 @@ dataset_overrides:
     datapath: /home/spencer/Data/correspondence/kitti
     normalize_images: true
   flyingthings:
-    datapath: /home/spencer/Data/FlyingThings3D_10k/FlyingThings3D
+    datapath: /home/spencer/Data/FlyingThings3D_10k
     normalize_images: true
   tss:
     datapath: /home/spencer/Data/correspondence/TSS_CVPR2016
@@ -76,6 +85,13 @@ dataset_overrides:
     datapath: /home/spencer/Data/middlebury/all
     normalize_images: true
 datasets:
+# FlyingThings first for fast failure detection
+- name: flyingthings
+  split: train
+  representation: resnet
+  num_batches: 100
+  is_eval: false
+  output: coresets/flyingthings_train_resnet.pt
 - name: synthetic
   split: train
   representation: resnet
@@ -148,18 +164,19 @@ datasets:
   num_batches: 100
   is_eval: false
   output: coresets/spair_train_resnet.pt
-- name: flyingthings
-  split: train
-  representation: resnet
-  num_batches: 100
-  is_eval: false
-  output: coresets/flyingthings_train_resnet.pt
 - name: pointodyssey
   split: train
   representation: resnet
   num_batches: 100
   is_eval: false
   output: coresets/pointodyssey_train_resnet.pt
+# FlyingThings test first for fast failure detection
+- name: flyingthings
+  split: test
+  representation: resnet
+  num_batches: 100
+  is_eval: true
+  output: coresets/flyingthings_val_resnet.pt
 - name: kitti2015
   split: val
   representation: resnet
@@ -196,12 +213,6 @@ datasets:
   num_batches: 100
   is_eval: true
   output: coresets/pointodyssey_val_resnet.pt
-- name: flyingthings
-  split: test
-  representation: resnet
-  num_batches: 100
-  is_eval: true
-  output: coresets/flyingthings_val_resnet.pt
 - name: tss
   split: val
   representation: resnet

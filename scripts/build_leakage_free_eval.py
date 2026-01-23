@@ -26,6 +26,7 @@ import re
 import subprocess
 import sys
 from collections import defaultdict
+from typing import List
 from pathlib import Path
 
 import numpy as np
@@ -76,7 +77,29 @@ def normalize_dataset_name(name):
     if name is None:
         return None
     name = str(name).strip().lower()
-    return name.replace('+', '_')
+    name = name.replace('+', '_')
+    if name.endswith("_cats"):
+        name = name[:-5]
+    return name
+
+
+def parse_eps_values(raw: str) -> List[str]:
+    if raw is None:
+        return []
+    values = []
+    for token in str(raw).split(","):
+        token = token.strip()
+        if not token:
+            continue
+        if token.endswith("px"):
+            token = token[:-2]
+        try:
+            value = float(token)
+        except ValueError:
+            values.append(token)
+            continue
+        values.append(f"{value:g}".replace(".", "p"))
+    return values
 
 
 def add_explicit_coverage_columns(df):
@@ -310,11 +333,19 @@ def load_coverage_lookup(csv_path, allow_unsplit=True):
     try:
         with path.open("r") as f:
             reader = csv.DictReader(f)
+            fieldnames = set(reader.fieldnames or [])
+            use_flow_eps_format = "train_dataset" in fieldnames and "eval_dataset" in fieldnames
             for row in reader:
-                train_dataset = normalize_dataset_name(row.get("dataset1"))
-                train_split = normalize_dataset_name(row.get("split1"))
-                eval_dataset = normalize_dataset_name(row.get("dataset2"))
-                eval_split = normalize_dataset_name(row.get("split2"))
+                if use_flow_eps_format:
+                    train_dataset = normalize_dataset_name(row.get("train_dataset"))
+                    train_split = normalize_dataset_name(row.get("train_split"))
+                    eval_dataset = normalize_dataset_name(row.get("eval_dataset"))
+                    eval_split = normalize_dataset_name(row.get("eval_split"))
+                else:
+                    train_dataset = normalize_dataset_name(row.get("dataset1"))
+                    train_split = normalize_dataset_name(row.get("split1"))
+                    eval_dataset = normalize_dataset_name(row.get("dataset2"))
+                    eval_split = normalize_dataset_name(row.get("split2"))
 
                 if not train_dataset or not eval_dataset:
                     continue
@@ -341,6 +372,18 @@ def load_coverage_lookup(csv_path, allow_unsplit=True):
                 mean_train_to_eval = _parse_float(row, "mean_nn_train_to_eval")
                 median_train_to_eval = _parse_float(row, "median_nn_train_to_eval")
                 p90_train_to_eval = _parse_float(row, "p90_nn_train_to_eval")
+                if np.isnan(mean_eval_to_train):
+                    mean_eval_to_train = _parse_float(row, "mean_nn_eval_to_train_k1")
+                if np.isnan(median_eval_to_train):
+                    median_eval_to_train = _parse_float(row, "median_nn_eval_to_train_k1")
+                if np.isnan(p90_eval_to_train):
+                    p90_eval_to_train = _parse_float(row, "p90_nn_eval_to_train_k1")
+                if np.isnan(mean_train_to_eval):
+                    mean_train_to_eval = _parse_float(row, "mean_nn_train_to_eval_k1")
+                if np.isnan(median_train_to_eval):
+                    median_train_to_eval = _parse_float(row, "median_nn_train_to_eval_k1")
+                if np.isnan(p90_train_to_eval):
+                    p90_train_to_eval = _parse_float(row, "p90_nn_train_to_eval_k1")
                 kl_eval_to_train = _parse_float(row, "kl_eval_to_train")
                 kl_train_to_eval = _parse_float(row, "kl_train_to_eval")
                 kl_eval_to_train_hist = _parse_float(row, "kl_eval_to_train_hist")
@@ -356,6 +399,29 @@ def load_coverage_lookup(csv_path, allow_unsplit=True):
 
                 if not allow_unsplit and (not train_split or not eval_split):
                     continue
+
+                eps_eval_to_train = {}
+                eps_train_to_eval = {}
+                for key, value in row.items():
+                    if key is None:
+                        continue
+                    key = key.strip()
+                    if key.startswith("eval_covered_by_train_eps") and key.endswith("px"):
+                        eps = key.replace("eval_covered_by_train_eps", "").replace("px", "")
+                        eps_eval_to_train[f"eval_to_train_eps{eps}px"] = _parse_float(row, key)
+                    elif key.startswith("train_covered_by_eval_eps") and key.endswith("px"):
+                        eps = key.replace("train_covered_by_eval_eps", "").replace("px", "")
+                        eps_train_to_eval[f"train_to_eval_eps{eps}px"] = _parse_float(row, key)
+                    elif key.startswith("eval_covered_by_train_eps") and key.endswith("px_weighted"):
+                        eps = key.replace("eval_covered_by_train_eps", "").replace("px_weighted", "")
+                        eps_eval_to_train[f"eval_to_train_eps{eps}px_weighted"] = _parse_float(row, key)
+                    elif key.startswith("train_covered_by_eval_eps") and key.endswith("px_weighted"):
+                        eps = key.replace("train_covered_by_eval_eps", "").replace("px_weighted", "")
+                        eps_train_to_eval[f"train_to_eval_eps{eps}px_weighted"] = _parse_float(row, key)
+                    elif key.startswith("eval_to_train_auc") or key.startswith("eval_to_train_eps_at"):
+                        eps_eval_to_train[key] = _parse_float(row, key)
+                    elif key.startswith("train_to_eval_auc") or key.startswith("train_to_eval_eps_at"):
+                        eps_train_to_eval[key] = _parse_float(row, key)
 
                 coverage_lookup[(train_id, eval_id)] = {
                     "train_to_eval_coverage": train_to_eval,
@@ -383,6 +449,8 @@ def load_coverage_lookup(csv_path, allow_unsplit=True):
                     "kl_train_to_eval_hist_median": kl_train_to_eval_hist_median,
                     "kl_eval_to_train_hist_rank": kl_eval_to_train_hist_rank,
                     "kl_train_to_eval_hist_rank": kl_train_to_eval_hist_rank,
+                    **eps_eval_to_train,
+                    **eps_train_to_eval,
                 }
                 if allow_unsplit:
                     coverage_lookup[(train_dataset, eval_dataset)] = {
@@ -411,6 +479,8 @@ def load_coverage_lookup(csv_path, allow_unsplit=True):
                         "kl_train_to_eval_hist_median": kl_train_to_eval_hist_median,
                         "kl_eval_to_train_hist_rank": kl_eval_to_train_hist_rank,
                         "kl_train_to_eval_hist_rank": kl_train_to_eval_hist_rank,
+                        **eps_eval_to_train,
+                        **eps_train_to_eval,
                     }
     except Exception as exc:
         print(f"Warning: could not read coverage CSV {csv_path}: {exc}")
@@ -1024,6 +1094,18 @@ def build_auc_feature_table(
             "feature_mmd": feature_mmd,
             "dino_mmd": dino_mmd,
         })
+
+        if flow_metrics:
+            for key, value in flow_metrics.items():
+                if (
+                    key.startswith("eval_to_train_eps")
+                    or key.startswith("train_to_eval_eps")
+                    or key.startswith("eval_to_train_auc")
+                    or key.startswith("train_to_eval_auc")
+                    or key.startswith("eval_to_train_eps_at")
+                    or key.startswith("train_to_eval_eps_at")
+                ):
+                    row[f"flow_{key}"] = value
         rows.append(row)
 
     df = pd.DataFrame(rows)
@@ -1386,6 +1468,88 @@ def compute_univariate_predictor_comparison(
         result_df.to_csv(output_path, index=False)
         print(f"Saved univariate comparison to {output_path}")
     
+    return result_df
+
+
+def compute_univariate_predictor_comparison_by_group(
+    df,
+    all_predictors,
+    target,
+    group_col,
+    output_path,
+    standardize=True,
+    ridge_alpha=0.5,
+    cv_standardize_mode="global",
+):
+    """
+    Fit each predictor individually in separate group-CV runs.
+
+    This mirrors the LOBO univariate comparison but uses a configurable
+    grouping column (e.g., train_dataset for LOTO-style analysis).
+    """
+    results = []
+
+    for predictor in all_predictors:
+        if predictor not in df.columns:
+            continue
+
+        predictor_df = df[[predictor, target, group_col]].dropna()
+        if predictor_df.empty or len(predictor_df) < 10:
+            continue
+
+        try:
+            summary, _ = run_group_cv(
+                predictor_df,
+                group_col,
+                [predictor],
+                target,
+                standardize=standardize,
+                standardize_mode=cv_standardize_mode,
+                model="ridge",
+                ridge_alpha=ridge_alpha,
+            )
+
+            if not summary.empty:
+                overall = summary[summary[group_col] == "__overall__"]
+                if not overall.empty:
+                    pearson = float(overall["pearson"].iloc[0])
+                    spearman = float(overall["spearman"].iloc[0])
+                    mae = float(overall["mae"].iloc[0])
+                    rmse = float(overall["rmse"].iloc[0])
+                else:
+                    pearson = np.nan
+                    spearman = np.nan
+                    mae = np.nan
+                    rmse = np.nan
+            else:
+                pearson = np.nan
+                spearman = np.nan
+                mae = np.nan
+                rmse = np.nan
+        except Exception as e:
+            print(f"Warning: Failed to fit {predictor} ({group_col}): {e}")
+            pearson = np.nan
+            spearman = np.nan
+            mae = np.nan
+            rmse = np.nan
+
+        results.append({
+            "predictor": predictor,
+            "n_obs": len(predictor_df),
+            f"{group_col}_pearson": pearson,
+            f"{group_col}_spearman": spearman,
+            f"{group_col}_mae": mae,
+            f"{group_col}_rmse": rmse,
+        })
+
+    result_df = pd.DataFrame(results).sort_values(
+        f"{group_col}_spearman", ascending=False
+    )
+
+    if output_path:
+        result_df.to_csv(output_path, index=False)
+        print(f"Saved group univariate comparison to {output_path}")
+
     return result_df
 
 
@@ -2055,6 +2219,96 @@ def compute_within_benchmark_slopes(df, predictors, target, output_path, min_row
                     row[name] = np.nan
                 else:
                     row[name] = float(np.dot(x - np.mean(x), y - np.mean(y)) / denom)
+        rows.append(row)
+
+    df_out = pd.DataFrame(rows)
+    if not df_out.empty:
+        df_out.to_csv(output_path, index=False)
+    return df_out
+
+
+def compute_within_benchmark_univariate_slopes(df, predictors, target, output_path, min_rows=12):
+    rows = []
+    for benchmark, sub in df.groupby("benchmark"):
+        sub = filter_complete_rows(sub, predictors, target)
+        if len(sub) < min_rows:
+            continue
+        z_df = sub.copy()
+        z_df[target] = _zscore(z_df[target])
+        for col in predictors:
+            z_df[col] = _zscore(z_df[col])
+
+        row = {
+            "benchmark": benchmark,
+            "n": int(len(sub)),
+            "r2": np.nan,
+            "mode": "univariate",
+        }
+        y = z_df[target].to_numpy(dtype=float)
+        for name in predictors:
+            x = z_df[name].to_numpy(dtype=float)
+            if len(x) < 2:
+                row[name] = np.nan
+                continue
+            denom = np.dot(x - np.mean(x), x - np.mean(x))
+            if denom == 0:
+                row[name] = np.nan
+            else:
+                slope = float(np.dot(x - np.mean(x), y - np.mean(y)) / denom)
+                row[name] = slope
+        if predictors:
+            vals = np.array([row.get(p) for p in predictors], dtype=float)
+            if np.isfinite(vals).any():
+                # Approximate average univariate R2 via mean corr^2
+                row["r2"] = float(np.nanmean(np.square(vals)))
+        rows.append(row)
+
+    df_out = pd.DataFrame(rows)
+    if not df_out.empty:
+        df_out.to_csv(output_path, index=False)
+    return df_out
+
+
+def compute_within_train_dataset_univariate_slopes(
+    df,
+    predictors,
+    target,
+    group_col,
+    output_path,
+    min_rows=12,
+):
+    rows = []
+    for group, sub in df.groupby(group_col):
+        sub = filter_complete_rows(sub, predictors, target)
+        if len(sub) < min_rows:
+            continue
+        z_df = sub.copy()
+        z_df[target] = _zscore(z_df[target])
+        for col in predictors:
+            z_df[col] = _zscore(z_df[col])
+
+        row = {
+            group_col: group,
+            "n": int(len(sub)),
+            "r2": np.nan,
+            "mode": "univariate",
+        }
+        y = z_df[target].to_numpy(dtype=float)
+        for name in predictors:
+            x = z_df[name].to_numpy(dtype=float)
+            if len(x) < 2:
+                row[name] = np.nan
+                continue
+            denom = np.dot(x - np.mean(x), x - np.mean(x))
+            if denom == 0:
+                row[name] = np.nan
+            else:
+                slope = float(np.dot(x - np.mean(x), y - np.mean(y)) / denom)
+                row[name] = slope
+        if predictors:
+            vals = np.array([row.get(p) for p in predictors], dtype=float)
+            if np.isfinite(vals).any():
+                row["r2"] = float(np.nanmean(np.square(vals)))
         rows.append(row)
 
     df_out = pd.DataFrame(rows)
@@ -2834,6 +3088,27 @@ def add_model_family_effects(df, predictors, families, baseline, add_interaction
     return df, dummy_cols, interaction_cols
 
 
+def add_spair_indicator_interactions(df, predictors, benchmark_col="benchmark"):
+    if df.empty or benchmark_col not in df.columns or not predictors:
+        return df, predictors, [], None
+    df = df.copy()
+    normalized = df[benchmark_col].astype(str).map(normalize_dataset_name)
+    indicator_col = "spair_indicator"
+    df[indicator_col] = (normalized == "spair").astype(float)
+    interaction_cols = []
+    for pred in predictors:
+        if pred not in df.columns:
+            continue
+        inter_col = f"{indicator_col}_x_{pred}"
+        df[inter_col] = df[indicator_col] * df[pred]
+        interaction_cols.append(inter_col)
+    updated = list(predictors)
+    if indicator_col not in updated:
+        updated.append(indicator_col)
+    updated.extend(interaction_cols)
+    return df, updated, interaction_cols, indicator_col
+
+
 def prepare_model_family_pooled_frames(
     report_df,
     cv_df,
@@ -3235,9 +3510,43 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
             cv_standardize_mode=args.cv_standardize_mode,
         )
         print(f"Univariate comparison results saved to {univariate_path}")
+        loto_uni_df = feature_df.copy()
+        if args.loto_collapse_mixed:
+            loto_uni_df["train_dataset_group"] = loto_uni_df["train_dataset"].apply(collapse_mixed_dataset)
+            loto_group_col = "train_dataset_group"
+        else:
+            loto_group_col = "train_dataset"
+        loto_univariate_path = out_dir / "univariate_predictor_comparison_loto.csv"
+        print(f"Running LOTO univariate predictor comparison ({len(predictors)} predictors)...")
+        compute_univariate_predictor_comparison_by_group(
+            loto_uni_df,
+            predictors,
+            args.target,
+            loto_group_col,
+            loto_univariate_path,
+            standardize=args.standardize,
+            ridge_alpha=args.ridge_alpha,
+            cv_standardize_mode=args.cv_standardize_mode,
+        )
+        print(f"LOTO univariate comparison results saved to {loto_univariate_path}")
 
     within_path = out_dir / "within_benchmark_slopes.csv"
     compute_within_benchmark_slopes(feature_df, predictors, args.target, within_path)
+    within_uni_path = out_dir / "within_benchmark_slopes_univariate.csv"
+    compute_within_benchmark_univariate_slopes(feature_df, predictors, args.target, within_uni_path)
+    within_train_uni_path = out_dir / "within_train_dataset_slopes_univariate.csv"
+    train_uni_df = feature_df.copy()
+    train_group_col = "train_dataset"
+    if args.loto_collapse_mixed:
+        train_uni_df["train_dataset_group"] = train_uni_df["train_dataset"].apply(collapse_mixed_dataset)
+        train_group_col = "train_dataset_group"
+    compute_within_train_dataset_univariate_slopes(
+        train_uni_df,
+        predictors,
+        args.target,
+        train_group_col,
+        within_train_uni_path,
+    )
 
     if not args.skip_regression:
         regression_path = out_dir / "regression_summary.txt"
@@ -3602,6 +3911,10 @@ def run_summary_report(out_dir, predictors, args):
         str(out_dir / "prediction_loto_mixed_summary.csv"),
         "--within-benchmark-slopes",
         str(out_dir / "within_benchmark_slopes.csv"),
+        "--within-benchmark-slopes-univariate",
+        str(out_dir / "within_benchmark_slopes_univariate.csv"),
+        "--within-train-dataset-slopes-univariate",
+        str(out_dir / "within_train_dataset_slopes_univariate.csv"),
         "--target",
         str(args.target),
         "--predictors",
@@ -3826,6 +4139,35 @@ def main():
         help="Coverage CSV for DINO feature metrics (optional).",
     )
     parser.add_argument(
+        "--flow-eps-values",
+        default="1,2,4,8,16,32,64",
+        help="Comma-separated flow epsilon values to use as predictors.",
+    )
+    parser.add_argument(
+        "--use-flow-eps-predictors",
+        dest="use_flow_eps_predictors",
+        action="store_true",
+        help="Include flow epsilon coverage predictors when available.",
+    )
+    parser.add_argument(
+        "--no-flow-eps-predictors",
+        dest="use_flow_eps_predictors",
+        action="store_false",
+        help="Disable flow epsilon coverage predictors.",
+    )
+    parser.add_argument(
+        "--use-flow-eps-weighted-predictors",
+        dest="use_flow_eps_weighted_predictors",
+        action="store_true",
+        help="Include weighted flow epsilon coverage predictors when available.",
+    )
+    parser.add_argument(
+        "--no-flow-eps-weighted-predictors",
+        dest="use_flow_eps_weighted_predictors",
+        action="store_false",
+        help="Disable weighted flow epsilon coverage predictors.",
+    )
+    parser.add_argument(
         "--flow-mmd-csv",
         default="flow_mmd_results.csv",
         help="Flow MMD CSV.",
@@ -3853,6 +4195,8 @@ def main():
         help="Disable logit transform on coverage metrics.",
     )
     parser.set_defaults(logit_coverage=True)
+    parser.set_defaults(use_flow_eps_predictors=True)
+    parser.set_defaults(use_flow_eps_weighted_predictors=False)
     parser.add_argument(
         "--rename-coverage",
         action="store_true",
@@ -4193,6 +4537,19 @@ def main():
         default=MODEL_FAMILY_DEFAULT,
         help="Baseline model_family for pooled interactions.",
     )
+    parser.add_argument(
+        "--spair-indicator-interactions",
+        dest="spair_indicator_interactions",
+        action="store_true",
+        help="Add a spair indicator and predictor interactions for pooled analysis.",
+    )
+    parser.add_argument(
+        "--no-spair-indicator-interactions",
+        dest="spair_indicator_interactions",
+        action="store_false",
+        help="Disable spair indicator interactions.",
+    )
+    parser.set_defaults(spair_indicator_interactions=False)
     parser.add_argument(
         "--model-family-main-effects",
         dest="model_family_main_effects",
@@ -4753,8 +5110,29 @@ def main():
                     "feature_mmd",
                 ]
 
+    if args.use_flow_eps_predictors:
+        eps_values = parse_eps_values(args.flow_eps_values)
+        for eps in eps_values:
+            predictors.append(f"flow_train_to_eval_eps{eps}px")
+            predictors.append(f"flow_eval_to_train_eps{eps}px")
+    if args.use_flow_eps_weighted_predictors:
+        eps_values = parse_eps_values(args.flow_eps_values)
+        for eps in eps_values:
+            predictors.append(f"flow_train_to_eval_eps{eps}px_weighted")
+            predictors.append(f"flow_eval_to_train_eps{eps}px_weighted")
+
     if args.include_kl:
         predictors = _extend_predictors_with_kl(predictors, feature_df)
+
+    if args.spair_indicator_interactions:
+        feature_df, predictors, interaction_cols, indicator_col = add_spair_indicator_interactions(
+            feature_df, predictors
+        )
+        if indicator_col:
+            print(
+                f"Added spair indicator interactions: {indicator_col} "
+                f"({len(interaction_cols)} interactions)"
+            )
 
     if args.target not in feature_df.columns:
         print(f"Target '{args.target}' not found in auc_with_features table.")

@@ -16,10 +16,10 @@ pca:
   max_train_vectors: 100000
   whiten: false
 faiss:
-  index_factory: HNSW32
+  index_factory: IVF4096,Flat
   metric: cosine
   use_gpu: true
-  nprobe: 16
+  nprobe: 64
 coverage:
   k: 5
   neighbor_agg: median
@@ -29,6 +29,13 @@ coverage:
   kl_knn_k: 20
   kl_bins: 50
   kl_eps: 1.0e-6
+cache:
+  dir: /mnt/nvme_1tb_b/coverage_vectors
+  mode: read_write
+  format: npy
+  mmap: true
+  mix_from_cache: true
+  pairwise: true
 output:
   results_file: coverage_faiss_dino_results_fast.csv
 dataset_params:
@@ -93,7 +100,7 @@ dataset_overrides:
     datapath: /home/spencer/Data/correspondence/kitti
     normalize_images: true
   flyingthings:
-    datapath: /home/spencer/Data/FlyingThings3D_10k/FlyingThings3D
+    datapath: /home/spencer/Data/FlyingThings3D_10k
     normalize_images: true
   tss:
     datapath: /home/spencer/Data/correspondence/TSS_CVPR2016
@@ -102,6 +109,13 @@ dataset_overrides:
     datapath: /home/spencer/Data/middlebury/all
     normalize_images: true
 datasets:
+# FlyingThings first for fast failure detection
+- name: flyingthings
+  split: train
+  representation: dino
+
+  is_eval: false
+  output: coresets/flyingthings_train_dino.pt
 - name: imagenet2dwarp
   split: train
   representation: dino
@@ -215,12 +229,6 @@ datasets:
 
   is_eval: false
   output: coresets/spair_train_dino.pt
-- name: flyingthings
-  split: train
-  representation: dino
-
-  is_eval: false
-  output: coresets/flyingthings_train_dino.pt
 - name: pointodyssey
   split: train
   representation: dino
@@ -257,18 +265,19 @@ datasets:
 
   is_eval: true
   output: coresets/pfwillow_val_dino.pt
-- name: pointodyssey
-  split: test
-  representation: dino
-
-  is_eval: true
-  output: coresets/pointodyssey_val_dino.pt
+# FlyingThings test first for fast failure detection
 - name: flyingthings
   split: test
   representation: dino
 
   is_eval: true
   output: coresets/flyingthings_val_dino.pt
+- name: pointodyssey
+  split: test
+  representation: dino
+
+  is_eval: true
+  output: coresets/pointodyssey_val_dino.pt
 - name: tss
   split: val
   representation: dino

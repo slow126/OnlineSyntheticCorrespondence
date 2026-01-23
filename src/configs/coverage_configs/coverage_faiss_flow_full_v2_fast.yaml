@@ -1,0 +1,198 @@
+# Coverage Pipeline v2.0 - Flow Representation (FAST TEST)
+# Multi-space decomposition (xy, flow, joint) with dual normalization
+# Reduced dataset list for quick testing
+
+representation: flow
+encoder: resnet101  # Not used for flow, but kept for compatibility
+batch_size: 8
+num_workers: 4
+
+# Vector sampling configuration
+sampling:
+  max_vectors: 16000000  # 16M vectors total across all images
+  vectors_per_image: 2048  # Target vectors per image (up to 2048 per sample)
+  seed: 42
+
+# Space configuration for flow
+spaces:
+  enabled: ["xy", "flow", "joint"]  # All three decomposition spaces
+  
+# Alpha calibration (Step 1 - for joint space)
+calibration:
+  enabled: true  # Required for joint space
+  k: 5  # kNN for alpha computation
+  aggregation: geometric_mean  # Options: 'geometric_mean' or 'median'
+  force_recompute: false  # Set to true to recalculate alpha
+
+# Flow normalization to [-1, 1]
+flow_normalization:
+  enabled: true  # Normalize [x,y,dx,dy] to [-1,1] centered at zero
+  scheme: norm2x1  # 2*x/W-1 for positions, 2*dx/W for flow
+  image_size: [512, 512]  # Default image size (will be overridden per dataset if needed)
+
+# PCA configuration (disabled for flow)
+pca:
+  enabled: false
+  output_dim: 256
+  fit_on: train
+  whiten: false
+  l2_normalize: false  # Not needed for flow
+
+# FAISS configuration (tuned for 3090 24GB VRAM)
+faiss:
+  index_factory: IVF4096,Flat  # IVF for speed (10-50x faster than Flat)
+  metric: l2  # Always L2 metric
+  use_gpu: true
+  nprobe: 128  # High nprobe for accuracy (~99% recall, good speed)
+  batch_size: 100000  # Batch size for GPU searches (4D flow is light)
+
+# Coverage metrics configuration
+coverage:
+  # Self-radius computation (Step 3)
+  self_radius_k: 5  # Use 5-NN for robust self-radius
+  radius_quantile: 0.95  # p95 radius
+  neighbor_agg: kth  # Use k-th neighbor distance
+  
+  # Cross-dataset distances (Step 4)
+  k_max: 5  # Maximum k to search
+  k_values: [1, 5]  # Compute metrics for k=1 and k=5
+  
+  # Dual normalization (Step 5)
+  compute_qnorm: true  # Query-normalized (headline metrics)
+  compute_rnorm: true  # Reference-normalized (diagnostic metrics)
+  
+  # Coverage curves (Step 5b - robustness check)
+  compute_curves: true  # Enable coverage curves
+  curve_quantiles: [0.80, 0.90, 0.95, 0.99]  # Quantiles for curves
+
+# Distance metric metadata (for cache keys)
+distance_metric:
+  name: sqL2  # Squared L2 (no sqrt)
+  description: "Squared L2 distances from FAISS (no sqrt applied)"
+
+# Cache configuration
+cache:
+  dir: /mnt/nvme_1tb_b/coverage_vectors
+  mode: read_write  # 'read', 'write', 'read_write', or 'off'
+  format: npy
+  mmap: true
+  # Cache structure:
+  # - Raw vectors: {dataset}_{split}_flow.npy
+  # - Global alpha: global_alpha_flow.npz
+  # - Radii: radii/radius_{dataset}_{split}_{space}_norm2x1_sqL2_k{k}_q{q}[_a{alpha}].npz
+
+# Output configuration
+output:
+  results_file: analysis/coverage_v2_flow_fast.csv
+  curves_file: analysis/coverage_v2_flow_fast_curves.csv
+  save_curves_to_main: false
+
+# Dataset parameters (same as before)
+dataset_params:
+  size: [512, 512]
+  downsample_flow: 32
+  max_kps: null
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: false
+  kitti_val_use_full_training: true
+
+# Dataset overrides (same as before)
+dataset_overrides:
+  sintel:
+    sintel_root: /home/spencer/Data
+    normalize_images: true
+  spair:
+    datapath: ./models/Datasets_CATs
+    normalize_images: false
+  pfpascal:
+    datapath: ./models/Datasets_CATs
+    normalize_images: false
+  pfwillow:
+    datapath: ./models/Datasets_CATs
+    normalize_images: false
+  imagenet2dwarp:
+    datapath: hf://ILSVRC/imagenet-1k
+    hf_streaming: false
+    hf_max_samples: 5000
+    hf_cache_dir: /home/spencer/.cache/huggingface/datasets
+    normalize_images: true
+    rotation_range: [-30.0, 30.0]
+    scale_range: [0.5, 2.5]
+    translation_range: [-0.1, 0.1]
+    shear_range: [-0.2, 0.2]
+    cache_warp_params: true
+    cache_dir: ./cache/imagenet2dwarp
+    seed: 42
+  kitti2012:
+    datapath: /home/spencer/Data/correspondence/kitti
+    normalize_images: true
+  kitti2015:
+    datapath: /home/spencer/Data/correspondence/kitti
+    normalize_images: true
+  flyingthings:
+    datapath: /home/spencer/Data/FlyingThings3D_10k
+    normalize_images: true
+  tss:
+    datapath: /home/spencer/Data/correspondence/TSS_CVPR2016
+    normalize_images: true
+  synthetic:
+    geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
+    processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
+    normalize_images: false
+    device: cuda
+
+# Dataset list - FAST TEST VERSION
+datasets:
+  # Training sets (FAST: 3 datasets)
+  - name: flyingthings
+    split: train
+    representation: flow
+    is_eval: false
+  
+  - name: imagenet2dwarp
+    split: train
+    representation: flow
+    is_eval: false
+  
+  - name: sintel
+    split: train
+    representation: flow
+    is_eval: false
+  
+  # Evaluation sets (FAST: 7 quick datasets)
+  - name: flyingthings
+    split: test
+    representation: flow
+    is_eval: true
+  
+  - name: kitti2015
+    split: val
+    representation: flow
+    is_eval: true
+  
+  - name: kitti2012
+    split: val
+    representation: flow
+    is_eval: true
+  
+  - name: spair
+    split: test
+    representation: flow
+    is_eval: true
+  
+  - name: pfpascal
+    split: test
+    representation: flow
+    is_eval: true
+  
+  - name: pfwillow
+    split: test
+    representation: flow
+    is_eval: true
+  
+  - name: tss
+    split: val
+    representation: flow
+    is_eval: true
