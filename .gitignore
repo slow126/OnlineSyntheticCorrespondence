@@ -129,3 +129,7 @@ coresets/
 # Insample
 insample_analysis/
 insample_analysis*
+
+# Variogram
+variogram/
+variogram*

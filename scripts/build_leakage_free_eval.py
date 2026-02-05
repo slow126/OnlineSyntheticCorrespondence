@@ -20,6 +20,7 @@ Optional (mode=all):
 """
 
 import argparse
+import json
 import math
 import csv
 import re
@@ -228,14 +229,6 @@ def parse_dataset_from_snapshot_name(name: str):
 
 
 def derive_model_family(snapshot_dir: Path) -> str:
-    for part in snapshot_dir.parts:
-        if part == "snapshots":
-            return MODEL_FAMILY_DEFAULT
-        if part.startswith("snapshots_"):
-            suffix = part.split("snapshots_", 1)[1].strip().lower()
-            if not suffix:
-                return MODEL_FAMILY_DEFAULT
-            return MODEL_FAMILY_ALIASES.get(suffix, suffix)
     name = snapshot_dir.name.lower()
     if "raft" in name:
         return "raft"
@@ -488,6 +481,53 @@ def load_coverage_lookup(csv_path, allow_unsplit=True):
     return coverage_lookup
 
 
+def load_variogram_lookup(csv_path, allow_unsplit=True):
+    lookup = {}
+    path = Path(csv_path)
+    if not path.exists():
+        print(f"Warning: Variogram CSV not found: {csv_path}")
+        return lookup
+
+    try:
+        with path.open("r") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                train_dataset = normalize_dataset_name(row.get("train_dataset"))
+                train_split = normalize_dataset_name(row.get("train_split"))
+                eval_dataset = normalize_dataset_name(row.get("eval_dataset"))
+                eval_split = normalize_dataset_name(row.get("eval_split"))
+                if not train_dataset or not eval_dataset:
+                    continue
+
+                train_id = f"{train_dataset}_{train_split}" if train_split else train_dataset
+                eval_id = f"{eval_dataset}_{eval_split}" if eval_split else eval_dataset
+
+                metrics = {
+                    "train_auc": _parse_float(row, "train_auc"),
+                    "eval_auc": _parse_float(row, "eval_auc"),
+                    "train_auc_norm": _parse_float(row, "train_auc_norm"),
+                    "eval_auc_norm": _parse_float(row, "eval_auc_norm"),
+                    "auc_diff": _parse_float(row, "auc_diff"),
+                    "auc_diff_norm": _parse_float(row, "auc_diff_norm"),
+                    "curve_l1": _parse_float(row, "curve_l1"),
+                    "curve_l2": _parse_float(row, "curve_l2"),
+                    "curve_corr": _parse_float(row, "curve_corr"),
+                    "overlap_bins": _parse_float(row, "overlap_bins"),
+                    "total_bins": _parse_float(row, "total_bins"),
+                }
+
+                if not allow_unsplit and (not train_split or not eval_split):
+                    continue
+
+                lookup[(train_id, eval_id)] = metrics
+                if allow_unsplit:
+                    lookup[(train_dataset, eval_dataset)] = metrics
+    except Exception as exc:
+        print(f"Warning: could not read variogram CSV {csv_path}: {exc}")
+
+    return lookup
+
+
 def load_mmd_lookup(csv_path, allow_unsplit=True):
     path = Path(csv_path)
     if not path.exists():
@@ -619,6 +659,182 @@ def strip_split_suffix(name):
         if name.endswith(suffix):
             return name[: -len(suffix)]
     return name
+
+
+def normalize_flow_stats_dataset(name):
+    name = normalize_dataset_name(name)
+    if not name:
+        return name
+    if name.endswith("_dino"):
+        name = name[: -len("_dino")]
+    return name
+
+
+def _flow_stats_candidates(name, allow_unsplit=True, prefer_splits=None):
+    name = normalize_flow_stats_dataset(name)
+    if not name:
+        return []
+    prefer_splits = prefer_splits or []
+    base = strip_split_suffix(name)
+    candidates = [name]
+    for suffix in prefer_splits:
+        cand = f"{base}_{suffix}"
+        if cand not in candidates:
+            candidates.append(cand)
+    if allow_unsplit and base != name:
+        candidates.append(base)
+    if allow_unsplit:
+        for suffix in ("train", "val", "test"):
+            cand = f"{base}_{suffix}"
+            if cand not in candidates:
+                candidates.append(cand)
+    return candidates
+
+
+def load_flow_stats(stats_dir):
+    lookup = {}
+    if not stats_dir:
+        return lookup
+    path = Path(stats_dir)
+    if not path.exists():
+        print(f"Warning: flow stats dir not found: {stats_dir}")
+        return lookup
+    for json_path in sorted(path.glob("*.json")):
+        try:
+            with json_path.open("r") as f:
+                data = json.load(f)
+        except Exception as exc:
+            print(f"Warning: could not read flow stats {json_path}: {exc}")
+            continue
+        dataset = data.get("dataset")
+        if not dataset:
+            dataset = json_path.stem
+            if dataset.startswith("flow_counts_"):
+                dataset = dataset[len("flow_counts_") :]
+        dataset = normalize_flow_stats_dataset(dataset)
+        if not dataset:
+            continue
+        if dataset in lookup:
+            print(f"Warning: duplicate flow stats for {dataset} (keeping {json_path.name})")
+        lookup[dataset] = data
+    return lookup
+
+
+def _extract_flow_density_metrics(stats):
+    if not stats:
+        return np.nan, np.nan
+    n_samples = stats.get("images_seen")
+    avg_flows = None
+    valid_counts = stats.get("valid_counts")
+    if isinstance(valid_counts, dict):
+        avg_flows = valid_counts.get("mean")
+    if avg_flows is None:
+        total_valid = stats.get("total_valid_vectors")
+        if total_valid is not None and n_samples:
+            avg_flows = total_valid / n_samples
+    try:
+        n_samples = float(n_samples)
+    except (TypeError, ValueError):
+        n_samples = np.nan
+    try:
+        avg_flows = float(avg_flows)
+    except (TypeError, ValueError):
+        avg_flows = np.nan
+    return n_samples, avg_flows
+
+
+def lookup_flow_stats(lookup, dataset, allow_unsplit=True, prefer_splits=None):
+    candidates = _flow_stats_candidates(
+        dataset, allow_unsplit=allow_unsplit, prefer_splits=prefer_splits
+    )
+    for candidate in candidates:
+        if candidate in lookup:
+            return lookup[candidate], candidate
+    return None, candidates[-1] if candidates else None
+
+
+def _safe_log_series(series, eps):
+    values = pd.to_numeric(series, errors="coerce").astype(float)
+    return np.log(np.maximum(values, float(eps)))
+
+
+def _is_coverage_column(name: str) -> bool:
+    lower = str(name).lower()
+    return (
+        "coverage" in lower
+        or "over_eval_recall" in lower
+        or "over_train_precision" in lower
+    )
+
+
+def add_flow_density_features(
+    df,
+    flow_stats_lookup,
+    log_eps=1e-6,
+    allow_unsplit=True,
+    add_interactions=False,
+):
+    if df.empty or not flow_stats_lookup:
+        return df, {}
+    df = df.copy()
+    missing = defaultdict(int)
+
+    train_names = df["train_dataset"].dropna().unique() if "train_dataset" in df.columns else []
+    eval_names = df["benchmark"].dropna().unique() if "benchmark" in df.columns else []
+
+    train_samples = {}
+    train_flows = {}
+    eval_samples = {}
+    eval_flows = {}
+
+    for name in train_names:
+        stats, _ = lookup_flow_stats(
+            flow_stats_lookup, name, allow_unsplit=allow_unsplit, prefer_splits=["train"]
+        )
+        if stats is None:
+            missing[("train_dataset", name)] += 1
+            train_samples[name] = np.nan
+            train_flows[name] = np.nan
+        else:
+            n_samples, avg_flows = _extract_flow_density_metrics(stats)
+            train_samples[name] = n_samples
+            train_flows[name] = avg_flows
+
+    for name in eval_names:
+        stats, _ = lookup_flow_stats(
+            flow_stats_lookup, name, allow_unsplit=allow_unsplit, prefer_splits=["val", "test"]
+        )
+        if stats is None:
+            missing[("benchmark", name)] += 1
+            eval_samples[name] = np.nan
+            eval_flows[name] = np.nan
+        else:
+            n_samples, avg_flows = _extract_flow_density_metrics(stats)
+            eval_samples[name] = n_samples
+            eval_flows[name] = avg_flows
+
+    if "train_dataset" in df.columns:
+        df["n_samples_train"] = df["train_dataset"].map(train_samples)
+        df["avg_flows_train"] = df["train_dataset"].map(train_flows)
+    if "benchmark" in df.columns:
+        df["n_samples_eval"] = df["benchmark"].map(eval_samples)
+        df["avg_flows_eval"] = df["benchmark"].map(eval_flows)
+
+    if "n_samples_train" in df.columns:
+        df["log_n_samples_train"] = _safe_log_series(df["n_samples_train"], log_eps)
+    if "n_samples_eval" in df.columns:
+        df["log_n_samples_eval"] = _safe_log_series(df["n_samples_eval"], log_eps)
+    if "avg_flows_train" in df.columns:
+        df["log_avg_flows_train"] = _safe_log_series(df["avg_flows_train"], log_eps)
+    if "avg_flows_eval" in df.columns:
+        df["log_avg_flows_eval"] = _safe_log_series(df["avg_flows_eval"], log_eps)
+
+    if add_interactions and "log_avg_flows_eval" in df.columns:
+        for col in df.columns:
+            if _is_coverage_column(col):
+                df[f"{col}_x_log_avg_flows_eval"] = df[col] * df["log_avg_flows_eval"]
+
+    return df, missing
 
 
 def logit(value, eps=1e-6):
@@ -859,6 +1075,7 @@ def build_auc_feature_table(
     auc_df,
     flow_lookup,
     resnet_lookup,
+    variogram_lookup,
     flow_mmd_lookup,
     feature_mmd_lookup,
     logit_coverage=False,
@@ -877,7 +1094,13 @@ def build_auc_feature_table(
     rows = []
     missing = defaultdict(int)
     known_datasets = gather_known_datasets(
-        flow_lookup, resnet_lookup, flow_mmd_lookup, feature_mmd_lookup, dino_lookup, dino_mmd_lookup
+        flow_lookup,
+        resnet_lookup,
+        variogram_lookup,
+        flow_mmd_lookup,
+        feature_mmd_lookup,
+        dino_lookup,
+        dino_mmd_lookup,
     )
 
     for row in auc_df.to_dict(orient="records"):
@@ -889,6 +1112,7 @@ def build_auc_feature_table(
         flow_metrics = None
         resnet_metrics = None
         dino_metrics = None
+        variogram_metrics = None
         flow_mmd = None
         feature_mmd = None
         dino_mmd = None
@@ -907,6 +1131,10 @@ def build_auc_feature_table(
                 dino_metrics, _ = lookup_pair(
                     dino_lookup, candidate, benchmark, allow_unsplit=allow_unsplit_coverage
                 )
+            if variogram_lookup:
+                variogram_metrics, _ = lookup_pair(
+                    variogram_lookup, candidate, benchmark, allow_unsplit=allow_unsplit_coverage
+                )
             flow_mmd, _ = lookup_mmd(
                 flow_mmd_lookup, candidate, benchmark, allow_unsplit=allow_unsplit_mmd
             )
@@ -917,7 +1145,7 @@ def build_auc_feature_table(
                 dino_mmd, _ = lookup_mmd(
                     dino_mmd_lookup, candidate, benchmark, allow_unsplit=allow_unsplit_mmd
                 )
-            if flow_metrics is not None or resnet_metrics is not None:
+            if flow_metrics is not None or resnet_metrics is not None or variogram_metrics is not None:
                 resolved_train = candidate
                 break
 
@@ -933,6 +1161,8 @@ def build_auc_feature_table(
             missing[("feature_mmd", train_dataset, benchmark)] += 1
         if dino_mmd_lookup is not None and dino_mmd is None:
             missing[("dino_mmd", train_dataset, benchmark)] += 1
+        if variogram_lookup is not None and variogram_metrics is None:
+            missing[("variogram", train_dataset, benchmark)] += 1
 
         row.update({
             "train_dataset": resolved_train,
@@ -1089,6 +1319,39 @@ def build_auc_feature_table(
                 dino_metrics.get("kl_train_to_eval_hist_log1p_linear", np.nan)
                 if dino_metrics
                 else np.nan
+            ),
+            "variogram_train_auc": (
+                variogram_metrics.get("train_auc", np.nan) if variogram_metrics else np.nan
+            ),
+            "variogram_eval_auc": (
+                variogram_metrics.get("eval_auc", np.nan) if variogram_metrics else np.nan
+            ),
+            "variogram_train_auc_norm": (
+                variogram_metrics.get("train_auc_norm", np.nan) if variogram_metrics else np.nan
+            ),
+            "variogram_eval_auc_norm": (
+                variogram_metrics.get("eval_auc_norm", np.nan) if variogram_metrics else np.nan
+            ),
+            "variogram_auc_diff": (
+                variogram_metrics.get("auc_diff", np.nan) if variogram_metrics else np.nan
+            ),
+            "variogram_auc_diff_norm": (
+                variogram_metrics.get("auc_diff_norm", np.nan) if variogram_metrics else np.nan
+            ),
+            "variogram_curve_l1": (
+                variogram_metrics.get("curve_l1", np.nan) if variogram_metrics else np.nan
+            ),
+            "variogram_curve_l2": (
+                variogram_metrics.get("curve_l2", np.nan) if variogram_metrics else np.nan
+            ),
+            "variogram_curve_corr": (
+                variogram_metrics.get("curve_corr", np.nan) if variogram_metrics else np.nan
+            ),
+            "variogram_overlap_bins": (
+                variogram_metrics.get("overlap_bins", np.nan) if variogram_metrics else np.nan
+            ),
+            "variogram_total_bins": (
+                variogram_metrics.get("total_bins", np.nan) if variogram_metrics else np.nan
             ),
             "flow_mmd": flow_mmd,
             "feature_mmd": feature_mmd,
@@ -3289,6 +3552,17 @@ def _drop_algebraic_redundancies(predictors):
     return filtered, redundant
 
 
+def _dedupe_predictors(predictors):
+    seen = set()
+    ordered = []
+    for pred in predictors:
+        if pred in seen:
+            continue
+        ordered.append(pred)
+        seen.add(pred)
+    return ordered
+
+
 def _extend_predictors_with_kl(predictors, feature_df):
     if not predictors or feature_df is None or feature_df.empty:
         return predictors
@@ -4129,6 +4403,11 @@ def main():
         help="Coverage CSV for flow/label metrics.",
     )
     parser.add_argument(
+        "--variogram-csv",
+        default=None,
+        help="Variogram CSV for train/eval curve distances (optional).",
+    )
+    parser.add_argument(
         "--coverage-resnet-csv",
         default="coverage_resnet_results.csv",
         help="Coverage CSV for feature metrics.",
@@ -4138,6 +4417,43 @@ def main():
         default=None,
         help="Coverage CSV for DINO feature metrics (optional).",
     )
+    parser.add_argument(
+        "--flow-stats-dir",
+        default=None,
+        help="Directory of flow extraction stats JSON files (optional).",
+    )
+    parser.add_argument(
+        "--flow-stats-log-eps",
+        type=float,
+        default=1e-6,
+        help="Epsilon for log density features from flow stats.",
+    )
+    parser.add_argument(
+        "--use-flow-density-predictors",
+        dest="use_flow_density_predictors",
+        action="store_true",
+        help="Include log density predictors from flow stats when available.",
+    )
+    parser.add_argument(
+        "--no-use-flow-density-predictors",
+        dest="use_flow_density_predictors",
+        action="store_false",
+        help="Disable flow density predictors.",
+    )
+    parser.set_defaults(use_flow_density_predictors=False)
+    parser.add_argument(
+        "--flow-density-interactions",
+        dest="flow_density_interactions",
+        action="store_true",
+        help="Add coverage x log_avg_flows_eval interaction predictors.",
+    )
+    parser.add_argument(
+        "--no-flow-density-interactions",
+        dest="flow_density_interactions",
+        action="store_false",
+        help="Disable coverage x log_avg_flows_eval interactions.",
+    )
+    parser.set_defaults(flow_density_interactions=False)
     parser.add_argument(
         "--flow-eps-values",
         default="1,2,4,8,16,32,64",
@@ -4696,6 +5012,19 @@ def main():
     )
     parser.set_defaults(allow_unsplit_coverage=True)
     parser.add_argument(
+        "--allow-unsplit-flow-stats",
+        dest="allow_unsplit_flow_stats",
+        action="store_true",
+        help="Allow flow stats matches without split tags.",
+    )
+    parser.add_argument(
+        "--no-allow-unsplit-flow-stats",
+        dest="allow_unsplit_flow_stats",
+        action="store_false",
+        help="Disable flow stats matches without split tags.",
+    )
+    parser.set_defaults(allow_unsplit_flow_stats=True)
+    parser.add_argument(
         "--allow-unsplit-mmd",
         dest="allow_unsplit_mmd",
         action="store_true",
@@ -4927,6 +5256,11 @@ def main():
     auc_df = pd.DataFrame(auc_rows)
 
     flow_lookup = load_coverage_lookup(args.coverage_csv, allow_unsplit=args.allow_unsplit_coverage)
+    variogram_lookup = (
+        load_variogram_lookup(args.variogram_csv, allow_unsplit=args.allow_unsplit_coverage)
+        if args.variogram_csv
+        else {}
+    )
     resnet_lookup = load_coverage_lookup(
         args.coverage_resnet_csv, allow_unsplit=args.allow_unsplit_coverage
     )
@@ -4944,11 +5278,13 @@ def main():
         if args.dino_mmd_csv
         else None
     )
+    flow_stats_lookup = load_flow_stats(args.flow_stats_dir)
 
     feature_df, missing = build_auc_feature_table(
         auc_df,
         flow_lookup,
         resnet_lookup,
+        variogram_lookup,
         flow_mmd_lookup,
         feature_mmd_lookup,
         logit_coverage=args.logit_coverage,
@@ -4971,6 +5307,20 @@ def main():
         print(
             f"Filtered {filtered} rows using train_datasets_mode={args.train_datasets_mode}."
         )
+    if args.flow_stats_dir:
+        feature_df, density_missing = add_flow_density_features(
+            feature_df,
+            flow_stats_lookup,
+            log_eps=args.flow_stats_log_eps,
+            allow_unsplit=args.allow_unsplit_flow_stats,
+            add_interactions=args.flow_density_interactions,
+        )
+        if density_missing:
+            density_path = out_dir / "missing_flow_stats.txt"
+            lines = ["Missing flow stats (sample):"]
+            for key, count in sorted(density_missing.items(), key=lambda x: x[1], reverse=True)[:20]:
+                lines.append(f"{key}: {count}")
+            density_path.write_text("\n".join(lines))
     if args.relative_target_baseline and not feature_df.empty:
         feature_df, missing_baseline, baseline_name = add_relative_target(
             feature_df, args.relative_target_baseline, args.target
@@ -5120,6 +5470,24 @@ def main():
         for eps in eps_values:
             predictors.append(f"flow_train_to_eval_eps{eps}px_weighted")
             predictors.append(f"flow_eval_to_train_eps{eps}px_weighted")
+
+    if args.use_flow_density_predictors:
+        density_cols = [
+            "log_n_samples_eval",
+            "log_avg_flows_eval",
+            "log_n_samples_train",
+            "log_avg_flows_train",
+        ]
+        for col in density_cols:
+            if col in feature_df.columns:
+                predictors.append(col)
+
+    if args.flow_density_interactions:
+        base_cov = [p for p in predictors if _is_coverage_column(p)]
+        for col in base_cov:
+            interaction = f"{col}_x_log_avg_flows_eval"
+            if interaction in feature_df.columns:
+                predictors.append(interaction)
 
     if args.include_kl:
         predictors = _extend_predictors_with_kl(predictors, feature_df)

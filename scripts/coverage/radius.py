@@ -13,11 +13,33 @@ from . import faiss_ops
 from . import cache
 
 
+def _dedup_vectors_exact(vectors: np.ndarray, verbose: bool = True) -> np.ndarray:
+    """Exact row-wise deduplication for float vectors."""
+    if vectors.size == 0:
+        return vectors
+    if vectors.ndim != 2:
+        raise ValueError(f"Expected 2D vectors array, got shape {vectors.shape}")
+    n, d = vectors.shape
+    if verbose:
+        print(f"  Deduplicating vectors (exact): {n:,}x{d}")
+    contig = np.ascontiguousarray(vectors)
+    view = contig.view(np.dtype((np.void, contig.dtype.itemsize * d)))
+    _, idx = np.unique(view, return_index=True)
+    idx = np.sort(idx)
+    unique = contig[idx]
+    if verbose:
+        print(f"  Deduped: {n:,} -> {len(unique):,} ({(len(unique)/n)*100:.2f}%)")
+    return unique
+
+
 def compute_per_dataset_radii(
     vectors: np.ndarray,
     k: int = 5,
     quantile: float = 0.95,
     neighbor_agg: str = "kth",
+    filter_duplicates: bool = True,
+    dedup: bool = False,
+    batch_size: Optional[int] = None,
     use_gpu: bool = True,
     index_factory: str = "Flat",
     verbose: bool = True,
@@ -40,11 +62,16 @@ def compute_per_dataset_radii(
     if verbose:
         print(f"  Computing self-radius: {vectors.shape[0]:,} vectors, k={k}, q={quantile:.2f}")
     
+    if dedup:
+        vectors = _dedup_vectors_exact(vectors, verbose=verbose)
+
     radius_data = faiss_ops.compute_self_radius(
         vectors,
         k=k,
         radius_quantile=quantile,
         neighbor_agg=neighbor_agg,
+        filter_duplicates=filter_duplicates,
+        batch_size=batch_size,
         use_gpu=use_gpu,
         index_factory=index_factory,
         verbose=verbose,
@@ -67,6 +94,9 @@ def load_or_compute_radius(
     k: int = 5,
     quantile: float = 0.95,
     neighbor_agg: str = "kth",
+    filter_duplicates: bool = True,
+    dedup: bool = False,
+    batch_size: Optional[int] = None,
     alpha: Optional[float] = None,
     normalization: str = "norm2x1",
     distance_metric: str = "sqL2",
@@ -98,6 +128,16 @@ def load_or_compute_radius(
     Returns:
         Dictionary with radius statistics
     """
+    def _radius_is_valid(data: Dict[str, float]) -> bool:
+        # Reject non-finite values and obviously corrupted magnitudes.
+        for key in ("radius", "median", "p90", "p95", "mean"):
+            val = float(data.get(key, float("nan")))
+            if not np.isfinite(val):
+                return False
+            if val > 1e6:
+                return False
+        return True
+
     # Try to load from cache
     if not force_recompute:
         cached = cache.load_radius(
@@ -107,15 +147,18 @@ def load_or_compute_radius(
             space,
             k=k,
             quantile=quantile,
+            dedup=dedup,
             alpha=alpha,
             normalization=normalization,
             distance_metric=distance_metric,
         )
         
-        if cached is not None:
+        if cached is not None and _radius_is_valid(cached):
             if verbose:
                 print(f"  ✓ Using cached radius: {cached['radius']:.6f}")
             return cached
+        if cached is not None and verbose:
+            print("  ⚠️  Cached radius looks invalid (non-finite or huge); recomputing.")
     
     # Compute radius
     if verbose:
@@ -126,6 +169,9 @@ def load_or_compute_radius(
         k=k,
         quantile=quantile,
         neighbor_agg=neighbor_agg,
+        filter_duplicates=filter_duplicates,
+        dedup=dedup,
+        batch_size=batch_size,
         use_gpu=use_gpu,
         index_factory=index_factory,
         verbose=verbose,
@@ -140,6 +186,7 @@ def load_or_compute_radius(
         radius_data,
         k=k,
         quantile=quantile,
+        dedup=dedup,
         alpha=alpha,
         normalization=normalization,
         distance_metric=distance_metric,
@@ -155,6 +202,9 @@ def compute_all_radii(
     k: int = 5,
     quantile: float = 0.95,
     neighbor_agg: str = "kth",
+    filter_duplicates: bool = True,
+    dedup: bool = False,
+    batch_size: Optional[int] = None,
     alpha: Optional[float] = None,
     normalization: str = "norm2x1",
     distance_metric: str = "sqL2",
@@ -208,6 +258,9 @@ def compute_all_radii(
             k=k,
             quantile=quantile,
             neighbor_agg=neighbor_agg,
+            filter_duplicates=filter_duplicates,
+            dedup=dedup,
+            batch_size=batch_size,
             alpha=alpha,
             normalization=normalization,
             distance_metric=distance_metric,

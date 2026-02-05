@@ -38,6 +38,17 @@ def normalize_flow_vectors(
         raise ValueError(f"Expected shape (N, 4), got {vectors.shape}")
     
     result = vectors.copy().astype(np.float32)
+
+    # Heuristic check: if x,y already look normalized, warn and skip renormalization
+    x_min, x_max = float(np.min(result[:, 0])), float(np.max(result[:, 0]))
+    y_min, y_max = float(np.min(result[:, 1])), float(np.max(result[:, 1]))
+    if x_min >= -1.05 and x_max <= 1.05 and y_min >= -1.05 and y_max <= 1.05:
+        print(
+            "  ⚠️  Flow vectors appear already normalized to [-1, 1] "
+            f"(x:[{x_min:.3f},{x_max:.3f}], y:[{y_min:.3f},{y_max:.3f}]); "
+            "skipping normalization to avoid double scaling."
+        )
+        return result
     
     # Positions: center at image center
     result[:, 0] = 2.0 * result[:, 0] / img_width - 1.0   # x: [0,W] → [-1,1]

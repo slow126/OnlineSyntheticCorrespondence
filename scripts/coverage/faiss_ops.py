@@ -13,6 +13,7 @@ This module provides reusable building blocks:
 """
 
 from typing import Dict, Optional, Tuple
+import gc
 import numpy as np
 
 try:
@@ -21,6 +22,60 @@ except ImportError as exc:
     raise SystemExit(
         "faiss is required. Install faiss-cpu or faiss-gpu."
     ) from exc
+
+_GPU_RESOURCES = None
+
+
+def _get_gpu_resources(temp_memory_bytes: int = 12 * 1024 * 1024 * 1024) -> "faiss.StandardGpuResources":
+    """Reuse a single GPU resource pool to avoid per-index GPU memory growth."""
+    global _GPU_RESOURCES
+    if _GPU_RESOURCES is None:
+        _GPU_RESOURCES = faiss.StandardGpuResources()
+        _GPU_RESOURCES.setTempMemory(temp_memory_bytes)
+    return _GPU_RESOURCES
+
+
+def release_index(index: Optional["faiss.Index"]) -> None:
+    """Best-effort cleanup for FAISS indices to free GPU memory promptly."""
+    if index is None:
+        return
+    try:
+        # Force deletion of the index object.
+        del index
+    finally:
+        gc.collect()
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
+
+
+def _has_invalid_distances(distances: np.ndarray) -> bool:
+    if distances.size == 0:
+        return False
+    return (~np.isfinite(distances)).any() or (distances >= 1e30).any()
+
+
+def _has_excessive_sentinel(
+    distances: np.ndarray,
+    sentinel: float = 1e9,
+    frac_threshold: float = 1e-3,
+) -> bool:
+    if distances.size == 0:
+        return False
+    frac = float(np.mean(distances >= sentinel))
+    return frac > frac_threshold
+
+
+def _invalid_fraction(distances: np.ndarray) -> float:
+    """Fraction of distances that are invalid (non-finite or sentinel-max)."""
+    if distances.size == 0:
+        return 0.0
+    invalid = (~np.isfinite(distances)) | (distances >= 1e30)
+    return float(np.mean(invalid))
 
 
 def _is_gpu_index(index: faiss.Index) -> bool:
@@ -121,8 +176,7 @@ def build_index(
     # Transfer to GPU
     if use_gpu:
         try:
-            gpu_resources = faiss.StandardGpuResources()
-            gpu_resources.setTempMemory(2 * 1024 * 1024 * 1024)  # 2GB temp memory
+            gpu_resources = _get_gpu_resources()
             index = faiss.index_cpu_to_gpu(gpu_resources, 0, index)
             if verbose:
                 print(f"    Transferred to GPU")
@@ -141,6 +195,8 @@ def compute_knn_distances(
     query_vectors: np.ndarray,
     k: int,
     exclude_self: bool = False,
+    filter_duplicates: bool = True,
+    fallback_index: Optional[faiss.Index] = None,
     batch_size: Optional[int] = None,
     verbose: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray]:
@@ -166,11 +222,14 @@ def compute_knn_distances(
     query_vectors = np.ascontiguousarray(query_vectors, dtype=np.float32)
     
     # Adjust k if excluding self/duplicates
-    # Search for extra neighbors to account for duplicates
+    # Search for extra neighbors to account for duplicates (optional)
     if exclude_self:
-        # Search for extra neighbors to skip over duplicates (e.g., same XY position from different images)
-        # Use a moderate buffer (k + 32) to balance memory usage and duplicate handling
-        search_k = min(k + 32, index.ntotal)
+        if filter_duplicates:
+            # Use a moderate buffer (k + 32) to balance memory usage and duplicate handling
+            search_k = min(k + 32, index.ntotal)
+        else:
+            # Only need one extra neighbor to drop self
+            search_k = min(k + 1, index.ntotal)
     else:
         search_k = min(k, index.ntotal)
     
@@ -204,7 +263,14 @@ def compute_knn_distances(
         
         for i in batch_iter:
             batch = query_vectors[i:i+batch_size]
+            if verbose and (not np.isfinite(batch).all()):
+                bad = np.count_nonzero(~np.isfinite(batch))
+                print(f"    ⚠️  Non-finite query vectors in batch [{i}:{i+len(batch)}]: {bad} values")
             batch_dists, batch_indices = index.search(batch, search_k)
+            if verbose and (not np.isfinite(batch_dists).all()):
+                bad = np.count_nonzero(~np.isfinite(batch_dists))
+                print(f"    ⚠️  Non-finite distances in batch [{i}:{i+len(batch)}]: {bad} values")
+                print(f"       dist min/max: {np.nanmin(batch_dists):.6g} / {np.nanmax(batch_dists):.6g}")
             all_dists.append(batch_dists)
             all_indices.append(batch_indices)
         
@@ -212,37 +278,95 @@ def compute_knn_distances(
         raw_indices = np.vstack(all_indices)
     else:
         raw_dists, raw_indices = index.search(query_vectors, search_k)
+
+    # Treat extreme values or invalid indices as invalid distances.
+    invalid_mask = (~np.isfinite(raw_dists)) | (raw_dists >= 1e30) | (raw_indices < 0)
+    if verbose:
+        n_invalid_idx = int(np.count_nonzero(raw_indices < 0))
+        n_invalid_dist = int(np.count_nonzero((~np.isfinite(raw_dists)) | (raw_dists >= 1e30)))
+        if n_invalid_idx or n_invalid_dist:
+            print(
+                f"    ⚠️  Invalids breakdown: invalid_index={n_invalid_idx}, "
+                f"invalid_distance={n_invalid_dist}, total={raw_dists.size}"
+            )
+    if verbose and invalid_mask.any():
+        bad = np.count_nonzero(invalid_mask)
+        print(f"    ⚠️  Invalid distances detected: {bad} values out of {raw_dists.size}")
+        print(f"       dist min/max: {np.nanmin(raw_dists):.6g} / {np.nanmax(raw_dists):.6g}")
+    if invalid_mask.any():
+        raw_dists = raw_dists.copy()
+        raw_dists[invalid_mask] = np.inf
+        if fallback_index is not None:
+            bad_rows = np.any(invalid_mask, axis=1)
+            n_bad = int(np.count_nonzero(bad_rows))
+            if verbose:
+                print(f"    ⚠️  Retrying {n_bad:,} invalid queries with Flat fallback...")
+            if n_bad > 0:
+                fallback_queries = query_vectors[bad_rows]
+                fb_dists, fb_indices = fallback_index.search(fallback_queries, search_k)
+                raw_dists[bad_rows] = fb_dists
+                raw_indices[bad_rows] = fb_indices
     
     # Keep squared L2 distances (do NOT take sqrt for consistency)
     # FAISS returns squared L2 by default - this is what we want throughout
     distances = raw_dists
     
-    # Handle exclude_self (robust to exact duplicates)
+    # Handle exclude_self (robust to exact duplicates if requested)
     if exclude_self:
-        # Exclude ALL neighbors with distance ~ 0 (self + exact duplicates)
-        # This is critical when pooling vectors from multiple images
-        tiny = 1e-12
-        
-        # Don't modify FAISS arrays in-place - work with a view instead
-        # Create a copy for sorting to avoid corrupting GPU memory
-        distances_copy = distances.copy()
-        
-        # Mark duplicates and set to inf so they sort to end
-        is_duplicate = distances_copy <= tiny
-        distances_copy[is_duplicate] = np.inf
-        
-        # Sort by distance to get non-duplicates first
-        sort_idx = np.argsort(distances_copy, axis=1)
-        
-        # Take first k (non-duplicates will be first after filtering)
-        row_idx = np.arange(n_query)[:, None]
-        result_indices = raw_indices[row_idx, sort_idx[:, :k]]
-        result_dists = distances_copy[row_idx, sort_idx[:, :k]]
-        
-        # Replace inf back with large value for queries with insufficient non-duplicates
-        result_dists[~np.isfinite(result_dists)] = 1e10
-        
-        return result_dists, result_indices
+        if filter_duplicates:
+            # Exclude ALL neighbors with distance ~ 0 (self + exact duplicates)
+            # This is critical when pooling vectors from multiple images
+            tiny = 1e-12
+            
+            # Don't modify FAISS arrays in-place - work with a view instead
+            # Create a copy for sorting to avoid corrupting GPU memory
+            distances_copy = distances.copy()
+            
+            # Mark duplicates and invalids to inf so they sort to end
+            is_duplicate = distances_copy <= tiny
+            distances_copy[is_duplicate] = np.inf
+            distances_copy[~np.isfinite(distances_copy)] = np.inf
+            
+            # Sort by distance to get non-duplicates first
+            sort_idx = np.argsort(distances_copy, axis=1)
+            
+            # Take first k (non-duplicates will be first after filtering)
+            row_idx = np.arange(n_query)[:, None]
+            result_indices = raw_indices[row_idx, sort_idx[:, :k]]
+            result_dists = distances_copy[row_idx, sort_idx[:, :k]]
+
+            # If duplicate filtering yields non-finite distances, retry those rows with fallback (Flat) index.
+            if fallback_index is not None and (not np.isfinite(result_dists).all()):
+                bad_rows = ~np.isfinite(result_dists).all(axis=1)
+                n_bad = int(np.count_nonzero(bad_rows))
+                if verbose:
+                    print(f"    ⚠️  Non-finite distances after duplicate filtering: {n_bad} rows")
+                if n_bad > 0:
+                    fb_queries = query_vectors[bad_rows]
+                    fb_dists, fb_indices = fallback_index.search(fb_queries, search_k)
+                    fb_copy = fb_dists.copy()
+                    fb_copy[fb_copy <= tiny] = np.inf
+                    fb_copy[~np.isfinite(fb_copy)] = np.inf
+                    fb_sort = np.argsort(fb_copy, axis=1)
+                    fb_row_idx = np.arange(fb_queries.shape[0])[:, None]
+                    fb_result_indices = fb_indices[fb_row_idx, fb_sort[:, :k]]
+                    fb_result_dists = fb_copy[fb_row_idx, fb_sort[:, :k]]
+                    result_indices[bad_rows] = fb_result_indices
+                    result_dists[bad_rows] = fb_result_dists
+
+            if verbose and (not np.isfinite(result_dists).all()):
+                bad = np.count_nonzero(~np.isfinite(result_dists))
+                print(f"    ⚠️  Non-finite distances after duplicate filtering: {bad} values")
+                print(f"       dist min/max: {np.nanmin(result_dists):.6g} / {np.nanmax(result_dists):.6g}")
+            
+            return result_dists, result_indices
+        else:
+            # Only drop the closest neighbor (assumed self); keep exact duplicates.
+            if raw_dists.shape[1] < k + 1:
+                raise ValueError(f"Not enough neighbors to exclude self for k={k}")
+            result_dists = raw_dists[:, 1:k+1]
+            result_indices = raw_indices[:, 1:k+1]
+            return result_dists, result_indices
     
     return distances, raw_indices
 
@@ -252,6 +376,7 @@ def compute_self_radius(
     k: int = 5,
     radius_quantile: float = 0.95,
     neighbor_agg: str = "kth",
+    filter_duplicates: bool = True,
     use_gpu: bool = True,
     index_factory: str = "Flat",
     nprobe: Optional[int] = None,
@@ -293,11 +418,46 @@ def compute_self_radius(
     
     # Build index
     index = build_index(vectors, use_gpu=use_gpu, index_factory=index_factory, nprobe=nprobe, verbose=verbose)
+    fallback_index = None
+    if index_factory.lower() != "flat":
+        fallback_index = build_index(vectors, use_gpu=True, index_factory="Flat", verbose=False)
     
     # Search for k+1 neighbors (including self)
-    distances, _ = compute_knn_distances(
-        index, vectors, k=k, exclude_self=True, batch_size=batch_size, verbose=verbose
-    )
+    try:
+        distances, _ = compute_knn_distances(
+            index,
+            vectors,
+            k=k,
+            exclude_self=True,
+            filter_duplicates=filter_duplicates,
+            fallback_index=fallback_index,
+            batch_size=batch_size,
+            verbose=verbose,
+        )
+    finally:
+        release_index(index)
+        release_index(fallback_index)
+
+    invalid_frac = _invalid_fraction(distances)
+    if (invalid_frac > 1e-4) or _has_excessive_sentinel(distances):
+        if fallback_index is None and (use_gpu or index_factory.lower() != "flat"):
+            if verbose:
+                print(
+                    "  ⚠️  Invalid distances detected; retrying with Flat index on "
+                    f"{'GPU' if use_gpu else 'CPU'}... (invalid_frac={invalid_frac:.6f})"
+                )
+            index = build_index(vectors, use_gpu=use_gpu, index_factory="Flat", nprobe=None, verbose=verbose)
+            try:
+                distances, _ = compute_knn_distances(
+                    index, vectors, k=k, exclude_self=True, batch_size=batch_size, verbose=verbose
+                )
+            finally:
+                release_index(index)
+        elif verbose:
+            print(
+                f"  ⚠️  Invalid distances remain after fallback requery "
+                f"(invalid_frac={invalid_frac:.6f}); continuing without full Flat fallback."
+            )
     
     if distances.size == 0:
         return {
@@ -351,6 +511,7 @@ def compute_directed_distances(
     k: int = 5,
     use_gpu: bool = True,
     index_factory: str = "Flat",
+    nprobe: Optional[int] = None,
     batch_size: Optional[int] = None,
     verbose: bool = True,
 ) -> Dict[str, np.ndarray]:
@@ -375,27 +536,75 @@ def compute_directed_distances(
         print(f"  Computing directed distances: train={train_vectors.shape[0]:,}, eval={eval_vectors.shape[0]:,}, k={k}")
     
     # Build indices
+    eval_to_train = None
+    train_to_eval = None
+    train_index = None
+    eval_index = None
+    train_fallback = None
+    eval_fallback = None
+
+    # Build train index and compute eval → train distances first
     if verbose:
         print(f"  Building train index...")
-    train_index = build_index(train_vectors, use_gpu=use_gpu, index_factory=index_factory, verbose=verbose)
-    
+    try:
+        train_index = build_index(
+            train_vectors, use_gpu=use_gpu, index_factory=index_factory, nprobe=nprobe, verbose=verbose
+        )
+        if index_factory.lower() != "flat":
+            train_fallback = build_index(train_vectors, use_gpu=True, index_factory="Flat", verbose=False)
+        if verbose:
+            print(f"  Computing eval→train distances...")
+        eval_to_train, _ = compute_knn_distances(
+            train_index,
+            eval_vectors,
+            k=k,
+            exclude_self=False,
+            fallback_index=train_fallback,
+            batch_size=batch_size,
+            verbose=verbose,
+        )
+    finally:
+        release_index(train_index)
+        release_index(train_fallback)
+
+    # Build eval index and compute train → eval distances second
     if verbose:
         print(f"  Building eval index...")
-    eval_index = build_index(eval_vectors, use_gpu=use_gpu, index_factory=index_factory, verbose=verbose)
-    
-    # Compute eval → train distances
-    if verbose:
-        print(f"  Computing eval→train distances...")
-    eval_to_train, _ = compute_knn_distances(
-        train_index, eval_vectors, k=k, exclude_self=False, batch_size=batch_size, verbose=verbose
-    )
-    
-    # Compute train → eval distances
-    if verbose:
-        print(f"  Computing train→eval distances...")
-    train_to_eval, _ = compute_knn_distances(
-        eval_index, train_vectors, k=k, exclude_self=False, batch_size=batch_size, verbose=verbose
-    )
+    try:
+        eval_index = build_index(
+            eval_vectors, use_gpu=use_gpu, index_factory=index_factory, nprobe=nprobe, verbose=verbose
+        )
+        if index_factory.lower() != "flat":
+            eval_fallback = build_index(eval_vectors, use_gpu=True, index_factory="Flat", verbose=False)
+        if verbose:
+            print(f"  Computing train→eval distances...")
+        train_to_eval, _ = compute_knn_distances(
+            eval_index,
+            train_vectors,
+            k=k,
+            exclude_self=False,
+            fallback_index=eval_fallback,
+            batch_size=batch_size,
+            verbose=verbose,
+        )
+    finally:
+        release_index(eval_index)
+        release_index(eval_fallback)
+
+    invalid_frac_eval = _invalid_fraction(eval_to_train)
+    invalid_frac_train = _invalid_fraction(train_to_eval)
+    if (
+        (invalid_frac_eval > 1e-4)
+        or (invalid_frac_train > 1e-4)
+        or _has_excessive_sentinel(eval_to_train)
+        or _has_excessive_sentinel(train_to_eval)
+    ):
+        if verbose:
+            print(
+                "  ⚠️  Invalid distances remain after fallback requery; "
+                f"continuing without full Flat fallback. "
+                f"(invalid_frac_eval={invalid_frac_eval:.6f}, invalid_frac_train={invalid_frac_train:.6f})"
+            )
     
     if verbose:
         print(f"  Directed distances complete")

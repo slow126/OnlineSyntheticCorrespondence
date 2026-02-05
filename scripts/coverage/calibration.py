@@ -14,12 +14,32 @@ from . import cache
 from . import spaces
 
 
+def _dedup_vectors_exact(vectors: np.ndarray, verbose: bool = True) -> np.ndarray:
+    """Exact row-wise deduplication for float vectors."""
+    if vectors.size == 0:
+        return vectors
+    if vectors.ndim != 2:
+        raise ValueError(f"Expected 2D vectors array, got shape {vectors.shape}")
+    n, d = vectors.shape
+    if verbose:
+        print(f"  Deduplicating vectors (exact): {n:,}x{d}")
+    contig = np.ascontiguousarray(vectors)
+    view = contig.view(np.dtype((np.void, contig.dtype.itemsize * d)))
+    _, idx = np.unique(view, return_index=True)
+    idx = np.sort(idx)
+    unique = contig[idx]
+    if verbose:
+        print(f"  Deduped: {n:,} -> {len(unique):,} ({(len(unique)/n)*100:.2f}%)")
+    return unique
+
+
 def compute_per_dataset_alpha(
     vectors: np.ndarray,
     k: int = 5,
     use_gpu: bool = True,
     verbose: bool = True,
     max_vectors_for_alpha: int = 1_000_000,
+    dedup: bool = False,
 ) -> float:
     """
     Compute per-dataset alpha from 2D kNN self-radius ratio.
@@ -49,10 +69,19 @@ def compute_per_dataset_alpha(
     
     if verbose:
         print(f"  Computing per-dataset alpha: {vectors.shape[0]:,} vectors, k={k}")
+
+    if dedup:
+        vectors = _dedup_vectors_exact(vectors, verbose=verbose)
     
     # Extract xy and flow spaces
     xy_vectors = spaces.to_xy_space(vectors)
     flow_vectors = spaces.to_flow_space(vectors)
+
+    if dedup:
+        if verbose:
+            print("  Deduplicating XY/flow spaces for alpha...")
+        xy_vectors = _dedup_vectors_exact(xy_vectors, verbose=verbose)
+        flow_vectors = _dedup_vectors_exact(flow_vectors, verbose=verbose)
     
     # Compute kNN distances in both spaces
     if verbose:
@@ -77,6 +106,7 @@ def compute_per_dataset_alpha(
         k=k,
         radius_quantile=0.50,  # Use median for alpha (not p95)
         neighbor_agg="kth",
+        filter_duplicates=False,
         use_gpu=use_gpu,
         index_factory=index_factory,
         nprobe=nprobe,
@@ -92,6 +122,7 @@ def compute_per_dataset_alpha(
         k=k,
         radius_quantile=0.50,  # Use median for alpha
         neighbor_agg="kth",
+        filter_duplicates=False,
         use_gpu=use_gpu,
         index_factory=index_factory,
         nprobe=nprobe,
@@ -149,6 +180,7 @@ def compute_global_alpha(
     use_gpu: bool = True,
     verbose: bool = True,
     max_vectors_for_alpha: int = 1_000_000,
+    dedup: bool = False,
 ) -> Tuple[float, Dict[str, float]]:
     """
     Compute global alpha from multiple training datasets.
@@ -182,7 +214,9 @@ def compute_global_alpha(
             vectors, 
             k=k, 
             use_gpu=use_gpu, 
-            verbose=verbose
+            verbose=verbose,
+            max_vectors_for_alpha=max_vectors_for_alpha,
+            dedup=dedup,
         )
         per_dataset_alphas[dataset_name] = alpha_i
     
@@ -254,6 +288,7 @@ def load_or_compute_alpha(
     use_gpu: bool = True,
     force_recompute: bool = False,
     verbose: bool = True,
+    dedup: bool = False,
 ) -> Tuple[float, Dict[str, float]]:
     """
     Load cached alpha or compute if not found.
@@ -272,7 +307,7 @@ def load_or_compute_alpha(
     """
     # Try to load from cache
     if not force_recompute:
-        cached = cache.load_alpha(cache_dir, representation="flow")
+        cached = cache.load_alpha(cache_dir, representation="flow", dedup=dedup)
         if cached is not None:
             global_alpha, per_dataset_alphas = cached
             
@@ -298,6 +333,7 @@ def load_or_compute_alpha(
         use_gpu=use_gpu,
         verbose=verbose,
         max_vectors_for_alpha=None,  # No subsampling - search for 128 neighbors instead
+        dedup=dedup,
     )
     
     # Save to cache
@@ -306,9 +342,11 @@ def load_or_compute_alpha(
         global_alpha,
         per_dataset_alphas,
         representation="flow",
+        dedup=dedup,
         extra_metadata={
             'k': np.array(k),
             'aggregation': aggregation,
+            'dedup': bool(dedup),
         },
     )
     

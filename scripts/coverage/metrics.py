@@ -146,9 +146,11 @@ def compute_pairwise_coverage(
     k_values: List[int] = [1, 5],
     use_gpu: bool = True,
     index_factory: str = "Flat",
+    nprobe: Optional[int] = None,
     batch_size: Optional[int] = None,
     compute_curves: bool = False,
     curve_quantiles: List[float] = [0.80, 0.90, 0.95, 0.99],
+    filter_duplicates: bool = True,
     verbose: bool = True,
 ) -> Dict[str, any]:
     """
@@ -188,6 +190,7 @@ def compute_pairwise_coverage(
         k=k_max,
         use_gpu=use_gpu,
         index_factory=index_factory,
+        nprobe=nprobe,
         batch_size=batch_size,
         verbose=verbose,
     )
@@ -239,16 +242,34 @@ def compute_pairwise_coverage(
         if verbose:
             print(f"    Computing train self-distances for curves...")
         train_index = faiss_ops.build_index(train_vectors, use_gpu=use_gpu, index_factory=index_factory, verbose=False)
-        train_self_dists, _ = faiss_ops.compute_knn_distances(
-            train_index, train_vectors, k=k_max, exclude_self=True, batch_size=batch_size, verbose=False
-        )
+        try:
+            train_self_dists, _ = faiss_ops.compute_knn_distances(
+                train_index,
+                train_vectors,
+                k=k_max,
+                exclude_self=True,
+                filter_duplicates=filter_duplicates,
+                batch_size=batch_size,
+                verbose=False,
+            )
+        finally:
+            faiss_ops.release_index(train_index)
         
         if verbose:
             print(f"    Computing eval self-distances for curves...")
         eval_index = faiss_ops.build_index(eval_vectors, use_gpu=use_gpu, index_factory=index_factory, verbose=False)
-        eval_self_dists, _ = faiss_ops.compute_knn_distances(
-            eval_index, eval_vectors, k=k_max, exclude_self=True, batch_size=batch_size, verbose=False
-        )
+        try:
+            eval_self_dists, _ = faiss_ops.compute_knn_distances(
+                eval_index,
+                eval_vectors,
+                k=k_max,
+                exclude_self=True,
+                filter_duplicates=filter_duplicates,
+                batch_size=batch_size,
+                verbose=False,
+            )
+        finally:
+            faiss_ops.release_index(eval_index)
         
         curves = compute_coverage_curves(
             train_self_dists,

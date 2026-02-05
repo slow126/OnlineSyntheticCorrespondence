@@ -332,9 +332,12 @@ def apply_pca_preprocessing(
 # Alpha Caching (Flow Calibration)
 # ============================================================================
 
-def alpha_cache_key(representation: str = "flow") -> str:
+def alpha_cache_key(representation: str = "flow", dedup: bool = False) -> str:
     """Generate cache key for global alpha."""
-    return f"global_alpha_{sanitize_name(representation)}.npz"
+    key = f"global_alpha_{sanitize_name(representation)}"
+    if dedup:
+        key += "_dedup"
+    return f"{key}.npz"
 
 
 def save_alpha(
@@ -342,6 +345,7 @@ def save_alpha(
     alpha: float,
     per_dataset_alphas: Dict[str, float],
     representation: str = "flow",
+    dedup: bool = False,
     extra_metadata: Optional[Dict] = None,
 ) -> Path:
     """
@@ -358,7 +362,7 @@ def save_alpha(
         Path to saved file
     """
     cache_dir.mkdir(parents=True, exist_ok=True)
-    path = cache_dir / alpha_cache_key(representation)
+    path = cache_dir / alpha_cache_key(representation, dedup=dedup)
     
     # Prepare data
     save_dict = {
@@ -378,6 +382,7 @@ def save_alpha(
 def load_alpha(
     cache_dir: Path,
     representation: str = "flow",
+    dedup: bool = False,
 ) -> Optional[Tuple[float, Dict[str, float]]]:
     """
     Load global alpha and per-dataset alphas.
@@ -389,7 +394,7 @@ def load_alpha(
     Returns:
         (global_alpha, per_dataset_alphas) or None if not found
     """
-    path = cache_dir / alpha_cache_key(representation)
+    path = cache_dir / alpha_cache_key(representation, dedup=dedup)
     
     if not path.exists():
         return None
@@ -419,6 +424,7 @@ def radius_cache_key(
     space: str,
     k: int = 5,
     quantile: float = 0.95,
+    dedup: bool = False,
     alpha: Optional[float] = None,
     normalization: str = "norm2x1",
     distance_metric: str = "sqL2",
@@ -447,6 +453,9 @@ def radius_cache_key(
         alpha_str = f"{alpha:.4f}".replace(".", "p").replace("-", "m")
         key += f"_a{alpha_str}"
     
+    if dedup:
+        key += "_dedup"
+    
     return f"{key}.npz"
 
 
@@ -458,6 +467,7 @@ def save_radius(
     radius_data: Dict[str, float],
     k: int = 5,
     quantile: float = 0.95,
+    dedup: bool = False,
     alpha: Optional[float] = None,
     normalization: str = "norm2x1",
     distance_metric: str = "sqL2",
@@ -483,7 +493,7 @@ def save_radius(
     radii_dir = cache_dir / "radii"
     radii_dir.mkdir(parents=True, exist_ok=True)
     
-    path = radii_dir / radius_cache_key(dataset, split, space, k, quantile, alpha, normalization, distance_metric)
+    path = radii_dir / radius_cache_key(dataset, split, space, k, quantile, dedup, alpha, normalization, distance_metric)
     
     # Save with full metadata
     save_dict = {key: np.array(val) for key, val in radius_data.items()}
@@ -507,6 +517,7 @@ def load_radius(
     space: str,
     k: int = 5,
     quantile: float = 0.95,
+    dedup: bool = False,
     alpha: Optional[float] = None,
     normalization: str = "norm2x1",
     distance_metric: str = "sqL2",
@@ -529,7 +540,7 @@ def load_radius(
         Dict with radius data or None if not found
     """
     radii_dir = cache_dir / "radii"
-    path = radii_dir / radius_cache_key(dataset, split, space, k, quantile, alpha, normalization, distance_metric)
+    path = radii_dir / radius_cache_key(dataset, split, space, k, quantile, dedup, alpha, normalization, distance_metric)
     
     if not path.exists():
         return None

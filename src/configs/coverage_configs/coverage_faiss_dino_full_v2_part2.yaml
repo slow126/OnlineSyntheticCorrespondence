@@ -82,8 +82,8 @@ cache:
 
 # Output configuration
 output:
-  results_file: analysis/coverage_v2_dino_full.csv
-  curves_file: analysis/coverage_v2_dino_curves.csv
+  results_file: analysis/coverage_v2_dino_full_part2.csv
+  curves_file: analysis/coverage_v2_dino_curves_part2.csv
   save_curves_to_main: false
 
 # Dataset parameters
@@ -160,119 +160,7 @@ dataset_overrides:
 
 # Dataset list (training and eval sets)
 datasets:
-  # Training sets
-  - name: flyingthings
-    split: train
-    representation: dino
-    is_eval: false
-  
-  - name: imagenet2dwarp
-    split: train
-    representation: dino
-    is_eval: false
-
-  - name: synthetic_2d_warp
-    split: train
-    representation: dino
-    is_eval: false
-  
-  - name: synthetic
-    split: train
-    representation: dino
-    is_eval: false
-  
-  - name: synthetic_small_zoom
-    split: train
-    representation: dino
-    is_eval: false
-    overrides:
-      dataset_name: synthetic
-      geometry_config_overrides:
-        angle_sampler:
-          x_components:
-            loc: 0
-            scale: 0.01
-          y_components:
-            loc: 0
-            scale: 0.01
-        scale_sampler:
-          abs_components:
-            scale: 0.2
-          rel_components:
-            loc: -0.1
-            scale: 0.2
-  
-  - name: synthetic_large_zoom
-    split: train
-    representation: dino
-    is_eval: false
-    overrides:
-      dataset_name: synthetic
-      geometry_config_overrides:
-        angle_sampler:
-          x_components:
-            loc: 0
-            scale: 0.01
-          y_components:
-            loc: 0
-            scale: 0.01
-        scale_sampler:
-          abs_components:
-            scale: 0.5
-          rel_components:
-            loc: -0.35
-            scale: 0.5
-  
-  - name: synthetic_random_flipping
-    split: train
-    representation: dino
-    is_eval: false
-    overrides:
-      dataset_name: synthetic
-      geometry_config_overrides:
-        random_flip: 0.5
-
-  - name: spair
-    split: train
-    representation: dino
-    is_eval: false
-  
-  - name: pointodyssey
-    split: train
-    representation: dino
-    is_eval: false
-  
-  - name: sintel
-    split: train
-    representation: dino
-    is_eval: false
-  
-  # Evaluation sets
-  - name: flyingthings
-    split: test
-    representation: dino
-    is_eval: true
-  
-  - name: kitti2015
-    split: val
-    representation: dino
-    is_eval: true
-  
-  - name: kitti2012
-    split: val
-    representation: dino
-    is_eval: true
-  
-  - name: spair
-    split: test
-    representation: dino
-    is_eval: true
-  
-  - name: pfpascal
-    split: test
-    representation: dino
-    is_eval: true
-  
+  # Evaluation sets (remaining)
   - name: pfwillow
     split: test
     representation: dino
@@ -326,7 +214,7 @@ datasets:
       - 0.7
       - 0.3
     is_eval: false
-
+  
   - name: pointodyssey_synthetic_30_70
     split: train
     mixed: true
@@ -337,7 +225,7 @@ datasets:
       - 0.3
       - 0.7
     is_eval: false
-
+  
   - name: pointodyssey_synthetic_50_50
     split: train
     mixed: true
@@ -348,7 +236,7 @@ datasets:
       - 0.5
       - 0.5
     is_eval: false
-
+  
   - name: pointodyssey_synthetic_70_30
     split: train
     mixed: true
@@ -359,7 +247,7 @@ datasets:
       - 0.7
       - 0.3
     is_eval: false
-
+  
   - name: flyingthings_synthetic_30_70
     split: train
     mixed: true
@@ -370,7 +258,7 @@ datasets:
       - 0.3
       - 0.7
     is_eval: false
-
+  
   - name: flyingthings_synthetic_70_30
     split: train
     mixed: true
@@ -381,7 +269,7 @@ datasets:
       - 0.7
       - 0.3
     is_eval: false
-
+  
   - name: sintel_synthetic_30_70
     split: train
     mixed: true
@@ -392,7 +280,7 @@ datasets:
       - 0.3
       - 0.7
     is_eval: false
-
+  
   - name: sintel_synthetic_70_30
     split: train
     mixed: true

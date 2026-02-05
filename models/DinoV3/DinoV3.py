@@ -45,44 +45,55 @@ class DinoV3:
         pooled_output = outputs.pooler_output
         return pooled_output
     
-    def _apply_tensor_transforms(self, tensor_batch):
+    def _apply_tensor_transforms(self, tensor_batch, normalize: bool = True, clamp: bool = True):
         """Apply the same transforms as self.transform but directly on tensors."""
         # Replicate the transform pipeline: resize, to_float, normalize
         # Assuming input is already in CHW format and on GPU
-        
-        # Resize to the configured size
         tensor_batch = torch.nn.functional.interpolate(
-            tensor_batch, 
-            size=(self.resize_size, self.resize_size), 
-            mode='bilinear', 
+            tensor_batch,
+            size=(self.resize_size, self.resize_size),
+            mode="bilinear",
             align_corners=False,
-            antialias=True
+            antialias=True,
         )
-        
-        # Convert to float32 and scale to [0, 1] if needed
+
         if tensor_batch.dtype != torch.float32:
             tensor_batch = tensor_batch.float()
-        
-        # Ensure values are in [0, 1] range
-        tensor_batch = torch.clamp(tensor_batch, 0.0, 1.0)
-        
-        # Normalize with ImageNet stats
-        mean = torch.tensor([0.485, 0.456, 0.406], device=tensor_batch.device).view(1, 3, 1, 1)
-        std = torch.tensor([0.229, 0.224, 0.225], device=tensor_batch.device).view(1, 3, 1, 1)
-        tensor_batch = (tensor_batch - mean) / std
-        
+
+        if clamp:
+            tensor_batch = torch.clamp(tensor_batch, 0.0, 1.0)
+
+        if normalize:
+            mean = torch.tensor([0.485, 0.456, 0.406], device=tensor_batch.device).view(1, 3, 1, 1)
+            std = torch.tensor([0.229, 0.224, 0.225], device=tensor_batch.device).view(1, 3, 1, 1)
+            tensor_batch = (tensor_batch - mean) / std
+
         return tensor_batch
 
     def get_spatial_features(self, image):
         # Check if input is a batch of tensors (already on GPU) or a single image
         if isinstance(image, torch.Tensor) and image.dim() == 4:
             # Batch of tensors already on GPU: (batch_size, 3, H, W)
-            image = self._apply_tensor_transforms(image)
+            sample_min = float(image.min().item())
+            sample_max = float(image.max().item())
+            already_normalized = (sample_min < -0.1) or (sample_max > 1.1)
+            image = self._apply_tensor_transforms(
+                image,
+                normalize=not already_normalized,
+                clamp=not already_normalized,
+            )
             
         elif isinstance(image, torch.Tensor) and image.dim() == 3:
             # Single tensor: (3, H, W) - add batch dimension, transform, remove batch dimension
             image = image.unsqueeze(0)  # (1, 3, H, W)
-            image = self._apply_tensor_transforms(image)
+            sample_min = float(image.min().item())
+            sample_max = float(image.max().item())
+            already_normalized = (sample_min < -0.1) or (sample_max > 1.1)
+            image = self._apply_tensor_transforms(
+                image,
+                normalize=not already_normalized,
+                clamp=not already_normalized,
+            )
             image = image.squeeze(0)  # (3, H, W)
             
         else:
@@ -90,11 +101,16 @@ class DinoV3:
             image = self.transform(image)
         
         # Process through the model
-        inputs = self.processor(
-            images=image, 
-            return_tensors="pt", 
-            do_resize=False,
-            do_center_crop=False).to(self.model.device)
+        processor_kwargs = {
+            "images": image,
+            "return_tensors": "pt",
+            "do_resize": False,
+            "do_center_crop": False,
+        }
+        if isinstance(image, torch.Tensor):
+            processor_kwargs["do_normalize"] = False
+            processor_kwargs["do_rescale"] = False
+        inputs = self.processor(**processor_kwargs).to(self.model.device)
         
         with torch.inference_mode():
             outputs = self.model(**inputs)
@@ -324,7 +340,6 @@ if __name__ == "__main__":
     input_image_path = "test_render.png"
     input_image = Image.open(input_image_path).convert("RGB")
     dino_v3.visualize_spatial_features(input_image)
-
 
 
 

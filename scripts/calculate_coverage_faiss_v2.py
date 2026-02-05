@@ -13,6 +13,7 @@ Implements the 5-step pipeline:
 
 import argparse
 import gc
+import os
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -330,8 +331,21 @@ def extract_vectors_from_dataset(
             features = encoder.extract_features(images)  # (B*1024, D) for spatial patches
             
             vectors = features.cpu().numpy()
+            del features
+            if device == "cuda":
+                torch.cuda.empty_cache()
+            
+            if not np.isfinite(vectors).all():
+                bad_mask = ~np.isfinite(vectors)
+                bad_count = int(np.count_nonzero(bad_mask))
+                print(f"  ⚠️  Non-finite DINO/ResNet features detected in batch {batch_idx}: {bad_count} values")
+                if np.isinf(vectors).any():
+                    print("    Contains inf values")
+                if np.isnan(vectors).any():
+                    print("    Contains NaN values")
             
             B = images.shape[0]
+            del images
             total_features = len(vectors)
             features_per_image_actual = total_features // B
             
@@ -368,6 +382,11 @@ def extract_vectors_from_dataset(
                 vectors = cache.apply_pca(pca_model, vectors)
                 if pca_l2_normalize:
                     vectors = cache.l2_normalize(vectors)
+                _summarize_vector_stats(
+                    vectors[: min(len(vectors), 50000)],
+                    label=f"{dataset_label or 'dataset'} (post-pca)",
+                    representation=representation,
+                )
         
         all_vectors.append(vectors)
         total_vectors += len(vectors)
@@ -505,6 +524,99 @@ def extract_vectors_from_dataset(
     return all_vectors
 
 
+def _validate_vectors(
+    vectors: np.ndarray,
+    representation: str,
+    expect_l2_normalized: bool,
+    dataset_label: str,
+    sample_size: int = 50000,
+) -> None:
+    """Sanity-check cached/extracted vectors for finiteness and normalization."""
+    if vectors is None or vectors.size == 0:
+        return
+    n = vectors.shape[0]
+    take = min(sample_size, n)
+    idx = np.random.choice(n, size=take, replace=False) if n > take else slice(None)
+    sample = vectors[idx]
+    finite_mask = np.isfinite(sample)
+    if not np.all(finite_mask):
+        bad = np.count_nonzero(~finite_mask)
+        raise ValueError(
+            f"[{dataset_label}] Found {bad} non-finite values in {representation} vectors. "
+            "Delete cached vectors and re-extract."
+        )
+    stats = _summarize_vector_stats(sample, label=dataset_label, representation=representation)
+    if stats["zero_frac"] > 0.001:
+        raise ValueError(
+            f"[{dataset_label}] Found {stats['zero_frac']:.3%} near-zero vectors in {representation} "
+            "sample; cached vectors may be invalid."
+        )
+    if stats["dup_rate"] > 0.05:
+        print(
+            f"  ⚠️  [{dataset_label}] High duplicate rate in {representation} sample "
+            f"({stats['dup_rate']:.2%}); continuing."
+        )
+    if expect_l2_normalized and representation in ("dino", "resnet"):
+        mean_norm = stats["mean_norm"]
+        if not (0.90 <= mean_norm <= 1.10):
+            raise ValueError(
+                f"[{dataset_label}] Expected L2-normalized vectors (mean norm≈1), got {mean_norm:.3f}. "
+                "Cached vectors may be stale; delete cache and re-extract."
+            )
+        # Stricter check: ensure most vectors are near unit norm.
+        frac_outside = stats["frac_outside_norm"]
+        if (mean_norm < 0.95 or mean_norm > 1.05) or (frac_outside > 0.01):
+            raise ValueError(
+                f"[{dataset_label}] L2-norm check failed (mean={mean_norm:.3f}, "
+                f"frac_outside_[0.8,1.2]={frac_outside:.3%}). "
+                "Cached vectors may be from a different PCA/L2 setting; delete cache and re-extract."
+            )
+
+
+def _summarize_vector_stats(
+    sample: np.ndarray,
+    label: str,
+    representation: str,
+) -> Dict[str, float]:
+    norms = np.linalg.norm(sample, axis=1)
+    mean_norm = float(np.mean(norms))
+    min_norm = float(np.min(norms))
+    max_norm = float(np.max(norms))
+    zero_frac = float(np.mean(norms <= 1e-12))
+    frac_outside_norm = float(np.mean((norms < 0.80) | (norms > 1.20)))
+
+    rounded = np.round(sample.astype(np.float32), decimals=4)
+    contig = np.ascontiguousarray(rounded)
+    view = contig.view(np.dtype((np.void, contig.dtype.itemsize * contig.shape[1])))
+    unique_vals, counts = np.unique(view, return_counts=True)
+    unique_count = int(unique_vals.size)
+    dup_rate = 1.0 - (unique_count / float(len(sample)))
+    top_idx = int(np.argmax(counts)) if counts.size else 0
+    top_count = int(counts[top_idx]) if counts.size else 0
+    top_vec = rounded[top_idx] if counts.size else None
+    top_norm = float(np.linalg.norm(top_vec)) if top_vec is not None else float("nan")
+
+    print(
+        f"  [{label}] {representation} stats: "
+        f"mean_norm={mean_norm:.6f}, min_norm={min_norm:.6f}, max_norm={max_norm:.6f}, "
+        f"zero_frac={zero_frac:.3%}, dup_rate={dup_rate:.2%}"
+    )
+    if top_vec is not None:
+        print(
+            f"    top_dup_count={top_count}, top_dup_norm={top_norm:.6f}, "
+            f"top_dup_is_zero={'yes' if top_norm <= 1e-6 else 'no'}"
+        )
+
+    return {
+        "mean_norm": mean_norm,
+        "min_norm": min_norm,
+        "max_norm": max_norm,
+        "zero_frac": zero_frac,
+        "dup_rate": dup_rate,
+        "frac_outside_norm": frac_outside_norm,
+    }
+
+
 def run_pipeline(config_path: str):
     """Run the full coverage pipeline."""
     
@@ -522,13 +634,36 @@ def run_pipeline(config_path: str):
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     device = "cuda" if torch.cuda.is_available() and config['faiss']['use_gpu'] else "cpu"
-    
+
+    # Determine cache representation (may include PCA suffix for streaming)
+    stream_pca = False
+    cache_repr = representation
+    if representation in ["resnet", "dino"] and config.get("pca", {}).get("enabled", False):
+        stream_pca = config["pca"].get("streaming", True)
+        if stream_pca:
+            cache_repr = _pca_representation_name(
+                representation,
+                config["pca"]["output_dim"],
+                config["pca"].get("l2_normalize", False),
+            )
+
+    # Only initialize encoder if we need to extract vectors (i.e., cache miss)
+    need_encoder = False
+    if representation in ["resnet", "dino"]:
+        for ds_config in config['datasets']:
+            dataset_name = ds_config.get('name')
+            split = ds_config.get('split')
+            if not cache.cache_exists(cache_dir, dataset_name, split, cache_repr):
+                need_encoder = True
+                break
+
     # Initialize encoder if needed
     encoder = None
-    if representation == "resnet":
-        encoder = ResNet101Encoder(device=device)
-    elif representation == "dino":
-        encoder = DinoV3Encoder(device=device)
+    if need_encoder:
+        if representation == "resnet":
+            encoder = ResNet101Encoder(device=device)
+        elif representation == "dino":
+            encoder = DinoV3Encoder(device=device)
     
     # ======================
     # STEP 0: Load/Extract Vectors
@@ -540,20 +675,12 @@ def run_pipeline(config_path: str):
     train_vectors = {}
     eval_vectors = {}
 
-    stream_pca = False
     pca_model = None
-    cache_repr = representation
     if representation in ["resnet", "dino"] and config.get("pca", {}).get("enabled", False):
-        stream_pca = config["pca"].get("streaming", True)
         if stream_pca:
-            cache_repr = _pca_representation_name(
-                representation,
-                config["pca"]["output_dim"],
-                config["pca"].get("l2_normalize", False),
-            )
             pca_model = cache.load_pca_model(cache_dir, representation)
 
-    if stream_pca and pca_model is None:
+    if stream_pca and pca_model is None and need_encoder:
         train_configs = [d for d in config["datasets"] if not d.get("is_eval", False)]
         pca_model = _fit_pca_from_train_datasets(
             train_configs,
@@ -674,6 +801,19 @@ def run_pipeline(config_path: str):
                 print(f"    y: [{vectors[:, 1].min():.2f}, {vectors[:, 1].max():.2f}]")
                 print(f"    dx: [{vectors[:, 2].min():.2f}, {vectors[:, 2].max():.2f}]")
                 print(f"    dy: [{vectors[:, 3].min():.2f}, {vectors[:, 3].max():.2f}]")
+
+        # Validate vectors for non-finite values and expected normalization
+        expect_l2 = (
+            representation in ("dino", "resnet")
+            and config.get("pca", {}).get("enabled", False)
+            and config.get("pca", {}).get("l2_normalize", False)
+        )
+        _validate_vectors(
+            vectors,
+            representation,
+            expect_l2_normalized=expect_l2,
+            dataset_label=f"{dataset_name}/{split}",
+        )
         
         # Store vectors
         key = (dataset_name, split)
@@ -692,6 +832,25 @@ def run_pipeline(config_path: str):
             torch.cuda.empty_cache()
     
     print(f"\nLoaded {len(train_vectors)} train sets, {len(eval_vectors)} eval sets")
+
+    # Release encoder after extraction to free GPU memory.
+    if encoder is not None:
+        try:
+            encoder_device = getattr(encoder, "device", None)
+            if encoder_device is not None and str(encoder_device).startswith("cuda"):
+                try:
+                    encoder.dino.model.to("cpu")
+                except Exception:
+                    pass
+                try:
+                    encoder.backbone.to("cpu")
+                except Exception:
+                    pass
+        finally:
+            del encoder
+            gc.collect()
+            if device == "cuda":
+                torch.cuda.empty_cache()
     
     # ======================
     # PREPROCESSING
@@ -764,11 +923,18 @@ def run_pipeline(config_path: str):
     # ======================
     global_alpha = None
     
-    if representation == "flow" and config['calibration']['enabled']:
+    disable_alpha = os.getenv("COVERAGE_DISABLE_ALPHA", "").strip().lower() in {"1", "true", "yes", "y"}
+
+    if representation == "flow" and config['calibration']['enabled'] and not disable_alpha:
         print(f"\n{'='*80}")
         print(f"STEP 1: ALPHA CALIBRATION")
         print(f"{'='*80}\n")
         
+        dedup_alpha = config.get("calibration", {}).get("dedup", False)
+        env_alpha = os.getenv("COVERAGE_ALPHA_DEDUP", "").strip().lower()
+        if env_alpha in {"1", "true", "yes", "y"}:
+            dedup_alpha = True
+
         global_alpha, per_dataset_alphas = calibration.load_or_compute_alpha(
             cache_dir,
             train_vectors,
@@ -776,8 +942,15 @@ def run_pipeline(config_path: str):
             aggregation=config['calibration']['aggregation'],
             use_gpu=config['faiss']['use_gpu'],
             force_recompute=config['calibration']['force_recompute'],
+            dedup=dedup_alpha,
             verbose=True,
         )
+    elif representation == "flow" and disable_alpha:
+        global_alpha = 1.0
+        print(f"\n{'='*80}")
+        print(f"STEP 1: ALPHA CALIBRATION (DISABLED)")
+        print(f"{'='*80}\n")
+        print("  ⚠️  Alpha calibration disabled via COVERAGE_DISABLE_ALPHA=1. Using alpha=1.0")
     
     # ======================
     # STEP 2: Define Spaces
@@ -835,6 +1008,11 @@ def run_pipeline(config_path: str):
     for space_name in enabled_spaces:
         all_datasets_in_space = {**space_train_vectors[space_name], **space_eval_vectors[space_name]}
         
+        dedup_self_radius = config.get("coverage", {}).get("self_radius_dedup", False)
+        env_dedup = os.getenv("COVERAGE_SELF_RADIUS_DEDUP", "").strip().lower()
+        if env_dedup in {"1", "true", "yes", "y"}:
+            dedup_self_radius = True
+
         radii_for_space = radius.compute_all_radii(
             cache_dir,
             all_datasets_in_space,
@@ -842,6 +1020,9 @@ def run_pipeline(config_path: str):
             k=config['coverage']['self_radius_k'],
             quantile=config['coverage']['radius_quantile'],
             neighbor_agg=config['coverage']['neighbor_agg'],
+            filter_duplicates=True,
+            dedup=dedup_self_radius,
+            batch_size=config['faiss'].get('batch_size'),
             alpha=global_alpha if space_name == "joint" else None,
             normalization=config.get('flow_normalization', {}).get('scheme', 'norm2x1'),
             distance_metric=config['distance_metric']['name'],
@@ -889,9 +1070,11 @@ def run_pipeline(config_path: str):
                     k_values=config['coverage']['k_values'],
                     use_gpu=config['faiss']['use_gpu'],
                     index_factory=config['faiss']['index_factory'],
+                    nprobe=config['faiss'].get('nprobe'),
                     batch_size=config['faiss'].get('batch_size'),
                     compute_curves=config['coverage']['compute_curves'],
                     curve_quantiles=config['coverage']['curve_quantiles'],
+                    filter_duplicates=(representation == "flow"),
                     verbose=True,
                 )
                 
@@ -919,6 +1102,10 @@ def run_pipeline(config_path: str):
                         eval_cov = coverage_result['metrics'][f'eval_covered_by_train_qnorm_k{k}']
                         train_cov = coverage_result['metrics'][f'train_covered_by_eval_qnorm_k{k}']
                         print(f"  k={k}: eval_covered={eval_cov:.3f}, train_covered={train_cov:.3f}")
+
+                gc.collect()
+                if device == "cuda":
+                    torch.cuda.empty_cache()
     
     # ======================
     # Save Results
