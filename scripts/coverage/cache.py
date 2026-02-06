@@ -73,6 +73,104 @@ def load_cached_vectors(
     return None
 
 
+# ============================================================================
+# Directed distance caching (cross-dataset)
+# ============================================================================
+
+def directed_cache_key(
+    train_dataset: str,
+    train_split: str,
+    eval_dataset: str,
+    eval_split: str,
+    space: str,
+    k: int,
+    direction: str,
+    normalization: str,
+    distance_metric: str,
+    alpha: Optional[float] = None,
+    ext: str = "npz",
+) -> str:
+    safe_train = sanitize_name(train_dataset)
+    safe_train_split = sanitize_name(train_split)
+    safe_eval = sanitize_name(eval_dataset)
+    safe_eval_split = sanitize_name(eval_split)
+    safe_space = sanitize_name(space)
+    safe_norm = sanitize_name(normalization)
+    safe_metric = sanitize_name(distance_metric)
+    safe_dir = sanitize_name(direction)
+    alpha_str = f"_a{alpha:.6g}" if alpha is not None else ""
+    return (
+        f"directed_{safe_train}_{safe_train_split}_to_{safe_eval}_{safe_eval_split}_"
+        f"{safe_space}_{safe_norm}_{safe_metric}_k{k}_{safe_dir}{alpha_str}.{ext}"
+    )
+
+
+def load_directed_distances(
+    cache_dir: Path,
+    train_dataset: str,
+    train_split: str,
+    eval_dataset: str,
+    eval_split: str,
+    space: str,
+    k: int,
+    direction: str,
+    normalization: str,
+    distance_metric: str,
+    alpha: Optional[float] = None,
+) -> Optional[np.ndarray]:
+    directed_dir = cache_dir / "directed"
+    path = directed_dir / directed_cache_key(
+        train_dataset,
+        train_split,
+        eval_dataset,
+        eval_split,
+        space,
+        k,
+        direction,
+        normalization,
+        distance_metric,
+        alpha=alpha,
+        ext="npz",
+    )
+    if not path.exists():
+        return None
+    data = np.load(path)
+    return data["distances"] if "distances" in data else None
+
+
+def save_directed_distances(
+    cache_dir: Path,
+    train_dataset: str,
+    train_split: str,
+    eval_dataset: str,
+    eval_split: str,
+    space: str,
+    k: int,
+    direction: str,
+    normalization: str,
+    distance_metric: str,
+    distances: np.ndarray,
+    alpha: Optional[float] = None,
+) -> Path:
+    directed_dir = cache_dir / "directed"
+    directed_dir.mkdir(parents=True, exist_ok=True)
+    path = directed_dir / directed_cache_key(
+        train_dataset,
+        train_split,
+        eval_dataset,
+        eval_split,
+        space,
+        k,
+        direction,
+        normalization,
+        distance_metric,
+        alpha=alpha,
+        ext="npz",
+    )
+    np.savez(path, distances=distances)
+    return path
+
+
 def save_cached_vectors(
     cache_dir: Path,
     dataset: str,

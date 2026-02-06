@@ -38,10 +38,10 @@ pca:
 
 # FAISS configuration (tuned for 3090 24GB VRAM with 256-D vectors)
 faiss:
-  index_factory: IVF1024,Flat  # IVF for speed (critical for 256-D)
+  index_factory: IVF4096,Flat  # More lists to reduce per-probe work
   metric: l2  # L2 on unit vectors = cosine similarity
   use_gpu: true
-  nprobe: 512  # Higher nprobe to reduce invalid neighbors
+  nprobe: 128  # Reduced nprobe for speed
   batch_size: 10000  # Smaller batch to reduce GPU IVF failures
 
 # Coverage metrics configuration
@@ -73,7 +73,8 @@ cache:
   dir: /mnt/nvme_1tb_b/coverage_vectors
   mode: read_write
   format: npy
-  mmap: true
+  mmap: false
+  lazy_load: true
   # Cache structure:
   # - Raw features: {dataset}_{split}_dino.npy (4096-D)
   # - PCA model: pca_model_dino.pkl

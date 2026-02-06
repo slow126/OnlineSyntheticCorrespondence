@@ -129,10 +129,62 @@ datasets:
     split: train
     is_eval: false
   
+  - name: synthetic_2d_warp
+    split: train
+    is_eval: false
+
   - name: synthetic
     split: train
     is_eval: false
   
+  - name: synthetic_small_zoom
+    split: train
+    is_eval: false
+    overrides:
+      dataset_name: synthetic
+      geometry_config_overrides:
+        angle_sampler:
+          x_components:
+            loc: 0
+            scale: 0.01
+          y_components:
+            loc: 0
+            scale: 0.01
+        scale_sampler:
+          abs_components:
+            scale: 0.2
+          rel_components:
+            loc: -0.1
+            scale: 0.2
+
+  - name: synthetic_large_zoom
+    split: train
+    is_eval: false
+    overrides:
+      dataset_name: synthetic
+      geometry_config_overrides:
+        angle_sampler:
+          x_components:
+            loc: 0
+            scale: 0.01
+          y_components:
+            loc: 0
+            scale: 0.01
+        scale_sampler:
+          abs_components:
+            scale: 0.5
+          rel_components:
+            loc: -0.35
+            scale: 0.5
+
+  - name: synthetic_random_flipping
+    split: train
+    is_eval: false
+    overrides:
+      dataset_name: synthetic
+      geometry_config_overrides:
+        random_flip: 0.5
+
   - name: spair
     split: train
     is_eval: false
@@ -181,3 +233,114 @@ datasets:
   - name: middlebury
     split: val
     is_eval: true
+
+  # Mixed training sets (for analysis parity)
+  - name: spair_synthetic_30_70
+    split: train
+    mixed: true
+    datasets:
+      - spair
+      - synthetic
+    percentages:
+      - 0.3
+      - 0.7
+    is_eval: false
+
+  - name: spair_synthetic_50_50
+    split: train
+    mixed: true
+    datasets:
+      - spair
+      - synthetic
+    percentages:
+      - 0.5
+      - 0.5
+    is_eval: false
+
+  - name: spair_synthetic_70_30
+    split: train
+    mixed: true
+    datasets:
+      - spair
+      - synthetic
+    percentages:
+      - 0.7
+      - 0.3
+    is_eval: false
+
+  - name: pointodyssey_synthetic_30_70
+    split: train
+    mixed: true
+    datasets:
+      - pointodyssey
+      - synthetic
+    percentages:
+      - 0.3
+      - 0.7
+    is_eval: false
+
+  - name: pointodyssey_synthetic_50_50
+    split: train
+    mixed: true
+    datasets:
+      - pointodyssey
+      - synthetic
+    percentages:
+      - 0.5
+      - 0.5
+    is_eval: false
+
+  - name: pointodyssey_synthetic_70_30
+    split: train
+    mixed: true
+    datasets:
+      - pointodyssey
+      - synthetic
+    percentages:
+      - 0.7
+      - 0.3
+    is_eval: false
+
+  - name: flyingthings_synthetic_30_70
+    split: train
+    mixed: true
+    datasets:
+      - flyingthings
+      - synthetic
+    percentages:
+      - 0.3
+      - 0.7
+    is_eval: false
+
+  - name: flyingthings_synthetic_70_30
+    split: train
+    mixed: true
+    datasets:
+      - flyingthings
+      - synthetic
+    percentages:
+      - 0.7
+      - 0.3
+    is_eval: false
+
+  - name: sintel_synthetic_30_70
+    split: train
+    mixed: true
+    datasets:
+      - sintel
+      - synthetic
+    percentages:
+      - 0.3
+      - 0.7
+    is_eval: false
+
+  - name: sintel_synthetic_70_30
+    split: train
+    mixed: true
+    datasets:
+      - sintel
+      - synthetic
+    percentages:
+      - 0.7
+      - 0.3
+    is_eval: false

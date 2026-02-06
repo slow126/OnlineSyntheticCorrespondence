@@ -13,6 +13,7 @@ This module provides reusable building blocks:
 """
 
 from typing import Dict, Optional, Tuple
+import os
 import gc
 import numpy as np
 
@@ -30,6 +31,13 @@ def _get_gpu_resources(temp_memory_bytes: int = 12 * 1024 * 1024 * 1024) -> "fai
     """Reuse a single GPU resource pool to avoid per-index GPU memory growth."""
     global _GPU_RESOURCES
     if _GPU_RESOURCES is None:
+        import os
+        env_gb = os.getenv("FAISS_GPU_TEMP_GB")
+        if env_gb:
+            try:
+                temp_memory_bytes = int(float(env_gb) * 1024 * 1024 * 1024)
+            except ValueError:
+                pass
         _GPU_RESOURCES = faiss.StandardGpuResources()
         _GPU_RESOURCES.setTempMemory(temp_memory_bytes)
     return _GPU_RESOURCES
@@ -168,6 +176,20 @@ def build_index(
     if verbose:
         print(f"    Adding {n_vectors:,} vectors...")
     index.add(vectors)
+
+    # IVF diagnostics (list size stats) before GPU transfer
+    if verbose and "ivf" in index_factory.lower() and hasattr(index, "invlists"):
+        try:
+            nlist = index.nlist
+            sizes = np.fromiter((index.invlists.list_size(i) for i in range(nlist)), dtype=np.int64)
+            if sizes.size:
+                print(
+                    f"    IVF list sizes: min={int(sizes.min())}, "
+                    f"median={int(np.median(sizes))}, max={int(sizes.max())}, "
+                    f"p90={int(np.quantile(sizes, 0.90))}"
+                )
+        except Exception:
+            pass
     
     # Set nprobe
     if nprobe is not None and hasattr(index, "nprobe"):
@@ -266,6 +288,24 @@ def compute_knn_distances(
             if verbose and (not np.isfinite(batch).all()):
                 bad = np.count_nonzero(~np.isfinite(batch))
                 print(f"    ⚠️  Non-finite query vectors in batch [{i}:{i+len(batch)}]: {bad} values")
+            # Optional query list diagnostics for IVF
+            if verbose and os.getenv("FAISS_LOG_QUERY_LISTS") and i == 0:
+                try:
+                    sample = batch[: min(len(batch), 10000)]
+                    cpu_index = faiss.index_gpu_to_cpu(index) if is_gpu else index
+                    if hasattr(cpu_index, "quantizer"):
+                        _, list_ids = cpu_index.quantizer.search(sample, 1)
+                        list_ids = list_ids.reshape(-1)
+                        counts = np.bincount(list_ids, minlength=cpu_index.nlist)
+                        top5 = np.argsort(counts)[-5:][::-1]
+                        top1_frac = float(counts[top5[0]]) / float(len(list_ids))
+                        top5_frac = float(counts[top5].sum()) / float(len(list_ids))
+                        print(
+                            f"    IVF query list usage (sample={len(list_ids)}): "
+                            f"top1={top1_frac:.2%}, top5={top5_frac:.2%}"
+                        )
+                except Exception:
+                    pass
             batch_dists, batch_indices = index.search(batch, search_k)
             if verbose and (not np.isfinite(batch_dists).all()):
                 bad = np.count_nonzero(~np.isfinite(batch_dists))
@@ -613,6 +653,80 @@ def compute_directed_distances(
         'eval_to_train': eval_to_train,
         'train_to_eval': train_to_eval,
     }
+
+
+def compute_eval_to_train(
+    train_vectors: np.ndarray,
+    eval_vectors: np.ndarray,
+    k: int = 5,
+    use_gpu: bool = True,
+    index_factory: str = "Flat",
+    nprobe: Optional[int] = None,
+    batch_size: Optional[int] = None,
+    verbose: bool = True,
+) -> np.ndarray:
+    """Compute eval → train distances only."""
+    if verbose:
+        print(f"  Computing eval→train distances...")
+        print(f"  Building train index...")
+    train_index = None
+    train_fallback = None
+    try:
+        train_index = build_index(
+            train_vectors, use_gpu=use_gpu, index_factory=index_factory, nprobe=nprobe, verbose=verbose
+        )
+        if index_factory.lower() != "flat":
+            train_fallback = build_index(train_vectors, use_gpu=True, index_factory="Flat", verbose=False)
+        eval_to_train, _ = compute_knn_distances(
+            train_index,
+            eval_vectors,
+            k=k,
+            exclude_self=False,
+            fallback_index=train_fallback,
+            batch_size=batch_size,
+            verbose=verbose,
+        )
+    finally:
+        release_index(train_index)
+        release_index(train_fallback)
+    return eval_to_train
+
+
+def compute_train_to_eval(
+    train_vectors: np.ndarray,
+    eval_vectors: np.ndarray,
+    k: int = 5,
+    use_gpu: bool = True,
+    index_factory: str = "Flat",
+    nprobe: Optional[int] = None,
+    batch_size: Optional[int] = None,
+    verbose: bool = True,
+) -> np.ndarray:
+    """Compute train → eval distances only."""
+    if verbose:
+        print(f"  Computing train→eval distances...")
+        print(f"  Building eval index...")
+    eval_index = None
+    eval_fallback = None
+    try:
+        eval_index = build_index(
+            eval_vectors, use_gpu=use_gpu, index_factory=index_factory, nprobe=nprobe, verbose=verbose
+        )
+        if index_factory.lower() != "flat":
+            eval_fallback = build_index(eval_vectors, use_gpu=True, index_factory="Flat", verbose=False)
+        train_to_eval, _ = compute_knn_distances(
+            eval_index,
+            train_vectors,
+            k=k,
+            exclude_self=False,
+            fallback_index=eval_fallback,
+            batch_size=batch_size,
+            verbose=verbose,
+        )
+    finally:
+        release_index(eval_index)
+        release_index(eval_fallback)
+    return train_to_eval
 
 
 def distance_statistics(distances: np.ndarray) -> Dict[str, float]:

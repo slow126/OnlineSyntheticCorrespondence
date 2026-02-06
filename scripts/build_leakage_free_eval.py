@@ -1039,6 +1039,21 @@ def _safe_corr(a, b):
     return float(np.corrcoef(a[mask], b[mask])[0, 1])
 
 
+def write_predictor_colinearity(df, predictors, out_path, method="pearson"):
+    if df.empty or not predictors:
+        return
+    cols = [p for p in predictors if p in df.columns]
+    if len(cols) < 2:
+        return
+    sub = df[cols].dropna()
+    if len(sub) < 3:
+        return
+    corr = sub.corr(method=method)
+    mask = np.triu(np.ones(corr.shape, dtype=bool), k=1)
+    corr = corr.mask(mask)
+    corr.to_csv(out_path)
+
+
 def write_distance_diagnostics(df, out_path):
     lines = []
     prefixes = ("flow", "resnet", "dino")
@@ -5224,6 +5239,8 @@ def main():
                 "auc_steps": int(args.auc_steps),
                 "auc": auc,
                 "auc_normalized": auc / args.auc_steps if args.auc_steps else np.nan,
+                "auc_last_step": int(last_step) if last_step is not None else np.nan,
+                "auc_normalized_observed": (auc / last_step) if last_step else np.nan,
                 "auc_points": int(n_points),
                 **curve_extra,
             }
@@ -5545,6 +5562,12 @@ def main():
     if not predictors:
         print("No valid predictors found after dropping redundant columns.")
         return
+
+    write_predictor_colinearity(
+        feature_df,
+        predictors,
+        out_dir / "predictor_colinearity_triangle.csv",
+    )
 
     predictor_norm = args.benchmark_normalize_predictors
     if predictor_norm == "auto":

@@ -8,9 +8,11 @@ Computes:
 """
 
 from typing import Dict, List, Optional, Tuple
+from pathlib import Path
 import numpy as np
 
 from . import faiss_ops
+from . import cache
 
 
 def compute_coverage_metrics(
@@ -142,6 +144,14 @@ def compute_pairwise_coverage(
     eval_vectors: np.ndarray,
     train_radius_data: Dict[str, float],
     eval_radius_data: Dict[str, float],
+    cache_dir: Optional[Path] = None,
+    train_label: Optional[Tuple[str, str]] = None,
+    eval_label: Optional[Tuple[str, str]] = None,
+    space: str = "features",
+    normalization: str = "norm2x1",
+    distance_metric: str = "sqL2",
+    alpha: Optional[float] = None,
+    direction: str = "both",
     k_max: int = 5,
     k_values: List[int] = [1, 5],
     use_gpu: bool = True,
@@ -183,20 +193,101 @@ def compute_pairwise_coverage(
         print(f"    Dim: {train_vectors.shape[1]}")
         print(f"    k_max: {k_max}, k_values: {k_values}")
     
-    # Compute directed distances
-    directed_dists = faiss_ops.compute_directed_distances(
-        train_vectors,
-        eval_vectors,
-        k=k_max,
-        use_gpu=use_gpu,
-        index_factory=index_factory,
-        nprobe=nprobe,
-        batch_size=batch_size,
-        verbose=verbose,
-    )
-    
-    eval_to_train = directed_dists['eval_to_train']  # (N_eval, k_max)
-    train_to_eval = directed_dists['train_to_eval']  # (N_train, k_max)
+    # Compute directed distances (optionally cached)
+    eval_to_train = None
+    train_to_eval = None
+    if cache_dir is not None and train_label and eval_label:
+        train_ds, train_split = train_label
+        eval_ds, eval_split = eval_label
+        if direction in ("both", "eval_to_train"):
+            eval_to_train = cache.load_directed_distances(
+                cache_dir,
+                train_ds,
+                train_split,
+                eval_ds,
+                eval_split,
+                space,
+                k_max,
+                direction="eval_to_train",
+                normalization=normalization,
+                distance_metric=distance_metric,
+                alpha=alpha,
+            )
+        if direction in ("both", "train_to_eval"):
+            train_to_eval = cache.load_directed_distances(
+                cache_dir,
+                train_ds,
+                train_split,
+                eval_ds,
+                eval_split,
+                space,
+                k_max,
+                direction="train_to_eval",
+                normalization=normalization,
+                distance_metric=distance_metric,
+                alpha=alpha,
+            )
+
+    if direction in ("both", "eval_to_train") and eval_to_train is None:
+        eval_to_train = faiss_ops.compute_eval_to_train(
+            train_vectors,
+            eval_vectors,
+            k=k_max,
+            use_gpu=use_gpu,
+            index_factory=index_factory,
+            nprobe=nprobe,
+            batch_size=batch_size,
+            verbose=verbose,
+        )
+        if cache_dir is not None and train_label and eval_label:
+            cache.save_directed_distances(
+                cache_dir,
+                train_label[0],
+                train_label[1],
+                eval_label[0],
+                eval_label[1],
+                space,
+                k_max,
+                direction="eval_to_train",
+                normalization=normalization,
+                distance_metric=distance_metric,
+                distances=eval_to_train,
+                alpha=alpha,
+            )
+
+    if direction in ("both", "train_to_eval") and train_to_eval is None:
+        train_to_eval = faiss_ops.compute_train_to_eval(
+            train_vectors,
+            eval_vectors,
+            k=k_max,
+            use_gpu=use_gpu,
+            index_factory=index_factory,
+            nprobe=nprobe,
+            batch_size=batch_size,
+            verbose=verbose,
+        )
+        if cache_dir is not None and train_label and eval_label:
+            cache.save_directed_distances(
+                cache_dir,
+                train_label[0],
+                train_label[1],
+                eval_label[0],
+                eval_label[1],
+                space,
+                k_max,
+                direction="train_to_eval",
+                normalization=normalization,
+                distance_metric=distance_metric,
+                distances=train_to_eval,
+                alpha=alpha,
+            )
+
+    if direction != "both":
+        return {
+            "metrics": {},
+            "distance_stats": {},
+            "curves": {},
+        }
     
     # Extract radii from radius_data
     train_radius = train_radius_data['radius']

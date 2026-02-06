@@ -617,7 +617,7 @@ def _summarize_vector_stats(
     }
 
 
-def run_pipeline(config_path: str):
+def run_pipeline(config_path: str, direction_override: Optional[str] = None):
     """Run the full coverage pipeline."""
     
     print(f"\n{'='*80}")
@@ -629,6 +629,10 @@ def run_pipeline(config_path: str):
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
     
+    if direction_override:
+        config.setdefault("coverage", {})
+        config["coverage"]["direction"] = direction_override
+
     representation = config['representation']
     cache_dir = Path(config['cache']['dir'])
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -672,8 +676,11 @@ def run_pipeline(config_path: str):
     print(f"STEP 0: LOAD/EXTRACT VECTORS")
     print(f"{'='*80}\n")
 
+    lazy_load = bool(config.get("cache", {}).get("lazy_load", False))
     train_vectors = {}
     eval_vectors = {}
+    train_keys = []
+    eval_keys = []
 
     pca_model = None
     if representation in ["resnet", "dino"] and config.get("pca", {}).get("enabled", False):
@@ -697,18 +704,33 @@ def run_pipeline(config_path: str):
         
         print(f"\n[{dataset_name}/{split}] {'(eval)' if is_eval else '(train)'}")
         
-        # Try to load from cache first
-        vectors = cache.load_cached_vectors(
-            cache_dir,
-            dataset_name,
-            split,
-            cache_repr,
-            mmap=config.get("cache", {}).get("mmap", False),
-        )
-        
+        vectors = None
+        cache_present = False
+        if not lazy_load:
+            # Try to load from cache first
+            vectors = cache.load_cached_vectors(
+                cache_dir,
+                dataset_name,
+                split,
+                cache_repr,
+                mmap=config.get("cache", {}).get("mmap", False),
+            )
+        else:
+            cache_present = cache.cache_exists(cache_dir, dataset_name, split, cache_repr)
+            if cache_present:
+                print("  ✓ Cached vectors present")
+
         dataset = None
         dataloader = None
         
+        if lazy_load and cache_present:
+            key = (dataset_name, split)
+            if is_eval:
+                eval_keys.append(key)
+            else:
+                train_keys.append(key)
+            continue
+
         if vectors is None:
             # Create dataset (mixed or regular)
             if ds_config.get('mixed', False):
@@ -793,35 +815,35 @@ def run_pipeline(config_path: str):
             cache.save_cached_vectors(cache_dir, dataset_name, split, cache_repr, vectors)
         else:
             print(f"  ✓ Loaded {len(vectors):,} cached vectors")
-            # Debug: check vectors after loading
-            if representation == "flow":
-                print(f"  Post-load check:")
-                print(f"    Shape: {vectors.shape}")
-                print(f"    x: [{vectors[:, 0].min():.2f}, {vectors[:, 0].max():.2f}]")
-                print(f"    y: [{vectors[:, 1].min():.2f}, {vectors[:, 1].max():.2f}]")
-                print(f"    dx: [{vectors[:, 2].min():.2f}, {vectors[:, 2].max():.2f}]")
-                print(f"    dy: [{vectors[:, 3].min():.2f}, {vectors[:, 3].max():.2f}]")
 
-        # Validate vectors for non-finite values and expected normalization
-        expect_l2 = (
-            representation in ("dino", "resnet")
-            and config.get("pca", {}).get("enabled", False)
-            and config.get("pca", {}).get("l2_normalize", False)
-        )
-        _validate_vectors(
-            vectors,
-            representation,
-            expect_l2_normalized=expect_l2,
-            dataset_label=f"{dataset_name}/{split}",
-        )
-        
-        # Store vectors
         key = (dataset_name, split)
         if is_eval:
-            eval_vectors[key] = vectors
+            eval_keys.append(key)
         else:
-            train_vectors[key] = vectors
-        
+            train_keys.append(key)
+
+        if not lazy_load:
+            # Validate vectors for non-finite values and expected normalization
+            expect_l2 = (
+                representation in ("dino", "resnet")
+                and config.get("pca", {}).get("enabled", False)
+                and config.get("pca", {}).get("l2_normalize", False)
+            )
+            _validate_vectors(
+                vectors,
+                representation,
+                expect_l2_normalized=expect_l2,
+                dataset_label=f"{dataset_name}/{split}",
+            )
+            # Store vectors
+            if is_eval:
+                eval_vectors[key] = vectors
+            else:
+                train_vectors[key] = vectors
+        else:
+            if vectors is not None:
+                del vectors
+
         # Clean up (only delete if they were created)
         if dataset is not None:
             del dataset
@@ -831,7 +853,10 @@ def run_pipeline(config_path: str):
         if device == "cuda":
             torch.cuda.empty_cache()
     
-    print(f"\nLoaded {len(train_vectors)} train sets, {len(eval_vectors)} eval sets")
+    if lazy_load:
+        print(f"\nFound {len(train_keys)} train sets, {len(eval_keys)} eval sets")
+    else:
+        print(f"\nLoaded {len(train_vectors)} train sets, {len(eval_vectors)} eval sets")
 
     # Release encoder after extraction to free GPU memory.
     if encoder is not None:
@@ -855,6 +880,9 @@ def run_pipeline(config_path: str):
     # ======================
     # PREPROCESSING
     # ======================
+    if lazy_load and representation in ["resnet", "dino"] and not stream_pca:
+        raise ValueError("Lazy-load requires streaming PCA for resnet/dino.")
+
     if representation == "flow":
         # Normalize flow vectors to [-1, 1]
         if config['flow_normalization']['enabled']:
@@ -961,40 +989,58 @@ def run_pipeline(config_path: str):
     
     enabled_spaces = config['spaces']['enabled']
     print(f"Enabled spaces: {enabled_spaces}")
-    
-    # Transform vectors into each space
+
+    def _load_vectors_for_key(key: tuple) -> np.ndarray:
+        dataset_name, split = key
+        vectors = cache.load_cached_vectors(
+            cache_dir,
+            dataset_name,
+            split,
+            cache_repr,
+            mmap=config.get("cache", {}).get("mmap", False),
+        )
+        if vectors is None:
+            raise ValueError(f"Missing cached vectors for {dataset_name}/{split}")
+        expect_l2 = (
+            representation in ("dino", "resnet")
+            and config.get("pca", {}).get("enabled", False)
+            and config.get("pca", {}).get("l2_normalize", False)
+        )
+        _validate_vectors(
+            vectors,
+            representation,
+            expect_l2_normalized=expect_l2,
+            dataset_label=f"{dataset_name}/{split}",
+        )
+        if representation == "flow" and config['flow_normalization']['enabled']:
+            img_h, img_w = config['flow_normalization']['image_size']
+            vectors = spaces.normalize_flow_vectors(vectors, img_w, img_h)
+        return vectors
+
+    def _to_space(vectors: np.ndarray, space_name: str) -> np.ndarray:
+        if representation != "flow":
+            return vectors
+        if space_name == "xy":
+            return spaces.to_xy_space(vectors)
+        if space_name == "flow":
+            return spaces.to_flow_space(vectors)
+        if space_name == "joint":
+            return spaces.to_joint_space(vectors, global_alpha)
+        raise ValueError(f"Unknown space: {space_name}")
+
     space_train_vectors = {}
     space_eval_vectors = {}
-    
-    for space_name in enabled_spaces:
-        print(f"\nTransforming to {space_name} space...")
-        
-        space_train_vectors[space_name] = {}
-        space_eval_vectors[space_name] = {}
-        
-        for key, vectors in train_vectors.items():
-            if representation == "flow":
-                if space_name == "xy":
-                    space_train_vectors[space_name][key] = spaces.to_xy_space(vectors)
-                elif space_name == "flow":
-                    space_train_vectors[space_name][key] = spaces.to_flow_space(vectors)
-                elif space_name == "joint":
-                    space_train_vectors[space_name][key] = spaces.to_joint_space(vectors, global_alpha)
-            else:  # features
-                space_train_vectors[space_name][key] = vectors
-        
-        for key, vectors in eval_vectors.items():
-            if representation == "flow":
-                if space_name == "xy":
-                    space_eval_vectors[space_name][key] = spaces.to_xy_space(vectors)
-                elif space_name == "flow":
-                    space_eval_vectors[space_name][key] = spaces.to_flow_space(vectors)
-                elif space_name == "joint":
-                    space_eval_vectors[space_name][key] = spaces.to_joint_space(vectors, global_alpha)
-            else:  # features
-                space_eval_vectors[space_name][key] = vectors
-        
-        print(f"  {space_name}: {len(space_train_vectors[space_name])} train, {len(space_eval_vectors[space_name])} eval")
+    if not lazy_load:
+        # Transform vectors into each space
+        for space_name in enabled_spaces:
+            print(f"\nTransforming to {space_name} space...")
+            space_train_vectors[space_name] = {}
+            space_eval_vectors[space_name] = {}
+            for key, vectors in train_vectors.items():
+                space_train_vectors[space_name][key] = _to_space(vectors, space_name)
+            for key, vectors in eval_vectors.items():
+                space_eval_vectors[space_name][key] = _to_space(vectors, space_name)
+            print(f"  {space_name}: {len(space_train_vectors[space_name])} train, {len(space_eval_vectors[space_name])} eval")
     
     # ======================
     # STEP 3: Self-Radius Computation
@@ -1006,33 +1052,68 @@ def run_pipeline(config_path: str):
     all_radii = {}  # space_name -> {(dataset_name, split): radius_data}
     
     for space_name in enabled_spaces:
-        all_datasets_in_space = {**space_train_vectors[space_name], **space_eval_vectors[space_name]}
-        
         dedup_self_radius = config.get("coverage", {}).get("self_radius_dedup", False)
         env_dedup = os.getenv("COVERAGE_SELF_RADIUS_DEDUP", "").strip().lower()
         if env_dedup in {"1", "true", "yes", "y"}:
             dedup_self_radius = True
 
-        radii_for_space = radius.compute_all_radii(
-            cache_dir,
-            all_datasets_in_space,
-            space=space_name,
-            k=config['coverage']['self_radius_k'],
-            quantile=config['coverage']['radius_quantile'],
-            neighbor_agg=config['coverage']['neighbor_agg'],
-            filter_duplicates=True,
-            dedup=dedup_self_radius,
-            batch_size=config['faiss'].get('batch_size'),
-            alpha=global_alpha if space_name == "joint" else None,
-            normalization=config.get('flow_normalization', {}).get('scheme', 'norm2x1'),
-            distance_metric=config['distance_metric']['name'],
-            use_gpu=config['faiss']['use_gpu'],
-            index_factory=config['faiss']['index_factory'],
-            force_recompute=False,
-            verbose=True,
-        )
-        
+        radii_for_space = {}
         all_radii[space_name] = radii_for_space
+
+        if not lazy_load:
+            all_datasets_in_space = {**space_train_vectors[space_name], **space_eval_vectors[space_name]}
+            radii_for_space.update(
+                radius.compute_all_radii(
+                    cache_dir,
+                    all_datasets_in_space,
+                    space=space_name,
+                    k=config['coverage']['self_radius_k'],
+                    quantile=config['coverage']['radius_quantile'],
+                    neighbor_agg=config['coverage']['neighbor_agg'],
+                    filter_duplicates=True,
+                    dedup=dedup_self_radius,
+                    batch_size=config['faiss'].get('batch_size'),
+                    alpha=global_alpha if space_name == "joint" else None,
+                    normalization=config.get('flow_normalization', {}).get('scheme', 'norm2x1'),
+                    distance_metric=config['distance_metric']['name'],
+                    use_gpu=config['faiss']['use_gpu'],
+                    index_factory=config['faiss']['index_factory'],
+                    nprobe=config['faiss'].get('nprobe'),
+                    force_recompute=False,
+                    verbose=True,
+                )
+            )
+        else:
+            for key in train_keys + eval_keys:
+                ds_name, ds_split = key
+                print(f"\n[{ds_name}/{ds_split}]")
+                vectors = _load_vectors_for_key(key)
+                vectors = _to_space(vectors, space_name)
+                radii_for_space[key] = radius.load_or_compute_radius(
+                    cache_dir,
+                    ds_name,
+                    ds_split,
+                    space_name,
+                    vectors,
+                    k=config['coverage']['self_radius_k'],
+                    quantile=config['coverage']['radius_quantile'],
+                    neighbor_agg=config['coverage']['neighbor_agg'],
+                    filter_duplicates=True,
+                    dedup=dedup_self_radius,
+                    batch_size=config['faiss'].get('batch_size'),
+                    alpha=global_alpha if space_name == "joint" else None,
+                    normalization=config.get('flow_normalization', {}).get('scheme', 'norm2x1'),
+                    distance_metric=config['distance_metric']['name'],
+                    use_gpu=config['faiss']['use_gpu'],
+                    index_factory=config['faiss']['index_factory'],
+                    nprobe=config['faiss'].get('nprobe'),
+                    force_recompute=False,
+                    verbose=True,
+                )
+                del vectors
+                gc.collect()
+                if device == "cuda":
+                    torch.cuda.empty_cache()
     
     # ======================
     # STEPS 4-5: Coverage Metrics
@@ -1048,15 +1129,23 @@ def run_pipeline(config_path: str):
         print(f"SPACE: {space_name.upper()}")
         print(f"{'='*60}\n")
         
-        for train_key in space_train_vectors[space_name].keys():
-            for eval_key in space_eval_vectors[space_name].keys():
+        train_iter = train_keys if lazy_load else space_train_vectors[space_name].keys()
+        eval_iter = eval_keys if lazy_load else space_eval_vectors[space_name].keys()
+        for train_key in train_iter:
+            for eval_key in eval_iter:
                 train_name, train_split = train_key
                 eval_name, eval_split = eval_key
                 
                 print(f"\n[{train_name}/{train_split} → {eval_name}/{eval_split}]")
-                
-                train_vecs = space_train_vectors[space_name][train_key]
-                eval_vecs = space_eval_vectors[space_name][eval_key]
+
+                if lazy_load:
+                    train_vecs = _load_vectors_for_key(train_key)
+                    eval_vecs = _load_vectors_for_key(eval_key)
+                    train_vecs = _to_space(train_vecs, space_name)
+                    eval_vecs = _to_space(eval_vecs, space_name)
+                else:
+                    train_vecs = space_train_vectors[space_name][train_key]
+                    eval_vecs = space_eval_vectors[space_name][eval_key]
                 train_radius_data = all_radii[space_name][train_key]
                 eval_radius_data = all_radii[space_name][eval_key]
                 
@@ -1066,6 +1155,14 @@ def run_pipeline(config_path: str):
                     eval_vecs,
                     train_radius_data,
                     eval_radius_data,
+                    cache_dir=cache_dir,
+                    train_label=train_key,
+                    eval_label=eval_key,
+                    space=space_name,
+                    normalization=config.get('flow_normalization', {}).get('scheme', 'norm2x1'),
+                    distance_metric=config['distance_metric']['name'],
+                    alpha=global_alpha if space_name == "joint" else None,
+                    direction=config.get("coverage", {}).get("direction", "both"),
                     k_max=config['coverage']['k_max'],
                     k_values=config['coverage']['k_values'],
                     use_gpu=config['faiss']['use_gpu'],
@@ -1106,6 +1203,9 @@ def run_pipeline(config_path: str):
                 gc.collect()
                 if device == "cuda":
                     torch.cuda.empty_cache()
+                if lazy_load:
+                    del train_vecs
+                    del eval_vecs
     
     # ======================
     # Save Results
@@ -1129,9 +1229,16 @@ def run_pipeline(config_path: str):
 def main():
     parser = argparse.ArgumentParser(description="Coverage Pipeline v2.0")
     parser.add_argument("--config", type=str, required=True, help="Path to config YAML")
+    parser.add_argument(
+        "--direction",
+        type=str,
+        choices=["both", "eval_to_train", "train_to_eval"],
+        default=None,
+        help="Compute only one direction of cross-dataset distances.",
+    )
     args = parser.parse_args()
     
-    run_pipeline(args.config)
+    run_pipeline(args.config, direction_override=args.direction)
 
 
 if __name__ == "__main__":

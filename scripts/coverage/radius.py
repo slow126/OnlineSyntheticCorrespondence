@@ -42,6 +42,7 @@ def compute_per_dataset_radii(
     batch_size: Optional[int] = None,
     use_gpu: bool = True,
     index_factory: str = "Flat",
+    nprobe: Optional[int] = None,
     verbose: bool = True,
 ) -> Dict[str, float]:
     """
@@ -74,6 +75,7 @@ def compute_per_dataset_radii(
         batch_size=batch_size,
         use_gpu=use_gpu,
         index_factory=index_factory,
+        nprobe=nprobe,
         verbose=verbose,
     )
     
@@ -102,6 +104,7 @@ def load_or_compute_radius(
     distance_metric: str = "sqL2",
     use_gpu: bool = True,
     index_factory: str = "Flat",
+    nprobe: Optional[int] = None,
     force_recompute: bool = False,
     verbose: bool = True,
 ) -> Dict[str, float]:
@@ -174,6 +177,7 @@ def load_or_compute_radius(
         batch_size=batch_size,
         use_gpu=use_gpu,
         index_factory=index_factory,
+        nprobe=nprobe,
         verbose=verbose,
     )
     
@@ -210,6 +214,7 @@ def compute_all_radii(
     distance_metric: str = "sqL2",
     use_gpu: bool = True,
     index_factory: str = "Flat",
+    nprobe: Optional[int] = None,
     force_recompute: bool = False,
     verbose: bool = True,
 ) -> Dict[str, Dict[str, float]]:
@@ -266,6 +271,7 @@ def compute_all_radii(
             distance_metric=distance_metric,
             use_gpu=use_gpu,
             index_factory=index_factory,
+            nprobe=nprobe,
             force_recompute=force_recompute,
             verbose=verbose,
         )
