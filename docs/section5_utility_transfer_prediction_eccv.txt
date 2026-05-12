@@ -1,0 +1,117 @@
+\section{Utility Function for Transfer Prediction}
+\label{sec:utility_transfer}
+
+\paragraph{Goal.}
+Given a candidate training dataset $T$ and target benchmark $B$, we define a utility score that predicts transfer performance before training to convergence.
+In this work, we focus on
+\texttt{auc\_normalized\_observed}
+as the prediction target, since it summarizes the observed training-curve quality at each run's available horizon.
+
+\subsection{Utility definition}
+\label{subsec:utility_definition}
+
+Let $\phi(T,B)\in\mathbb{R}^d$ denote dataset-pair features (directional discrepancy + density controls).
+We define:
+\begin{equation}
+U(T\mid B)\;=\;\hat{P}(T\!\rightarrow\!B)\;=\;f_\theta\!\big(\phi(T,B)\big),
+\end{equation}
+where $f_\theta$ is a calibrated predictor fitted on historical train/benchmark experiments, and $\hat{P}(T\!\rightarrow\!B)$ estimates
+\texttt{auc\_normalized\_observed}.
+Higher utility indicates higher expected transfer.
+
+\subsection{``Shipping'' predictor (portable feature set)}
+\label{subsec:shipping_predictor}
+
+For deployment, we use a compact, portable feature set:
+\begin{itemize}
+\item \textbf{Primary directional support term}: eval$\rightarrow$train discrepancy (missing-support signal).
+\item \textbf{Density/context controls}: log sample count and log average-flow statistics.
+\item \textbf{Optional semantic term}: DINO directional discrepancy/KL when available.
+\end{itemize}
+
+This choice is practical: it keeps feature extraction fast, avoids over-parameterization, and preserves interpretability under distribution shift.
+We treat eval$\rightarrow$train terms as primary utility features, while train$\rightarrow$eval terms are retained as complementary diagnostics.
+
+\subsection{Diagnostics: missing support vs.\ extra mass}
+\label{subsec:utility_diagnostics}
+
+We attach two directional diagnostics to every utility score:
+\begin{equation}
+\Delta_{\text{miss}}(T,B)=D_{E\rightarrow T},\qquad
+\Delta_{\text{extra}}(T,B)=D_{T\rightarrow E},
+\end{equation}
+where $D_{\cdot}$ is a directional NN-distance or coverage-derived discrepancy.
+Interpretation:
+\begin{itemize}
+\item high $\Delta_{\text{miss}}$, low/moderate $\Delta_{\text{extra}}$: under-coverage (missing support)
+\item low/moderate $\Delta_{\text{miss}}$, high $\Delta_{\text{extra}}$: extra mass
+\item both high: broad mismatch
+\end{itemize}
+
+Thus, utility provides a scalar rank signal, while directional diagnostics explain \emph{why} a candidate is weak or strong.
+
+\subsection{Deployment recipe}
+\label{subsec:deployment_recipe}
+
+\textbf{Offline (once per benchmark family).}
+\begin{enumerate}
+\item Build historical table of $(T,B,\phi(T,B), y)$ with $y=\texttt{auc\_normalized\_observed}$.
+\item Fit $f_\theta$ using leakage-free splits (e.g., leave-one-train-dataset-out and leave-one-benchmark-out).
+\item Calibrate outputs and store model + preprocessing parameters.
+\end{enumerate}
+
+\textbf{Online (for new candidate datasets).}
+\begin{enumerate}
+\item For each candidate $T$, compute $\phi(T,B)$.
+\item Compute utility $U(T\mid B)=f_\theta(\phi(T,B))$.
+\item Rank candidates by $U(T\mid B)$ and inspect $(\Delta_{\text{miss}},\Delta_{\text{extra}})$ for diagnosis.
+\end{enumerate}
+
+\subsection{Algorithm 1: utility for a pair}
+\label{subsec:alg_utility}
+
+\begin{figure}[t]
+\centering
+\fbox{
+\begin{minipage}{0.96\linewidth}
+\textbf{Algorithm 1: Compute utility for one $(T,B)$ pair}
+\begin{enumerate}
+\item \textbf{Input:} candidate train set $T$, benchmark $B$, fitted predictor $f_\theta$, feature config $\mathcal{C}$.
+\item Extract pairwise directional features under $\mathcal{C}$:
+eval$\rightarrow$train discrepancy, train$\rightarrow$eval discrepancy, and density controls.
+\item Optionally extract DINO directional feature(s) if enabled.
+\item Form feature vector $\phi(T,B)$ using saved preprocessing.
+\item Compute utility score: $U(T\mid B)\gets f_\theta(\phi(T,B))$.
+\item Set diagnostics:
+$\Delta_{\text{miss}}\gets D_{E\rightarrow T}$ and $\Delta_{\text{extra}}\gets D_{T\rightarrow E}$.
+\item \textbf{Return:} $U(T\mid B)$ and diagnostics $(\Delta_{\text{miss}},\Delta_{\text{extra}})$.
+\end{enumerate}
+\end{minipage}
+}
+\caption{
+Package-free pseudocode for computing utility on one dataset pair.
+}
+\label{alg:utility_pair}
+\end{figure}
+
+\subsection{Closed-loop dataset design}
+\label{subsec:design_loop}
+
+Figure~\ref{fig:dataset_design_loop} summarizes the practical loop:
+\emph{generate} candidates $\rightarrow$ \emph{measure} directional mismatch $\rightarrow$ \emph{score} utility $\rightarrow$ \emph{iterate} data design.
+This closes the loop between dataset construction and expected transfer quality, reducing expensive full-training evaluations.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\linewidth]{figures/section5/fig4_dataset_design_loop.pdf}
+    \caption{
+    Dataset design loop for transfer-oriented training data construction.
+    Candidate datasets are generated, measured with directional discrepancy metrics, scored by utility prediction, and iteratively refined.
+    }
+    \label{fig:dataset_design_loop}
+\end{figure}
+
+\paragraph{Practical note.}
+The utility target in this work is
+\texttt{auc\_normalized\_observed},
+which aligns scoring with observed transfer quality while remaining robust to differing run horizons.

@@ -1,0 +1,26 @@
+\begin{table}[t]
+\centering
+\small
+\caption{Training datasets ranked by peak PCK on TSS (PCK $\alpha$\,=\,5\%, best checkpoint, avg.\ RAFT \& CATs++). Parenthetical numbers are ranks (1\,=\,best); \textbf{bold} = within 1 of PCK rank. Symmetric flow MMD conflates both directions of distributional overlap. For example, ImageNet-2D-Warp is PCK rank\,7 but Flow MMD rank\,3. Decomposing into directed flow coverage (fraction of flow vectors within 2\,px of their nearest neighbour in the other set ($\uparrow$ higher\,=\,better).), the Eval$\to$Train direction better identifies whether evaluation flows have nearby matches in the training set.}
+\label{tab:directional_spotlight_tss}
+\resizebox{\linewidth}{!}{%
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{lrrrrr}
+\toprule
+\textbf{Training set} & \textbf{PCK ($\alpha$\,=\,5\%)} & \textbf{rank} & \textbf{Eval{\footnotesize$\to$}Train$^\dagger$ ($\uparrow$)} & \textbf{Train{\footnotesize$\to$}Eval$^\dagger$ ($\uparrow$)} & \textbf{Flow MMD ($\downarrow$)} \\
+\midrule
+SDF-Fractal3D & 45.5 & 1 & \textbf{0.154 (1)} & 0.009 (4) & \textbf{0.284 (2)} \\
+FlyingThings3D & 45.3 & 2 & \textbf{0.131 (3)} & \textbf{0.017 (3)} & 1.034 (5) \\
+Sintel & 44.8 & 3 & 0.023 (6) & \textbf{0.023 (2)} & 1.965 (6) \\
+PointOdyssey & 44.8 & 4 & \textbf{0.093 (4)} & 0.036 (1) & 2.090 (7) \\
+SDF-Fractal3D (2D warp) & 43.9 & 5 & 0.152 (2) & \textbf{0.009 (5)} & 0.282 (1) \\
+ImageNet-2D-Warp & 33.1 & 7 & 0.093 (5) & \textbf{0.008 (6)} & 0.424 (3) \\
+\midrule
+\multicolumn{6}{l}{\textit{sample-limited ($n \ll$ others)}} \\
+SPair-71k & 33.1 & 6 & \textbf{0.002 (7)} & \textbf{0.004 (7)} & 0.799 (4) \\
+\midrule
+\multicolumn{6}{p{0.95\linewidth}}{\small Sorted by PCK ($\alpha$\,=\,5\%, best checkpoint, avg.\ RAFT \& CATs++). \textbf{Bold} = metric rank within 1 of PCK rank. $^\dagger$Flow Coverage = fraction of flow vectors within 2\,px of their nearest neighbour in the other set ($\uparrow$ higher\,=\,better).} \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}

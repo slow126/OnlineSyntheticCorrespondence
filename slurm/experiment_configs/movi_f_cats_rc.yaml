@@ -1,0 +1,45 @@
+# MOVi-F baseline sweep: 4 CATs encoder variants + RAFT (5 jobs total)
+#
+# Run ON the RC cluster after pulling:
+#   python slurm/generate_experiments.py \
+#       -M slurm/machine_configs/remote_long.yaml \
+#       -S slurm/experiment_configs/movi_f_cats_rc.yaml \
+#       -O slurm/experiment_configs/generated_movi_f
+#
+# Then submit:
+#   bash slurm/experiment_configs/generated_movi_f/submit_all.sh
+
+project_root: "/home/slow1/Projects/OnlineSyntheticCorrespondence"
+
+training_base: "src/configs/lightning/training_base_rc.yaml"
+eval_base: "src/configs/lightning/eval_base_rc.yaml"
+
+training_datasets:
+  - name: "movi_f"
+    dataset_config: "src/configs/lightning/datasets/movi_f_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 16
+
+output_dir: "/home/slow1/Projects/OnlineSyntheticCorrespondence/slurm/experiment_configs/generated_movi_f"
+
+sweeps:
+  # 2x2 CATs encoder grid: pretrained backbone × frozen encoder (4 runs)
+  - name: "cats_encoder_grid"
+    parameters:
+      model.pretrained_backbone: [true, false]
+      model.freeze: [true, false]
+      training.steps_per_epoch: 100
+    name_template: "movi_f_cats_pretrained{model.pretrained_backbone}_freeze{model.freeze}"
+
+  # RAFT baseline (1 run)
+  - name: "raft_baseline"
+    parameters:
+      model.type: raft
+      model.small: false
+      model.iters: 12
+      model.alternate_corr: false
+      model.mixed_precision: false
+      model.dropout: 0.0
+      dataset.downsample_flow: null
+    name_template: "movi_f_raft_baseline"

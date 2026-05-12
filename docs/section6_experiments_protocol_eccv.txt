@@ -1,0 +1,88 @@
+\section{Experiments}
+\label{sec:experiments}
+
+\subsection{Protocol overview}
+\label{subsec:protocol_overview}
+
+We evaluate transfer prediction on a dataset-transfer grid defined by candidate train datasets $T$ and target benchmarks $B$.
+Each $(T,B)$ pair contributes observed transfer outcomes and precomputed discrepancy features, enabling utility prediction without full retraining for every design iteration.
+
+\subsection{Dataset roster and transfer grid}
+\label{subsec:dataset_roster_grid}
+
+Our roster includes synthetic, real, and mixed train datasets spanning sparse-to-dense motion regimes.
+Evaluation benchmarks cover both optical-flow-style and semantic correspondence settings.
+Table~\ref{tab:dataset_roster_stats} reports the roster and core statistics (size, density, and coarse type: sparse/dense/mixed).
+
+\begin{table}[t]
+    \centering
+    \caption{Dataset roster and basic statistics.}
+    \label{tab:dataset_roster_stats}
+    \begin{tabular}{lccc}
+        \hline
+        Dataset & \#samples & density stat & type \\
+        \hline
+        % fill from your run summary csv / appendix table generation
+        % e.g., flyingthings, synthetic\_small\_zoom, spair\_synthetic\_70\_30, ...
+        \hline
+    \end{tabular}
+\end{table}
+
+\subsection{Target variable}
+\label{subsec:target_variable}
+
+The primary regression target is:
+\begin{equation}
+y(T,B)=\texttt{auc\_normalized\_observed}(T,B).
+\end{equation}
+This target reflects observed transfer quality over available training horizons and is used consistently in all main experiments.
+
+\subsection{Validation design}
+\label{subsec:validation_design}
+
+We use two leakage-aware validation schemes:
+\begin{itemize}
+\item \textbf{LOTO (Leave-One-Train-dataset-Out):} tests generalization to unseen train-set constructions.
+\item \textbf{LOBO (Leave-One-Benchmark-Out):} tests benchmark transfer.
+\end{itemize}
+
+For LOBO, we avoid benchmark-specific intercept leakage by not introducing held-out benchmark identity effects in the prediction fold.
+This enforces true out-of-benchmark evaluation of utility.
+
+\subsection{Evaluation metrics}
+\label{subsec:evaluation_metrics}
+
+Primary metrics are error-based:
+\begin{itemize}
+\item Mean Absolute Error (MAE)
+\item Root Mean Squared Error (RMSE)
+\end{itemize}
+
+Supporting association metrics:
+\begin{itemize}
+\item Pearson correlation
+\item Spearman rank correlation
+\end{itemize}
+
+Ranking-oriented analyses (top-$k$, regret, rank error) are reported as optional/appendix diagnostics.
+
+\subsection{Method-family comparison and parity}
+\label{subsec:method_parity}
+
+We compare directional, symmetric, and mixed predictor families under matched training/evaluation protocol.
+Where applicable, parameter parity is enforced (same target, same split logic, same preprocessing policy), and any family-specific hyperparameters are isolated.
+Full grid-search ranges and model-selection details are deferred to the appendix for reproducibility.
+
+\subsection{Visualization of the transfer matrix}
+\label{subsec:transfer_matrix_viz}
+
+To contextualize utility behavior, we optionally visualize the train$\times$benchmark matrix (Figure~\ref{fig:transfer_grid_optional}), highlighting structured success/failure regions across dataset families.
+
+\begin{figure}[t]
+    \centering
+    % Optional placeholder; replace if included in final draft.
+    \fbox{\parbox{0.95\linewidth}{\centering Optional Fig. 5 placeholder: train$\times$benchmark transfer grid visualization.}}
+    \caption{(Optional) Train$\times$benchmark transfer grid visualization.}
+    \label{fig:transfer_grid_optional}
+\end{figure}
+

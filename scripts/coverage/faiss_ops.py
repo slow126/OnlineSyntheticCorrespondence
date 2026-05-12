@@ -27,8 +27,10 @@ except ImportError as exc:
 _GPU_RESOURCES = None
 
 
-def _get_gpu_resources(temp_memory_bytes: int = 12 * 1024 * 1024 * 1024) -> "faiss.StandardGpuResources":
-    """Reuse a single GPU resource pool to avoid per-index GPU memory growth."""
+def _get_gpu_resources(temp_memory_bytes: int = 512 * 1024 * 1024) -> "faiss.StandardGpuResources":
+    """Reuse a single GPU resource pool to avoid per-index GPU memory growth.
+    512 MB scratch is sufficient for batched IVF train/add/search; the old 12 GB
+    default left no room for two large indices to coexist on a 24 GB card."""
     global _GPU_RESOURCES
     if _GPU_RESOURCES is None:
         import os
@@ -163,48 +165,51 @@ def build_index(
         index = faiss.IndexFlatL2(dim)
     else:
         index = faiss.index_factory(dim, index_factory, faiss.METRIC_L2)
-    
-    # Train if needed
+
+    # Transfer to GPU before training so k-means and add happen on GPU.
+    # (Transferring after training means all the slow work already ran on CPU.)
+    if use_gpu:
+        try:
+            gpu_resources = _get_gpu_resources()
+            index = faiss.index_cpu_to_gpu(gpu_resources, 0, index)
+            if verbose:
+                print(f"    Transferred to GPU (pre-train)")
+        except Exception as e:
+            if verbose:
+                print(f"    WARNING: GPU transfer failed ({e}), using CPU")
+
+    # Train if needed (runs on GPU if transfer above succeeded)
     if not index.is_trained:
         if verbose:
             print(f"    Training index...")
         index.train(vectors)
         if verbose:
             print(f"    Training complete")
-    
-    # Add vectors
+
+    # Add vectors (runs on GPU)
     if verbose:
         print(f"    Adding {n_vectors:,} vectors...")
     index.add(vectors)
 
-    # IVF diagnostics (list size stats) before GPU transfer
-    if verbose and "ivf" in index_factory.lower() and hasattr(index, "invlists"):
+    # IVF diagnostics — need CPU index for invlists inspection
+    if verbose and "ivf" in index_factory.lower():
         try:
-            nlist = index.nlist
-            sizes = np.fromiter((index.invlists.list_size(i) for i in range(nlist)), dtype=np.int64)
+            cpu_idx = faiss.index_gpu_to_cpu(index) if use_gpu else index
+            nlist = cpu_idx.nlist
+            sizes = np.fromiter((cpu_idx.invlists.list_size(i) for i in range(nlist)), dtype=np.int64)
             if sizes.size:
                 print(
                     f"    IVF list sizes: min={int(sizes.min())}, "
                     f"median={int(np.median(sizes))}, max={int(sizes.max())}, "
                     f"p90={int(np.quantile(sizes, 0.90))}"
                 )
+            del cpu_idx
         except Exception:
             pass
-    
+
     # Set nprobe
     if nprobe is not None and hasattr(index, "nprobe"):
         index.nprobe = nprobe
-    
-    # Transfer to GPU
-    if use_gpu:
-        try:
-            gpu_resources = _get_gpu_resources()
-            index = faiss.index_cpu_to_gpu(gpu_resources, 0, index)
-            if verbose:
-                print(f"    Transferred to GPU")
-        except Exception as e:
-            if verbose:
-                print(f"    WARNING: GPU transfer failed ({e}), using CPU")
     
     if verbose:
         print(f"    Index ready: {index.ntotal:,} vectors")
@@ -670,25 +675,20 @@ def compute_eval_to_train(
         print(f"  Computing eval→train distances...")
         print(f"  Building train index...")
     train_index = None
-    train_fallback = None
     try:
         train_index = build_index(
             train_vectors, use_gpu=use_gpu, index_factory=index_factory, nprobe=nprobe, verbose=verbose
         )
-        if index_factory.lower() != "flat":
-            train_fallback = build_index(train_vectors, use_gpu=True, index_factory="Flat", verbose=False)
         eval_to_train, _ = compute_knn_distances(
             train_index,
             eval_vectors,
             k=k,
             exclude_self=False,
-            fallback_index=train_fallback,
             batch_size=batch_size,
             verbose=verbose,
         )
     finally:
         release_index(train_index)
-        release_index(train_fallback)
     return eval_to_train
 
 
@@ -707,25 +707,20 @@ def compute_train_to_eval(
         print(f"  Computing train→eval distances...")
         print(f"  Building eval index...")
     eval_index = None
-    eval_fallback = None
     try:
         eval_index = build_index(
             eval_vectors, use_gpu=use_gpu, index_factory=index_factory, nprobe=nprobe, verbose=verbose
         )
-        if index_factory.lower() != "flat":
-            eval_fallback = build_index(eval_vectors, use_gpu=True, index_factory="Flat", verbose=False)
         train_to_eval, _ = compute_knn_distances(
             eval_index,
             train_vectors,
             k=k,
             exclude_self=False,
-            fallback_index=eval_fallback,
             batch_size=batch_size,
             verbose=verbose,
         )
     finally:
         release_index(eval_index)
-        release_index(eval_fallback)
     return train_to_eval
 
 

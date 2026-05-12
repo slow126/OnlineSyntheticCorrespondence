@@ -15,6 +15,8 @@ MAX_RADIUS_PX=64      # Max splat radius
 FLOW_BINS=512         # Flow space histogram bins
 DPI=200               # Output figure DPI
 SEED=42               # Random seed
+SHOW_ENDPOINT=0       # 1=show endpoint footprint panel, 0=hide it
+LEGEND_SIDE="left"    # inside, left, right
 
 # Optional: specify image dimensions (leave commented to auto-infer)
 # HEIGHT=384
@@ -36,7 +38,12 @@ CMD="python3 visualize_flow_splats.py \
   --max_radius_px ${MAX_RADIUS_PX} \
   --flow_bins ${FLOW_BINS} \
   --dpi ${DPI} \
-  --seed ${SEED}"
+  --seed ${SEED} \
+  --legend-side ${LEGEND_SIDE}"
+
+if [ "${SHOW_ENDPOINT}" -eq 0 ]; then
+  CMD="${CMD} --no-endpoint"
+fi
 
 # Add optional dimensions if set
 if [ -n "${HEIGHT}" ]; then

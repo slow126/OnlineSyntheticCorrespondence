@@ -30,9 +30,81 @@ FLOW_FAMILY = ["kitti2012", "kitti2015", "middlebury", "flyingthings", "pointody
 SEMANTIC_FAMILY = ["spair", "pfpascal", "pfwillow", "tss"]
 KITTI_BENCHMARKS = ["kitti2012", "kitti2015"]
 
+# HOF predictor presets (for zoom intervention analysis)
+HOF_PREDICTOR_PRESETS = {
+    "motion": [
+        "hof_eval_to_train_mean_dist",
+        "hof_train_to_eval_mean_dist",
+    ],
+    "density": [
+        "hof_density_l2",
+    ],
+    "combined": [
+        "hof_eval_to_train_mean_dist",
+        "hof_train_to_eval_mean_dist",
+        "hof_density_l2",
+    ],
+}
+
 
 def _parse_csv_list(value: str) -> List[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _first_existing_col(df: pd.DataFrame, candidates: List[str]) -> str | None:
+    for col in candidates:
+        if col in df.columns:
+            return col
+    return None
+
+
+def _normalize_dataset_columns(df: pd.DataFrame) -> pd.DataFrame:
+    if "dataset1" in df.columns and "dataset2" in df.columns:
+        df["dataset1"] = df["dataset1"].astype(str).str.lower()
+        df["dataset2"] = df["dataset2"].astype(str).str.lower()
+        return df
+    if "train_dataset" in df.columns and "eval_dataset" in df.columns:
+        df["dataset1"] = df["train_dataset"].astype(str).str.lower()
+        df["dataset2"] = df["eval_dataset"].astype(str).str.lower()
+        return df
+    raise ValueError("CSV must include dataset1/dataset2 or train_dataset/eval_dataset columns.")
+
+
+def _select_k_column(df: pd.DataFrame, base: str, preferred: Tuple[int, ...]) -> str | None:
+    if base in df.columns:
+        return base
+    for k in preferred:
+        col = f"{base}_k{k}"
+        if col in df.columns:
+            return col
+    candidates = [c for c in df.columns if c.startswith(f"{base}_k")]
+    if not candidates:
+        return None
+    def _kval(name: str) -> int:
+        try:
+            return int(name.split("_k")[-1])
+        except (ValueError, IndexError):
+            return 1_000_000
+    return sorted(candidates, key=_kval)[0]
+
+
+def _resolve_hof_predictors(arg: str) -> List[str]:
+    if not arg:
+        return HOF_PREDICTOR_PRESETS["combined"]
+    tokens = _parse_csv_list(arg)
+    if not tokens:
+        return HOF_PREDICTOR_PRESETS["combined"]
+    resolved: List[str] = []
+    for token in tokens:
+        key = token.lower()
+        if key in HOF_PREDICTOR_PRESETS:
+            for pred in HOF_PREDICTOR_PRESETS[key]:
+                if pred not in resolved:
+                    resolved.append(pred)
+        else:
+            if token not in resolved:
+                resolved.append(token)
+    return resolved
 
 
 def load_distance_metrics(
@@ -53,14 +125,25 @@ def load_distance_metrics(
     For MMD CSVs (which don't have distance columns), just normalizes dataset names.
     """
     df = pd.read_csv(csv_path)
-    df["dataset1"] = df["dataset1"].astype(str).str.lower()
-    df["dataset2"] = df["dataset2"].astype(str).str.lower()
+    df = _normalize_dataset_columns(df)
+
+    # Normalize radius columns if needed (v2 coverage uses train_radius/eval_radius)
+    if "radius_eval" not in df.columns and "eval_radius" in df.columns:
+        df["radius_eval"] = df["eval_radius"]
+    if "radius_train" not in df.columns and "train_radius" in df.columns:
+        df["radius_train"] = df["train_radius"]
     
     # Only create distance columns if this is a coverage CSV (has mean_nn columns)
-    if "mean_nn_eval_to_train" in df.columns and "mean_nn_train_to_eval" in df.columns:
+    mean_eval_col = _select_k_column(
+        df, "mean_nn_eval_to_train", preferred=(1, 5, 10, 20, 40)
+    )
+    mean_train_col = _select_k_column(
+        df, "mean_nn_train_to_eval", preferred=(1, 5, 10, 20, 40)
+    )
+    if mean_eval_col and mean_train_col:
         # Create the mean distance columns (as done in build_leakage_free_eval.py)
-        df[f"{prefix}_eval_to_train_mean_dist"] = df["mean_nn_eval_to_train"]
-        df[f"{prefix}_train_to_eval_mean_dist"] = df["mean_nn_train_to_eval"]
+        df[f"{prefix}_eval_to_train_mean_dist"] = df[mean_eval_col]
+        df[f"{prefix}_train_to_eval_mean_dist"] = df[mean_train_col]
         
         # Create ALL 4 normalized distance variants (distance / radius)
         # Use a small epsilon to avoid division by zero
@@ -111,8 +194,74 @@ def load_distance_metrics(
                 values = pd.to_numeric(df[col], errors="coerce")
                 values = values.where(values >= 0)
                 df[f"{col}_log1p"] = np.log1p(values)
+    else:
+        has_mean_nn = any(
+            col.startswith("mean_nn_eval_to_train") or col.startswith("mean_nn_train_to_eval")
+            for col in df.columns
+        )
+        if has_mean_nn:
+            warnings.warn(
+                f"{csv_path}: missing mean_nn_eval_to_train/mean_nn_train_to_eval columns; "
+                "distance-derived metrics will be unavailable."
+            )
     
     return df
+
+
+def load_kl_metrics(csv_path: Path, prefix: str = "hof") -> Tuple[pd.DataFrame, Dict[str, str]]:
+    df = pd.read_csv(csv_path)
+    df = _normalize_dataset_columns(df)
+    eval_col = _select_k_column(df, "kl_eval_to_train", preferred=(5, 10, 20, 40, 1))
+    train_col = _select_k_column(df, "kl_train_to_eval", preferred=(5, 10, 20, 40, 1))
+    info: Dict[str, str] = {}
+    if eval_col:
+        df[f"{prefix}_eval_to_train_kl"] = df[eval_col]
+        info["eval_to_train_col"] = eval_col
+    if train_col:
+        df[f"{prefix}_train_to_eval_kl"] = df[train_col]
+        info["train_to_eval_col"] = train_col
+    if not eval_col or not train_col:
+        warnings.warn(
+            f"{csv_path}: missing KL columns (expected kl_eval_to_train/kl_train_to_eval or *_k*)."
+        )
+    return df, info
+
+
+def _match_pair(
+    df: pd.DataFrame,
+    dataset: str,
+    benchmark: str,
+) -> Tuple[pd.Series | None, bool]:
+    dataset = dataset.lower()
+    benchmark = benchmark.lower()
+    match = df[(df["dataset1"] == dataset) & (df["dataset2"] == benchmark)]
+    if not match.empty:
+        return match.iloc[0], False
+    match = df[(df["dataset1"] == benchmark) & (df["dataset2"] == dataset)]
+    if not match.empty:
+        return match.iloc[0], True
+    return None, False
+
+
+def _extract_directional(
+    row: pd.Series | None,
+    flipped: bool,
+    eval_to_train_col: str,
+    train_to_eval_col: str,
+) -> Tuple[float, float]:
+    if row is None:
+        return np.nan, np.nan
+    eval_to_train = float(row[eval_to_train_col]) if eval_to_train_col in row else np.nan
+    train_to_eval = float(row[train_to_eval_col]) if train_to_eval_col in row else np.nan
+    if flipped:
+        eval_to_train, train_to_eval = train_to_eval, eval_to_train
+    return eval_to_train, train_to_eval
+
+
+def _safe_match_value(match: pd.DataFrame, column: str) -> float:
+    if column not in match.columns:
+        return np.nan
+    return float(match[column].iloc[0])
 
 
 def get_distance(df: pd.DataFrame, dataset: str, benchmark: str, metric_col: str) -> float:
@@ -126,6 +275,8 @@ def get_distance(df: pd.DataFrame, dataset: str, benchmark: str, metric_col: str
         match = df[(df["dataset1"] == benchmark) & (df["dataset2"] == dataset)]
     
     if match.empty:
+        return np.nan
+    if metric_col not in match.columns:
         return np.nan
     
     return float(match[metric_col].iloc[0])
@@ -221,6 +372,22 @@ def analyze_complementarity(
     suffix = "_log1p" if distance_transform == "log1p" else ""
     
     for benchmark in benchmarks:
+        flow_metric = _first_existing_col(
+            flow_coverage_df,
+            [
+                _distance_col("flow_eval_to_train_mean_dist_over_radius_train", distance_transform),
+                _distance_col("flow_eval_to_train_norm_by_train", distance_transform),
+                "flow_eval_to_train_mean_dist",
+            ],
+        )
+        dino_metric = _first_existing_col(
+            dino_coverage_df,
+            [
+                _distance_col("dino_eval_to_train_mean_dist_over_radius_train", distance_transform),
+                _distance_col("dino_eval_to_train_norm_by_train", distance_transform),
+                "dino_eval_to_train_mean_dist",
+            ],
+        )
         flow_mmds = []
         dino_mmds = []
         flow_eval_to_train = []
@@ -233,22 +400,13 @@ def analyze_complementarity(
             flow_mmds.append(flow_mmd)
             dino_mmds.append(dino_mmd)
             
-            # Get eval→train mean distance (recall metric) - using NORMALIZED metric
-            flow_metric = _distance_col(
-                'flow_eval_to_train_mean_dist_over_radius_train',
-                distance_transform,
-            )
-            dino_metric = _distance_col(
-                'dino_eval_to_train_mean_dist_over_radius_train',
-                distance_transform,
-            )
             flow_recall = get_distance(
                 flow_coverage_df[flow_coverage_df['dataset1'] == variant],
-                variant, benchmark, flow_metric
+                variant, benchmark, flow_metric or "flow_eval_to_train_mean_dist"
             )
             dino_recall = get_distance(
                 dino_coverage_df[dino_coverage_df['dataset1'] == variant],
-                variant, benchmark, dino_metric
+                variant, benchmark, dino_metric or "dino_eval_to_train_mean_dist"
             )
             flow_eval_to_train.append(flow_recall)
             dino_eval_to_train.append(dino_recall)
@@ -434,6 +592,10 @@ def analyze_asymmetry(
                     ]:
                         row[metric] = np.nan
                 else:
+                    eval_norm_by_eval_col = _distance_col('flow_eval_to_train_norm_by_eval', distance_transform)
+                    eval_norm_by_train_col = _distance_col('flow_eval_to_train_norm_by_train', distance_transform)
+                    train_norm_by_eval_col = _distance_col('flow_train_to_eval_norm_by_eval', distance_transform)
+                    train_norm_by_train_col = _distance_col('flow_train_to_eval_norm_by_train', distance_transform)
                     # Get ALL 4 normalized distance variants + raw mean distances
                     row = {
                         **group,
@@ -441,30 +603,30 @@ def analyze_asymmetry(
                         'benchmark': benchmark,
                         'performance': performance,
                         # Raw mean distances (no normalization)
-                        'eval_to_train_mean_dist': float(match['flow_eval_to_train_mean_dist'].iloc[0]),
-                        'train_to_eval_mean_dist': float(match['flow_train_to_eval_mean_dist'].iloc[0]),
+                        'eval_to_train_mean_dist': _safe_match_value(match, 'flow_eval_to_train_mean_dist'),
+                        'train_to_eval_mean_dist': _safe_match_value(match, 'flow_train_to_eval_mean_dist'),
                         # Eval→train normalized by eval radius
-                        f'eval_to_train_norm_by_eval{suffix}': float(
-                            match[_distance_col('flow_eval_to_train_norm_by_eval', distance_transform)].iloc[0]
+                        f'eval_to_train_norm_by_eval{suffix}': _safe_match_value(
+                            match, eval_norm_by_eval_col
                         ),
                         # Eval→train normalized by train radius
-                        f'eval_to_train_norm_by_train{suffix}': float(
-                            match[_distance_col('flow_eval_to_train_norm_by_train', distance_transform)].iloc[0]
+                        f'eval_to_train_norm_by_train{suffix}': _safe_match_value(
+                            match, eval_norm_by_train_col
                         ),
                         # Train→eval normalized by eval radius
-                        f'train_to_eval_norm_by_eval{suffix}': float(
-                            match[_distance_col('flow_train_to_eval_norm_by_eval', distance_transform)].iloc[0]
+                        f'train_to_eval_norm_by_eval{suffix}': _safe_match_value(
+                            match, train_norm_by_eval_col
                         ),
                         # Train→eval normalized by train radius
-                        f'train_to_eval_norm_by_train{suffix}': float(
-                            match[_distance_col('flow_train_to_eval_norm_by_train', distance_transform)].iloc[0]
+                        f'train_to_eval_norm_by_train{suffix}': _safe_match_value(
+                            match, train_norm_by_train_col
                         ),
                         # KL divergence metrics (lower = better)
-                        'eval_to_train_kl': float(match['kl_eval_to_train'].iloc[0]) if 'kl_eval_to_train' in match.columns else np.nan,
-                        'train_to_eval_kl': float(match['kl_train_to_eval'].iloc[0]) if 'kl_train_to_eval' in match.columns else np.nan,
+                        'eval_to_train_kl': _safe_match_value(match, 'kl_eval_to_train'),
+                        'train_to_eval_kl': _safe_match_value(match, 'kl_train_to_eval'),
                         # Coverage metrics (higher = better)
-                        'recall': float(match['recall'].iloc[0]) if 'recall' in match.columns else np.nan,
-                        'precision': float(match['precision'].iloc[0]) if 'precision' in match.columns else np.nan,
+                        'recall': _safe_match_value(match, 'recall'),
+                        'precision': _safe_match_value(match, 'precision'),
                     }
 
                 results.append(row)
@@ -512,6 +674,598 @@ def analyze_asymmetry(
         return merged
     
     return df
+
+
+def analyze_hof_zoom(
+    hof_coverage_df: pd.DataFrame,
+    perf_df: pd.DataFrame,
+    variants: List[str],
+    baseline: str,
+    benchmarks: List[str],
+    group_cols: List[str],
+    predictors: List[str],
+    perf_metric: str = "auc",
+    hof_kl_df: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """
+    Zoom intervention analysis using HOF distances + density metrics.
+    Avoids HOF coverage (binary) and keeps motion/density separate.
+    """
+    results = []
+    agg_cols = group_cols + ["train_dataset", "benchmark"]
+    agg_perf = perf_df.groupby(agg_cols)[perf_metric].mean().reset_index()
+    if group_cols:
+        group_records = agg_perf[group_cols].drop_duplicates().to_dict("records")
+    else:
+        group_records = [{}]
+
+    for group in group_records:
+        if group_cols:
+            mask = np.ones(len(agg_perf), dtype=bool)
+            for col, val in group.items():
+                mask &= agg_perf[col] == val
+            group_perf = agg_perf[mask]
+        else:
+            group_perf = agg_perf
+        for variant in variants:
+            for benchmark in benchmarks:
+                perf_match = group_perf[
+                    (group_perf["train_dataset"] == variant)
+                    & (group_perf["benchmark"] == benchmark)
+                ]
+                performance = (
+                    float(perf_match[perf_metric].iloc[0]) if not perf_match.empty else np.nan
+                )
+
+                row = {
+                    **group,
+                    "variant": variant,
+                    "benchmark": benchmark,
+                    "performance": performance,
+                }
+
+                match, flipped = _match_pair(hof_coverage_df, variant, benchmark)
+                eval_to_train, train_to_eval = _extract_directional(
+                    match,
+                    flipped,
+                    "hof_eval_to_train_mean_dist",
+                    "hof_train_to_eval_mean_dist",
+                )
+                row["hof_eval_to_train_mean_dist"] = eval_to_train
+                row["hof_train_to_eval_mean_dist"] = train_to_eval
+
+                for density_col in ("hof_density_l2", "hof_density_l1", "hof_density_cosine"):
+                    if density_col in hof_coverage_df.columns:
+                        row[density_col] = float(match[density_col]) if match is not None else np.nan
+
+                if hof_kl_df is not None:
+                    kl_match, kl_flipped = _match_pair(hof_kl_df, variant, benchmark)
+                    kl_eval_to_train, kl_train_to_eval = _extract_directional(
+                        kl_match,
+                        kl_flipped,
+                        "hof_eval_to_train_kl",
+                        "hof_train_to_eval_kl",
+                    )
+                    row["hof_eval_to_train_kl"] = kl_eval_to_train
+                    row["hof_train_to_eval_kl"] = kl_train_to_eval
+
+                results.append(row)
+
+    df = pd.DataFrame(results)
+
+    # Compare to baseline
+    baseline_df = df[df["variant"] == baseline].copy()
+    variant_df = df[df["variant"] != baseline].copy()
+
+    if not baseline_df.empty and not variant_df.empty:
+        metric_cols = [p for p in predictors if p in df.columns]
+        merge_cols = group_cols + ["benchmark", "performance"] + metric_cols
+        merged = variant_df.merge(
+            baseline_df[merge_cols],
+            on=group_cols + ["benchmark"],
+            suffixes=("", "_baseline"),
+        )
+        for metric in metric_cols:
+            merged[f"delta_{metric}"] = merged[metric] - merged[f"{metric}_baseline"]
+        merged["delta_performance"] = merged["performance"] - merged["performance_baseline"]
+        return merged
+
+    return df
+
+
+def _bool_rate(series: pd.Series) -> float:
+    vals = pd.to_numeric(series, errors="coerce")
+    vals = vals.dropna()
+    if vals.empty:
+        return np.nan
+    return float(vals.mean())
+
+
+def build_intervention_consistency(
+    asymmetry_df: pd.DataFrame,
+    hof_zoom_df: pd.DataFrame | None,
+    group_cols: List[str],
+    eps: float = 1e-9,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Build paired intervention-style consistency tables.
+    - perf improvement: delta_performance > 0
+    - distance improvement (for mean distances): delta < 0
+    """
+    base_cols = group_cols + ["variant", "benchmark"]
+    required = ["delta_performance", "delta_train_to_eval_mean_dist", "delta_eval_to_train_mean_dist"]
+    missing = [c for c in required if c not in asymmetry_df.columns]
+    if missing:
+        raise ValueError(f"Asymmetry table missing required columns: {missing}")
+
+    pair = asymmetry_df[base_cols + required].copy()
+    pair["perf_improved"] = np.where(
+        np.isfinite(pair["delta_performance"]),
+        pair["delta_performance"] > eps,
+        np.nan,
+    )
+    pair["flow_t2e_improved"] = np.where(
+        np.isfinite(pair["delta_train_to_eval_mean_dist"]),
+        pair["delta_train_to_eval_mean_dist"] < -eps,
+        np.nan,
+    )
+    pair["flow_e2t_improved"] = np.where(
+        np.isfinite(pair["delta_eval_to_train_mean_dist"]),
+        pair["delta_eval_to_train_mean_dist"] < -eps,
+        np.nan,
+    )
+    pair["flow_t2e_concordant"] = np.where(
+        np.isfinite(pair["perf_improved"]) & np.isfinite(pair["flow_t2e_improved"]),
+        pair["perf_improved"] == pair["flow_t2e_improved"],
+        np.nan,
+    )
+    pair["flow_e2t_concordant"] = np.where(
+        np.isfinite(pair["perf_improved"]) & np.isfinite(pair["flow_e2t_improved"]),
+        pair["perf_improved"] == pair["flow_e2t_improved"],
+        np.nan,
+    )
+
+    if hof_zoom_df is not None and "delta_performance" in hof_zoom_df.columns:
+        hof_keys = base_cols.copy()
+        hof_delta_cols = [
+            c
+            for c in [
+                "delta_hof_train_to_eval_mean_dist",
+                "delta_hof_eval_to_train_mean_dist",
+                "delta_hof_density_l2",
+                "delta_hof_density_l1",
+                "delta_hof_density_cosine",
+            ]
+            if c in hof_zoom_df.columns
+        ]
+        if hof_delta_cols:
+            hof_part = hof_zoom_df[hof_keys + hof_delta_cols].copy().drop_duplicates()
+            pair = pair.merge(hof_part, on=hof_keys, how="left")
+            if "delta_hof_train_to_eval_mean_dist" in pair.columns:
+                pair["hof_t2e_improved"] = np.where(
+                    np.isfinite(pair["delta_hof_train_to_eval_mean_dist"]),
+                    pair["delta_hof_train_to_eval_mean_dist"] < -eps,
+                    np.nan,
+                )
+                pair["hof_t2e_concordant"] = np.where(
+                    np.isfinite(pair["perf_improved"]) & np.isfinite(pair["hof_t2e_improved"]),
+                    pair["perf_improved"] == pair["hof_t2e_improved"],
+                    np.nan,
+                )
+            if "delta_hof_eval_to_train_mean_dist" in pair.columns:
+                pair["hof_e2t_improved"] = np.where(
+                    np.isfinite(pair["delta_hof_eval_to_train_mean_dist"]),
+                    pair["delta_hof_eval_to_train_mean_dist"] < -eps,
+                    np.nan,
+                )
+                pair["hof_e2t_concordant"] = np.where(
+                    np.isfinite(pair["perf_improved"]) & np.isfinite(pair["hof_e2t_improved"]),
+                    pair["perf_improved"] == pair["hof_e2t_improved"],
+                    np.nan,
+                )
+            if "delta_hof_density_l2" in pair.columns:
+                pair["hof_density_l2_improved"] = np.where(
+                    np.isfinite(pair["delta_hof_density_l2"]),
+                    pair["delta_hof_density_l2"] < -eps,
+                    np.nan,
+                )
+                pair["hof_density_l2_concordant"] = np.where(
+                    np.isfinite(pair["perf_improved"]) & np.isfinite(pair["hof_density_l2_improved"]),
+                    pair["perf_improved"] == pair["hof_density_l2_improved"],
+                    np.nan,
+                )
+
+    summary_cols = [
+        "perf_improved",
+        "flow_t2e_concordant",
+        "flow_e2t_concordant",
+        "hof_t2e_concordant",
+        "hof_e2t_concordant",
+        "hof_density_l2_concordant",
+    ]
+    summary_input_cols = [c for c in summary_cols if c in pair.columns]
+    summary = (
+        pair.groupby(["variant", "benchmark"], dropna=False)[summary_input_cols]
+        .apply(
+            lambda g: pd.Series(
+                {
+                    "n": int(len(g)),
+                    "perf_gain_rate": _bool_rate(g["perf_improved"]),
+                    "flow_t2e_concordance": _bool_rate(g["flow_t2e_concordant"]),
+                    "flow_e2t_concordance": _bool_rate(g["flow_e2t_concordant"]),
+                    "asymmetry_advantage_flow_t2e_minus_e2t": _bool_rate(g["flow_t2e_concordant"])
+                    - _bool_rate(g["flow_e2t_concordant"]),
+                    "hof_t2e_concordance": _bool_rate(g["hof_t2e_concordant"])
+                    if "hof_t2e_concordant" in g.columns
+                    else np.nan,
+                    "hof_e2t_concordance": _bool_rate(g["hof_e2t_concordant"])
+                    if "hof_e2t_concordant" in g.columns
+                    else np.nan,
+                    "hof_density_l2_concordance": _bool_rate(g["hof_density_l2_concordant"])
+                    if "hof_density_l2_concordant" in g.columns
+                    else np.nan,
+                }
+            )
+        )
+        .reset_index()
+    )
+
+    return pair, summary
+
+
+def build_motion_vs_appearance_intervention(
+    perf_df: pd.DataFrame,
+    dino_coverage_df: pd.DataFrame | None,
+    variants: List[str],
+    baseline: str,
+    group_cols: List[str],
+    perf_metric: str,
+    flow_motion_col: str = "flow_train_to_eval_eps1px",
+    hof_motion_col: str = "hof_train_to_eval_mean_dist",
+    appearance_col: str = "dino_train_to_eval_mean_dist",
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Build intervention tables focused on the core claim:
+    motion proxies (flow/HOF) vs appearance proxy (DINO).
+    """
+    value_cols = [perf_metric]
+    for col in (flow_motion_col, hof_motion_col):
+        if col in perf_df.columns:
+            value_cols.append(col)
+    has_appearance_in_perf = appearance_col in perf_df.columns
+    if has_appearance_in_perf:
+        value_cols.append(appearance_col)
+
+    agg_cols = group_cols + ["train_dataset", "benchmark"]
+    agg = (
+        perf_df[agg_cols + value_cols]
+        .groupby(agg_cols, dropna=False)
+        .mean(numeric_only=True)
+        .reset_index()
+    )
+
+    if appearance_col not in agg.columns:
+        agg[appearance_col] = np.nan
+
+    # Fallback: fill appearance proxy from DINO coverage if perf CSV has empty DINO columns.
+    if agg[appearance_col].notna().sum() == 0 and dino_coverage_df is not None:
+        if {
+            "dino_eval_to_train_mean_dist",
+            "dino_train_to_eval_mean_dist",
+            "dataset1",
+            "dataset2",
+        }.issubset(dino_coverage_df.columns):
+            def _lookup_appearance(train_ds: str, bench: str) -> float:
+                match, flipped = _match_pair(dino_coverage_df, str(train_ds), str(bench))
+                if appearance_col == "dino_eval_to_train_mean_dist":
+                    eval_to_train, _ = _extract_directional(
+                        match, flipped, "dino_eval_to_train_mean_dist", "dino_train_to_eval_mean_dist"
+                    )
+                    return eval_to_train
+                _, train_to_eval = _extract_directional(
+                    match, flipped, "dino_eval_to_train_mean_dist", "dino_train_to_eval_mean_dist"
+                )
+                return train_to_eval
+
+            agg[appearance_col] = agg.apply(
+                lambda r: _lookup_appearance(r["train_dataset"], r["benchmark"]),
+                axis=1,
+            )
+
+    if appearance_col not in value_cols:
+        value_cols.append(appearance_col)
+
+    base = agg[agg["train_dataset"] == baseline].copy()
+    base = base.rename(
+        columns={col: f"{col}_baseline" for col in value_cols}
+    )
+    var = agg[(agg["train_dataset"].isin(variants)) & (agg["train_dataset"] != baseline)].copy()
+
+    merge_keys = group_cols + ["benchmark"]
+    merged = var.merge(base[merge_keys + [f"{col}_baseline" for col in value_cols]], on=merge_keys, how="left")
+
+    merged["delta_performance"] = merged[perf_metric] - merged[f"{perf_metric}_baseline"]
+    merged["perf_improved"] = np.where(
+        np.isfinite(merged["delta_performance"]),
+        merged["delta_performance"] > 0,
+        np.nan,
+    )
+
+    # Flow eps recall-style predictor: higher is better.
+    if flow_motion_col in value_cols:
+        merged["delta_flow_motion"] = merged[flow_motion_col] - merged[f"{flow_motion_col}_baseline"]
+        merged["flow_motion_improved"] = np.where(
+            np.isfinite(merged["delta_flow_motion"]),
+            merged["delta_flow_motion"] > 0,
+            np.nan,
+        )
+        merged["flow_motion_concordance"] = np.where(
+            np.isfinite(merged["perf_improved"]) & np.isfinite(merged["flow_motion_improved"]),
+            merged["perf_improved"] == merged["flow_motion_improved"],
+            np.nan,
+        )
+
+    # HOF distance predictor: lower is better.
+    if hof_motion_col in value_cols:
+        merged["delta_hof_motion"] = merged[hof_motion_col] - merged[f"{hof_motion_col}_baseline"]
+        merged["hof_motion_improved"] = np.where(
+            np.isfinite(merged["delta_hof_motion"]),
+            merged["delta_hof_motion"] < 0,
+            np.nan,
+        )
+        merged["hof_motion_concordance"] = np.where(
+            np.isfinite(merged["perf_improved"]) & np.isfinite(merged["hof_motion_improved"]),
+            merged["perf_improved"] == merged["hof_motion_improved"],
+            np.nan,
+        )
+
+    # Appearance proxy shift magnitude: lower means appearance is better held constant.
+    if appearance_col in value_cols:
+        merged["delta_appearance"] = merged[appearance_col] - merged[f"{appearance_col}_baseline"]
+        merged["appearance_shift_abs"] = np.abs(merged["delta_appearance"])
+
+    merged["variant"] = merged["train_dataset"]
+    merged["family"] = np.where(
+        merged["benchmark"].isin(KITTI_BENCHMARKS),
+        "kitti",
+        np.where(merged["benchmark"].isin(SEMANTIC_FAMILY), "semantic", "other"),
+    )
+
+    def _summary(df: pd.DataFrame) -> pd.DataFrame:
+        agg_map = {
+            "n": ("benchmark", "size"),
+            "delta_perf_mean": ("delta_performance", "mean"),
+            "perf_gain_rate": ("perf_improved", "mean"),
+        }
+        if "delta_flow_motion" in df.columns:
+            agg_map["flow_motion_delta_mean"] = ("delta_flow_motion", "mean")
+        if "flow_motion_concordance" in df.columns:
+            agg_map["flow_motion_concordance"] = ("flow_motion_concordance", "mean")
+        if "delta_hof_motion" in df.columns:
+            agg_map["hof_motion_delta_mean"] = ("delta_hof_motion", "mean")
+        if "hof_motion_concordance" in df.columns:
+            agg_map["hof_motion_concordance"] = ("hof_motion_concordance", "mean")
+        if "appearance_shift_abs" in df.columns:
+            agg_map["appearance_shift_abs_mean"] = ("appearance_shift_abs", "mean")
+        return df.groupby("variant", dropna=False).agg(**agg_map).reset_index()
+
+    all_non_self = merged[merged["benchmark"] != baseline].copy()
+    kitti_only = all_non_self[all_non_self["benchmark"].isin(KITTI_BENCHMARKS)].copy()
+
+    return merged, _summary(all_non_self), _summary(kitti_only)
+
+
+def build_asymmetry_vs_mmd_intervention(
+    perf_df: pd.DataFrame,
+    flow_mmd_df: pd.DataFrame,
+    variants: List[str],
+    baseline: str,
+    group_cols: List[str],
+    perf_metric: str,
+    flow_t2e_col: str = "flow_train_to_eval_eps1px",
+    flow_e2t_col: str = "flow_eval_to_train_eps1p5px",
+    hof_t2e_col: str = "hof_train_to_eval_mean_dist",
+    hof_e2t_col: str = "hof_eval_to_train_mean_dist",
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Build predictor-native directional asymmetry vs symmetric-MMD intervention tables.
+    """
+    agg_cols = group_cols + ["train_dataset", "benchmark"]
+    value_cols = [perf_metric]
+    for col in (flow_t2e_col, flow_e2t_col, hof_t2e_col, hof_e2t_col):
+        if col in perf_df.columns:
+            value_cols.append(col)
+
+    perf_agg = (
+        perf_df[agg_cols + value_cols]
+        .groupby(agg_cols, dropna=False)
+        .mean(numeric_only=True)
+        .reset_index()
+    )
+    base_perf = perf_agg[perf_agg["train_dataset"] == baseline].copy()
+    base_perf = base_perf.rename(columns={col: f"{col}_baseline" for col in value_cols})
+    var_perf = perf_agg[(perf_agg["train_dataset"].isin(variants)) & (perf_agg["train_dataset"] != baseline)].copy()
+    merge_keys = group_cols + ["benchmark"]
+    merged = var_perf.merge(
+        base_perf[merge_keys + [f"{col}_baseline" for col in value_cols]],
+        on=merge_keys,
+        how="left",
+    )
+    merged["delta_performance"] = merged[perf_metric] - merged[f"{perf_metric}_baseline"]
+    merged["perf_improved"] = np.where(
+        np.isfinite(merged["delta_performance"]),
+        merged["delta_performance"] > 0,
+        np.nan,
+    )
+
+    mmd_col = _first_existing_col(flow_mmd_df, ["mmd2", "mmd", "flow_mmd"])
+    if mmd_col is None:
+        merged["delta_flow_mmd"] = np.nan
+    else:
+        merged["delta_flow_mmd"] = merged.apply(
+            lambda r: get_distance(flow_mmd_df, str(r["train_dataset"]), str(r["benchmark"]), mmd_col)
+            - get_distance(flow_mmd_df, baseline, str(r["benchmark"]), mmd_col),
+            axis=1,
+        )
+
+    if flow_t2e_col in perf_agg.columns:
+        merged[f"delta_{flow_t2e_col}"] = merged[flow_t2e_col] - merged[f"{flow_t2e_col}_baseline"]
+    else:
+        merged[f"delta_{flow_t2e_col}"] = np.nan
+    if flow_e2t_col in perf_agg.columns:
+        merged[f"delta_{flow_e2t_col}"] = merged[flow_e2t_col] - merged[f"{flow_e2t_col}_baseline"]
+    else:
+        merged[f"delta_{flow_e2t_col}"] = np.nan
+    if hof_t2e_col in perf_agg.columns:
+        merged[f"delta_{hof_t2e_col}"] = merged[hof_t2e_col] - merged[f"{hof_t2e_col}_baseline"]
+    else:
+        merged[f"delta_{hof_t2e_col}"] = np.nan
+    if hof_e2t_col in perf_agg.columns:
+        merged[f"delta_{hof_e2t_col}"] = merged[hof_e2t_col] - merged[f"{hof_e2t_col}_baseline"]
+    else:
+        merged[f"delta_{hof_e2t_col}"] = np.nan
+
+    for col in (
+        f"delta_{flow_t2e_col}",
+        f"delta_{flow_e2t_col}",
+        f"delta_{hof_t2e_col}",
+        f"delta_{hof_e2t_col}",
+        "delta_flow_mmd",
+        "delta_performance",
+    ):
+        merged[col] = pd.to_numeric(merged[col], errors="coerce").replace([np.inf, -np.inf], np.nan)
+
+    # Predictor-native directionality:
+    # - flow eps coverage metrics: higher is better
+    # - HOF mean distance metrics: lower is better
+    merged[f"{flow_t2e_col}_improved"] = np.where(
+        np.isfinite(merged[f"delta_{flow_t2e_col}"]),
+        merged[f"delta_{flow_t2e_col}"] > 0,
+        np.nan,
+    )
+    merged[f"{flow_e2t_col}_improved"] = np.where(
+        np.isfinite(merged[f"delta_{flow_e2t_col}"]),
+        merged[f"delta_{flow_e2t_col}"] > 0,
+        np.nan,
+    )
+    merged[f"{hof_t2e_col}_improved"] = np.where(
+        np.isfinite(merged[f"delta_{hof_t2e_col}"]),
+        merged[f"delta_{hof_t2e_col}"] < 0,
+        np.nan,
+    )
+    merged[f"{hof_e2t_col}_improved"] = np.where(
+        np.isfinite(merged[f"delta_{hof_e2t_col}"]),
+        merged[f"delta_{hof_e2t_col}"] < 0,
+        np.nan,
+    )
+    merged["flow_mmd_improved"] = np.where(
+        np.isfinite(merged["delta_flow_mmd"]),
+        merged["delta_flow_mmd"] < 0,
+        np.nan,
+    )
+    merged[f"{flow_t2e_col}_concordance"] = np.where(
+        np.isfinite(merged["perf_improved"]) & np.isfinite(merged[f"{flow_t2e_col}_improved"]),
+        merged["perf_improved"] == merged[f"{flow_t2e_col}_improved"],
+        np.nan,
+    )
+    merged[f"{flow_e2t_col}_concordance"] = np.where(
+        np.isfinite(merged["perf_improved"]) & np.isfinite(merged[f"{flow_e2t_col}_improved"]),
+        merged["perf_improved"] == merged[f"{flow_e2t_col}_improved"],
+        np.nan,
+    )
+    merged[f"{hof_t2e_col}_concordance"] = np.where(
+        np.isfinite(merged["perf_improved"]) & np.isfinite(merged[f"{hof_t2e_col}_improved"]),
+        merged["perf_improved"] == merged[f"{hof_t2e_col}_improved"],
+        np.nan,
+    )
+    merged[f"{hof_e2t_col}_concordance"] = np.where(
+        np.isfinite(merged["perf_improved"]) & np.isfinite(merged[f"{hof_e2t_col}_improved"]),
+        merged["perf_improved"] == merged[f"{hof_e2t_col}_improved"],
+        np.nan,
+    )
+    merged["flow_mmd_concordance"] = np.where(
+        np.isfinite(merged["perf_improved"]) & np.isfinite(merged["flow_mmd_improved"]),
+        merged["perf_improved"] == merged["flow_mmd_improved"],
+        np.nan,
+    )
+    directional_predictors = [flow_t2e_col, flow_e2t_col, hof_t2e_col, hof_e2t_col]
+    for predictor_col in directional_predictors:
+        conc_col = f"{predictor_col}_concordance"
+        valid = np.isfinite(merged[conc_col]) & np.isfinite(merged["flow_mmd_concordance"])
+        merged[f"mmd_failure_exposed_by_{predictor_col}"] = np.where(
+            valid,
+            (merged[conc_col] == 1) & (merged["flow_mmd_concordance"] == 0),
+            np.nan,
+        )
+        merged[f"mmd_only_correct_vs_{predictor_col}"] = np.where(
+            valid,
+            (merged[conc_col] == 0) & (merged["flow_mmd_concordance"] == 1),
+            np.nan,
+        )
+        merged[f"both_correct_with_mmd_vs_{predictor_col}"] = np.where(
+            valid,
+            (merged[conc_col] == 1) & (merged["flow_mmd_concordance"] == 1),
+            np.nan,
+        )
+        merged[f"both_wrong_with_mmd_vs_{predictor_col}"] = np.where(
+            valid,
+            (merged[conc_col] == 0) & (merged["flow_mmd_concordance"] == 0),
+            np.nan,
+        )
+        merged[f"predictor_mmd_disagree_{predictor_col}"] = np.where(
+            valid,
+            merged[conc_col] != merged["flow_mmd_concordance"],
+            np.nan,
+        )
+    merged["variant"] = merged["train_dataset"]
+    merged["family"] = np.where(
+        merged["benchmark"].isin(KITTI_BENCHMARKS),
+        "kitti",
+        np.where(merged["benchmark"].isin(SEMANTIC_FAMILY), "semantic", "other"),
+    )
+
+    def _summary(df: pd.DataFrame) -> pd.DataFrame:
+        agg_map = {
+            "n": ("benchmark", "size"),
+            "delta_perf_mean": ("delta_performance", "mean"),
+            "flow_mmd_delta_mean": ("delta_flow_mmd", "mean"),
+            "flow_mmd_concordance": ("flow_mmd_concordance", "mean"),
+        }
+        for predictor_col in directional_predictors:
+            agg_map[f"delta_{predictor_col}_mean"] = (f"delta_{predictor_col}", "mean")
+            agg_map[f"{predictor_col}_concordance"] = (f"{predictor_col}_concordance", "mean")
+            agg_map[f"mmd_failure_exposed_by_{predictor_col}_rate"] = (
+                f"mmd_failure_exposed_by_{predictor_col}",
+                "mean",
+            )
+            agg_map[f"mmd_only_correct_vs_{predictor_col}_rate"] = (
+                f"mmd_only_correct_vs_{predictor_col}",
+                "mean",
+            )
+            agg_map[f"both_correct_with_mmd_vs_{predictor_col}_rate"] = (
+                f"both_correct_with_mmd_vs_{predictor_col}",
+                "mean",
+            )
+            agg_map[f"both_wrong_with_mmd_vs_{predictor_col}_rate"] = (
+                f"both_wrong_with_mmd_vs_{predictor_col}",
+                "mean",
+            )
+            agg_map[f"predictor_mmd_disagree_{predictor_col}_rate"] = (
+                f"predictor_mmd_disagree_{predictor_col}",
+                "mean",
+            )
+
+        out = df.groupby("variant", dropna=False).agg(**agg_map).reset_index()
+        out["mmd_failure_rate"] = 1.0 - out["flow_mmd_concordance"]
+        for predictor_col in directional_predictors:
+            out[f"asymmetry_adv_{predictor_col}_minus_mmd"] = (
+                out[f"{predictor_col}_concordance"] - out["flow_mmd_concordance"]
+            )
+        return out
+
+    non_self = merged[merged["benchmark"] != baseline].copy()
+    kitti = non_self[non_self["benchmark"].isin(KITTI_BENCHMARKS)].copy()
+    return merged, _summary(non_self), _summary(kitti)
 
 
 def analyze_semantic_improvement(
@@ -586,6 +1340,18 @@ def main():
         help='DINO MMD CSV'
     )
     parser.add_argument(
+        '--hof-coverage-csv',
+        type=Path,
+        default=Path('analysis/coverage_v2_hof_full_occ.csv'),
+        help='HOF coverage CSV (optional; v2 coverage format)'
+    )
+    parser.add_argument(
+        '--hof-kl-csv',
+        type=Path,
+        default=Path('analysis/kl_v2_hof_full_occ.csv'),
+        help='HOF KL CSV (optional; v2 KL format)'
+    )
+    parser.add_argument(
         '--output-dir',
         type=Path,
         default=Path('analysis/zoom_variants'),
@@ -593,7 +1359,7 @@ def main():
     )
     parser.add_argument(
         '--perf-metric',
-        default='auc',
+        default='auc_normalized_observed',
         help='Performance metric to analyze'
     )
     parser.add_argument(
@@ -617,6 +1383,19 @@ def main():
         choices=['none', 'log1p'],
         default='none',
         help='Transform normalized distance ratios before analysis.'
+    )
+    parser.add_argument(
+        '--predictors',
+        default='',
+        help=(
+            "HOF predictor override (comma-separated). Presets: motion, density, combined. "
+            "Examples: 'motion' or 'hof_density_l2' or 'motion,hof_density_l2'."
+        ),
+    )
+    parser.add_argument(
+        '--intervention-only',
+        action='store_true',
+        help='Run only intervention-style consistency outputs (skip H1/H2/H4 summaries).',
     )
     
     args = parser.parse_args()
@@ -654,31 +1433,173 @@ def main():
     )
     flow_mmd_df = load_distance_metrics(args.flow_mmd_csv, prefix="flow")
     dino_mmd_df = load_distance_metrics(args.dino_mmd_csv, prefix="dino")
+
+    hof_coverage_df = None
+    hof_kl_df = None
+    hof_kl_info: Dict[str, str] = {}
+    if args.hof_coverage_csv and args.hof_coverage_csv.exists():
+        hof_coverage_df = load_distance_metrics(
+            args.hof_coverage_csv,
+            prefix="hof",
+            distance_transform="none",
+        )
+    else:
+        print(f"Note: HOF coverage CSV not found; skipping HOF analysis ({args.hof_coverage_csv}).")
+
+    if args.hof_kl_csv and args.hof_kl_csv.exists():
+        hof_kl_df, hof_kl_info = load_kl_metrics(args.hof_kl_csv, prefix="hof")
+    elif args.hof_kl_csv:
+        print(f"Note: HOF KL CSV not found; continuing without KL ({args.hof_kl_csv}).")
     
     # Normalize variant names
     variants = [v.lower() for v in args.variants]
     baseline = args.baseline.lower()
     
     all_benchmarks = sorted(perf_df["benchmark"].dropna().unique().tolist())
+
+    if args.intervention_only:
+        print("\n=== Intervention Mode: Motion vs Appearance ===")
+        print("Using core proxies:")
+        print("  flow motion: flow_train_to_eval_eps1px (higher is better)")
+        print("  hof motion:  hof_train_to_eval_mean_dist (lower is better)")
+        print("  appearance:  dino_train_to_eval_mean_dist (|delta| should stay small)")
+
+        pairs_df, summary_all_df, summary_kitti_df = build_motion_vs_appearance_intervention(
+            perf_df=perf_df,
+            dino_coverage_df=dino_coverage_df,
+            variants=variants,
+            baseline=baseline,
+            group_cols=group_cols,
+            perf_metric=args.perf_metric,
+        )
+        asym_pairs_df, asym_summary_all_df, asym_summary_kitti_df = build_asymmetry_vs_mmd_intervention(
+            perf_df=perf_df,
+            flow_mmd_df=flow_mmd_df,
+            variants=variants,
+            baseline=baseline,
+            group_cols=group_cols,
+            perf_metric=args.perf_metric,
+        )
+
+        pairs_path = args.output_dir / "intervention_motion_vs_appearance_pairs.csv"
+        summary_all_path = args.output_dir / "intervention_motion_vs_appearance_summary_all.csv"
+        summary_kitti_path = args.output_dir / "intervention_motion_vs_appearance_summary_kitti.csv"
+        asym_pairs_path = args.output_dir / "intervention_asymmetry_vs_mmd_pairs.csv"
+        asym_summary_all_path = args.output_dir / "intervention_asymmetry_vs_mmd_summary_all.csv"
+        asym_summary_kitti_path = args.output_dir / "intervention_asymmetry_vs_mmd_summary_kitti.csv"
+        pairs_df.to_csv(pairs_path, index=False)
+        summary_all_df.to_csv(summary_all_path, index=False)
+        summary_kitti_df.to_csv(summary_kitti_path, index=False)
+        asym_pairs_df.to_csv(asym_pairs_path, index=False)
+        asym_summary_all_df.to_csv(asym_summary_all_path, index=False)
+        asym_summary_kitti_df.to_csv(asym_summary_kitti_path, index=False)
+
+        def _compact_asymmetry_table(df: pd.DataFrame) -> pd.DataFrame:
+            wanted = [
+                "variant",
+                "n",
+                "delta_perf_mean",
+                "flow_mmd_concordance",
+                "mmd_failure_rate",
+                "flow_train_to_eval_eps1px_concordance",
+                "asymmetry_adv_flow_train_to_eval_eps1px_minus_mmd",
+                "mmd_failure_exposed_by_flow_train_to_eval_eps1px_rate",
+                "mmd_only_correct_vs_flow_train_to_eval_eps1px_rate",
+                "both_correct_with_mmd_vs_flow_train_to_eval_eps1px_rate",
+                "both_wrong_with_mmd_vs_flow_train_to_eval_eps1px_rate",
+                "flow_eval_to_train_eps1p5px_concordance",
+                "asymmetry_adv_flow_eval_to_train_eps1p5px_minus_mmd",
+                "mmd_failure_exposed_by_flow_eval_to_train_eps1p5px_rate",
+                "mmd_only_correct_vs_flow_eval_to_train_eps1p5px_rate",
+                "hof_train_to_eval_mean_dist_concordance",
+                "asymmetry_adv_hof_train_to_eval_mean_dist_minus_mmd",
+                "hof_eval_to_train_mean_dist_concordance",
+                "asymmetry_adv_hof_eval_to_train_mean_dist_minus_mmd",
+            ]
+            keep = [c for c in wanted if c in df.columns]
+            return df[keep].copy()
+
+        asym_summary_kitti_compact = _compact_asymmetry_table(asym_summary_kitti_df)
+        asym_summary_all_compact = _compact_asymmetry_table(asym_summary_all_df)
+
+        summary_lines = [
+            "=" * 80,
+            "INTERVENTION SUMMARY (MOTION VS APPEARANCE)",
+            "=" * 80,
+            f"Baseline: {baseline}",
+            f"Variants: {', '.join(variants)}",
+            f"Performance metric: {args.perf_metric}",
+            "Motion proxies: flow_train_to_eval_eps1px (higher better), hof_train_to_eval_mean_dist (lower better)",
+            "Appearance proxy: dino_train_to_eval_mean_dist (smaller |delta| means appearance is more constant)",
+            "",
+            "KITTI-only summary (primary):",
+            summary_kitti_df.to_string(index=False),
+            "",
+            "All non-self benchmarks summary:",
+            summary_all_df.to_string(index=False),
+            "",
+            "ASYMMETRY VS MMD (KITTI, primary):",
+            "  flow asymmetric predictors: flow_train_to_eval_eps1px / flow_eval_to_train_eps1p5px (higher is better)",
+            "  hof asymmetric predictors: hof_train_to_eval_mean_dist / hof_eval_to_train_mean_dist (lower is better)",
+            "  mmd delta: lower is better",
+            "  asymmetry_adv_*_minus_mmd > 0 means asymmetric predictor beats MMD concordance",
+            "  mmd_failure_exposed_by_*_rate: asymmetric correct while MMD is wrong",
+            "  mmd_only_correct_vs_*_rate: MMD correct while asymmetric is wrong",
+            "  both_correct_with_mmd_vs_*_rate / both_wrong_with_mmd_vs_*_rate: tie decomposition",
+            asym_summary_kitti_compact.to_string(index=False),
+            "",
+            "ASYMMETRY VS MMD (all non-self benchmarks):",
+            asym_summary_all_compact.to_string(index=False),
+            "",
+            f"CSV: {summary_kitti_path}",
+            f"CSV: {summary_all_path}",
+            f"CSV: {pairs_path}",
+            f"CSV: {asym_summary_kitti_path}",
+            f"CSV: {asym_summary_all_path}",
+            f"CSV: {asym_pairs_path}",
+        ]
+        intervention_summary_path = args.output_dir / "intervention_summary.txt"
+        intervention_summary_path.write_text("\n".join(summary_lines))
+
+        print("\nKITTI summary:")
+        print(summary_kitti_df.to_string(index=False))
+        print("\nAsymmetry vs MMD (KITTI):")
+        print(asym_summary_kitti_compact.to_string(index=False))
+        print(f"\n✓ Saved intervention outputs to {args.output_dir}/")
+        print("  - intervention_motion_vs_appearance_pairs.csv")
+        print("  - intervention_motion_vs_appearance_summary_all.csv")
+        print("  - intervention_motion_vs_appearance_summary_kitti.csv")
+        print("  - intervention_asymmetry_vs_mmd_pairs.csv")
+        print("  - intervention_asymmetry_vs_mmd_summary_all.csv")
+        print("  - intervention_asymmetry_vs_mmd_summary_kitti.csv")
+        print("  - intervention_summary.txt")
+        return
     
     # Run analyses
-    print("\n=== H1: Testing Complementarity (Flow varies, DINO constant) ===")
-    complementarity_df = analyze_complementarity(
-        perf_df, flow_coverage_df, dino_coverage_df,
-        flow_mmd_df, dino_mmd_df,
-        variants, baseline, all_benchmarks,
-        args.distance_transform,
-    )
-    complementarity_df.to_csv(args.output_dir / 'h1_complementarity.csv', index=False)
-    print(complementarity_df.to_string(index=False))
-    
-    print("\n=== H2: Flow MMD Predicts Performance ===")
-    flow_pred_detail, flow_pred_corr = analyze_flow_prediction(
-        perf_df, flow_mmd_df, variants, all_benchmarks, group_cols, args.perf_metric
-    )
-    flow_pred_detail.to_csv(args.output_dir / 'h2_flow_prediction_detail.csv', index=False)
-    flow_pred_corr.to_csv(args.output_dir / 'h2_flow_prediction_correlations.csv', index=False)
-    print(flow_pred_corr.to_string(index=False))
+    complementarity_df = pd.DataFrame()
+    flow_pred_detail = pd.DataFrame()
+    flow_pred_corr = pd.DataFrame()
+    if not args.intervention_only:
+        print("\n=== H1: Testing Complementarity (Flow varies, DINO constant) ===")
+        complementarity_df = analyze_complementarity(
+            perf_df, flow_coverage_df, dino_coverage_df,
+            flow_mmd_df, dino_mmd_df,
+            variants, baseline, all_benchmarks,
+            args.distance_transform,
+        )
+        complementarity_df.to_csv(args.output_dir / 'h1_complementarity.csv', index=False)
+        print(complementarity_df.to_string(index=False))
+        
+        print("\n=== H2: Flow MMD Predicts Performance ===")
+        flow_pred_detail, flow_pred_corr = analyze_flow_prediction(
+            perf_df, flow_mmd_df, variants, all_benchmarks, group_cols, args.perf_metric
+        )
+        flow_pred_detail.to_csv(args.output_dir / 'h2_flow_prediction_detail.csv', index=False)
+        flow_pred_corr.to_csv(args.output_dir / 'h2_flow_prediction_correlations.csv', index=False)
+        print(flow_pred_corr.to_string(index=False))
+    else:
+        print("\n=== Intervention Mode ===")
+        print("Skipping H1/H2 (complementarity + MMD prediction).")
     
     print("\n=== H3: Eval→Train vs Train→Eval Asymmetry ===")
     print("Metric interpretation:")
@@ -701,107 +1622,176 @@ def main():
     )
     asymmetry_df.to_csv(args.output_dir / 'h3_asymmetry.csv', index=False)
     
-    # Correlation analysis: which normalization best predicts performance?
-    print("\n--- Which normalization variant best predicts performance? ---")
-    suffix = "_log1p" if args.distance_transform == "log1p" else ""
-    distance_metrics = [
-        f'delta_eval_to_train_norm_by_eval{suffix}',
-        f'delta_eval_to_train_norm_by_train{suffix}',
-        f'delta_train_to_eval_norm_by_eval{suffix}',
-        f'delta_train_to_eval_norm_by_train{suffix}',
-        'delta_eval_to_train_kl',
-        'delta_train_to_eval_kl'
-    ]
-    
-    corr_results = []
-    # Filter to non-baseline variants
-    variant_data = asymmetry_df[asymmetry_df['variant'] != baseline].copy()
-    
-    for metric in distance_metrics:
-        valid_data = variant_data[['delta_performance', metric]].dropna()
-        if len(valid_data) > 3:
-            # Distance metrics: negative = better, so we expect negative correlation with performance
-            # (when distance delta is negative/closer, performance delta should be positive/better)
-            pearson_r, pearson_p = stats.pearsonr(valid_data[metric], valid_data['delta_performance'])
-            spearman_r, spearman_p = stats.spearmanr(valid_data[metric], valid_data['delta_performance'])
-            
-            corr_results.append({
-                'metric': metric,
-                'pearson_r': pearson_r,
-                'pearson_p': pearson_p,
-                'spearman_r': spearman_r,
-                'spearman_p': spearman_p,
-                'n': len(valid_data),
-                'abs_spearman': abs(spearman_r)
-            })
-    
-    corr_columns = [
-        'metric', 'pearson_r', 'pearson_p', 'spearman_r', 'spearman_p', 'n',
-        'abs_spearman',
-    ]
-    corr_df = pd.DataFrame(corr_results, columns=corr_columns)
-    if not corr_df.empty:
-        corr_df = corr_df.sort_values('abs_spearman', ascending=False)
-    print(corr_df[['metric', 'pearson_r', 'pearson_p', 'spearman_r', 'spearman_p', 'n']].to_string(index=False))
-    print("\nInterpretation: Negative correlation = metric correctly predicts performance")
-    print("                (lower distance → better performance)")
-    corr_df.to_csv(args.output_dir / 'h3_normalization_correlations.csv', index=False)
-    
-    # Show KITTI, semantic, and remaining benchmarks separately for clarity
-    kitti_asymmetry = asymmetry_df[asymmetry_df['benchmark'].isin(KITTI_BENCHMARKS)]
-    semantic_asymmetry = asymmetry_df[asymmetry_df['benchmark'].isin(SEMANTIC_FAMILY)]
-    other_mask = ~asymmetry_df['benchmark'].isin(KITTI_BENCHMARKS + SEMANTIC_FAMILY)
-    other_asymmetry = asymmetry_df[other_mask]
-    
-    print("\n--- KITTI benchmarks (Performance & Distance Deltas) ---")
-    base_compact_cols = [
-        'variant', 'benchmark', 'delta_performance',
-        f'delta_eval_to_train_norm_by_eval{suffix}', f'delta_eval_to_train_norm_by_train{suffix}',
-        f'delta_train_to_eval_norm_by_eval{suffix}', f'delta_train_to_eval_norm_by_train{suffix}',
-        'delta_eval_to_train_kl', 'delta_train_to_eval_kl'
-    ]
-    base_compact_names = [
-        'variant', 'benchmark', 'Δperf',
-        'Δe2t_by_e', 'Δe2t_by_t', 'Δt2e_by_e', 'Δt2e_by_t',
-        'Δkl_e2t', 'Δkl_t2e'
-    ]
-    compact_cols = group_cols + base_compact_cols
-    compact_names = group_cols + base_compact_names
-    kitti_compact = kitti_asymmetry[compact_cols].copy()
-    # Shorten column names for display
-    kitti_compact.columns = compact_names
-    print(kitti_compact.to_string(index=False))
-    print("\nLegend:")
-    print("  Δperf: performance delta (positive = better)")
-    print("  Δe2t_by_e: eval→train normalized by eval radius (negative = closer)")
-    print("  Δe2t_by_t: eval→train normalized by train radius (negative = closer)")
-    print("  Δt2e_by_e: train→eval normalized by eval radius (negative = closer)")
-    print("  Δt2e_by_t: train→eval normalized by train radius (negative = closer)")
-    print("  Δkl_e2t/t2e: KL divergence deltas (negative = closer)")
-    
-    print("\n--- Semantic benchmarks (Performance & Distance Deltas) ---")
-    semantic_compact = semantic_asymmetry[compact_cols].copy()
-    # Shorten column names for display
-    semantic_compact.columns = compact_names
-    print(semantic_compact.to_string(index=False))
-    if not other_asymmetry.empty:
-        print("\n--- Other benchmarks (Performance & Distance Deltas) ---")
-        other_compact = other_asymmetry[compact_cols].copy()
-        other_compact.columns = compact_names
-        print(other_compact.to_string(index=False))
+    if not args.intervention_only:
+        # Correlation analysis: which normalization best predicts performance?
+        print("\n--- Which normalization variant best predicts performance? ---")
+        suffix = "_log1p" if args.distance_transform == "log1p" else ""
+        distance_metrics = [
+            f'delta_eval_to_train_norm_by_eval{suffix}',
+            f'delta_eval_to_train_norm_by_train{suffix}',
+            f'delta_train_to_eval_norm_by_eval{suffix}',
+            f'delta_train_to_eval_norm_by_train{suffix}',
+            'delta_eval_to_train_kl',
+            'delta_train_to_eval_kl'
+        ]
+        
+        corr_results = []
+        # Filter to non-baseline variants
+        variant_data = asymmetry_df[asymmetry_df['variant'] != baseline].copy()
+        
+        for metric in distance_metrics:
+            valid_data = variant_data[['delta_performance', metric]].dropna()
+            if len(valid_data) > 3:
+                # Distance metrics: negative = better, so we expect negative correlation with performance
+                # (when distance delta is negative/closer, performance delta should be positive/better)
+                pearson_r, pearson_p = stats.pearsonr(valid_data[metric], valid_data['delta_performance'])
+                spearman_r, spearman_p = stats.spearmanr(valid_data[metric], valid_data['delta_performance'])
+                
+                corr_results.append({
+                    'metric': metric,
+                    'pearson_r': pearson_r,
+                    'pearson_p': pearson_p,
+                    'spearman_r': spearman_r,
+                    'spearman_p': spearman_p,
+                    'n': len(valid_data),
+                    'abs_spearman': abs(spearman_r)
+                })
+        
+        corr_columns = [
+            'metric', 'pearson_r', 'pearson_p', 'spearman_r', 'spearman_p', 'n',
+            'abs_spearman',
+        ]
+        corr_df = pd.DataFrame(corr_results, columns=corr_columns)
+        if not corr_df.empty:
+            corr_df = corr_df.sort_values('abs_spearman', ascending=False)
+        print(corr_df[['metric', 'pearson_r', 'pearson_p', 'spearman_r', 'spearman_p', 'n']].to_string(index=False))
+        print("\nInterpretation: Negative correlation = metric correctly predicts performance")
+        print("                (lower distance → better performance)")
+        corr_df.to_csv(args.output_dir / 'h3_normalization_correlations.csv', index=False)
+        
+        # Show KITTI, semantic, and remaining benchmarks separately for clarity
+        kitti_asymmetry = asymmetry_df[asymmetry_df['benchmark'].isin(KITTI_BENCHMARKS)]
+        semantic_asymmetry = asymmetry_df[asymmetry_df['benchmark'].isin(SEMANTIC_FAMILY)]
+        other_mask = ~asymmetry_df['benchmark'].isin(KITTI_BENCHMARKS + SEMANTIC_FAMILY)
+        other_asymmetry = asymmetry_df[other_mask]
+        
+        print("\n--- KITTI benchmarks (Performance & Distance Deltas) ---")
+        base_compact_cols = [
+            'variant', 'benchmark', 'delta_performance',
+            f'delta_eval_to_train_norm_by_eval{suffix}', f'delta_eval_to_train_norm_by_train{suffix}',
+            f'delta_train_to_eval_norm_by_eval{suffix}', f'delta_train_to_eval_norm_by_train{suffix}',
+            'delta_eval_to_train_kl', 'delta_train_to_eval_kl'
+        ]
+        base_compact_names = [
+            'variant', 'benchmark', 'Δperf',
+            'Δe2t_by_e', 'Δe2t_by_t', 'Δt2e_by_e', 'Δt2e_by_t',
+            'Δkl_e2t', 'Δkl_t2e'
+        ]
+        compact_cols = group_cols + base_compact_cols
+        compact_names = group_cols + base_compact_names
+        kitti_compact = kitti_asymmetry[compact_cols].copy()
+        # Shorten column names for display
+        kitti_compact.columns = compact_names
+        print(kitti_compact.to_string(index=False))
+        print("\nLegend:")
+        print("  Δperf: performance delta (positive = better)")
+        print("  Δe2t_by_e: eval→train normalized by eval radius (negative = closer)")
+        print("  Δe2t_by_t: eval→train normalized by train radius (negative = closer)")
+        print("  Δt2e_by_e: train→eval normalized by eval radius (negative = closer)")
+        print("  Δt2e_by_t: train→eval normalized by train radius (negative = closer)")
+        print("  Δkl_e2t/t2e: KL divergence deltas (negative = closer)")
+        
+        print("\n--- Semantic benchmarks (Performance & Distance Deltas) ---")
+        semantic_compact = semantic_asymmetry[compact_cols].copy()
+        # Shorten column names for display
+        semantic_compact.columns = compact_names
+        print(semantic_compact.to_string(index=False))
+        if not other_asymmetry.empty:
+            print("\n--- Other benchmarks (Performance & Distance Deltas) ---")
+            other_compact = other_asymmetry[compact_cols].copy()
+            other_compact.columns = compact_names
+            print(other_compact.to_string(index=False))
 
-    abs_cols = group_cols + [
-        'variant', 'benchmark', 'delta_performance',
-        'delta_eval_to_train_mean_dist', 'delta_train_to_eval_mean_dist',
-    ]
-    abs_names = group_cols + [
-        'variant', 'benchmark', 'Δperf', 'Δe2t_raw', 'Δt2e_raw',
-    ]
-    abs_compact = asymmetry_df[abs_cols].copy()
-    abs_compact.columns = abs_names
-    print("\n--- Absolute distance deltas (mean_nn, unnormalized) ---")
-    print(abs_compact.to_string(index=False))
-    
+        abs_cols = group_cols + [
+            'variant', 'benchmark', 'delta_performance',
+            'delta_eval_to_train_mean_dist', 'delta_train_to_eval_mean_dist',
+        ]
+        abs_names = group_cols + [
+            'variant', 'benchmark', 'Δperf', 'Δe2t_raw', 'Δt2e_raw',
+        ]
+        abs_compact = asymmetry_df[abs_cols].copy()
+        abs_compact.columns = abs_names
+        print("\n--- Absolute distance deltas (mean_nn, unnormalized) ---")
+        print(abs_compact.to_string(index=False))
+
+    hof_zoom_df = None
+    hof_predictors: List[str] = []
+    if hof_coverage_df is not None:
+        print("\n=== H5: HOF Motion/Density (Zoom Intervention) ===")
+        hof_predictors = _resolve_hof_predictors(args.predictors)
+        if any("coverage" in p for p in hof_predictors):
+            print("Warning: HOF coverage predictors are not recommended (binary zeros).")
+
+        hof_zoom_df = analyze_hof_zoom(
+            hof_coverage_df,
+            perf_df,
+            variants,
+            baseline,
+            all_benchmarks,
+            group_cols,
+            hof_predictors,
+            args.perf_metric,
+            hof_kl_df=hof_kl_df,
+        )
+        hof_zoom_df.to_csv(args.output_dir / "h5_hof_zoom.csv", index=False)
+
+        if "delta_performance" not in hof_zoom_df.columns:
+            print("Note: baseline rows missing; HOF deltas not computed.")
+        elif not args.intervention_only:
+            delta_cols = [
+                f"delta_{p}" for p in hof_predictors if f"delta_{p}" in hof_zoom_df.columns
+            ]
+            missing = [p for p in hof_predictors if f"delta_{p}" not in hof_zoom_df.columns]
+            if missing:
+                print(f"Note: missing HOF predictors in data: {missing}")
+
+            base_cols = group_cols + ["variant", "benchmark", "delta_performance"] + delta_cols
+            compact = hof_zoom_df[base_cols].copy()
+
+            rename_map = {
+                "delta_performance": "Δperf",
+                "delta_hof_eval_to_train_mean_dist": "Δmotion_e2t",
+                "delta_hof_train_to_eval_mean_dist": "Δmotion_t2e",
+                "delta_hof_density_l2": "Δdensity_l2",
+                "delta_hof_density_l1": "Δdensity_l1",
+                "delta_hof_density_cosine": "Δdensity_cos",
+                "delta_hof_eval_to_train_kl": "Δkl_e2t",
+                "delta_hof_train_to_eval_kl": "Δkl_t2e",
+            }
+            compact = compact.rename(columns=rename_map)
+
+            kitti_hof = compact[compact["benchmark"].isin(KITTI_BENCHMARKS)]
+            semantic_hof = compact[compact["benchmark"].isin(SEMANTIC_FAMILY)]
+            other_mask = ~compact["benchmark"].isin(KITTI_BENCHMARKS + SEMANTIC_FAMILY)
+            other_hof = compact[other_mask]
+
+            print("\n--- HOF KITTI benchmarks (Motion & Density Deltas) ---")
+            print(kitti_hof.to_string(index=False))
+            if not semantic_hof.empty:
+                print("\n--- HOF Semantic benchmarks (Motion & Density Deltas) ---")
+                print(semantic_hof.to_string(index=False))
+            if not other_hof.empty:
+                print("\n--- HOF Other benchmarks (Motion & Density Deltas) ---")
+                print(other_hof.to_string(index=False))
+        else:
+            available_hof_delta_cols = [
+                c for c in hof_zoom_df.columns if c.startswith("delta_hof_")
+            ]
+            print(
+                "HOF deltas ready for intervention summary: "
+                + (", ".join(available_hof_delta_cols) if available_hof_delta_cols else "none")
+            )
+
     print("\n=== H4: Semantic Improvement (Scale Invariance) ===")
     semantic_df = analyze_semantic_improvement(
         perf_df, variants, baseline, group_cols, args.perf_metric
@@ -922,10 +1912,41 @@ def main():
         summary_lines.append(f"✓ H3: Zoom variants improved performance in {perf_improved}/{total_zoom} KITTI cases")
         summary_lines.append(f"     Train→eval distance closer in {t2e_improved}/{total_zoom} cases (better coverage)")
     
+    # H5 summary (HOF motion/density)
+    if hof_zoom_df is not None:
+        summary_lines.append("H5: HOF MOTION/DENSITY (Zoom Intervention)")
+        summary_lines.append("-" * 80)
+        summary_lines.append("Negative delta = closer/better for distances (L2/L1); cosine similarity is higher=better.")
+        summary_lines.append(f"HOF predictors: {', '.join(hof_predictors) if hof_predictors else 'none'}")
+        if "delta_performance" not in hof_zoom_df.columns:
+            summary_lines.append("Baseline rows missing; HOF deltas not computed.")
+        else:
+            hof_delta_cols = [
+                f"delta_{p}" for p in hof_predictors if f"delta_{p}" in hof_zoom_df.columns
+            ]
+            for variant in [v for v in variants if v != baseline]:
+                variant_data = hof_zoom_df[hof_zoom_df["variant"] == variant]
+                kitti_data = variant_data[variant_data["benchmark"].isin(KITTI_BENCHMARKS)]
+                if kitti_data.empty:
+                    continue
+                summary_lines.append(f"{variant} (KITTI):")
+                for _, row in kitti_data.iterrows():
+                    line = f"  {row['benchmark']}: Δperf={row['delta_performance']:+.0f}"
+                    for metric in hof_delta_cols:
+                        if metric in row and np.isfinite(row[metric]):
+                            line += f", {metric.replace('delta_', 'Δ')}: {row[metric]:+.2f}"
+                    summary_lines.append(line)
+                summary_lines.append("")
+
     summary_lines.append("✓ H4: See CSV for semantic benchmark improvements")
+    if hof_zoom_df is not None:
+        summary_lines.append("✓ H5: HOF motion/density deltas in h5_hof_zoom.csv")
     summary_lines.append("")
     summary_lines.append("Full details in CSVs: h1_complementarity, h2_flow_prediction_*,")
-    summary_lines.append("                      h3_asymmetry, h4_semantic_improvement")
+    if hof_zoom_df is not None:
+        summary_lines.append("                      h3_asymmetry, h4_semantic_improvement, h5_hof_zoom")
+    else:
+        summary_lines.append("                      h3_asymmetry, h4_semantic_improvement")
     summary_lines.append("")
     
     summary_path = args.output_dir / 'summary.txt'
@@ -992,6 +2013,35 @@ def main():
     detailed_lines.append(abs_compact.to_string(index=False))
     detailed_lines.append("")
     
+    if hof_zoom_df is not None:
+        detailed_lines.append("=" * 80)
+        detailed_lines.append("H5: HOF Motion/Density (Zoom Intervention)")
+        detailed_lines.append("=" * 80)
+        detailed_lines.append(
+            f"HOF predictors: {', '.join(hof_predictors) if hof_predictors else 'none'}"
+        )
+        if "delta_performance" not in hof_zoom_df.columns:
+            detailed_lines.append("Baseline rows missing; HOF deltas not computed.")
+        else:
+            delta_cols = [
+                f"delta_{p}" for p in hof_predictors if f"delta_{p}" in hof_zoom_df.columns
+            ]
+            base_cols = group_cols + ["variant", "benchmark", "delta_performance"] + delta_cols
+            hof_compact = hof_zoom_df[base_cols].copy()
+            hof_compact = hof_compact.rename(columns={
+                "delta_performance": "Δperf",
+                "delta_hof_eval_to_train_mean_dist": "Δmotion_e2t",
+                "delta_hof_train_to_eval_mean_dist": "Δmotion_t2e",
+                "delta_hof_density_l2": "Δdensity_l2",
+                "delta_hof_density_l1": "Δdensity_l1",
+                "delta_hof_density_cosine": "Δdensity_cos",
+                "delta_hof_eval_to_train_kl": "Δkl_e2t",
+                "delta_hof_train_to_eval_kl": "Δkl_t2e",
+            })
+            detailed_lines.append("--- HOF Motion/Density Deltas (All Benchmarks) ---")
+            detailed_lines.append(hof_compact.to_string(index=False))
+        detailed_lines.append("")
+
     # Add correlation analysis
     detailed_lines.append("--- Which normalization variant best predicts performance? ---")
     detailed_lines.append(corr_df[['metric', 'pearson_r', 'pearson_p', 'spearman_r', 'spearman_p', 'n']].to_string(index=False))
@@ -1016,6 +2066,8 @@ def main():
     print(f"  - h3_asymmetry.csv: Eval→train vs train→eval distances")
     print(f"  - h3_normalization_correlations.csv: Which normalization predicts performance")
     print(f"  - h4_semantic_improvement.csv: Unexpected semantic gains")
+    if hof_zoom_df is not None:
+        print(f"  - h5_hof_zoom.csv: HOF motion/density deltas")
     print(f"  - summary.txt: High-level findings")
     print(f"  - detailed_results.txt: All formatted tables")
 

@@ -15,6 +15,7 @@ Modules:
 - spaces: Space transformations (xy, flow, joint extraction from flow vectors)
 - calibration: Alpha calibration for flow scaling (Step 1)
 - metrics: Coverage metrics computation (Steps 4-5)
+- kl: kNN KL divergence utilities
 """
 
 __version__ = "2.0.0"
@@ -24,4 +25,5 @@ __all__ = [
     "spaces",
     "calibration",
     "metrics",
+    "kl",
 ]

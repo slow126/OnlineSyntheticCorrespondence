@@ -1,0 +1,58 @@
+# HOF fingerprint extraction (debug: flyingthings + spair)
+
+representation: hof
+batch_size: 8
+num_workers: 4
+
+sampling:
+  shuffle: false
+  seed: 42
+
+cache:
+  dir: /mnt/nvme_1tb_b/hof_cache
+
+hof:
+  grid_hw: [32, 32]
+  angle_bins: 8
+  mag_edges: [0.0, 0.01, 0.03, 0.08, 0.25]
+  mag_clip: 0.25
+  occupancy_tau: 5.0
+  normalize_hist: true
+  use_sqrt_mag: true
+  zero_is_invalid: true
+
+# Dataset parameters (aligned with coverage configs)
+dataset_params:
+  size: [512, 512]
+  downsample_flow: 32
+  max_kps: null
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: false
+  kitti_val_use_full_training: true
+
+# Dataset overrides
+# Update datapaths as needed for your machine
+
+dataset_overrides:
+  flyingthings:
+    datapath: /home/spencer/Data/FlyingThings3D_10k
+    normalize_images: true
+  spair:
+    datapath: ./models/Datasets_CATs
+    normalize_images: false
+
+# Datasets (debug subset)
+datasets:
+  - name: flyingthings
+    split: train
+
+  - name: spair
+    split: train
+
+  - name: flyingthings
+    split: test
+
+  - name: spair
+    split: test

@@ -63,6 +63,21 @@ coverage:
   compute_curves: true
   curve_quantiles: [0.80, 0.90, 0.95, 0.99]
 
+# KL divergence (kNN estimator)
+kl:
+  enabled: false
+  method: knn
+  spaces: ["features"]
+  k_values: [5, 10, 20, 40]
+  eps: 1e-12
+  nprobe: 16
+  filter_duplicates: true
+  cache_self_dists: true
+  cache_self_dists_disk: true
+  resume: true
+  flush_each_pair: true
+  streaming: true
+
 # Distance metric metadata
 distance_metric:
   name: sqL2  # Squared L2 on unit vectors
@@ -86,6 +101,7 @@ output:
   results_file: analysis/coverage_v2_dino_full.csv
   curves_file: analysis/coverage_v2_dino_curves.csv
   save_curves_to_main: false
+  kl_results_file: analysis/kl_v2_dino_features.csv
 
 # Dataset parameters
 dataset_params:

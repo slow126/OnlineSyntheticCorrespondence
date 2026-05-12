@@ -12,6 +12,12 @@ Outputs (under --output-dir):
   - prediction_lobo_rows.csv: per-row LOBO predictions
   - prediction_loto_summary.csv: leave-one-training-dataset-out metrics
   - prediction_loto_rows.csv: per-row LOTO predictions
+  - prediction_loto_holdout_placement_summary.csv: LOTO holdout insertion ranking metrics
+  - prediction_loto_holdout_placement_detail.csv: per-task LOTO holdout insertion diagnostics
+  - prediction_jointood_summary.csv: leave-one-train-dataset-and-benchmark-out metrics (optional)
+  - prediction_jointood_rows.csv: per-row joint-OOD predictions (optional)
+  - prediction_jointood_holdout_placement_summary.csv: Joint-OOD holdout insertion ranking metrics
+  - prediction_jointood_holdout_placement_detail.csv: per-task Joint-OOD insertion diagnostics
   - regression_summary.txt: OLS/mixedlm regression summary
 
 Optional (mode=all):
@@ -20,6 +26,7 @@ Optional (mode=all):
 """
 
 import argparse
+import datetime
 import json
 import math
 import csv
@@ -71,6 +78,10 @@ COVERAGE_RENAME_MAP = {
     "dino_eval_to_train_coverage_logit": "dino_eval_to_train_over_train_precision_logit",
     "dino_train_to_eval_coverage": "dino_train_to_eval_over_eval_recall",
     "dino_train_to_eval_coverage_logit": "dino_train_to_eval_over_eval_recall_logit",
+    "hof_eval_to_train_coverage": "hof_eval_to_train_over_train_precision",
+    "hof_eval_to_train_coverage_logit": "hof_eval_to_train_over_train_precision_logit",
+    "hof_train_to_eval_coverage": "hof_train_to_eval_over_eval_recall",
+    "hof_train_to_eval_coverage_logit": "hof_train_to_eval_over_eval_recall_logit",
 }
 
 
@@ -101,6 +112,31 @@ def parse_eps_values(raw: str) -> List[str]:
             continue
         values.append(f"{value:g}".replace(".", "p"))
     return values
+
+
+def apply_flow_eps_ring_features(
+    df: pd.DataFrame,
+    eps_values: List[str],
+    weighted: bool = False,
+) -> pd.DataFrame:
+    """Convert cumulative flow epsilon ladders into per-ring bins in place."""
+    if df.empty or not eps_values:
+        return df
+    out = df.copy()
+    suffix = "_weighted" if weighted else ""
+    for direction in ("train_to_eval", "eval_to_train"):
+        prev = None
+        for eps in eps_values:
+            col = f"flow_{direction}_eps{eps}px{suffix}"
+            if col not in out.columns:
+                continue
+            current = pd.to_numeric(out[col], errors="coerce")
+            if prev is None:
+                out[col] = current
+            else:
+                out[col] = current - prev
+            prev = current
+    return out
 
 
 def add_explicit_coverage_columns(df):
@@ -389,6 +425,9 @@ def load_coverage_lookup(csv_path, allow_unsplit=True):
                 kl_train_to_eval_hist_median = _parse_float(row, "kl_train_to_eval_hist_median")
                 kl_eval_to_train_hist_rank = _parse_float(row, "kl_eval_to_train_hist_rank")
                 kl_train_to_eval_hist_rank = _parse_float(row, "kl_train_to_eval_hist_rank")
+                density_l2 = _parse_float(row, "hof_density_l2")
+                density_l1 = _parse_float(row, "hof_density_l1")
+                density_cos = _parse_float(row, "hof_density_cosine")
 
                 if not allow_unsplit and (not train_split or not eval_split):
                     continue
@@ -442,6 +481,9 @@ def load_coverage_lookup(csv_path, allow_unsplit=True):
                     "kl_train_to_eval_hist_median": kl_train_to_eval_hist_median,
                     "kl_eval_to_train_hist_rank": kl_eval_to_train_hist_rank,
                     "kl_train_to_eval_hist_rank": kl_train_to_eval_hist_rank,
+                    "hof_density_l2": density_l2,
+                    "hof_density_l1": density_l1,
+                    "hof_density_cosine": density_cos,
                     **eps_eval_to_train,
                     **eps_train_to_eval,
                 }
@@ -472,6 +514,9 @@ def load_coverage_lookup(csv_path, allow_unsplit=True):
                         "kl_train_to_eval_hist_median": kl_train_to_eval_hist_median,
                         "kl_eval_to_train_hist_rank": kl_eval_to_train_hist_rank,
                         "kl_train_to_eval_hist_rank": kl_train_to_eval_hist_rank,
+                        "hof_density_l2": density_l2,
+                        "hof_density_l1": density_l1,
+                        "hof_density_cosine": density_cos,
                         **eps_eval_to_train,
                         **eps_train_to_eval,
                     }
@@ -854,7 +899,7 @@ def add_logit_columns(df, columns, suffix="_logit"):
 def normalize_distances_by_radius(df, eps, radius_floor=0.0):
     df = df.copy()
     floor = max(float(radius_floor), 0.0)
-    prefixes = ("flow", "resnet", "dino")
+    prefixes = ("flow", "resnet", "dino", "hof")
     suffixes = (
         "eval_to_train_mean_dist",
         "eval_to_train_median_dist",
@@ -878,7 +923,7 @@ def normalize_distances_by_radius(df, eps, radius_floor=0.0):
 def add_distance_ratio_features(df, eps, radius_floor=0.0):
     df = df.copy()
     floor = max(float(radius_floor), 0.0)
-    prefixes = ("flow", "resnet", "dino")
+    prefixes = ("flow", "resnet", "dino", "hof")
     stats = ("mean", "median", "p90")
     for prefix in prefixes:
         radius_train_col = f"{prefix}_radius_train"
@@ -931,7 +976,7 @@ def transform_radius_features(df, mode, eps):
     if mode == "keep":
         return df
     df = df.copy()
-    prefixes = ("flow", "resnet", "dino")
+    prefixes = ("flow", "resnet", "dino", "hof")
     radius_cols = ("radius_train", "radius_eval", "radius_quantile")
     if mode == "drop":
         for prefix in prefixes:
@@ -1039,6 +1084,14 @@ def _safe_corr(a, b):
     return float(np.corrcoef(a[mask], b[mask])[0, 1])
 
 
+def _safe_max_abs_delta(a, b):
+    vals = np.abs(np.asarray(a, dtype=float) - np.asarray(b, dtype=float))
+    mask = np.isfinite(vals)
+    if mask.sum() == 0:
+        return np.nan
+    return float(np.max(vals[mask]))
+
+
 def write_predictor_colinearity(df, predictors, out_path, method="pearson"):
     if df.empty or not predictors:
         return
@@ -1056,7 +1109,7 @@ def write_predictor_colinearity(df, predictors, out_path, method="pearson"):
 
 def write_distance_diagnostics(df, out_path):
     lines = []
-    prefixes = ("flow", "resnet", "dino")
+    prefixes = ("flow", "resnet", "dino", "hof")
     directions = ("train_to_eval", "eval_to_train")
     for prefix in prefixes:
         for direction in directions:
@@ -1069,15 +1122,9 @@ def write_distance_diagnostics(df, out_path):
             median_vals = df[median_col]
             p90_vals = df[p90_col]
             lines.append(f"{prefix} {direction}:")
-            lines.append(
-                f"  max_abs(mean-median)={np.nanmax(np.abs(mean_vals - median_vals)):.6f}"
-            )
-            lines.append(
-                f"  max_abs(mean-p90)={np.nanmax(np.abs(mean_vals - p90_vals)):.6f}"
-            )
-            lines.append(
-                f"  max_abs(median-p90)={np.nanmax(np.abs(median_vals - p90_vals)):.6f}"
-            )
+            lines.append(f"  max_abs(mean-median)={_safe_max_abs_delta(mean_vals, median_vals):.6f}")
+            lines.append(f"  max_abs(mean-p90)={_safe_max_abs_delta(mean_vals, p90_vals):.6f}")
+            lines.append(f"  max_abs(median-p90)={_safe_max_abs_delta(median_vals, p90_vals):.6f}")
             lines.append(f"  corr(mean,median)={_safe_corr(mean_vals, median_vals):.6f}")
             lines.append(f"  corr(mean,p90)={_safe_corr(mean_vals, p90_vals):.6f}")
             lines.append(f"  corr(median,p90)={_safe_corr(median_vals, p90_vals):.6f}")
@@ -1086,10 +1133,102 @@ def write_distance_diagnostics(df, out_path):
     out_path.write_text("\n".join(lines))
 
 
+def _write_run_metadata(out_dir: Path, predictors: List[str], args: argparse.Namespace) -> None:
+    resolved_model = args.prediction_model or args.linear_model
+    predictor_list = list(predictors or [])
+    n_total = len(predictor_list)
+    n_enc_main = len([p for p in predictor_list if p.startswith("enc_")])
+    n_mf_main = len([p for p in predictor_list if p.startswith("mf_")])
+    n_enc_inter = len([p for p in predictor_list if "__enc_" in p])
+    n_mf_inter = len([p for p in predictor_list if "__mf_" in p])
+    n_base = n_total - n_enc_main - n_mf_main - n_enc_inter - n_mf_inter
+    meta = {
+        "target": args.target,
+        "prediction_target": args.prediction_target,
+        "predictors": predictors,
+        "n_predictors": n_total,
+        "n_predictors_base": n_base,
+        "n_predictors_encoder_main_effects": n_enc_main,
+        "n_predictors_model_family_main_effects": n_mf_main,
+        "n_predictors_encoder_interactions": n_enc_inter,
+        "n_predictors_model_family_interactions": n_mf_inter,
+        "rank_target": bool(args.rank_target),
+        "rank_target_source": args.rank_target_source,
+        "rank_target_group": args.rank_target_group,
+        "ranking_group": args.ranking_group,
+        "ranking_context_cols": args.ranking_context_cols,
+        "pairwise_group_cols": args.pairwise_group_cols,
+        "cv_residualize_target_by_context": bool(
+            getattr(args, "cv_residualize_target_by_context", False)
+        ),
+        "cv_residual_context_cols": getattr(args, "cv_residual_context_cols", ""),
+        "cv_residual_eval_space": getattr(args, "cv_residual_eval_space", "residual"),
+        "cv_residual_target_transform": getattr(args, "cv_residual_target_transform", "residual"),
+        "cv_residual_target_std_eps": getattr(args, "cv_residual_target_std_eps", 1e-9),
+        "cv_fewshot_context_calibration": bool(
+            getattr(args, "cv_fewshot_context_calibration", False)
+        ),
+        "cv_fewshot_context_calibration_cols": getattr(
+            args, "cv_fewshot_context_calibration_cols", ""
+        ),
+        "cv_fewshot_context_calibration_std_eps": getattr(
+            args, "cv_fewshot_context_calibration_std_eps", 1e-9
+        ),
+        "cv_fewshot_context_calibration_min_group_size": getattr(
+            args, "cv_fewshot_context_calibration_min_group_size", 2
+        ),
+        "cv_fewshot_context_calibration_backoff": bool(
+            getattr(args, "cv_fewshot_context_calibration_backoff", True)
+        ),
+        "cv_fewshot_context_calibration_k": int(
+            getattr(args, "cv_fewshot_context_calibration_k", 0)
+        ),
+        "cv_fewshot_context_calibration_seed": int(
+            getattr(args, "cv_fewshot_context_calibration_seed", 0)
+        ),
+        "loto_single_predictor_baselines": bool(
+            getattr(args, "loto_single_predictor_baselines", True)
+        ),
+        "jointood_single_predictor_baselines": bool(
+            getattr(args, "jointood_single_predictor_baselines", True)
+        ),
+        "rank_target_with_encoder": bool(args.rank_target_with_encoder),
+        "rank_target_with_model": bool(args.rank_target_with_model),
+        "model": resolved_model,
+        "linear_model": args.linear_model,
+        "prediction_model": args.prediction_model,
+        "joint_ood_holdout": bool(getattr(args, "joint_ood_holdout", False)),
+        "collapse_cv_cells": bool(getattr(args, "collapse_cv_cells", False)),
+        "ridge_alpha": args.ridge_alpha,
+        "standardize": bool(args.standardize),
+        "fit_sample_weighting": args.fit_sample_weighting,
+        "fit_balance_real_synth": bool(args.fit_balance_real_synth),
+        "cv_repeat_aggregation": getattr(args, "cv_repeat_aggregation", "none"),
+        "overall_aggregation": args.overall_aggregation,
+        "logit_coverage": bool(args.logit_coverage),
+        "custom_interactions": getattr(args, "custom_interactions", ""),
+        "use_flow_eps_predictors": bool(getattr(args, "use_flow_eps_predictors", False)),
+        "use_flow_eps_weighted_predictors": bool(
+            getattr(args, "use_flow_eps_weighted_predictors", False)
+        ),
+        "flow_eps_rings": bool(getattr(args, "flow_eps_rings", False)),
+        "use_flow_density_predictors": bool(
+            getattr(args, "use_flow_density_predictors", False)
+        ),
+        "flow_density_interactions": bool(
+            getattr(args, "flow_density_interactions", False)
+        ),
+        "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
+    }
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "run_metadata.json").write_text(json.dumps(meta, indent=2, sort_keys=True))
+
+
 def build_auc_feature_table(
     auc_df,
     flow_lookup,
     resnet_lookup,
+    hof_lookup,
     variogram_lookup,
     flow_mmd_lookup,
     feature_mmd_lookup,
@@ -1111,6 +1250,7 @@ def build_auc_feature_table(
     known_datasets = gather_known_datasets(
         flow_lookup,
         resnet_lookup,
+        hof_lookup,
         variogram_lookup,
         flow_mmd_lookup,
         feature_mmd_lookup,
@@ -1126,6 +1266,7 @@ def build_auc_feature_table(
 
         flow_metrics = None
         resnet_metrics = None
+        hof_metrics = None
         dino_metrics = None
         variogram_metrics = None
         flow_mmd = None
@@ -1142,6 +1283,10 @@ def build_auc_feature_table(
             resnet_metrics, resnet_key = lookup_pair(
                 resnet_lookup, candidate, benchmark, allow_unsplit=allow_unsplit_coverage
             )
+            if hof_lookup:
+                hof_metrics, _ = lookup_pair(
+                    hof_lookup, candidate, benchmark, allow_unsplit=allow_unsplit_coverage
+                )
             if dino_lookup:
                 dino_metrics, _ = lookup_pair(
                     dino_lookup, candidate, benchmark, allow_unsplit=allow_unsplit_coverage
@@ -1160,7 +1305,12 @@ def build_auc_feature_table(
                 dino_mmd, _ = lookup_mmd(
                     dino_mmd_lookup, candidate, benchmark, allow_unsplit=allow_unsplit_mmd
                 )
-            if flow_metrics is not None or resnet_metrics is not None or variogram_metrics is not None:
+            if (
+                flow_metrics is not None
+                or resnet_metrics is not None
+                or hof_metrics is not None
+                or variogram_metrics is not None
+            ):
                 resolved_train = candidate
                 break
 
@@ -1168,6 +1318,8 @@ def build_auc_feature_table(
             missing[("flow", train_dataset, benchmark)] += 1
         if resnet_metrics is None:
             missing[("resnet", train_dataset, benchmark)] += 1
+        if hof_lookup is not None and hof_metrics is None:
+            missing[("hof", train_dataset, benchmark)] += 1
         if dino_lookup is not None and dino_metrics is None:
             missing[("dino", train_dataset, benchmark)] += 1
         if flow_mmd is None:
@@ -1283,6 +1435,66 @@ def build_auc_feature_table(
                 resnet_metrics.get("kl_train_to_eval_hist_log1p_linear", np.nan)
                 if resnet_metrics
                 else np.nan
+            ),
+            "hof_train_to_eval_coverage": (
+                hof_metrics["train_to_eval_coverage"] if hof_metrics else np.nan
+            ),
+            "hof_eval_to_train_coverage": (
+                hof_metrics["eval_to_train_coverage"] if hof_metrics else np.nan
+            ),
+            "hof_outside_mass": hof_metrics["outside"] if hof_metrics else np.nan,
+            "hof_k": hof_metrics["k"] if hof_metrics else np.nan,
+            "hof_radius_quantile": hof_metrics["radius_quantile"] if hof_metrics else np.nan,
+            "hof_radius_train": hof_metrics["radius_train"] if hof_metrics else np.nan,
+            "hof_radius_eval": hof_metrics["radius_eval"] if hof_metrics else np.nan,
+            "hof_eval_to_train_mean_dist": (
+                hof_metrics["mean_nn_eval_to_train"] if hof_metrics else np.nan
+            ),
+            "hof_eval_to_train_median_dist": (
+                hof_metrics["median_nn_eval_to_train"] if hof_metrics else np.nan
+            ),
+            "hof_eval_to_train_p90_dist": (
+                hof_metrics["p90_nn_eval_to_train"] if hof_metrics else np.nan
+            ),
+            "hof_train_to_eval_mean_dist": (
+                hof_metrics["mean_nn_train_to_eval"] if hof_metrics else np.nan
+            ),
+            "hof_train_to_eval_median_dist": (
+                hof_metrics["median_nn_train_to_eval"] if hof_metrics else np.nan
+            ),
+            "hof_train_to_eval_p90_dist": (
+                hof_metrics["p90_nn_train_to_eval"] if hof_metrics else np.nan
+            ),
+            "hof_eval_to_train_kl_div": (
+                hof_metrics["kl_eval_to_train"] if hof_metrics else np.nan
+            ),
+            "hof_train_to_eval_kl_div": (
+                hof_metrics["kl_train_to_eval"] if hof_metrics else np.nan
+            ),
+            "hof_eval_to_train_kl_div_hist": (
+                hof_metrics.get("kl_eval_to_train_hist", np.nan) if hof_metrics else np.nan
+            ),
+            "hof_train_to_eval_kl_div_hist": (
+                hof_metrics.get("kl_train_to_eval_hist", np.nan) if hof_metrics else np.nan
+            ),
+            "hof_eval_to_train_kl_div_hist_log1p_linear": (
+                hof_metrics.get("kl_eval_to_train_hist_log1p_linear", np.nan)
+                if hof_metrics
+                else np.nan
+            ),
+            "hof_train_to_eval_kl_div_hist_log1p_linear": (
+                hof_metrics.get("kl_train_to_eval_hist_log1p_linear", np.nan)
+                if hof_metrics
+                else np.nan
+            ),
+            "hof_density_l2": (
+                hof_metrics.get("hof_density_l2", np.nan) if hof_metrics else np.nan
+            ),
+            "hof_density_l1": (
+                hof_metrics.get("hof_density_l1", np.nan) if hof_metrics else np.nan
+            ),
+            "hof_density_cosine": (
+                hof_metrics.get("hof_density_cosine", np.nan) if hof_metrics else np.nan
             ),
             "dino_train_to_eval_coverage": (
                 dino_metrics["train_to_eval_coverage"] if dino_metrics else np.nan
@@ -1407,6 +1619,9 @@ def build_auc_feature_table(
                 "dino_train_to_eval_coverage",
                 "dino_eval_to_train_coverage",
                 "dino_outside_mass",
+                "hof_train_to_eval_coverage",
+                "hof_eval_to_train_coverage",
+                "hof_outside_mass",
             ],
         )
     if rename_coverage:
@@ -1415,12 +1630,21 @@ def build_auc_feature_table(
 
 
 def pearson_corr(x, y):
-    if len(x) < 2:
-        return np.nan
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
+    finite = np.isfinite(x) & np.isfinite(y)
+    if finite.sum() < 2:
+        return np.nan
+    x = x[finite]
+    y = y[finite]
     x = x - np.mean(x)
     y = y - np.mean(y)
+    x_scale = float(np.max(np.abs(x))) if x.size else 0.0
+    y_scale = float(np.max(np.abs(y))) if y.size else 0.0
+    if x_scale == 0.0 or y_scale == 0.0:
+        return np.nan
+    x = x / x_scale
+    y = y / y_scale
     denom = np.linalg.norm(x) * np.linalg.norm(y)
     if denom == 0:
         return np.nan
@@ -1428,11 +1652,131 @@ def pearson_corr(x, y):
 
 
 def spearman_corr(x, y):
-    if len(x) < 2:
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    finite = np.isfinite(x) & np.isfinite(y)
+    if finite.sum() < 2:
         return np.nan
+    x = x[finite]
+    y = y[finite]
     rx = pd.Series(x).rank(method="average").to_numpy()
     ry = pd.Series(y).rank(method="average").to_numpy()
     return pearson_corr(rx, ry)
+
+
+def kendall_tau_b(x, y):
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    finite = np.isfinite(x) & np.isfinite(y)
+    if finite.sum() < 2:
+        return np.nan
+    xx = x[finite]
+    yy = y[finite]
+    n = int(len(xx))
+    if n < 2:
+        return np.nan
+
+    n_conc = 0
+    n_disc = 0
+    n_tie_x = 0
+    n_tie_y = 0
+    for i in range(n):
+        for j in range(i + 1, n):
+            dx = xx[i] - xx[j]
+            dy = yy[i] - yy[j]
+            tie_x = dx == 0.0
+            tie_y = dy == 0.0
+            if tie_x:
+                n_tie_x += 1
+            if tie_y:
+                n_tie_y += 1
+            if tie_x or tie_y:
+                continue
+            if dx * dy > 0.0:
+                n_conc += 1
+            elif dx * dy < 0.0:
+                n_disc += 1
+    n0 = n * (n - 1) / 2.0
+    denom = np.sqrt(max(n0 - n_tie_x, 0.0) * max(n0 - n_tie_y, 0.0))
+    if denom == 0.0:
+        return np.nan
+    return float((n_conc - n_disc) / denom)
+
+
+def pairwise_cindex(y_true, y_pred):
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+    finite = np.isfinite(y_true) & np.isfinite(y_pred)
+    if finite.sum() < 2:
+        return np.nan
+    yt = y_true[finite]
+    yp = y_pred[finite]
+    n = int(len(yt))
+    if n < 2:
+        return np.nan
+
+    comparable = 0
+    score = 0.0
+    for i in range(n):
+        for j in range(i + 1, n):
+            dy_true = yt[i] - yt[j]
+            if dy_true == 0.0:
+                continue
+            comparable += 1
+            dy_pred = yp[i] - yp[j]
+            if dy_pred == 0.0:
+                score += 0.5
+            elif dy_true * dy_pred > 0.0:
+                score += 1.0
+    if comparable == 0:
+        return np.nan
+    return float(score / comparable)
+
+
+def mae_rmse(x, y):
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    finite = np.isfinite(x) & np.isfinite(y)
+    if finite.sum() == 0:
+        return np.nan, np.nan
+    diff = x[finite] - y[finite]
+    mae = float(np.mean(np.abs(diff)))
+    scale = float(np.max(np.abs(diff))) if diff.size else 0.0
+    if not np.isfinite(scale):
+        rmse = np.nan
+    elif scale == 0.0:
+        rmse = 0.0
+    else:
+        rmse = float(scale * np.sqrt(np.mean((diff / scale) ** 2)))
+    return mae, rmse
+
+
+def safe_std(values):
+    values = np.asarray(values, dtype=float)
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        return np.nan
+    scale = float(np.max(np.abs(finite)))
+    if not np.isfinite(scale):
+        return np.nan
+    if scale == 0.0:
+        return 0.0
+    normalized = finite / scale
+    centered = normalized - float(np.mean(normalized))
+    return float(scale * np.sqrt(np.mean(centered * centered)))
+
+
+def inv_one_plus_exp(values):
+    values = np.asarray(values, dtype=float)
+    out = np.empty_like(values)
+    pos = values >= 0
+    if np.any(pos):
+        exp_neg = np.exp(-values[pos])
+        out[pos] = exp_neg / (1.0 + exp_neg)
+    if np.any(~pos):
+        exp_pos = np.exp(values[~pos])
+        out[~pos] = 1.0 / (1.0 + exp_pos)
+    return out
 
 
 def fit_linear_model(
@@ -1443,26 +1787,55 @@ def fit_linear_model(
     model="ols",
     ridge_alpha=1.0,
     min_std=0.0,
+    sample_weight=None,
 ):
     X = train_df[predictors].to_numpy(dtype=float)
     y = train_df[target].to_numpy(dtype=float)
+    w = None
+    if sample_weight is not None:
+        w = np.asarray(sample_weight, dtype=float).reshape(-1)
+        if w.shape[0] != X.shape[0]:
+            w = None
+        else:
+            w[~np.isfinite(w)] = 0.0
+            w = np.where(w > 0.0, w, 0.0)
+            if float(w.sum()) <= 0.0:
+                w = None
     mean = np.zeros(X.shape[1])
     std = np.ones(X.shape[1])
     if standardize:
-        mean = X.mean(axis=0)
-        std = X.std(axis=0)
+        if w is None:
+            mean = X.mean(axis=0)
+            std = X.std(axis=0)
+        else:
+            w_norm = w / float(w.sum())
+            mean = np.sum(X * w_norm[:, None], axis=0)
+            var = np.sum(((X - mean) ** 2) * w_norm[:, None], axis=0)
+            std = np.sqrt(np.maximum(var, 0.0))
         if min_std > 0:
             std = np.where(std < min_std, float(min_std), std)
         std[std == 0] = 1.0
         X = (X - mean) / std
     X = np.column_stack([np.ones(len(X)), X])
+    if w is not None:
+        sqrt_w = np.sqrt(w)
+        X_fit = X * sqrt_w[:, None]
+        y_fit = y * sqrt_w
+    else:
+        X_fit = X
+        y_fit = y
     if model == "ridge":
         alpha = float(ridge_alpha)
         penalty = np.eye(X.shape[1])
         penalty[0, 0] = 0.0
-        coef = np.linalg.solve(X.T @ X + alpha * penalty, X.T @ y)
+        xtx = X_fit.T @ X_fit
+        xty = X_fit.T @ y_fit
+        try:
+            coef = np.linalg.solve(xtx + alpha * penalty, xty)
+        except np.linalg.LinAlgError:
+            coef, _, _, _ = np.linalg.lstsq(xtx + alpha * penalty, xty, rcond=None)
     else:
-        coef, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
+        coef, _, _, _ = np.linalg.lstsq(X_fit, y_fit, rcond=None)
     return coef, mean, std
 
 
@@ -1835,7 +2208,7 @@ def fit_pairwise_rank_model(
     train_df,
     predictors,
     target,
-    group_col,
+    group_cols,
     option_col,
     standardize=True,
     ridge_alpha=1.0,
@@ -1843,7 +2216,12 @@ def fit_pairwise_rank_model(
     max_iter=200,
     lr=0.1,
 ):
-    agg_cols = [group_col, option_col] if option_col else [group_col]
+    if isinstance(group_cols, str):
+        group_cols = [group_cols] if group_cols else []
+    group_cols = [c for c in list(group_cols or []) if c]
+    agg_cols = list(dict.fromkeys(group_cols + ([option_col] if option_col else [])))
+    if not agg_cols:
+        raise ValueError("Pairwise rank requires at least one grouping/option column.")
     grouped = (
         train_df.groupby(agg_cols)[predictors + [target]]
         .mean()
@@ -1868,27 +2246,22 @@ def fit_pairwise_rank_model(
 
     diffs = []
     labels = []
-    if group_col in grouped.columns:
-        for _, sub in grouped.groupby(group_col):
-            if len(sub) < 2:
-                continue
-            idx = sub.index.to_numpy()
-            for i in range(len(idx)):
-                for j in range(i + 1, len(idx)):
-                    yi = y[idx[i]]
-                    yj = y[idx[j]]
-                    if yi == yj:
-                        continue
-                    label = 1.0 if yi > yj else -1.0
-                    diffs.append(X[idx[i]] - X[idx[j]])
-                    labels.append(label)
+    if group_cols:
+        group_iter = grouped.groupby(group_cols, dropna=False)
     else:
-        for i in range(len(y)):
-            for j in range(i + 1, len(y)):
-                if y[i] == y[j]:
+        group_iter = [(None, grouped)]
+    for _, sub in group_iter:
+        if len(sub) < 2:
+            continue
+        idx = sub.index.to_numpy()
+        for i in range(len(idx)):
+            for j in range(i + 1, len(idx)):
+                yi = y[idx[i]]
+                yj = y[idx[j]]
+                if yi == yj:
                     continue
-                label = 1.0 if y[i] > y[j] else -1.0
-                diffs.append(X[i] - X[j])
+                label = 1.0 if yi > yj else -1.0
+                diffs.append(X[idx[i]] - X[idx[j]])
                 labels.append(label)
 
     if not diffs:
@@ -1902,11 +2275,19 @@ def fit_pairwise_rank_model(
 
     for _ in range(max_iter):
         margins = labels * (diffs @ w)
-        grad = -(labels[:, None] * diffs) * (1.0 / (1.0 + np.exp(margins)))[:, None]
+        grad = -(labels[:, None] * diffs) * inv_one_plus_exp(margins)[:, None]
         grad = grad.mean(axis=0)
         if reg > 0:
             grad = grad + reg * w
-        w = w - float(lr) * grad
+        if not np.all(np.isfinite(grad)):
+            break
+        grad_norm = float(np.linalg.norm(grad))
+        if np.isfinite(grad_norm) and grad_norm > 1e3:
+            grad = grad * (1e3 / grad_norm)
+        step = float(lr) * grad
+        if not np.all(np.isfinite(step)):
+            break
+        w = w - step
 
     return w, mean, std
 
@@ -1929,6 +2310,108 @@ def predict_pairwise_rank(df, predictors, coef, mean, std, standardize=True):
 def filter_complete_rows(df, predictors, target):
     mask = df[predictors + [target]].notna().all(axis=1)
     return df[mask].copy()
+
+
+def _is_synthetic_train_dataset_name(name):
+    if name is None:
+        return False
+    norm = normalize_dataset_name(str(name))
+    if norm.startswith("synthetic"):
+        return True
+    return "_synthetic" in norm
+
+
+def _inverse_frequency_weights(df, cols):
+    if df.empty or not cols:
+        return np.ones(len(df), dtype=float)
+    if any(col not in df.columns for col in cols):
+        return np.ones(len(df), dtype=float)
+    if len(cols) == 1:
+        col = cols[0]
+        counts = df.groupby(col, dropna=False).size()
+        row_counts = df[col].map(counts).to_numpy(dtype=float)
+    else:
+        counts = df.groupby(cols, dropna=False).size()
+        keys = pd.MultiIndex.from_frame(df[cols])
+        row_counts = counts.reindex(keys).to_numpy(dtype=float)
+    row_counts = np.where(np.isfinite(row_counts) & (row_counts > 0), row_counts, 1.0)
+    return 1.0 / row_counts
+
+
+def compute_fit_sample_weights(
+    train_df,
+    mode="none",
+    balance_real_synth=False,
+):
+    n = len(train_df)
+    if n == 0:
+        return np.array([], dtype=float)
+
+    weights = np.ones(n, dtype=float)
+    mode = str(mode or "none").strip().lower()
+    if mode == "inverse_benchmark":
+        weights *= _inverse_frequency_weights(train_df, ["benchmark"])
+    elif mode == "inverse_train_dataset":
+        weights *= _inverse_frequency_weights(train_df, ["train_dataset"])
+    elif mode == "inverse_task":
+        if "model_family_encoder" in train_df.columns:
+            task_cols = ["benchmark", "model_family_encoder"]
+        elif "model_family" in train_df.columns:
+            task_cols = ["benchmark", "model_family"]
+        else:
+            task_cols = ["benchmark"]
+        weights *= _inverse_frequency_weights(train_df, task_cols)
+
+    if balance_real_synth and "train_dataset" in train_df.columns:
+        synth_mask = train_df["train_dataset"].map(_is_synthetic_train_dataset_name).to_numpy(dtype=bool)
+        real_mask = ~synth_mask
+        synth_sum = float(weights[synth_mask].sum()) if synth_mask.any() else 0.0
+        real_sum = float(weights[real_mask].sum()) if real_mask.any() else 0.0
+        if synth_sum > 0.0 and real_sum > 0.0:
+            weights[synth_mask] *= 0.5 / synth_sum
+            weights[real_mask] *= 0.5 / real_sum
+
+    weights[~np.isfinite(weights)] = 0.0
+    weights = np.where(weights > 0.0, weights, 0.0)
+    total = float(weights.sum())
+    if total <= 0.0:
+        return np.ones(n, dtype=float)
+    # Keep optimization scale stable across folds.
+    return weights * (float(n) / total)
+
+
+def _first_non_null(series):
+    non_null = series.dropna()
+    if non_null.empty:
+        return np.nan
+    return non_null.iloc[0]
+
+
+def collapse_cv_rows_to_cells(df, group_cols, numeric_agg="mean"):
+    if df.empty:
+        return df.copy()
+
+    missing = [c for c in group_cols if c not in df.columns]
+    if missing:
+        return df.copy()
+
+    agg_mode = str(numeric_agg or "mean").strip().lower()
+    if agg_mode not in {"mean", "median"}:
+        agg_mode = "mean"
+
+    agg_map = {}
+    for col in df.columns:
+        if col in group_cols:
+            continue
+        if pd.api.types.is_numeric_dtype(df[col]):
+            agg_map[col] = agg_mode
+        else:
+            agg_map[col] = _first_non_null
+
+    grouped = df.groupby(group_cols, dropna=False, sort=False)
+    collapsed = grouped.agg(agg_map).reset_index()
+    collapsed["cell_n_rows"] = grouped.size().to_numpy()
+    return collapsed
 
 
 def drop_low_variance_predictors(train_df, test_df, predictors, min_std):
@@ -1956,6 +2439,17 @@ def run_group_cv(
     encoder_group_col=None,
     target_group_demean=False,
     target_group_col=None,
+    target_context_residualize_cols=None,
+    target_context_transform="residual",
+    target_context_std_eps=1e-9,
+    target_context_eval="absolute",
+    fewshot_context_calibration=False,
+    fewshot_context_calibration_cols=None,
+    fewshot_context_calibration_std_eps=1e-9,
+    fewshot_context_calibration_min_group_size=2,
+    fewshot_context_calibration_backoff=True,
+    fewshot_context_calibration_k=0,
+    fewshot_context_calibration_seed=0,
     min_predictor_std=0.0,
     prediction_clip=False,
     prediction_clip_min=None,
@@ -1966,7 +2460,14 @@ def run_group_cv(
     permute_group_col=None,
     permute_seed=0,
     pairwise_option_col=None,
-    pairwise_group_col="benchmark",
+    pairwise_group_cols=("benchmark",),
+    fit_sample_weighting="none",
+    fit_balance_real_synth=False,
+    overall_aggregation="micro",
+    task_prediction_rows_out=None,
+    task_prediction_option_col=None,
+    task_prediction_task_cols=None,
+    task_prediction_holdout_group_col=None,
 ):
     results = []
     pred_rows = []
@@ -2002,9 +2503,34 @@ def run_group_cv(
         if len(train_df) <= len(predictors):
             continue
 
-        y_true = test_df[target].to_numpy(dtype=float)
         target_offsets = None
-        if target_group_demean and target_group_col:
+        target_scales = None
+        target_residualizer = None
+        y_true = test_df[target].to_numpy(dtype=float)
+        if target_context_residualize_cols:
+            (
+                train_df,
+                test_df,
+                _,
+                context_test_offsets,
+                _,
+                context_test_scales,
+                target_residualizer,
+            ) = residualize_target_by_context(
+                train_df,
+                test_df,
+                target,
+                target_context_residualize_cols,
+                transform=target_context_transform,
+                std_eps=target_context_std_eps,
+            )
+            if target_residualizer is not None:
+                if str(target_context_eval or "absolute").strip().lower() == "residual":
+                    y_true = test_df[target].to_numpy(dtype=float)
+                else:
+                    target_offsets = context_test_offsets
+                    target_scales = context_test_scales
+        elif target_group_demean and target_group_col:
             # Support both single column (string) and multiple columns (list)
             if isinstance(target_group_col, str):
                 train_df, test_df, target_offsets = demean_target_by_group(
@@ -2052,12 +2578,20 @@ def run_group_cv(
         # Disable local standardization if global mode is used
         local_standardize = standardize and standardize_mode == "local"
         
+        fit_weights = None
+        if model != "pairwise_rank":
+            fit_weights = compute_fit_sample_weights(
+                train_df,
+                mode=fit_sample_weighting,
+                balance_real_synth=fit_balance_real_synth,
+            )
+
         if model == "pairwise_rank":
             coef, mean, std = fit_pairwise_rank_model(
                 train_df,
                 predictors_fold,
                 target,
-                pairwise_group_col,
+                pairwise_group_cols,
                 pairwise_option_col,
                 standardize=local_standardize,
                 ridge_alpha=ridge_alpha,
@@ -2073,6 +2607,7 @@ def run_group_cv(
                 model=model,
                 ridge_alpha=ridge_alpha,
                 min_std=min_predictor_std,
+                sample_weight=fit_weights,
             )
             y_pred = predict_linear_model(test_df, predictors_fold, coef, mean, std, local_standardize)
         if local_standardize:
@@ -2080,39 +2615,149 @@ def run_group_cv(
             max_abs_z = float(np.nanmax(np.abs(X_test))) if X_test.size else np.nan
         else:
             max_abs_z = np.nan
+        if target_scales is not None:
+            y_pred = y_pred * target_scales
         if target_offsets is not None:
             y_pred = y_pred + target_offsets
+
+        context_calibrator = None
+        fewshot_calibration_mask = np.zeros(len(test_df), dtype=bool)
+        if bool(fewshot_context_calibration):
+            calib_df = test_df
+            calib_y_true = y_true
+            calib_y_pred = y_pred
+            k_shot = int(fewshot_context_calibration_k)
+            if k_shot > 0:
+                rng = np.random.RandomState(int(fewshot_context_calibration_seed) + int(idx))
+                fewshot_calibration_mask = sample_fewshot_calibration_mask(
+                    test_df,
+                    context_cols=fewshot_context_calibration_cols,
+                    k=k_shot,
+                    rng=rng,
+                    allow_backoff=fewshot_context_calibration_backoff,
+                )
+                if np.any(fewshot_calibration_mask):
+                    calib_df = test_df.iloc[np.where(fewshot_calibration_mask)[0]]
+                    calib_y_true = y_true[fewshot_calibration_mask]
+                    calib_y_pred = y_pred[fewshot_calibration_mask]
+            context_calibrator = fit_context_prediction_calibrator(
+                calib_df,
+                calib_y_true,
+                calib_y_pred,
+                context_cols=fewshot_context_calibration_cols,
+                std_eps=fewshot_context_calibration_std_eps,
+                min_group_size=fewshot_context_calibration_min_group_size,
+                allow_backoff=fewshot_context_calibration_backoff,
+            )
+            y_pred = apply_context_prediction_calibrator(
+                test_df,
+                y_pred,
+                context_calibrator,
+            )
+        clip_min = prediction_clip_min
+        clip_max = prediction_clip_max
         if prediction_clip and model != "pairwise_rank":
-            clip_min = prediction_clip_min
-            clip_max = prediction_clip_max
             if clip_min is None:
                 clip_min = float(np.nanmin(train_df[target].to_numpy(dtype=float)))
             if clip_max is None:
                 clip_max = float(np.nanmax(train_df[target].to_numpy(dtype=float)))
             y_pred = np.clip(y_pred, clip_min, clip_max)
 
-        pred_nan = int(np.isnan(y_pred).sum())
-        pred_inf = int(np.isinf(y_pred).sum())
-        target_nan = int(np.isnan(y_true).sum())
-        target_inf = int(np.isinf(y_true).sum())
-        pred_finite = y_pred[np.isfinite(y_pred)]
-        target_finite = y_true[np.isfinite(y_true)]
+        eval_mask = ~fewshot_calibration_mask if int(fewshot_context_calibration_k) > 0 else np.ones(len(test_df), dtype=bool)
+        if not np.any(eval_mask):
+            continue
+        test_eval_df = test_df.iloc[np.where(eval_mask)[0]]
+        y_true_eval = y_true[eval_mask]
+        y_pred_eval = y_pred[eval_mask]
+
+        if task_prediction_rows_out is not None:
+            option_col = task_prediction_option_col or pairwise_option_col
+            task_cols = [c for c in (task_prediction_task_cols or ["benchmark"]) if c in fold_df.columns]
+            holdout_group_col = (
+                task_prediction_holdout_group_col
+                if task_prediction_holdout_group_col in fold_df.columns
+                else None
+            )
+            if option_col and option_col in fold_df.columns and task_cols:
+                candidate_df = filter_complete_rows(fold_df, predictors, target)
+                if not candidate_df.empty:
+                    task_keys = test_eval_df[task_cols].drop_duplicates()
+                    candidate_df = candidate_df.merge(task_keys, on=task_cols, how="inner")
+                    if not candidate_df.empty:
+                        candidate_offsets = None
+                        candidate_scales = None
+                        if target_residualizer is not None:
+                            candidate_df, candidate_offsets, candidate_scales = apply_context_target_residualizer(
+                                candidate_df,
+                                target,
+                                target_residualizer,
+                            )
+                        if model == "pairwise_rank":
+                            candidate_pred = predict_pairwise_rank(
+                                candidate_df, predictors_fold, coef, mean, std, local_standardize
+                            )
+                        else:
+                            candidate_pred = predict_linear_model(
+                                candidate_df, predictors_fold, coef, mean, std, local_standardize
+                            )
+                            if prediction_clip:
+                                candidate_pred = np.clip(candidate_pred, clip_min, clip_max)
+                        if (
+                            candidate_scales is not None
+                            and str(target_context_eval or "absolute").strip().lower()
+                            != "residual"
+                        ):
+                            candidate_pred = candidate_pred * candidate_scales
+                        if (
+                            candidate_offsets is not None
+                            and str(target_context_eval or "absolute").strip().lower()
+                            != "residual"
+                        ):
+                            candidate_pred = candidate_pred + candidate_offsets
+                        if context_calibrator is not None:
+                            candidate_pred = apply_context_prediction_calibrator(
+                                candidate_df,
+                                candidate_pred,
+                                context_calibrator,
+                            )
+                        for row, pred in zip(candidate_df.to_dict(orient="records"), candidate_pred):
+                            is_holdout = 0
+                            if holdout_group_col is not None:
+                                is_holdout = int(row.get(holdout_group_col) == group)
+                            elif option_col in row:
+                                is_holdout = int(row.get(option_col) == group)
+                            row.update(
+                                {
+                                    "prediction": float(pred),
+                                    "target": float(row[target]),
+                                    "fold": group,
+                                    "is_holdout_option": is_holdout,
+                                }
+                            )
+                            task_prediction_rows_out.append(row)
+
+        pred_nan = int(np.isnan(y_pred_eval).sum())
+        pred_inf = int(np.isinf(y_pred_eval).sum())
+        target_nan = int(np.isnan(y_true_eval).sum())
+        target_inf = int(np.isinf(y_true_eval).sum())
+        pred_finite = y_pred_eval[np.isfinite(y_pred_eval)]
+        target_finite = y_true_eval[np.isfinite(y_true_eval)]
         pred_min = float(pred_finite.min()) if pred_finite.size else np.nan
         pred_max = float(pred_finite.max()) if pred_finite.size else np.nan
         target_min = float(target_finite.min()) if target_finite.size else np.nan
         target_max = float(target_finite.max()) if target_finite.size else np.nan
-        pred_std = float(np.std(pred_finite)) if pred_finite.size else np.nan
-        target_std = float(np.std(target_finite)) if target_finite.size else np.nan
+        pred_std = safe_std(pred_finite)
+        target_std = safe_std(target_finite)
 
-        mae = float(np.mean(np.abs(y_true - y_pred)))
-        rmse = float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
-        pearson = pearson_corr(y_true, y_pred)
-        spearman = spearman_corr(y_true, y_pred)
+        mae, rmse = mae_rmse(y_true_eval, y_pred_eval)
+        pearson = pearson_corr(y_true_eval, y_pred_eval)
+        spearman = spearman_corr(y_true_eval, y_pred_eval)
 
         results.append({
             group_col: group,
             "n_train": int(len(train_df)),
-            "n_test": int(len(test_df)),
+            "n_test": int(len(test_eval_df)),
+            "n_calibration": int(fewshot_calibration_mask.sum()),
             "mae": mae,
             "rmse": rmse,
             "pearson": pearson,
@@ -2131,11 +2776,12 @@ def run_group_cv(
             "dropped_predictor_count": len(dropped),
         })
 
-        for row, pred in zip(test_df.to_dict(orient="records"), y_pred):
+        for row, pred in zip(test_eval_df.to_dict(orient="records"), y_pred_eval):
             row.update({
                 "prediction": float(pred),
                 "target": float(row[target]),
                 "fold": group,
+                "is_calibration_row": 0,
             })
             pred_rows.append(row)
 
@@ -2143,26 +2789,482 @@ def run_group_cv(
     summary_df = pd.DataFrame(results)
 
     if not pred_df.empty:
+        macro_mode = str(overall_aggregation or "micro").strip().lower() == "macro_fold"
+        if macro_mode and not summary_df.empty:
+            overall_mae = float(summary_df["mae"].mean())
+            overall_rmse = float(summary_df["rmse"].mean())
+            overall_pearson = float(summary_df["pearson"].mean())
+            overall_spearman = float(summary_df["spearman"].mean())
+        else:
+            overall_mae, overall_rmse = mae_rmse(
+                pred_df["target"].to_numpy(), pred_df["prediction"].to_numpy()
+            )
+            overall_pearson = pearson_corr(
+                pred_df["target"].to_numpy(), pred_df["prediction"].to_numpy()
+            )
+            overall_spearman = spearman_corr(
+                pred_df["target"].to_numpy(), pred_df["prediction"].to_numpy()
+            )
         overall = {
             group_col: "__overall__",
             "n_train": int(len(df)),
             "n_test": int(len(pred_df)),
-            "mae": float(np.mean(np.abs(pred_df["target"] - pred_df["prediction"]))),
-            "rmse": float(np.sqrt(np.mean((pred_df["target"] - pred_df["prediction"]) ** 2))),
-            "pearson": pearson_corr(pred_df["target"].to_numpy(), pred_df["prediction"].to_numpy()),
-            "spearman": spearman_corr(pred_df["target"].to_numpy(), pred_df["prediction"].to_numpy()),
+            "n_calibration": float(summary_df["n_calibration"].sum()) if "n_calibration" in summary_df.columns else np.nan,
+            "mae": overall_mae,
+            "rmse": overall_rmse,
+            "pearson": overall_pearson,
+            "spearman": overall_spearman,
             "target_min": float(pred_df["target"].min()) if not pred_df.empty else np.nan,
             "target_max": float(pred_df["target"].max()) if not pred_df.empty else np.nan,
             "pred_min": float(pred_df["prediction"].min()) if not pred_df.empty else np.nan,
             "pred_max": float(pred_df["prediction"].max()) if not pred_df.empty else np.nan,
-            "target_std": float(pred_df["target"].std(ddof=0)) if not pred_df.empty else np.nan,
-            "pred_std": float(pred_df["prediction"].std(ddof=0)) if not pred_df.empty else np.nan,
+            "target_std": safe_std(pred_df["target"].to_numpy()) if not pred_df.empty else np.nan,
+            "pred_std": safe_std(pred_df["prediction"].to_numpy()) if not pred_df.empty else np.nan,
             "max_abs_zscore_feature": np.nan,
             "pred_nan": int(np.isnan(pred_df["prediction"]).sum()) if not pred_df.empty else 0,
             "pred_inf": int(np.isinf(pred_df["prediction"]).sum()) if not pred_df.empty else 0,
             "target_nan": int(np.isnan(pred_df["target"]).sum()) if not pred_df.empty else 0,
             "target_inf": int(np.isinf(pred_df["target"]).sum()) if not pred_df.empty else 0,
             "dropped_predictor_count": np.nan,
+            "overall_aggregation": "macro_fold" if macro_mode else "micro",
+        }
+        summary_df = pd.concat([summary_df, pd.DataFrame([overall])], ignore_index=True)
+
+    return summary_df, pred_df
+
+
+def run_joint_holdout_cv(
+    df,
+    train_group_col,
+    benchmark_col,
+    predictors,
+    target,
+    standardize=True,
+    standardize_mode="local",
+    center_by_group=False,
+    center_group_col=None,
+    group_norm_mode="none",
+    within_benchmark_norm="none",
+    encoder_group_norm_mode="none",
+    encoder_group_col=None,
+    target_group_demean=False,
+    target_group_col=None,
+    target_context_residualize_cols=None,
+    target_context_transform="residual",
+    target_context_std_eps=1e-9,
+    target_context_eval="absolute",
+    fewshot_context_calibration=False,
+    fewshot_context_calibration_cols=None,
+    fewshot_context_calibration_std_eps=1e-9,
+    fewshot_context_calibration_min_group_size=2,
+    fewshot_context_calibration_backoff=True,
+    fewshot_context_calibration_k=0,
+    fewshot_context_calibration_seed=0,
+    min_predictor_std=0.0,
+    prediction_clip=False,
+    prediction_clip_min=None,
+    prediction_clip_max=None,
+    model="ols",
+    ridge_alpha=1.0,
+    permute_target=False,
+    permute_group_col=None,
+    permute_seed=0,
+    pairwise_option_col=None,
+    pairwise_group_cols=("benchmark",),
+    fit_sample_weighting="none",
+    fit_balance_real_synth=False,
+    overall_aggregation="micro",
+    task_prediction_rows_out=None,
+    task_prediction_option_col=None,
+    task_prediction_task_cols=None,
+    task_prediction_holdout_group_col=None,
+):
+    results = []
+    pred_rows = []
+
+    global_mean = None
+    global_std = None
+    df_standardized = df.copy()
+    if standardize and standardize_mode == "global":
+        complete_df = filter_complete_rows(df, predictors, target)
+        if not complete_df.empty:
+            X_all = complete_df[predictors].to_numpy(dtype=float)
+            global_mean = X_all.mean(axis=0)
+            global_std = X_all.std(axis=0)
+            if min_predictor_std > 0:
+                global_std = np.where(
+                    global_std < float(min_predictor_std),
+                    float(min_predictor_std),
+                    global_std,
+                )
+            global_std[global_std == 0] = 1.0
+            for i, pred in enumerate(predictors):
+                df_standardized[pred] = (
+                    df_standardized[pred] - global_mean[i]
+                ) / global_std[i]
+
+    train_groups = sorted(df[train_group_col].dropna().unique())
+    benchmark_groups = sorted(df[benchmark_col].dropna().unique())
+    fold_idx = 0
+    for train_group in train_groups:
+        for benchmark in benchmark_groups:
+            holdout_name = f"{train_group}__{benchmark}"
+            fold_df = df_standardized if (standardize and standardize_mode == "global") else df
+            train_df = fold_df[
+                (fold_df[train_group_col] != train_group) & (fold_df[benchmark_col] != benchmark)
+            ]
+            test_df = fold_df[
+                (fold_df[train_group_col] == train_group) & (fold_df[benchmark_col] == benchmark)
+            ]
+            train_df = filter_complete_rows(train_df, predictors, target)
+            test_df = filter_complete_rows(test_df, predictors, target)
+
+            if train_df.empty or test_df.empty:
+                fold_idx += 1
+                continue
+            if len(train_df) <= len(predictors):
+                fold_idx += 1
+                continue
+
+            target_offsets = None
+            target_scales = None
+            target_residualizer = None
+            y_true = test_df[target].to_numpy(dtype=float)
+            if target_context_residualize_cols:
+                (
+                    train_df,
+                    test_df,
+                    _,
+                    context_test_offsets,
+                    _,
+                    context_test_scales,
+                    target_residualizer,
+                ) = residualize_target_by_context(
+                    train_df,
+                    test_df,
+                    target,
+                    target_context_residualize_cols,
+                    transform=target_context_transform,
+                    std_eps=target_context_std_eps,
+                )
+                if target_residualizer is not None:
+                    if str(target_context_eval or "absolute").strip().lower() == "residual":
+                        y_true = test_df[target].to_numpy(dtype=float)
+                    else:
+                        target_offsets = context_test_offsets
+                        target_scales = context_test_scales
+            elif target_group_demean and target_group_col:
+                if isinstance(target_group_col, str):
+                    train_df, test_df, target_offsets = demean_target_by_group(
+                        train_df, test_df, target, target_group_col
+                    )
+                else:
+                    train_df, test_df = demean_target_by_multiple_groups(
+                        train_df, test_df, target, target_group_col
+                    )
+                    target_offsets = None
+
+            if permute_target:
+                rng = np.random.RandomState(int(permute_seed) + fold_idx)
+                train_df = permute_target_within_group(
+                    train_df, target, permute_group_col, rng
+                )
+
+            if within_benchmark_norm != "none":
+                train_df, test_df = normalize_predictors_within_benchmark(
+                    train_df, test_df, predictors, within_benchmark_norm
+                )
+
+            train_df, test_df, predictors_fold, dropped = drop_low_variance_predictors(
+                train_df, test_df, predictors, min_predictor_std
+            )
+            if not predictors_fold:
+                fold_idx += 1
+                continue
+            if len(train_df) <= len(predictors_fold):
+                fold_idx += 1
+                continue
+
+            if encoder_group_norm_mode != "none" and encoder_group_col:
+                train_df, test_df = _normalize_predictors_by_group(
+                    train_df,
+                    test_df,
+                    predictors_fold,
+                    encoder_group_col,
+                    encoder_group_norm_mode,
+                )
+            if group_norm_mode != "none" and center_group_col:
+                train_df, test_df = _normalize_predictors_by_group(
+                    train_df, test_df, predictors_fold, center_group_col, group_norm_mode
+                )
+            elif center_by_group and center_group_col:
+                train_df, test_df = _normalize_predictors_by_group(
+                    train_df, test_df, predictors_fold, center_group_col, "center"
+                )
+
+            local_standardize = standardize and standardize_mode == "local"
+            fit_weights = None
+            if model != "pairwise_rank":
+                fit_weights = compute_fit_sample_weights(
+                    train_df,
+                    mode=fit_sample_weighting,
+                    balance_real_synth=fit_balance_real_synth,
+                )
+
+            if model == "pairwise_rank":
+                coef, mean, std = fit_pairwise_rank_model(
+                    train_df,
+                    predictors_fold,
+                    target,
+                    pairwise_group_cols,
+                    pairwise_option_col,
+                    standardize=local_standardize,
+                    ridge_alpha=ridge_alpha,
+                    min_std=min_predictor_std,
+                )
+                y_pred = predict_pairwise_rank(
+                    test_df, predictors_fold, coef, mean, std, local_standardize
+                )
+            else:
+                coef, mean, std = fit_linear_model(
+                    train_df,
+                    predictors_fold,
+                    target,
+                    standardize=local_standardize,
+                    model=model,
+                    ridge_alpha=ridge_alpha,
+                    min_std=min_predictor_std,
+                    sample_weight=fit_weights,
+                )
+                y_pred = predict_linear_model(
+                    test_df, predictors_fold, coef, mean, std, local_standardize
+                )
+            if local_standardize:
+                X_test = (test_df[predictors_fold].to_numpy(dtype=float) - mean) / std
+                max_abs_z = float(np.nanmax(np.abs(X_test))) if X_test.size else np.nan
+            else:
+                max_abs_z = np.nan
+            if target_scales is not None:
+                y_pred = y_pred * target_scales
+            if target_offsets is not None:
+                y_pred = y_pred + target_offsets
+
+            context_calibrator = None
+            fewshot_calibration_mask = np.zeros(len(test_df), dtype=bool)
+            if bool(fewshot_context_calibration):
+                calib_df = test_df
+                calib_y_true = y_true
+                calib_y_pred = y_pred
+                k_shot = int(fewshot_context_calibration_k)
+                if k_shot > 0:
+                    rng = np.random.RandomState(int(fewshot_context_calibration_seed) + int(fold_idx))
+                    fewshot_calibration_mask = sample_fewshot_calibration_mask(
+                        test_df,
+                        context_cols=fewshot_context_calibration_cols,
+                        k=k_shot,
+                        rng=rng,
+                        allow_backoff=fewshot_context_calibration_backoff,
+                    )
+                    if np.any(fewshot_calibration_mask):
+                        calib_df = test_df.iloc[np.where(fewshot_calibration_mask)[0]]
+                        calib_y_true = y_true[fewshot_calibration_mask]
+                        calib_y_pred = y_pred[fewshot_calibration_mask]
+                context_calibrator = fit_context_prediction_calibrator(
+                    calib_df,
+                    calib_y_true,
+                    calib_y_pred,
+                    context_cols=fewshot_context_calibration_cols,
+                    std_eps=fewshot_context_calibration_std_eps,
+                    min_group_size=fewshot_context_calibration_min_group_size,
+                    allow_backoff=fewshot_context_calibration_backoff,
+                )
+                y_pred = apply_context_prediction_calibrator(
+                    test_df,
+                    y_pred,
+                    context_calibrator,
+                )
+            clip_min = prediction_clip_min
+            clip_max = prediction_clip_max
+            if prediction_clip and model != "pairwise_rank":
+                if clip_min is None:
+                    clip_min = float(np.nanmin(train_df[target].to_numpy(dtype=float)))
+                if clip_max is None:
+                    clip_max = float(np.nanmax(train_df[target].to_numpy(dtype=float)))
+                y_pred = np.clip(y_pred, clip_min, clip_max)
+
+            eval_mask = ~fewshot_calibration_mask if int(fewshot_context_calibration_k) > 0 else np.ones(len(test_df), dtype=bool)
+            if not np.any(eval_mask):
+                fold_idx += 1
+                continue
+            test_eval_df = test_df.iloc[np.where(eval_mask)[0]]
+            y_true_eval = y_true[eval_mask]
+            y_pred_eval = y_pred[eval_mask]
+
+            if task_prediction_rows_out is not None:
+                option_col = task_prediction_option_col or pairwise_option_col
+                task_cols = [c for c in (task_prediction_task_cols or ["benchmark"]) if c in fold_df.columns]
+                holdout_group_col = (
+                    task_prediction_holdout_group_col
+                    if task_prediction_holdout_group_col in fold_df.columns
+                    else None
+                )
+                if option_col and option_col in fold_df.columns and task_cols:
+                    candidate_df = filter_complete_rows(fold_df, predictors, target)
+                    if not candidate_df.empty:
+                        task_keys = test_eval_df[task_cols].drop_duplicates()
+                        candidate_df = candidate_df.merge(task_keys, on=task_cols, how="inner")
+                        if not candidate_df.empty:
+                            candidate_offsets = None
+                            candidate_scales = None
+                            if target_residualizer is not None:
+                                candidate_df, candidate_offsets, candidate_scales = apply_context_target_residualizer(
+                                    candidate_df,
+                                    target,
+                                    target_residualizer,
+                                )
+                            if model == "pairwise_rank":
+                                candidate_pred = predict_pairwise_rank(
+                                    candidate_df, predictors_fold, coef, mean, std, local_standardize
+                                )
+                            else:
+                                candidate_pred = predict_linear_model(
+                                    candidate_df, predictors_fold, coef, mean, std, local_standardize
+                                )
+                                if prediction_clip:
+                                    candidate_pred = np.clip(candidate_pred, clip_min, clip_max)
+                            if (
+                                candidate_scales is not None
+                                and str(target_context_eval or "absolute").strip().lower()
+                                != "residual"
+                            ):
+                                candidate_pred = candidate_pred * candidate_scales
+                            if (
+                                candidate_offsets is not None
+                                and str(target_context_eval or "absolute").strip().lower()
+                                != "residual"
+                            ):
+                                candidate_pred = candidate_pred + candidate_offsets
+                            if context_calibrator is not None:
+                                candidate_pred = apply_context_prediction_calibrator(
+                                    candidate_df,
+                                    candidate_pred,
+                                    context_calibrator,
+                                )
+                            for row, pred in zip(candidate_df.to_dict(orient="records"), candidate_pred):
+                                is_holdout = 0
+                                if holdout_group_col is not None:
+                                    is_holdout = int(row.get(holdout_group_col) == train_group)
+                                row.update(
+                                    {
+                                        "prediction": float(pred),
+                                        "target": float(row[target]),
+                                        "fold": holdout_name,
+                                        "is_holdout_option": is_holdout,
+                                    }
+                                )
+                                task_prediction_rows_out.append(row)
+
+            pred_nan = int(np.isnan(y_pred_eval).sum())
+            pred_inf = int(np.isinf(y_pred_eval).sum())
+            target_nan = int(np.isnan(y_true_eval).sum())
+            target_inf = int(np.isinf(y_true_eval).sum())
+            pred_finite = y_pred_eval[np.isfinite(y_pred_eval)]
+            target_finite = y_true_eval[np.isfinite(y_true_eval)]
+            pred_min = float(pred_finite.min()) if pred_finite.size else np.nan
+            pred_max = float(pred_finite.max()) if pred_finite.size else np.nan
+            target_min = float(target_finite.min()) if target_finite.size else np.nan
+            target_max = float(target_finite.max()) if target_finite.size else np.nan
+            pred_std = safe_std(pred_finite)
+            target_std = safe_std(target_finite)
+
+            mae, rmse = mae_rmse(y_true_eval, y_pred_eval)
+            pearson = pearson_corr(y_true_eval, y_pred_eval)
+            spearman = spearman_corr(y_true_eval, y_pred_eval)
+
+            results.append(
+                {
+                    "joint_holdout": holdout_name,
+                    train_group_col: train_group,
+                    benchmark_col: benchmark,
+                    "n_train": int(len(train_df)),
+                    "n_test": int(len(test_eval_df)),
+                    "n_calibration": int(fewshot_calibration_mask.sum()),
+                    "mae": mae,
+                    "rmse": rmse,
+                    "pearson": pearson,
+                    "spearman": spearman,
+                    "target_min": target_min,
+                    "target_max": target_max,
+                    "pred_min": pred_min,
+                    "pred_max": pred_max,
+                    "target_std": target_std,
+                    "pred_std": pred_std,
+                    "max_abs_zscore_feature": max_abs_z,
+                    "pred_nan": pred_nan,
+                    "pred_inf": pred_inf,
+                    "target_nan": target_nan,
+                    "target_inf": target_inf,
+                    "dropped_predictor_count": len(dropped),
+                }
+            )
+
+            for row, pred in zip(test_eval_df.to_dict(orient="records"), y_pred_eval):
+                row.update(
+                    {
+                        "prediction": float(pred),
+                        "target": float(row[target]),
+                        "fold": holdout_name,
+                        "joint_holdout": holdout_name,
+                        "is_calibration_row": 0,
+                    }
+                )
+                pred_rows.append(row)
+            fold_idx += 1
+
+    pred_df = pd.DataFrame(pred_rows)
+    summary_df = pd.DataFrame(results)
+
+    if not pred_df.empty:
+        macro_mode = str(overall_aggregation or "micro").strip().lower() == "macro_fold"
+        if macro_mode and not summary_df.empty:
+            overall_mae = float(summary_df["mae"].mean())
+            overall_rmse = float(summary_df["rmse"].mean())
+            overall_pearson = float(summary_df["pearson"].mean())
+            overall_spearman = float(summary_df["spearman"].mean())
+        else:
+            overall_mae, overall_rmse = mae_rmse(
+                pred_df["target"].to_numpy(), pred_df["prediction"].to_numpy()
+            )
+            overall_pearson = pearson_corr(
+                pred_df["target"].to_numpy(), pred_df["prediction"].to_numpy()
+            )
+            overall_spearman = spearman_corr(
+                pred_df["target"].to_numpy(), pred_df["prediction"].to_numpy()
+            )
+        overall = {
+            "joint_holdout": "__overall__",
+            train_group_col: "__overall__",
+            benchmark_col: "__overall__",
+            "n_train": int(len(df)),
+            "n_test": int(len(pred_df)),
+            "n_calibration": float(summary_df["n_calibration"].sum()) if "n_calibration" in summary_df.columns else np.nan,
+            "mae": overall_mae,
+            "rmse": overall_rmse,
+            "pearson": overall_pearson,
+            "spearman": overall_spearman,
+            "target_min": float(pred_df["target"].min()) if not pred_df.empty else np.nan,
+            "target_max": float(pred_df["target"].max()) if not pred_df.empty else np.nan,
+            "pred_min": float(pred_df["prediction"].min()) if not pred_df.empty else np.nan,
+            "pred_max": float(pred_df["prediction"].max()) if not pred_df.empty else np.nan,
+            "target_std": safe_std(pred_df["target"].to_numpy()) if not pred_df.empty else np.nan,
+            "pred_std": safe_std(pred_df["prediction"].to_numpy()) if not pred_df.empty else np.nan,
+            "max_abs_zscore_feature": np.nan,
+            "pred_nan": int(np.isnan(pred_df["prediction"]).sum()) if not pred_df.empty else 0,
+            "pred_inf": int(np.isinf(pred_df["prediction"]).sum()) if not pred_df.empty else 0,
+            "target_nan": int(np.isnan(pred_df["target"]).sum()) if not pred_df.empty else 0,
+            "target_inf": int(np.isinf(pred_df["target"]).sum()) if not pred_df.empty else 0,
+            "dropped_predictor_count": np.nan,
+            "overall_aggregation": "macro_fold" if macro_mode else "micro",
         }
         summary_df = pd.concat([summary_df, pd.DataFrame([overall])], ignore_index=True)
 
@@ -2406,8 +3508,7 @@ def run_group_cv_mixedlm(
                 clip_max = float(np.nanmax(train_df[target].to_numpy(dtype=float)))
             y_pred = np.clip(y_pred, clip_min, clip_max)
 
-        mae = float(np.mean(np.abs(y_true - y_pred)))
-        rmse = float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
+        mae, rmse = mae_rmse(y_true, y_pred)
         pearson = pearson_corr(y_true, y_pred)
         spearman = spearman_corr(y_true, y_pred)
 
@@ -2433,12 +3534,15 @@ def run_group_cv_mixedlm(
     summary_df = pd.DataFrame(results)
 
     if not pred_df.empty:
+        overall_mae, overall_rmse = mae_rmse(
+            pred_df["target"].to_numpy(), pred_df["prediction"].to_numpy()
+        )
         overall = {
             holdout_col: "__overall__",
             "n_train": int(len(df)),
             "n_test": int(len(pred_df)),
-            "mae": float(np.mean(np.abs(pred_df["target"] - pred_df["prediction"]))),
-            "rmse": float(np.sqrt(np.mean((pred_df["target"] - pred_df["prediction"]) ** 2))),
+            "mae": overall_mae,
+            "rmse": overall_rmse,
             "pearson": pearson_corr(pred_df["target"].to_numpy(), pred_df["prediction"].to_numpy()),
             "spearman": spearman_corr(pred_df["target"].to_numpy(), pred_df["prediction"].to_numpy()),
         }
@@ -2600,20 +3704,86 @@ def compute_ranking_dataframe(
     target_col,
     option_col,
     benchmark_col="benchmark",
+    context_cols=None,
     topk_frac=None,
     topk_min=1,
+    require_single_fold_task=False,
 ):
     rows = []
     if pred_df.empty:
         return pd.DataFrame()
 
-    required_cols = [benchmark_col, option_col, "prediction", target_col]
+    context_cols = [c for c in (context_cols or []) if c and c != benchmark_col]
+    if context_cols:
+        pred_df, context_cols, _ = _ensure_context_columns(pred_df, context_cols)
+
+    effective_option_col = option_col
+    if effective_option_col == benchmark_col:
+        fallback_candidates = [
+            "train_dataset",
+            "train_dataset_encoder",
+            "train_dataset_model_family_encoder",
+            "model_family_encoder",
+            "run_name",
+            "run_id",
+        ]
+        fallback = next((c for c in fallback_candidates if c in pred_df.columns), None)
+        if fallback is not None:
+            print(
+                "Warning: ranking option column matches benchmark column "
+                f"('{benchmark_col}'). Falling back to option grouping by '{fallback}'."
+            )
+            effective_option_col = fallback
+        else:
+            # Keep old behavior if no fallback exists, but avoid duplicate labels.
+            effective_option_col = "__ranking_option_fallback__"
+            pred_df = pred_df.copy()
+            pred_df[effective_option_col] = pred_df[benchmark_col].astype(str)
+
+    required_cols = list(dict.fromkeys([benchmark_col] + context_cols + [effective_option_col, "prediction", target_col]))
+    missing_cols = [c for c in required_cols if c not in pred_df.columns]
+    if missing_cols:
+        print(
+            "Warning: cannot compute ranking summary; missing columns: "
+            + ", ".join(missing_cols)
+        )
+        return pd.DataFrame()
     df = pred_df.dropna(subset=required_cols).copy()
     if df.empty:
         return pd.DataFrame()
 
-    for benchmark, sub in df.groupby(benchmark_col):
-        grouped = sub.groupby(option_col).agg(
+    group_cols = [benchmark_col] + context_cols
+    if require_single_fold_task:
+        if "fold" not in df.columns:
+            print(
+                "Warning: require_single_fold_task=True but 'fold' column is missing; "
+                "continuing without fold-consistency filtering."
+            )
+        else:
+            task_key = "__rank_task_key__"
+            df[task_key] = list(zip(*[df[col] for col in group_cols]))
+            fold_counts = (
+                df.groupby(task_key, dropna=False)["fold"]
+                .nunique(dropna=True)
+                .astype(int)
+            )
+            valid_task_keys = set(fold_counts[fold_counts <= 1].index.tolist())
+            skipped = int((fold_counts > 1).sum())
+            if skipped > 0:
+                print(
+                    "Warning: skipped "
+                    f"{skipped}/{int(len(fold_counts))} ranking tasks due to mixed-fold options."
+                )
+            if not valid_task_keys:
+                return pd.DataFrame()
+            df = df[df[task_key].isin(valid_task_keys)].copy()
+            df.drop(columns=[task_key], inplace=True)
+
+    for group_key, sub in df.groupby(group_cols, dropna=False):
+        if len(group_cols) == 1:
+            group_key = (group_key,)
+        group_map = {col: group_key[i] for i, col in enumerate(group_cols)}
+        grouped = sub.groupby(effective_option_col).agg(
             pred_mean=("prediction", "mean"),
             true_mean=(target_col, "mean"),
             n=("prediction", "size"),
@@ -2640,6 +3810,8 @@ def compute_ranking_dataframe(
         top3 = int(rank_true.loc[pred_best_idx] <= 3)
         regret = float(true_best - pred_best_true)
         spearman = spearman_corr(grouped["true_mean"].to_numpy(), grouped["pred_mean"].to_numpy())
+        kendall = kendall_tau_b(grouped["true_mean"].to_numpy(), grouped["pred_mean"].to_numpy())
+        cindex = pairwise_cindex(grouped["true_mean"].to_numpy(), grouped["pred_mean"].to_numpy())
 
         topk = np.nan
         topk_k = np.nan
@@ -2654,7 +3826,7 @@ def compute_ranking_dataframe(
             topk_frac_out = float(topk_frac)
 
         rows.append({
-            benchmark_col: benchmark,
+            **group_map,
             "n_options": n_options,
             "top1": top1,
             "top3": top3,
@@ -2663,6 +3835,8 @@ def compute_ranking_dataframe(
             "topk_frac": topk_frac_out,
             "regret": regret,
             "spearman": spearman,
+            "kendall_tau": kendall,
+            "pairwise_cindex": cindex,
             "mean_abs_rank_error": float(abs_rank_error.mean()),
             "median_abs_rank_error": float(abs_rank_error.median()),
             "mean_abs_rank_pct_error": float(abs_rank_pct_error.mean()),
@@ -2688,6 +3862,12 @@ def compute_ranking_dataframe(
         "topk_frac": float(df_out["topk_frac"].mean()) if "topk_frac" in df_out.columns else np.nan,
         "regret": float(df_out["regret"].mean()),
         "spearman": float(df_out["spearman"].mean()),
+        "kendall_tau": float(df_out["kendall_tau"].mean())
+        if "kendall_tau" in df_out.columns
+        else np.nan,
+        "pairwise_cindex": float(df_out["pairwise_cindex"].mean())
+        if "pairwise_cindex" in df_out.columns
+        else np.nan,
         "mean_abs_rank_error": float(df_out["mean_abs_rank_error"].mean())
         if "mean_abs_rank_error" in df_out.columns
         else np.nan,
@@ -2703,6 +3883,8 @@ def compute_ranking_dataframe(
         "true_best_option": "n/a",
         "pred_best_option": "n/a",
     }
+    for col in context_cols:
+        overall[col] = "__overall__"
     df_out = pd.concat([df_out, pd.DataFrame([overall])], ignore_index=True)
     return df_out
 
@@ -2713,35 +3895,113 @@ def compute_ranking_summary(
     option_col,
     output_path,
     benchmark_col="benchmark",
+    context_cols=None,
     topk_frac=None,
     topk_min=1,
+    require_single_fold_task=False,
 ):
     df_out = compute_ranking_dataframe(
         pred_df,
         target_col,
         option_col,
         benchmark_col,
+        context_cols=context_cols,
         topk_frac=topk_frac,
         topk_min=topk_min,
+        require_single_fold_task=require_single_fold_task,
     )
     if not df_out.empty:
         df_out.to_csv(output_path, index=False)
         return df_out.to_dict(orient="records")
+    out_path = Path(output_path)
+    if out_path.exists():
+        out_path.unlink()
     return []
 
 
-def compute_rank_detail_rows(pred_df, target_col, option_col, benchmark_col="benchmark"):
+def compute_rank_detail_rows(
+    pred_df,
+    target_col,
+    option_col,
+    benchmark_col="benchmark",
+    context_cols=None,
+    require_single_fold_task=False,
+):
     rows = []
     if pred_df.empty:
         return pd.DataFrame()
 
-    required_cols = [benchmark_col, option_col, "prediction", target_col]
+    context_cols = [c for c in (context_cols or []) if c and c != benchmark_col]
+    if context_cols:
+        pred_df, context_cols, _ = _ensure_context_columns(pred_df, context_cols)
+
+    effective_option_col = option_col
+    if effective_option_col == benchmark_col:
+        fallback_candidates = [
+            "train_dataset",
+            "train_dataset_encoder",
+            "train_dataset_model_family_encoder",
+            "model_family_encoder",
+            "run_name",
+            "run_id",
+        ]
+        fallback = next((c for c in fallback_candidates if c in pred_df.columns), None)
+        if fallback is not None:
+            print(
+                "Warning: rank-detail option column matches benchmark column "
+                f"('{benchmark_col}'). Falling back to '{fallback}'."
+            )
+            effective_option_col = fallback
+        else:
+            effective_option_col = "__ranking_option_fallback__"
+            pred_df = pred_df.copy()
+            pred_df[effective_option_col] = pred_df[benchmark_col].astype(str)
+
+    required_cols = list(dict.fromkeys([benchmark_col] + context_cols + [effective_option_col, "prediction", target_col]))
+    missing_cols = [c for c in required_cols if c not in pred_df.columns]
+    if missing_cols:
+        print(
+            "Warning: cannot compute rank-detail rows; missing columns: "
+            + ", ".join(missing_cols)
+        )
+        return pd.DataFrame()
     df = pred_df.dropna(subset=required_cols).copy()
     if df.empty:
         return pd.DataFrame()
 
-    for benchmark, sub in df.groupby(benchmark_col):
-        grouped = sub.groupby(option_col).agg(
+    output_option_col = effective_option_col if effective_option_col != benchmark_col else "option"
+    group_cols = [benchmark_col] + context_cols
+    if require_single_fold_task:
+        if "fold" not in df.columns:
+            print(
+                "Warning: require_single_fold_task=True but 'fold' column is missing; "
+                "continuing without fold-consistency filtering for rank-detail rows."
+            )
+        else:
+            task_key = "__rank_task_key__"
+            df[task_key] = list(zip(*[df[col] for col in group_cols]))
+            fold_counts = (
+                df.groupby(task_key, dropna=False)["fold"]
+                .nunique(dropna=True)
+                .astype(int)
+            )
+            valid_task_keys = set(fold_counts[fold_counts <= 1].index.tolist())
+            skipped = int((fold_counts > 1).sum())
+            if skipped > 0:
+                print(
+                    "Warning: skipped "
+                    f"{skipped}/{int(len(fold_counts))} rank-detail tasks due to mixed-fold options."
+                )
+            if not valid_task_keys:
+                return pd.DataFrame()
+            df = df[df[task_key].isin(valid_task_keys)].copy()
+            df.drop(columns=[task_key], inplace=True)
+
+    for group_key, sub in df.groupby(group_cols, dropna=False):
+        if len(group_cols) == 1:
+            group_key = (group_key,)
+        group_map = {col: group_key[i] for i, col in enumerate(group_cols)}
+        grouped = sub.groupby(effective_option_col).agg(
             pred_mean=("prediction", "mean"),
             true_mean=(target_col, "mean"),
             n=("prediction", "size"),
@@ -2762,8 +4022,8 @@ def compute_rank_detail_rows(pred_df, target_col, option_col, benchmark_col="ben
 
         for option, row in grouped.iterrows():
             rows.append({
-                benchmark_col: benchmark,
-                option_col: option,
+                **group_map,
+                output_option_col: option,
                 "n_options": n_options,
                 "true_mean": float(row["true_mean"]),
                 "pred_mean": float(row["pred_mean"]),
@@ -2787,11 +4047,451 @@ def write_rank_detail_rows(
     option_col,
     output_path,
     benchmark_col="benchmark",
+    context_cols=None,
+    require_single_fold_task=False,
 ):
-    df_out = compute_rank_detail_rows(pred_df, target_col, option_col, benchmark_col)
+    df_out = compute_rank_detail_rows(
+        pred_df,
+        target_col,
+        option_col,
+        benchmark_col,
+        context_cols=context_cols,
+        require_single_fold_task=require_single_fold_task,
+    )
     if not df_out.empty:
         df_out.to_csv(output_path, index=False)
+    else:
+        out_path = Path(output_path)
+        if out_path.exists():
+            out_path.unlink()
     return df_out
+
+
+def compute_holdout_placement_rows(
+    pred_df,
+    reference_df,
+    target_col,
+    option_col,
+    task_cols=None,
+    fold_col="fold",
+    holdout_group_col=None,
+):
+    if pred_df is None or pred_df.empty:
+        return pd.DataFrame()
+    if reference_df is None or reference_df.empty:
+        return pd.DataFrame()
+    # Defensive: merged tables may contain duplicate column labels.
+    pred_df = pred_df.loc[:, ~pred_df.columns.duplicated()].copy()
+    reference_df = reference_df.loc[:, ~reference_df.columns.duplicated()].copy()
+
+    task_cols = [c for c in (task_cols or ["benchmark"]) if c]
+    pred_target_col = target_col if target_col in pred_df.columns else "target"
+    if pred_target_col not in pred_df.columns:
+        return pd.DataFrame()
+
+    pred_required = [fold_col, option_col, "prediction", pred_target_col] + task_cols
+    pred_missing = [c for c in pred_required if c not in pred_df.columns]
+    if pred_missing:
+        print(
+            "Warning: cannot compute holdout placement rows; missing prediction columns: "
+            + ", ".join(pred_missing)
+        )
+        return pd.DataFrame()
+
+    ref_required = [option_col, target_col] + task_cols
+    ref_missing = [c for c in ref_required if c not in reference_df.columns]
+    if ref_missing:
+        print(
+            "Warning: cannot compute holdout placement rows; missing reference columns: "
+            + ", ".join(ref_missing)
+        )
+        return pd.DataFrame()
+
+    holdout_group_enabled = (
+        holdout_group_col is not None
+        and holdout_group_col in pred_df.columns
+        and holdout_group_col in reference_df.columns
+    )
+
+    pred_cols = pred_required + ([holdout_group_col] if holdout_group_enabled else [])
+    ref_cols = ref_required + ([holdout_group_col] if holdout_group_enabled else [])
+    pred_cols = list(dict.fromkeys(pred_cols))
+    ref_cols = list(dict.fromkeys(ref_cols))
+    pred_work = pred_df[pred_cols].dropna(
+        subset=[fold_col, option_col, "prediction", pred_target_col] + task_cols
+    )
+    ref_work = reference_df[ref_cols].dropna(subset=[option_col, target_col] + task_cols)
+    if pred_work.empty or ref_work.empty:
+        return pd.DataFrame()
+
+    heldout_group_cols = [fold_col] + task_cols + [option_col]
+    if holdout_group_enabled:
+        heldout_group_cols.append(holdout_group_col)
+    heldout_group_cols = list(dict.fromkeys(heldout_group_cols))
+    heldout_df = (
+        pred_work.groupby(heldout_group_cols, dropna=False)
+        .agg(
+            heldout_true=(pred_target_col, "mean"),
+            heldout_pred=("prediction", "mean"),
+            heldout_n=(pred_target_col, "size"),
+        )
+        .reset_index()
+    )
+    if heldout_df.empty:
+        return pd.DataFrame()
+
+    anchor_group_cols = task_cols + [option_col]
+    if holdout_group_enabled:
+        anchor_group_cols.append(holdout_group_col)
+    anchor_group_cols = list(dict.fromkeys(anchor_group_cols))
+    anchor_df = (
+        ref_work.groupby(anchor_group_cols, dropna=False)
+        .agg(anchor_true=(target_col, "mean"), anchor_n=(target_col, "size"))
+        .reset_index()
+    )
+    if anchor_df.empty:
+        return pd.DataFrame()
+
+    anchor_by_task = {}
+    for task_key, sub in anchor_df.groupby(task_cols, dropna=False):
+        if not isinstance(task_key, tuple):
+            task_key = (task_key,)
+        anchor_by_task[task_key] = sub.reset_index(drop=True)
+
+    rows = []
+    for _, h in heldout_df.iterrows():
+        task_key = tuple(h[col] for col in task_cols)
+        anchors = anchor_by_task.get(task_key)
+        if anchors is None or anchors.empty:
+            continue
+
+        anchors = anchors[anchors[option_col] != h[option_col]]
+        if holdout_group_enabled:
+            anchors = anchors[anchors[holdout_group_col] != h[holdout_group_col]]
+        if anchors.empty:
+            continue
+
+        holdout_true = float(h["heldout_true"])
+        holdout_pred = float(h["heldout_pred"])
+        anchor_true = anchors["anchor_true"].to_numpy(dtype=float)
+        n_options = int(len(anchor_true) + 1)
+        denom = float(max(n_options - 1, 1))
+
+        true_rank = 1 + int(np.sum(anchor_true > holdout_true))
+        pred_rank = 1 + int(np.sum(anchor_true > holdout_pred))
+        true_rank_pct = float((true_rank - 1) / denom)
+        pred_rank_pct = float((pred_rank - 1) / denom)
+        rank_error = float(pred_rank - true_rank)
+        abs_rank_error = float(abs(rank_error))
+        rank_pct_error = float(pred_rank_pct - true_rank_pct)
+        abs_rank_pct_error = float(abs(rank_pct_error))
+
+        true_delta = holdout_true - anchor_true
+        pred_delta = holdout_pred - anchor_true
+        valid_pairs = true_delta != 0.0
+        if np.any(valid_pairs):
+            pred_sign = np.sign(pred_delta[valid_pairs])
+            true_sign = np.sign(true_delta[valid_pairs])
+            pairwise = (pred_sign == true_sign).astype(float)
+            pairwise[pred_sign == 0.0] = 0.5
+            pairwise_win_rate = float(np.mean(pairwise))
+            pairwise_n = int(valid_pairs.sum())
+        else:
+            pairwise_win_rate = np.nan
+            pairwise_n = 0
+
+        all_true = np.concatenate(([holdout_true], anchor_true))
+        all_pred_for_select = np.concatenate(([holdout_pred], anchor_true))
+        selected_idx = int(np.argmax(all_pred_for_select))
+        selected_true = float(all_true[selected_idx])
+        true_best = float(np.max(all_true))
+        regret = float(true_best - selected_true)
+
+        out = {
+            fold_col: h[fold_col],
+            option_col: h[option_col],
+            "heldout_true": holdout_true,
+            "heldout_pred": holdout_pred,
+            "heldout_n": int(h["heldout_n"]),
+            "n_anchors": int(len(anchor_true)),
+            "n_options": n_options,
+            "true_rank": int(true_rank),
+            "pred_rank": int(pred_rank),
+            "true_rank_pct": true_rank_pct,
+            "pred_rank_pct": pred_rank_pct,
+            "rank_error": rank_error,
+            "abs_rank_error": abs_rank_error,
+            "rank_pct_error": rank_pct_error,
+            "abs_rank_pct_error": abs_rank_pct_error,
+            "pairwise_win_rate": pairwise_win_rate,
+            "pairwise_n": pairwise_n,
+            "regret": regret,
+            "selected_is_holdout": int(selected_idx == 0),
+            "holdout_true_top1": int(true_rank == 1),
+            "holdout_pred_top1": int(pred_rank == 1),
+        }
+        if holdout_group_enabled:
+            out[holdout_group_col] = h[holdout_group_col]
+        for col in task_cols:
+            out[col] = h[col]
+        rows.append(out)
+
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows)
+
+
+def compute_insertion_rows_from_task_predictions(
+    task_pred_df,
+    option_col,
+    task_cols=None,
+    fold_col="fold",
+    holdout_flag_col="is_holdout_option",
+):
+    if task_pred_df is None or task_pred_df.empty:
+        return pd.DataFrame()
+    task_cols = [c for c in (task_cols or ["benchmark"]) if c in task_pred_df.columns]
+    required = [fold_col, option_col, "prediction", "target", holdout_flag_col] + task_cols
+    missing = [c for c in required if c not in task_pred_df.columns]
+    if missing:
+        print(
+            "Warning: cannot compute insertion rows; missing columns: "
+            + ", ".join(missing)
+        )
+        return pd.DataFrame()
+
+    df = task_pred_df.dropna(subset=required).copy()
+    if df.empty:
+        return pd.DataFrame()
+
+    group_cols = [fold_col] + task_cols
+    rows = []
+    for group_key, sub in df.groupby(group_cols, dropna=False):
+        if len(group_cols) == 1:
+            group_key = (group_key,)
+        group_map = {col: group_key[i] for i, col in enumerate(group_cols)}
+        grouped = (
+            sub.groupby(option_col, dropna=False)
+            .agg(
+                pred_mean=("prediction", "mean"),
+                true_mean=("target", "mean"),
+                is_holdout=(holdout_flag_col, "max"),
+                n=("prediction", "size"),
+            )
+            .reset_index()
+        )
+        holdouts = grouped[grouped["is_holdout"] > 0.5]
+        anchors = grouped[grouped["is_holdout"] <= 0.5]
+        if holdouts.empty or anchors.empty:
+            continue
+
+        anchor_true = anchors["true_mean"].to_numpy(dtype=float)
+        anchor_pred = anchors["pred_mean"].to_numpy(dtype=float)
+        n_options = int(len(anchor_true) + 1)
+        denom = float(max(n_options - 1, 1))
+
+        for _, h in holdouts.iterrows():
+            holdout_true = float(h["true_mean"])
+            holdout_pred = float(h["pred_mean"])
+
+            true_rank = 1 + int(np.sum(anchor_true > holdout_true))
+            pred_rank = 1 + int(np.sum(anchor_pred > holdout_pred))
+            true_rank_pct = float((true_rank - 1) / denom)
+            pred_rank_pct = float((pred_rank - 1) / denom)
+            rank_error = float(pred_rank - true_rank)
+            abs_rank_error = float(abs(rank_error))
+            rank_pct_error = float(pred_rank_pct - true_rank_pct)
+            abs_rank_pct_error = float(abs(rank_pct_error))
+
+            true_delta = holdout_true - anchor_true
+            pred_delta = holdout_pred - anchor_pred
+            valid_pairs = true_delta != 0.0
+            if np.any(valid_pairs):
+                pred_sign = np.sign(pred_delta[valid_pairs])
+                true_sign = np.sign(true_delta[valid_pairs])
+                pairwise = (pred_sign == true_sign).astype(float)
+                pairwise[pred_sign == 0.0] = 0.5
+                pairwise_win_rate = float(np.mean(pairwise))
+                pairwise_n = int(valid_pairs.sum())
+            else:
+                pairwise_win_rate = np.nan
+                pairwise_n = 0
+
+            all_true = np.concatenate(([holdout_true], anchor_true))
+            all_pred = np.concatenate(([holdout_pred], anchor_pred))
+            selected_idx = int(np.argmax(all_pred))
+            selected_true = float(all_true[selected_idx])
+            true_best = float(np.max(all_true))
+            regret = float(true_best - selected_true)
+
+            rows.append(
+                {
+                    **group_map,
+                    option_col: h[option_col],
+                    "heldout_true": holdout_true,
+                    "heldout_pred": holdout_pred,
+                    "heldout_n": int(h["n"]),
+                    "n_anchors": int(len(anchor_true)),
+                    "n_options": n_options,
+                    "true_rank": int(true_rank),
+                    "pred_rank": int(pred_rank),
+                    "true_rank_pct": true_rank_pct,
+                    "pred_rank_pct": pred_rank_pct,
+                    "rank_error": rank_error,
+                    "abs_rank_error": abs_rank_error,
+                    "rank_pct_error": rank_pct_error,
+                    "abs_rank_pct_error": abs_rank_pct_error,
+                    "pairwise_win_rate": pairwise_win_rate,
+                    "pairwise_n": pairwise_n,
+                    "regret": regret,
+                    "selected_is_holdout": int(selected_idx == 0),
+                    "holdout_true_top1": int(true_rank == 1),
+                    "holdout_pred_top1": int(pred_rank == 1),
+                }
+            )
+
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows)
+
+
+def summarize_holdout_placement_rows(detail_df, fold_col="fold"):
+    if detail_df is None or detail_df.empty:
+        return pd.DataFrame()
+    if fold_col not in detail_df.columns:
+        return pd.DataFrame()
+
+    per_fold_rows = []
+    for fold, sub in detail_df.groupby(fold_col, dropna=False):
+        per_fold_rows.append(
+            {
+                fold_col: fold,
+                "n_tasks": int(len(sub)),
+                "abs_rank_error": float(sub["abs_rank_error"].mean()),
+                "abs_rank_pct_error": float(sub["abs_rank_pct_error"].mean()),
+                "pairwise_win_rate": float(sub["pairwise_win_rate"].mean()),
+                "regret": float(sub["regret"].mean()),
+                "holdout_true_top1": float(sub["holdout_true_top1"].mean()),
+                "holdout_pred_top1": float(sub["holdout_pred_top1"].mean()),
+                "rank_spearman": spearman_corr(
+                    sub["true_rank_pct"].to_numpy(dtype=float),
+                    sub["pred_rank_pct"].to_numpy(dtype=float),
+                ),
+                "rank_kendall": kendall_tau_b(
+                    sub["true_rank_pct"].to_numpy(dtype=float),
+                    sub["pred_rank_pct"].to_numpy(dtype=float),
+                ),
+            }
+        )
+    per_fold = pd.DataFrame(per_fold_rows)
+    if per_fold.empty:
+        return pd.DataFrame()
+
+    overall = {
+        fold_col: "__overall__",
+        "n_folds": int(len(per_fold)),
+        "n_tasks": int(len(detail_df)),
+        "abs_rank_error": float(per_fold["abs_rank_error"].mean()),
+        "abs_rank_pct_error": float(per_fold["abs_rank_pct_error"].mean()),
+        "pairwise_win_rate": float(per_fold["pairwise_win_rate"].mean()),
+        "regret": float(per_fold["regret"].mean()),
+        "holdout_true_top1": float(per_fold["holdout_true_top1"].mean()),
+        "holdout_pred_top1": float(per_fold["holdout_pred_top1"].mean()),
+        "rank_spearman": float(per_fold["rank_spearman"].mean()),
+        "rank_kendall": float(per_fold["rank_kendall"].mean()),
+        "abs_rank_error_micro": float(detail_df["abs_rank_error"].mean()),
+        "abs_rank_pct_error_micro": float(detail_df["abs_rank_pct_error"].mean()),
+        "pairwise_win_rate_micro": float(detail_df["pairwise_win_rate"].mean()),
+        "regret_micro": float(detail_df["regret"].mean()),
+        "holdout_true_top1_micro": float(detail_df["holdout_true_top1"].mean()),
+        "holdout_pred_top1_micro": float(detail_df["holdout_pred_top1"].mean()),
+        "rank_spearman_micro": spearman_corr(
+            detail_df["true_rank_pct"].to_numpy(dtype=float),
+            detail_df["pred_rank_pct"].to_numpy(dtype=float),
+        ),
+        "rank_kendall_micro": kendall_tau_b(
+            detail_df["true_rank_pct"].to_numpy(dtype=float),
+            detail_df["pred_rank_pct"].to_numpy(dtype=float),
+        ),
+    }
+
+    valid = per_fold["rank_spearman"].to_numpy(dtype=float)
+    valid = valid[np.isfinite(valid)]
+    if valid.size:
+        clipped = np.clip(valid, -0.999999, 0.999999)
+        overall["rank_spearman_fisher"] = float(np.tanh(np.mean(np.arctanh(clipped))))
+    else:
+        overall["rank_spearman_fisher"] = np.nan
+
+    return pd.concat([per_fold, pd.DataFrame([overall])], ignore_index=True)
+
+
+def write_holdout_placement_outputs(
+    pred_df,
+    reference_df,
+    target_col,
+    option_col,
+    detail_path,
+    summary_path,
+    task_cols=None,
+    fold_col="fold",
+    holdout_group_col=None,
+):
+    detail_df = compute_holdout_placement_rows(
+        pred_df=pred_df,
+        reference_df=reference_df,
+        target_col=target_col,
+        option_col=option_col,
+        task_cols=task_cols,
+        fold_col=fold_col,
+        holdout_group_col=holdout_group_col,
+    )
+    if detail_df.empty:
+        for p in (Path(detail_path), Path(summary_path)):
+            if p.exists():
+                p.unlink()
+        return pd.DataFrame(), pd.DataFrame()
+
+    detail_df.to_csv(detail_path, index=False)
+    summary_df = summarize_holdout_placement_rows(detail_df, fold_col=fold_col)
+    if summary_df.empty:
+        p = Path(summary_path)
+        if p.exists():
+            p.unlink()
+    else:
+        summary_df.to_csv(summary_path, index=False)
+    return summary_df, detail_df
+
+
+def write_insertion_outputs_from_task_predictions(
+    task_pred_df,
+    option_col,
+    detail_path,
+    summary_path,
+    task_cols=None,
+    fold_col="fold",
+):
+    detail_df = compute_insertion_rows_from_task_predictions(
+        task_pred_df=task_pred_df,
+        option_col=option_col,
+        task_cols=task_cols,
+        fold_col=fold_col,
+    )
+    if detail_df.empty:
+        for p in (Path(detail_path), Path(summary_path)):
+            if p.exists():
+                p.unlink()
+        return pd.DataFrame(), pd.DataFrame()
+
+    detail_df.to_csv(detail_path, index=False)
+    summary_df = summarize_holdout_placement_rows(detail_df, fold_col=fold_col)
+    if summary_df.empty:
+        p = Path(summary_path)
+        if p.exists():
+            p.unlink()
+    else:
+        summary_df.to_csv(summary_path, index=False)
+    return summary_df, detail_df
 
 
 def write_direction_audit(pred_df, target_col, option_col, output_path, benchmark_col="benchmark"):
@@ -2802,9 +4502,31 @@ def write_direction_audit(pred_df, target_col, option_col, output_path, benchmar
     if target_col not in pred_df.columns and "target" in pred_df.columns:
         target_col = "target"
 
+    effective_option_col = option_col
+    if effective_option_col == benchmark_col:
+        fallback_candidates = [
+            "train_dataset",
+            "train_dataset_encoder",
+            "train_dataset_model_family_encoder",
+            "model_family_encoder",
+            "run_name",
+            "run_id",
+        ]
+        fallback = next((c for c in fallback_candidates if c in pred_df.columns), None)
+        if fallback is not None:
+            print(
+                "Warning: direction-audit option column matches benchmark column "
+                f"('{benchmark_col}'). Falling back to '{fallback}'."
+            )
+            effective_option_col = fallback
+        else:
+            effective_option_col = "__ranking_option_fallback__"
+            pred_df = pred_df.copy()
+            pred_df[effective_option_col] = pred_df[benchmark_col].astype(str)
+
     for benchmark in sorted(pred_df[benchmark_col].dropna().unique()):
         sub = pred_df[pred_df[benchmark_col] == benchmark]
-        grouped = sub.groupby(option_col).agg(
+        grouped = sub.groupby(effective_option_col).agg(
             true_mean=(target_col, "mean"),
             pred_mean=("prediction", "mean"),
         )
@@ -2851,18 +4573,49 @@ def compute_constant_selector(
     option_col,
     chosen_option,
     benchmark_col="benchmark",
+    context_cols=None,
     topk_frac=None,
     topk_min=1,
 ):
     rows = []
     if df.empty:
         return pd.DataFrame()
-    df = df.dropna(subset=[benchmark_col, option_col, target_col])
+    context_cols = [c for c in (context_cols or []) if c and c != benchmark_col]
+    if context_cols:
+        df, context_cols, _ = _ensure_context_columns(df, context_cols)
+    effective_option_col = option_col
+    if effective_option_col == benchmark_col:
+        fallback_candidates = [
+            "train_dataset",
+            "train_dataset_encoder",
+            "train_dataset_model_family_encoder",
+            "model_family_encoder",
+            "run_name",
+            "run_id",
+        ]
+        fallback = next((c for c in fallback_candidates if c in df.columns), None)
+        if fallback is not None:
+            print(
+                "Warning: constant-selector option column matches benchmark column "
+                f"('{benchmark_col}'). Falling back to '{fallback}'."
+            )
+            effective_option_col = fallback
+        else:
+            effective_option_col = "__ranking_option_fallback__"
+            df = df.copy()
+            df[effective_option_col] = df[benchmark_col].astype(str)
+
+    required_cols = list(dict.fromkeys([benchmark_col] + context_cols + [effective_option_col, target_col]))
+    df = df.dropna(subset=required_cols)
     if df.empty:
         return pd.DataFrame()
 
-    for benchmark, sub in df.groupby(benchmark_col):
-        grouped = sub.groupby(option_col).agg(true_mean=(target_col, "mean"))
+    group_cols = [benchmark_col] + context_cols
+    for group_key, sub in df.groupby(group_cols, dropna=False):
+        if len(group_cols) == 1:
+            group_key = (group_key,)
+        group_map = {col: group_key[i] for i, col in enumerate(group_cols)}
+        grouped = sub.groupby(effective_option_col).agg(true_mean=(target_col, "mean"))
         if len(grouped) < 2:
             continue
 
@@ -2891,7 +4644,7 @@ def compute_constant_selector(
             topk_frac_out = float(topk_frac)
 
         rows.append({
-            benchmark_col: benchmark,
+            **group_map,
             "n_options": int(len(grouped)),
             "top1": top1,
             "top3": top3,
@@ -2922,6 +4675,8 @@ def compute_constant_selector(
         "true_best_option": "n/a",
         "pred_best_option": "n/a",
     }
+    for col in context_cols:
+        overall[col] = "__overall__"
     df_out = pd.concat([df_out, pd.DataFrame([overall])], ignore_index=True)
     return df_out
 
@@ -2933,6 +4688,7 @@ def compute_baseline_rankings(
     output_path,
     selectors,
     benchmark_col="benchmark",
+    context_cols=None,
     topk_frac=None,
     topk_min=1,
 ):
@@ -2947,10 +4703,13 @@ def compute_baseline_rankings(
             col = selector.get("column")
             if not col or col not in df.columns:
                 continue
-            sub = df[[benchmark_col, option_col, target_col, col]].dropna()
+            # Keep full row context so ranking-context group columns can still be derived.
+            sub = df.copy()
+            sub = sub.dropna(subset=[benchmark_col, option_col, target_col, col])
             if sub.empty:
                 continue
-            pred_df = sub.rename(columns={col: "prediction"}).copy()
+            pred_df = sub.copy()
+            pred_df["prediction"] = pred_df[col]
             if selector.get("direction", 1) < 0:
                 pred_df["prediction"] = -pred_df["prediction"]
             ranking_df = compute_ranking_dataframe(
@@ -2958,6 +4717,7 @@ def compute_baseline_rankings(
                 target_col,
                 option_col,
                 benchmark_col,
+                context_cols=context_cols,
                 topk_frac=topk_frac,
                 topk_min=topk_min,
             )
@@ -2971,6 +4731,7 @@ def compute_baseline_rankings(
                 option_col,
                 option,
                 benchmark_col,
+                context_cols=context_cols,
                 topk_frac=topk_frac,
                 topk_min=topk_min,
             )
@@ -2985,6 +4746,7 @@ def compute_baseline_rankings(
                 option_col,
                 option,
                 benchmark_col,
+                context_cols=context_cols,
                 topk_frac=topk_frac,
                 topk_min=topk_min,
             )
@@ -2995,6 +4757,79 @@ def compute_baseline_rankings(
             continue
         ranking_df.insert(0, "selector", name)
         baseline_frames.append(ranking_df)
+
+    if not baseline_frames:
+        return pd.DataFrame()
+
+    df_out = pd.concat(baseline_frames, ignore_index=True)
+    df_out.to_csv(output_path, index=False)
+    return df_out
+
+
+def compute_baseline_insertion_summaries(
+    task_pred_df,
+    option_col,
+    output_path,
+    selectors,
+    task_cols=None,
+    fold_col="fold",
+):
+    if task_pred_df is None or task_pred_df.empty:
+        return pd.DataFrame()
+    if not selectors:
+        return pd.DataFrame()
+    required = [option_col, fold_col, "target", "prediction", "is_holdout_option"]
+    for col in required:
+        if col not in task_pred_df.columns:
+            return pd.DataFrame()
+
+    baseline_frames = []
+    for selector in selectors:
+        sel_type = selector.get("type", "metric")
+        name = selector.get("name")
+        work = task_pred_df.copy()
+
+        if sel_type == "metric":
+            col = selector.get("column")
+            if not col or col not in work.columns:
+                continue
+            work = work.dropna(subset=[col]).copy()
+            if work.empty:
+                continue
+            work["prediction"] = pd.to_numeric(work[col], errors="coerce")
+            if selector.get("direction", 1) < 0:
+                work["prediction"] = -work["prediction"]
+        elif sel_type == "constant":
+            chosen_option = selector.get("option")
+            if not chosen_option:
+                continue
+            work["prediction"] = (work[option_col].astype(str) == str(chosen_option)).astype(float)
+        elif sel_type == "best_avg":
+            valid = work.dropna(subset=[option_col, "target"])
+            if valid.empty:
+                continue
+            chosen_option = valid.groupby(option_col, dropna=False)["target"].mean().idxmax()
+            work["prediction"] = (work[option_col] == chosen_option).astype(float)
+        else:
+            continue
+
+        work = work.dropna(subset=[fold_col, option_col, "target", "prediction", "is_holdout_option"])
+        if work.empty:
+            continue
+
+        detail_df = compute_insertion_rows_from_task_predictions(
+            task_pred_df=work,
+            option_col=option_col,
+            task_cols=task_cols,
+            fold_col=fold_col,
+        )
+        if detail_df.empty:
+            continue
+        summary_df = summarize_holdout_placement_rows(detail_df, fold_col=fold_col)
+        if summary_df.empty:
+            continue
+        summary_df.insert(0, "selector", str(name))
+        baseline_frames.append(summary_df)
 
     if not baseline_frames:
         return pd.DataFrame()
@@ -3170,6 +5005,35 @@ def ensure_train_dataset_model_family_encoder_column(
     return df
 
 
+def _parse_csv_group_cols(value: str) -> List[str]:
+    return [c.strip() for c in str(value or "").split(",") if c.strip()]
+
+
+def _ensure_context_columns(df, cols):
+    out = df
+    available = []
+    missing = []
+    for col in cols:
+        if col in out.columns:
+            available.append(col)
+            continue
+        if col == "encoder_config":
+            out = ensure_encoder_config(out)
+        elif col == "model_family":
+            out = ensure_model_family(out)
+        elif col == "model_family_encoder":
+            out = create_model_family_encoder_column(out)
+        elif col == "train_dataset_encoder":
+            out = ensure_train_dataset_encoder_column(out)
+        elif col == "train_dataset_model_family_encoder":
+            out = ensure_train_dataset_model_family_encoder_column(out)
+        if col in out.columns:
+            available.append(col)
+        else:
+            missing.append(col)
+    return out, available, missing
+
+
 def add_rank_target(df, source_col, group_cols, output_col):
     if source_col not in df.columns:
         return df
@@ -3237,6 +5101,389 @@ def _parse_dataset_list(value):
             continue
         items.append(token)
     return items
+
+
+def _parse_custom_interaction_specs(value):
+    specs = []
+    if not value:
+        return specs
+    for raw in str(value).split(","):
+        token = raw.strip()
+        if not token:
+            continue
+        scale = 1.0
+        if "@" in token:
+            token, scale_raw = token.rsplit("@", 1)
+            token = token.strip()
+            scale_raw = scale_raw.strip()
+            if scale_raw:
+                try:
+                    scale = float(scale_raw)
+                except ValueError:
+                    print(
+                        "Warning: invalid custom interaction scale "
+                        f"'{scale_raw}' in '{raw}'. Using 1.0."
+                    )
+        if "*" in token:
+            left, right = token.split("*", 1)
+        elif ":" in token:
+            left, right = token.split(":", 1)
+        else:
+            print(
+                "Warning: invalid custom interaction spec "
+                f"'{raw}'. Use col1*col2 (or col1*col2@scale)."
+            )
+            continue
+        left = left.strip()
+        right = right.strip()
+        if not left or not right:
+            print(
+                "Warning: invalid custom interaction spec "
+                f"'{raw}'. Empty column name."
+            )
+            continue
+        specs.append((left, right, scale))
+    return specs
+
+
+def add_custom_interaction_features(df, raw_specs):
+    specs = _parse_custom_interaction_specs(raw_specs)
+    if df.empty or not specs:
+        return df, [], []
+
+    out = df.copy()
+    created = []
+    skipped = []
+    for left, right, scale in specs:
+        if left not in out.columns or right not in out.columns:
+            skipped.append((left, right))
+            continue
+        col = f"{left}_x_{right}"
+        left_vals = pd.to_numeric(out[left], errors="coerce")
+        right_vals = pd.to_numeric(out[right], errors="coerce")
+        product = left_vals * right_vals
+        if scale != 1.0:
+            product = product * float(scale)
+        out[col] = product
+        created.append(col)
+    return out, created, skipped
+
+
+def fit_context_target_residualizer(
+    train_df,
+    target,
+    context_cols,
+    transform="residual",
+    std_eps=1e-9,
+):
+    if train_df is None or train_df.empty:
+        return None
+    cols = [c for c in (context_cols or []) if c in train_df.columns]
+    if not cols:
+        return None
+    mode = str(transform or "residual").strip().lower()
+    if mode not in {"residual", "zscore"}:
+        mode = "residual"
+    mean_col = "__target_context_mean__"
+    means = (
+        train_df.groupby(cols, dropna=False)[target]
+        .mean()
+        .reset_index()
+        .rename(columns={target: mean_col})
+    )
+    std_col = "__target_context_std__"
+    stds = None
+    global_std = float(np.nanstd(train_df[target].to_numpy(dtype=float), ddof=0))
+    if not np.isfinite(global_std) or global_std <= float(std_eps):
+        global_std = 1.0
+    if mode == "zscore":
+        stds = (
+            train_df.groupby(cols, dropna=False)[target]
+            .std(ddof=0)
+            .reset_index()
+            .rename(columns={target: std_col})
+        )
+    global_mean = float(np.nanmean(train_df[target].to_numpy(dtype=float)))
+    return {
+        "context_cols": cols,
+        "transform": mode,
+        "std_eps": float(std_eps),
+        "mean_col": mean_col,
+        "std_col": std_col,
+        "means": means,
+        "stds": stds,
+        "global_mean": global_mean,
+        "global_std": global_std,
+    }
+
+
+def apply_context_target_residualizer(df, target, residualizer):
+    if df is None:
+        return df, None, None
+    if residualizer is None:
+        out = df.copy()
+        return out, np.zeros(len(out), dtype=float), np.ones(len(out), dtype=float)
+
+    cols = [c for c in residualizer.get("context_cols", []) if c in df.columns]
+    if not cols:
+        out = df.copy()
+        return out, np.zeros(len(out), dtype=float), np.ones(len(out), dtype=float)
+
+    means = residualizer.get("means")
+    mean_col = str(residualizer.get("mean_col") or "__target_context_mean__")
+    stds = residualizer.get("stds")
+    std_col = str(residualizer.get("std_col") or "__target_context_std__")
+    global_mean = float(residualizer.get("global_mean", np.nan))
+    global_std = float(residualizer.get("global_std", 1.0))
+    transform = str(residualizer.get("transform") or "residual").strip().lower()
+    std_eps = float(residualizer.get("std_eps", 1e-9))
+    if not np.isfinite(global_std) or global_std <= std_eps:
+        global_std = 1.0
+
+    if means is None or means.empty:
+        out = df.copy()
+        offsets = np.full(len(out), global_mean, dtype=float)
+        scales = np.full(len(out), global_std if transform == "zscore" else 1.0, dtype=float)
+        if transform == "zscore":
+            out[target] = (out[target].to_numpy(dtype=float) - offsets) / scales
+        else:
+            out[target] = out[target].to_numpy(dtype=float) - offsets
+        return out, offsets, scales
+
+    out = df.copy()
+    out["__target_resid_row__"] = np.arange(len(out))
+    out = out.merge(means[cols + [mean_col]], on=cols, how="left")
+    if transform == "zscore" and stds is not None and not stds.empty:
+        out = out.merge(stds[cols + [std_col]], on=cols, how="left")
+    out = out.sort_values("__target_resid_row__", kind="mergesort")
+    offsets = out[mean_col].fillna(global_mean).to_numpy(dtype=float)
+    scales = np.ones(len(out), dtype=float)
+    drop_cols = ["__target_resid_row__", mean_col]
+    if transform == "zscore":
+        if std_col in out.columns:
+            scales = out[std_col].fillna(global_std).to_numpy(dtype=float)
+        else:
+            scales = np.full(len(out), global_std, dtype=float)
+        scales = np.where((~np.isfinite(scales)) | (scales <= std_eps), global_std, scales)
+        scales = np.where((~np.isfinite(scales)) | (scales <= std_eps), 1.0, scales)
+        out[target] = (out[target].to_numpy(dtype=float) - offsets) / scales
+        if std_col in out.columns:
+            drop_cols.append(std_col)
+    else:
+        out[target] = out[target].to_numpy(dtype=float) - offsets
+    out = out.drop(columns=drop_cols)
+    return out, offsets, scales
+
+
+def residualize_target_by_context(
+    train_df,
+    test_df,
+    target,
+    context_cols,
+    transform="residual",
+    std_eps=1e-9,
+):
+    train_df = train_df.copy()
+    test_df = test_df.copy()
+    residualizer = fit_context_target_residualizer(
+        train_df,
+        target,
+        context_cols,
+        transform=transform,
+        std_eps=std_eps,
+    )
+    if residualizer is None:
+        return train_df, test_df, None, None, None, None, None
+    train_out, train_offsets, train_scales = apply_context_target_residualizer(
+        train_df, target, residualizer
+    )
+    test_out, test_offsets, test_scales = apply_context_target_residualizer(
+        test_df, target, residualizer
+    )
+    return (
+        train_out,
+        test_out,
+        train_offsets,
+        test_offsets,
+        train_scales,
+        test_scales,
+        residualizer,
+    )
+
+
+def sample_fewshot_calibration_mask(df, context_cols=None, k=0, rng=None, allow_backoff=True):
+    n_rows = int(len(df)) if df is not None else 0
+    mask = np.zeros(n_rows, dtype=bool)
+    if n_rows <= 1:
+        return mask
+    k_int = int(k)
+    if k_int <= 0:
+        return mask
+    rng = rng or np.random.RandomState(0)
+    cols = [c for c in (context_cols or []) if c in df.columns]
+    if cols and bool(allow_backoff):
+        for cand_cols in [cols[:kk] for kk in range(len(cols), 0, -1)]:
+            counts = (
+                df[cand_cols]
+                .assign(__row__=1)
+                .groupby(cand_cols, dropna=False)["__row__"]
+                .sum()
+            )
+            if not counts.empty and int(counts.max()) > 1:
+                cols = cand_cols
+                break
+    if not cols:
+        k_eff = min(k_int, n_rows - 1)
+        if k_eff <= 0:
+            return mask
+        chosen = rng.choice(np.arange(n_rows), size=k_eff, replace=False)
+        mask[chosen] = True
+        return mask
+
+    work = df[cols].copy()
+    work["__row__"] = np.arange(n_rows)
+    for _, grp in work.groupby(cols, dropna=False, sort=False):
+        rows = grp["__row__"].to_numpy(dtype=int)
+        if rows.size <= 1:
+            continue
+        k_eff = min(k_int, rows.size - 1)
+        if k_eff <= 0:
+            continue
+        chosen = rng.choice(rows, size=k_eff, replace=False)
+        mask[chosen] = True
+    return mask
+
+
+def fit_context_prediction_calibrator(
+    df,
+    y_true,
+    y_pred,
+    context_cols=None,
+    std_eps=1e-9,
+    min_group_size=2,
+    allow_backoff=True,
+):
+    if df is None or len(df) == 0:
+        return None
+    cols = [c for c in (context_cols or []) if c in df.columns]
+    work = df[cols].copy() if cols else pd.DataFrame(index=df.index)
+    work["__pred__"] = np.asarray(y_pred, dtype=float)
+    work["__true__"] = np.asarray(y_true, dtype=float)
+    work = work.replace([np.inf, -np.inf], np.nan).dropna(subset=["__pred__", "__true__"])
+    if work.empty:
+        return None
+
+    global_pred_mean = float(np.nanmean(work["__pred__"].to_numpy(dtype=float)))
+    global_true_mean = float(np.nanmean(work["__true__"].to_numpy(dtype=float)))
+    global_pred_std = float(np.nanstd(work["__pred__"].to_numpy(dtype=float), ddof=0))
+    global_true_std = float(np.nanstd(work["__true__"].to_numpy(dtype=float), ddof=0))
+    if not np.isfinite(global_pred_std) or global_pred_std <= float(std_eps):
+        global_pred_std = 1.0
+    if not np.isfinite(global_true_std) or global_true_std <= float(std_eps):
+        global_true_std = 1.0
+
+    min_n = max(int(min_group_size), 1)
+    levels = []
+    if cols:
+        candidate_cols = [cols]
+        if bool(allow_backoff):
+            candidate_cols = [cols[:k] for k in range(len(cols), 0, -1)]
+        for level_cols in candidate_cols:
+            stats = (
+                work.groupby(level_cols, dropna=False)
+                .agg(
+                    pred_mean=("__pred__", "mean"),
+                    pred_std=("__pred__", lambda s: float(np.nanstd(s.to_numpy(dtype=float), ddof=0))),
+                    true_mean=("__true__", "mean"),
+                    true_std=("__true__", lambda s: float(np.nanstd(s.to_numpy(dtype=float), ddof=0))),
+                    group_n=("__pred__", "size"),
+                )
+                .reset_index()
+            )
+            stats = stats[stats["group_n"] >= min_n].copy()
+            if stats.empty:
+                continue
+            levels.append(
+                {
+                    "context_cols": list(level_cols),
+                    "stats": stats[level_cols + ["pred_mean", "pred_std", "true_mean", "true_std"]],
+                }
+            )
+            if not bool(allow_backoff):
+                break
+    stats = levels[0]["stats"] if levels else None
+    effective_context_cols = levels[0]["context_cols"] if levels else []
+    return {
+        "context_cols": cols,
+        "effective_context_cols": effective_context_cols,
+        "levels": levels,
+        "stats": stats,
+        "global_pred_mean": global_pred_mean,
+        "global_true_mean": global_true_mean,
+        "global_pred_std": global_pred_std,
+        "global_true_std": global_true_std,
+        "std_eps": float(std_eps),
+        "min_group_size": int(min_n),
+        "allow_backoff": bool(allow_backoff),
+    }
+
+
+def apply_context_prediction_calibrator(df, y_pred, calibrator):
+    pred = np.asarray(y_pred, dtype=float)
+    if calibrator is None or df is None or len(pred) == 0:
+        return pred
+
+    cols = [c for c in (calibrator.get("context_cols") or []) if c in df.columns]
+    std_eps = float(calibrator.get("std_eps", 1e-9))
+    gpm = float(calibrator.get("global_pred_mean", 0.0))
+    gtm = float(calibrator.get("global_true_mean", 0.0))
+    gps = float(calibrator.get("global_pred_std", 1.0))
+    gts = float(calibrator.get("global_true_std", 1.0))
+    if not np.isfinite(gps) or gps <= std_eps:
+        gps = 1.0
+    if not np.isfinite(gts) or gts <= std_eps:
+        gts = 1.0
+
+    levels = calibrator.get("levels") or []
+    n_rows = len(pred)
+    pred_mean = np.full(n_rows, gpm, dtype=float)
+    true_mean = np.full(n_rows, gtm, dtype=float)
+    pred_std = np.full(n_rows, gps, dtype=float)
+    true_std = np.full(n_rows, gts, dtype=float)
+    assigned = np.zeros(n_rows, dtype=bool)
+
+    # Backward compatibility for calibrators saved before hierarchical levels existed.
+    if not levels:
+        stats = calibrator.get("stats")
+        if cols and stats is not None and len(stats) > 0:
+            levels = [{"context_cols": cols, "stats": stats}]
+
+    for level in levels:
+        level_cols = [c for c in (level.get("context_cols") or []) if c in df.columns]
+        stats = level.get("stats")
+        if not level_cols or stats is None or len(stats) == 0:
+            continue
+        work = df[level_cols].copy()
+        work["__pred_row__"] = np.arange(len(work))
+        work = work.merge(stats, on=level_cols, how="left")
+        work = work.sort_values("__pred_row__", kind="mergesort")
+        cand_pred_mean = work["pred_mean"].to_numpy(dtype=float)
+        cand_true_mean = work["true_mean"].to_numpy(dtype=float)
+        cand_pred_std = work["pred_std"].to_numpy(dtype=float)
+        cand_true_std = work["true_std"].to_numpy(dtype=float)
+        valid = np.isfinite(cand_pred_mean) & np.isfinite(cand_true_mean)
+        take = (~assigned) & valid
+        if not np.any(take):
+            continue
+        pred_mean[take] = cand_pred_mean[take]
+        true_mean[take] = cand_true_mean[take]
+        pred_std[take] = cand_pred_std[take]
+        true_std[take] = cand_true_std[take]
+        assigned[take] = True
+
+    pred_std = np.where((~np.isfinite(pred_std)) | (pred_std <= std_eps), gps, pred_std)
+    true_std = np.where((~np.isfinite(true_std)) | (true_std <= std_eps), gts, true_std)
+    return ((pred - pred_mean) / pred_std) * true_std + true_mean
 
 
 def demean_target_by_multiple_groups(train_df, test_df, target, group_cols):
@@ -3550,7 +5797,7 @@ def _select_random_slopes(args, predictors):
 
 def _drop_algebraic_redundancies(predictors):
     redundant = []
-    for prefix in ("flow", "resnet", "dino"):
+    for prefix in ("flow", "resnet", "dino", "hof"):
         cov = f"{prefix}_eval_to_train_coverage"
         cov_explicit = f"{prefix}_eval_to_train_over_train_precision"
         outside = f"{prefix}_outside_mass"
@@ -3589,6 +5836,8 @@ def _extend_predictors_with_kl(predictors, feature_df):
             prefixes.add("resnet")
         if pred.startswith("dino_"):
             prefixes.add("dino")
+        if pred.startswith("hof_"):
+            prefixes.add("hof")
     if not prefixes:
         return predictors
     extended = list(predictors)
@@ -3623,6 +5872,8 @@ def _build_baseline_selectors(feature_df, predictors=None, use_logit=True):
         lower = name.lower()
         if "coverage" in lower or "precision" in lower or "recall" in lower:
             return 1
+        if "kl_div" in lower or "divergence" in lower:
+            return -1
         if "mmd" in lower:
             return -1
         if "outside" in lower:
@@ -3648,6 +5899,8 @@ def _build_baseline_selectors(feature_df, predictors=None, use_logit=True):
             "resnet_eval_to_train_mean_dist",
             "dino_train_to_eval_mean_dist",
             "dino_eval_to_train_mean_dist",
+            "hof_train_to_eval_mean_dist",
+            "hof_eval_to_train_mean_dist",
         ]
         has_distance = any(col in feature_df.columns for col in distance_cols)
         if has_distance:
@@ -3697,9 +5950,15 @@ def _build_baseline_selectors(feature_df, predictors=None, use_logit=True):
                 if "dino_train_to_eval_over_eval_recall_logit" in feature_df.columns
                 else "dino_train_to_eval_coverage_logit"
             )
+            hof_cov_logit = (
+                "hof_train_to_eval_over_eval_recall_logit"
+                if "hof_train_to_eval_over_eval_recall_logit" in feature_df.columns
+                else "hof_train_to_eval_coverage_logit"
+            )
             add_metric(flow_cov_logit, flow_cov_logit, direction=1)
             add_metric(resnet_cov_logit, resnet_cov_logit, direction=1)
             add_metric(dino_cov_logit, dino_cov_logit, direction=1)
+            add_metric(hof_cov_logit, hof_cov_logit, direction=1)
         else:
             flow_cov = (
                 "flow_train_to_eval_over_eval_recall"
@@ -3716,9 +5975,15 @@ def _build_baseline_selectors(feature_df, predictors=None, use_logit=True):
                 if "dino_train_to_eval_over_eval_recall" in feature_df.columns
                 else "dino_train_to_eval_coverage"
             )
+            hof_cov = (
+                "hof_train_to_eval_over_eval_recall"
+                if "hof_train_to_eval_over_eval_recall" in feature_df.columns
+                else "hof_train_to_eval_coverage"
+            )
             add_metric(flow_cov, flow_cov, direction=1)
             add_metric(resnet_cov, resnet_cov, direction=1)
             add_metric(dino_cov, dino_cov, direction=1)
+            add_metric(hof_cov, hof_cov, direction=1)
 
         add_metric("flow_mmd", "flow_mmd", direction=-1)
         add_metric("feature_mmd", "feature_mmd", direction=-1)
@@ -3765,11 +6030,14 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
         # Define predictor families
         flow_predictors = [p for p in predictors if p.startswith("flow_")]
         dino_predictors = [p for p in predictors if p.startswith("dino_")]
+        hof_predictors = [p for p in predictors if p.startswith("hof_")]
         predictor_families = {}
         if flow_predictors:
             predictor_families['flow'] = flow_predictors
         if dino_predictors:
             predictor_families['dino'] = dino_predictors
+        if hof_predictors:
+            predictor_families['hof'] = hof_predictors
         
         if len(predictor_families) >= 2:
             family_path = out_dir / "predictor_family_comparison.csv"
@@ -3846,7 +6114,7 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
             regression_path,
             linear_model=args.linear_model,
             ridge_alpha=args.ridge_alpha,
-            use_mixedlm=True,
+            use_mixedlm=args.regression_mixedlm,
         )
 
     if args.skip_prediction:
@@ -3855,6 +6123,60 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
     pred_target = args.prediction_target or args.target
     pred_model = args.prediction_model or args.linear_model
     cv_df = cv_df if cv_df is not None else feature_df
+    repeat_agg_mode = str(args.cv_repeat_aggregation or "none").strip().lower()
+    if repeat_agg_mode != "none":
+        repeat_group_cols_req = ["train_dataset", "benchmark"]
+        if args.ranking_group:
+            repeat_group_cols_req.append(str(args.ranking_group))
+        repeat_group_cols_req.extend(_parse_csv_group_cols(args.ranking_context_cols))
+        repeat_group_cols_req.extend(_parse_csv_group_cols(args.pairwise_group_cols))
+        if args.cv_residualize_target_by_context:
+            repeat_group_cols_req.extend(_parse_csv_group_cols(args.cv_residual_context_cols))
+        if "model_family_encoder" in cv_df.columns:
+            repeat_group_cols_req.append("model_family_encoder")
+        repeat_group_cols_req = list(dict.fromkeys([c for c in repeat_group_cols_req if c]))
+        cv_df, repeat_group_cols, repeat_missing_cols = _ensure_context_columns(
+            cv_df, repeat_group_cols_req
+        )
+        if repeat_missing_cols:
+            print(
+                "Warning: missing repeat-aggregation columns (ignored): "
+                + ", ".join(repeat_missing_cols)
+            )
+        repeat_group_cols = [c for c in repeat_group_cols if c in cv_df.columns]
+        if len(repeat_group_cols) < 2:
+            print(
+                "Warning: insufficient columns for --cv-repeat-aggregation; "
+                "skipping repeat aggregation."
+            )
+        else:
+            before_rows = len(cv_df)
+            cv_df = collapse_cv_rows_to_cells(
+                cv_df, repeat_group_cols, numeric_agg=repeat_agg_mode
+            )
+            after_rows = len(cv_df)
+            if before_rows != after_rows:
+                print(
+                    "Aggregated repeated CV rows by "
+                    f"{repeat_group_cols} ({repeat_agg_mode}): {before_rows} -> {after_rows}"
+                )
+    if args.collapse_cv_cells:
+        collapse_cols = ["train_dataset", "benchmark"]
+        available = [c for c in collapse_cols if c in cv_df.columns]
+        if len(available) == len(collapse_cols):
+            before_rows = len(cv_df)
+            cv_df = collapse_cv_rows_to_cells(cv_df, collapse_cols)
+            after_rows = len(cv_df)
+            if before_rows != after_rows:
+                print(
+                    "Collapsed CV rows to cells by "
+                    f"{collapse_cols}: {before_rows} -> {after_rows}"
+                )
+        else:
+            print(
+                "Warning: requested collapse_cv_cells but missing columns: "
+                + ", ".join([c for c in collapse_cols if c not in cv_df.columns])
+            )
     exclude_benchmarks = _parse_benchmark_list(args.exclude_benchmarks)
     if exclude_benchmarks and "benchmark" in cv_df.columns:
         cv_df = cv_df[
@@ -3862,11 +6184,74 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
         ].copy()
         if cv_df.empty:
             print(
-                "Warning: excluded all rows for prediction; skipping LOBO/LOTO runs."
+                "Warning: excluded all rows for prediction; skipping LOBO/LOTO/joint-OOD runs."
             )
             return
     target_demean_groups = _select_target_demean_groups(args)
     target_group_demean = len(target_demean_groups) > 0
+
+    pairwise_group_cols_req = _parse_csv_group_cols(args.pairwise_group_cols)
+    if not pairwise_group_cols_req:
+        pairwise_group_cols_req = ["benchmark"]
+    cv_df, pairwise_group_cols, pairwise_missing_cols = _ensure_context_columns(
+        cv_df, pairwise_group_cols_req
+    )
+    if pairwise_missing_cols:
+        print(
+            "Warning: missing pairwise group columns (ignored): "
+            + ", ".join(pairwise_missing_cols)
+        )
+    if not pairwise_group_cols:
+        pairwise_group_cols = ["benchmark"]
+
+    ranking_context_cols_req = _parse_csv_group_cols(args.ranking_context_cols)
+    cv_df, ranking_context_cols, ranking_context_missing_cols = _ensure_context_columns(
+        cv_df, ranking_context_cols_req
+    )
+    if ranking_context_missing_cols:
+        print(
+            "Warning: missing ranking context columns (ignored): "
+            + ", ".join(ranking_context_missing_cols)
+        )
+    residual_context_cols = []
+    residual_eval_space = str(args.cv_residual_eval_space or "residual").strip().lower()
+    fewshot_calibration_cols = []
+    if args.cv_fewshot_context_calibration:
+        fewshot_cols_req = _parse_csv_group_cols(args.cv_fewshot_context_calibration_cols)
+        if not fewshot_cols_req:
+            fewshot_cols_req = ["benchmark", "model_family_encoder"]
+        cv_df, fewshot_calibration_cols, fewshot_missing_cols = _ensure_context_columns(
+            cv_df, fewshot_cols_req
+        )
+        if fewshot_missing_cols:
+            print(
+                "Warning: missing few-shot calibration context columns (ignored): "
+                + ", ".join(fewshot_missing_cols)
+            )
+        if not fewshot_calibration_cols:
+            print(
+                "Warning: no valid few-shot calibration context columns found; disabling "
+                "--cv-fewshot-context-calibration."
+            )
+            args.cv_fewshot_context_calibration = False
+    if args.cv_residualize_target_by_context:
+        residual_context_cols_req = _parse_csv_group_cols(args.cv_residual_context_cols)
+        if not residual_context_cols_req:
+            residual_context_cols_req = ["benchmark"] + list(ranking_context_cols or [])
+        cv_df, residual_context_cols, residual_context_missing_cols = _ensure_context_columns(
+            cv_df, residual_context_cols_req
+        )
+        if residual_context_missing_cols:
+            print(
+                "Warning: missing residual context columns (ignored): "
+                + ", ".join(residual_context_missing_cols)
+            )
+        if not residual_context_cols:
+            print(
+                "Warning: no valid residual context columns found; disabling "
+                "--cv-residualize-target-by-context."
+            )
+            args.cv_residualize_target_by_context = False
 
     lobo_group_norm_mode = args.cv_normalize_predictors_by_benchmark
     lobo_center_by_group = args.center_predictors_by_benchmark
@@ -3899,6 +6284,17 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
         loto_center_group_col = "benchmark"
         loto_target_demean_groups = ["benchmark", "model_family_encoder"]
         loto_target_group_demean = True
+    if args.cv_residualize_target_by_context:
+        if lobo_target_group_demean or loto_target_group_demean:
+            raise SystemExit(
+                "Cannot combine --cv-residualize-target-by-context with target demeaning "
+                "(--cv-demean-target-by-*, --lobo-model-centered, or --loto-benchmark-centered)."
+            )
+        if args.prediction_mixedlm and HAS_STATSMODELS:
+            print(
+                "Warning: MixedLM prediction outputs are skipped when "
+                "--cv-residualize-target-by-context is enabled."
+            )
 
     lobo_summary, lobo_preds = run_group_cv(
         cv_df,
@@ -3915,6 +6311,19 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
         encoder_group_col=lobo_encoder_group_col,
         target_group_demean=lobo_target_group_demean,
         target_group_col=lobo_target_demean_groups,
+        target_context_residualize_cols=(
+            residual_context_cols if args.cv_residualize_target_by_context else None
+        ),
+        target_context_transform=args.cv_residual_target_transform,
+        target_context_std_eps=args.cv_residual_target_std_eps,
+        target_context_eval=residual_eval_space,
+        fewshot_context_calibration=args.cv_fewshot_context_calibration,
+        fewshot_context_calibration_cols=fewshot_calibration_cols,
+        fewshot_context_calibration_std_eps=args.cv_fewshot_context_calibration_std_eps,
+        fewshot_context_calibration_min_group_size=args.cv_fewshot_context_calibration_min_group_size,
+        fewshot_context_calibration_backoff=args.cv_fewshot_context_calibration_backoff,
+        fewshot_context_calibration_k=args.cv_fewshot_context_calibration_k,
+        fewshot_context_calibration_seed=args.cv_fewshot_context_calibration_seed,
         min_predictor_std=args.cv_min_predictor_std,
         prediction_clip=args.prediction_clip,
         prediction_clip_min=args.prediction_clip_min,
@@ -3922,6 +6331,10 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
         model=pred_model,
         ridge_alpha=args.ridge_alpha,
         pairwise_option_col=args.ranking_group,
+        pairwise_group_cols=pairwise_group_cols,
+        fit_sample_weighting=args.fit_sample_weighting,
+        fit_balance_real_synth=args.fit_balance_real_synth,
+        overall_aggregation=args.overall_aggregation,
     )
     if not lobo_summary.empty:
         lobo_summary.to_csv(out_dir / "prediction_lobo_summary.csv", index=False)
@@ -3932,6 +6345,7 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
             pred_target,
             args.ranking_group,
             out_dir / "prediction_lobo_rank_summary.csv",
+            context_cols=ranking_context_cols,
             topk_frac=args.ranking_topk_frac,
             topk_min=args.ranking_topk_min,
         )
@@ -3940,6 +6354,7 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
             pred_target,
             args.ranking_group,
             out_dir / "prediction_lobo_rank_detail.csv",
+            context_cols=ranking_context_cols,
         )
         if args.sanity_direction_audit:
             write_direction_audit(
@@ -3960,11 +6375,16 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
         args.ranking_group,
         out_dir / "prediction_lobo_rank_baselines.csv",
         baseline_selectors,
+        context_cols=ranking_context_cols,
         topk_frac=args.ranking_topk_frac,
         topk_min=args.ranking_topk_min,
     )
 
-    if args.prediction_mixedlm and HAS_STATSMODELS:
+    if (
+        args.prediction_mixedlm
+        and HAS_STATSMODELS
+        and not args.cv_residualize_target_by_context
+    ):
         random_slopes = _select_random_slopes(args, predictors)
         lobo_mixed_summary, lobo_mixed_preds = run_group_cv_mixedlm(
             cv_df,
@@ -4001,6 +6421,7 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
                 args.target,
                 args.ranking_group,
                 out_dir / "prediction_lobo_mixed_rank_summary.csv",
+                context_cols=ranking_context_cols,
                 topk_frac=args.ranking_topk_frac,
                 topk_min=args.ranking_topk_min,
             )
@@ -4013,6 +6434,8 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
         loto_df = cv_df
         group_col = "train_dataset"
 
+    placement_task_cols = ["benchmark"] + list(ranking_context_cols or [])
+    loto_task_pred_rows = []
     loto_summary, loto_preds = run_group_cv(
         loto_df,
         group_col,
@@ -4028,6 +6451,19 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
         encoder_group_col=loto_encoder_group_col,
         target_group_demean=loto_target_group_demean,
         target_group_col=loto_target_demean_groups,
+        target_context_residualize_cols=(
+            residual_context_cols if args.cv_residualize_target_by_context else None
+        ),
+        target_context_transform=args.cv_residual_target_transform,
+        target_context_std_eps=args.cv_residual_target_std_eps,
+        target_context_eval=residual_eval_space,
+        fewshot_context_calibration=args.cv_fewshot_context_calibration,
+        fewshot_context_calibration_cols=fewshot_calibration_cols,
+        fewshot_context_calibration_std_eps=args.cv_fewshot_context_calibration_std_eps,
+        fewshot_context_calibration_min_group_size=args.cv_fewshot_context_calibration_min_group_size,
+        fewshot_context_calibration_backoff=args.cv_fewshot_context_calibration_backoff,
+        fewshot_context_calibration_k=args.cv_fewshot_context_calibration_k,
+        fewshot_context_calibration_seed=args.cv_fewshot_context_calibration_seed,
         min_predictor_std=args.cv_min_predictor_std,
         prediction_clip=args.prediction_clip,
         prediction_clip_min=args.prediction_clip_min,
@@ -4035,25 +6471,155 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
         model=pred_model,
         ridge_alpha=args.ridge_alpha,
         pairwise_option_col=args.ranking_group,
+        pairwise_group_cols=pairwise_group_cols,
+        fit_sample_weighting=args.fit_sample_weighting,
+        fit_balance_real_synth=args.fit_balance_real_synth,
+        overall_aggregation=args.overall_aggregation,
+        task_prediction_rows_out=loto_task_pred_rows,
+        task_prediction_option_col=args.ranking_group,
+        task_prediction_task_cols=placement_task_cols,
+        task_prediction_holdout_group_col=group_col,
     )
     if not loto_summary.empty:
         loto_summary.to_csv(out_dir / "prediction_loto_summary.csv", index=False)
     if not loto_preds.empty:
         loto_preds.to_csv(out_dir / "prediction_loto_rows.csv", index=False)
-        compute_ranking_summary(
-            loto_preds,
-            pred_target,
-            args.ranking_group,
-            out_dir / "prediction_loto_rank_summary.csv",
-            topk_frac=args.ranking_topk_frac,
-            topk_min=args.ranking_topk_min,
+    for stale in (
+        out_dir / "prediction_loto_rank_summary.csv",
+        out_dir / "prediction_loto_rank_detail.csv",
+    ):
+        if stale.exists():
+            stale.unlink()
+    write_insertion_outputs_from_task_predictions(
+            task_pred_df=pd.DataFrame(loto_task_pred_rows),
+            option_col=args.ranking_group,
+            detail_path=out_dir / "prediction_loto_holdout_placement_detail.csv",
+            summary_path=out_dir / "prediction_loto_holdout_placement_summary.csv",
+            task_cols=placement_task_cols,
+            fold_col="fold",
+    )
+    loto_baseline_df = pd.DataFrame()
+    if args.loto_single_predictor_baselines:
+        loto_baseline_df = compute_baseline_insertion_summaries(
+            task_pred_df=pd.DataFrame(loto_task_pred_rows),
+            option_col=args.ranking_group,
+            output_path=out_dir / "prediction_loto_holdout_placement_baselines.csv",
+            selectors=baseline_selectors,
+            task_cols=placement_task_cols,
+            fold_col="fold",
         )
-        write_rank_detail_rows(
-            loto_preds,
-            pred_target,
-            args.ranking_group,
-            out_dir / "prediction_loto_rank_detail.csv",
-        )
+    if (not args.loto_single_predictor_baselines) or loto_baseline_df.empty:
+        stale = out_dir / "prediction_loto_holdout_placement_baselines.csv"
+        if stale.exists():
+            stale.unlink()
+
+    if args.joint_ood_holdout:
+        joint_train_col = group_col
+        benchmark_col = "benchmark" if "benchmark" in loto_df.columns else None
+        if benchmark_col:
+            joint_task_pred_rows = []
+            joint_summary, joint_preds = run_joint_holdout_cv(
+                loto_df,
+                joint_train_col,
+                benchmark_col,
+                predictors,
+                pred_target,
+                standardize=args.standardize,
+                standardize_mode=args.cv_standardize_mode,
+                center_by_group=loto_center_by_group,
+                center_group_col=loto_center_group_col,
+                group_norm_mode=loto_group_norm_mode,
+                within_benchmark_norm=args.cv_within_benchmark_predictor_norm,
+                encoder_group_norm_mode=loto_encoder_group_norm_mode,
+                encoder_group_col=loto_encoder_group_col,
+                target_group_demean=loto_target_group_demean,
+                target_group_col=loto_target_demean_groups,
+                target_context_residualize_cols=(
+                    residual_context_cols if args.cv_residualize_target_by_context else None
+                ),
+                target_context_transform=args.cv_residual_target_transform,
+                target_context_std_eps=args.cv_residual_target_std_eps,
+                target_context_eval=residual_eval_space,
+                fewshot_context_calibration=args.cv_fewshot_context_calibration,
+                fewshot_context_calibration_cols=fewshot_calibration_cols,
+                fewshot_context_calibration_std_eps=args.cv_fewshot_context_calibration_std_eps,
+                fewshot_context_calibration_min_group_size=args.cv_fewshot_context_calibration_min_group_size,
+                fewshot_context_calibration_backoff=args.cv_fewshot_context_calibration_backoff,
+                fewshot_context_calibration_k=args.cv_fewshot_context_calibration_k,
+                fewshot_context_calibration_seed=args.cv_fewshot_context_calibration_seed,
+                min_predictor_std=args.cv_min_predictor_std,
+                prediction_clip=args.prediction_clip,
+                prediction_clip_min=args.prediction_clip_min,
+                prediction_clip_max=args.prediction_clip_max,
+                model=pred_model,
+                ridge_alpha=args.ridge_alpha,
+                pairwise_option_col=args.ranking_group,
+                pairwise_group_cols=pairwise_group_cols,
+                fit_sample_weighting=args.fit_sample_weighting,
+                fit_balance_real_synth=args.fit_balance_real_synth,
+                overall_aggregation=args.overall_aggregation,
+                task_prediction_rows_out=joint_task_pred_rows,
+                task_prediction_option_col=args.ranking_group,
+                task_prediction_task_cols=placement_task_cols,
+                task_prediction_holdout_group_col=joint_train_col,
+            )
+            if not joint_summary.empty:
+                joint_summary.to_csv(out_dir / "prediction_jointood_summary.csv", index=False)
+            if not joint_preds.empty:
+                joint_preds.to_csv(out_dir / "prediction_jointood_rows.csv", index=False)
+            joint_task_pred_df = pd.DataFrame(joint_task_pred_rows)
+            if not joint_task_pred_df.empty:
+                joint_rank_context_cols = ["fold"] + list(ranking_context_cols or [])
+                compute_ranking_summary(
+                    joint_task_pred_df,
+                    pred_target,
+                    args.ranking_group,
+                    out_dir / "prediction_jointood_rank_summary.csv",
+                    context_cols=joint_rank_context_cols,
+                    topk_frac=args.ranking_topk_frac,
+                    topk_min=args.ranking_topk_min,
+                    require_single_fold_task=True,
+                )
+                write_rank_detail_rows(
+                    joint_task_pred_df,
+                    pred_target,
+                    args.ranking_group,
+                    out_dir / "prediction_jointood_rank_detail.csv",
+                    context_cols=joint_rank_context_cols,
+                    require_single_fold_task=True,
+                )
+                write_insertion_outputs_from_task_predictions(
+                    task_pred_df=joint_task_pred_df,
+                    option_col=args.ranking_group,
+                    detail_path=out_dir / "prediction_jointood_holdout_placement_detail.csv",
+                    summary_path=out_dir / "prediction_jointood_holdout_placement_summary.csv",
+                    task_cols=placement_task_cols,
+                    fold_col="fold",
+                )
+                joint_baseline_df = pd.DataFrame()
+                if args.jointood_single_predictor_baselines:
+                    joint_baseline_df = compute_baseline_insertion_summaries(
+                        task_pred_df=joint_task_pred_df,
+                        option_col=args.ranking_group,
+                        output_path=out_dir / "prediction_jointood_holdout_placement_baselines.csv",
+                        selectors=baseline_selectors,
+                        task_cols=placement_task_cols,
+                        fold_col="fold",
+                    )
+                if (not args.jointood_single_predictor_baselines) or joint_baseline_df.empty:
+                    stale = out_dir / "prediction_jointood_holdout_placement_baselines.csv"
+                    if stale.exists():
+                        stale.unlink()
+            else:
+                for stale in (
+                    out_dir / "prediction_jointood_rank_summary.csv",
+                    out_dir / "prediction_jointood_rank_detail.csv",
+                    out_dir / "prediction_jointood_holdout_placement_summary.csv",
+                    out_dir / "prediction_jointood_holdout_placement_detail.csv",
+                    out_dir / "prediction_jointood_holdout_placement_baselines.csv",
+                ):
+                    if stale.exists():
+                        stale.unlink()
 
     if args.sanity_permutation:
         perm_group = args.sanity_permute_group or "benchmark"
@@ -4074,6 +6640,19 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
             encoder_group_col=lobo_encoder_group_col,
             target_group_demean=lobo_target_group_demean,
             target_group_col=lobo_target_demean_groups,
+            target_context_residualize_cols=(
+                residual_context_cols if args.cv_residualize_target_by_context else None
+            ),
+            target_context_transform=args.cv_residual_target_transform,
+            target_context_std_eps=args.cv_residual_target_std_eps,
+            target_context_eval=residual_eval_space,
+            fewshot_context_calibration=args.cv_fewshot_context_calibration,
+            fewshot_context_calibration_cols=fewshot_calibration_cols,
+            fewshot_context_calibration_std_eps=args.cv_fewshot_context_calibration_std_eps,
+            fewshot_context_calibration_min_group_size=args.cv_fewshot_context_calibration_min_group_size,
+            fewshot_context_calibration_backoff=args.cv_fewshot_context_calibration_backoff,
+            fewshot_context_calibration_k=args.cv_fewshot_context_calibration_k,
+            fewshot_context_calibration_seed=args.cv_fewshot_context_calibration_seed,
             min_predictor_std=args.cv_min_predictor_std,
             prediction_clip=args.prediction_clip,
             prediction_clip_min=args.prediction_clip_min,
@@ -4084,6 +6663,10 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
             permute_group_col=perm_group,
             permute_seed=perm_seed,
             pairwise_option_col=args.ranking_group,
+            pairwise_group_cols=pairwise_group_cols,
+            fit_sample_weighting=args.fit_sample_weighting,
+            fit_balance_real_synth=args.fit_balance_real_synth,
+            overall_aggregation=args.overall_aggregation,
         )
         if not perm_lobo_summary.empty:
             perm_lobo_summary.to_csv(
@@ -4098,6 +6681,7 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
                 pred_target,
                 args.ranking_group,
                 out_dir / "prediction_lobo_permutation_rank_summary.csv",
+                context_cols=ranking_context_cols,
                 topk_frac=args.ranking_topk_frac,
                 topk_min=args.ranking_topk_min,
             )
@@ -4117,6 +6701,19 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
             encoder_group_col=loto_encoder_group_col,
             target_group_demean=loto_target_group_demean,
             target_group_col=loto_target_demean_groups,
+            target_context_residualize_cols=(
+                residual_context_cols if args.cv_residualize_target_by_context else None
+            ),
+            target_context_transform=args.cv_residual_target_transform,
+            target_context_std_eps=args.cv_residual_target_std_eps,
+            target_context_eval=residual_eval_space,
+            fewshot_context_calibration=args.cv_fewshot_context_calibration,
+            fewshot_context_calibration_cols=fewshot_calibration_cols,
+            fewshot_context_calibration_std_eps=args.cv_fewshot_context_calibration_std_eps,
+            fewshot_context_calibration_min_group_size=args.cv_fewshot_context_calibration_min_group_size,
+            fewshot_context_calibration_backoff=args.cv_fewshot_context_calibration_backoff,
+            fewshot_context_calibration_k=args.cv_fewshot_context_calibration_k,
+            fewshot_context_calibration_seed=args.cv_fewshot_context_calibration_seed,
             min_predictor_std=args.cv_min_predictor_std,
             prediction_clip=args.prediction_clip,
             prediction_clip_min=args.prediction_clip_min,
@@ -4127,6 +6724,10 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
             permute_group_col=perm_group,
             permute_seed=perm_seed,
             pairwise_option_col=args.ranking_group,
+            pairwise_group_cols=pairwise_group_cols,
+            fit_sample_weighting=args.fit_sample_weighting,
+            fit_balance_real_synth=args.fit_balance_real_synth,
+            overall_aggregation=args.overall_aggregation,
         )
         if not perm_loto_summary.empty:
             perm_loto_summary.to_csv(
@@ -4137,7 +6738,11 @@ def run_analysis_bundle(feature_df, out_dir, predictors, args, cv_df=None):
                 out_dir / "prediction_loto_permutation_rows.csv", index=False
             )
 
-    if args.prediction_mixedlm and HAS_STATSMODELS:
+    if (
+        args.prediction_mixedlm
+        and HAS_STATSMODELS
+        and not args.cv_residualize_target_by_context
+    ):
         random_slopes = _select_random_slopes(args, predictors)
         loto_mixed_summary, loto_mixed_preds = run_group_cv_mixedlm(
             loto_df,
@@ -4194,6 +6799,18 @@ def run_summary_report(out_dir, predictors, args):
         str(out_dir / "prediction_loto_summary.csv"),
         "--loto-rank-summary",
         str(out_dir / "prediction_loto_rank_summary.csv"),
+        "--loto-holdout-placement-summary",
+        str(out_dir / "prediction_loto_holdout_placement_summary.csv"),
+        "--loto-holdout-placement-baselines",
+        str(out_dir / "prediction_loto_holdout_placement_baselines.csv"),
+        "--jointood-summary",
+        str(out_dir / "prediction_jointood_summary.csv"),
+        "--jointood-rank-summary",
+        str(out_dir / "prediction_jointood_rank_summary.csv"),
+        "--jointood-holdout-placement-summary",
+        str(out_dir / "prediction_jointood_holdout_placement_summary.csv"),
+        "--jointood-holdout-placement-baselines",
+        str(out_dir / "prediction_jointood_holdout_placement_baselines.csv"),
         "--lobo-mixed-summary",
         str(out_dir / "prediction_lobo_mixed_summary.csv"),
         "--loto-mixed-summary",
@@ -4216,6 +6833,12 @@ def run_summary_report(out_dir, predictors, args):
         str(args.prediction_model or args.linear_model),
         "--standardize",
         str(args.standardize),
+        "--fit-sample-weighting",
+        str(args.fit_sample_weighting),
+        "--fit-balance-real-synth",
+        str(args.fit_balance_real_synth),
+        "--overall-aggregation",
+        str(args.overall_aggregation),
         "--cv-standardize-mode",
         str(args.cv_standardize_mode),
         "--per-encoder",
@@ -4433,6 +7056,11 @@ def main():
         help="Coverage CSV for DINO feature metrics (optional).",
     )
     parser.add_argument(
+        "--coverage-hof-csv",
+        default=None,
+        help="Coverage CSV for HOF motion metrics (optional).",
+    )
+    parser.add_argument(
         "--flow-stats-dir",
         default=None,
         help="Directory of flow extraction stats JSON files (optional).",
@@ -4470,6 +7098,15 @@ def main():
     )
     parser.set_defaults(flow_density_interactions=False)
     parser.add_argument(
+        "--custom-interactions",
+        default="",
+        help=(
+            "Comma-separated custom interaction specs (e.g., "
+            "flow_train_to_eval_eps1px*log_n_samples_eval,dino_eval_to_train_mean_dist*log_n_samples_eval). "
+            "Use @scale suffix to scale interaction terms."
+        ),
+    )
+    parser.add_argument(
         "--flow-eps-values",
         default="1,2,4,8,16,32,64",
         help="Comma-separated flow epsilon values to use as predictors.",
@@ -4497,6 +7134,18 @@ def main():
         dest="use_flow_eps_weighted_predictors",
         action="store_false",
         help="Disable weighted flow epsilon coverage predictors.",
+    )
+    parser.add_argument(
+        "--flow-eps-rings",
+        dest="flow_eps_rings",
+        action="store_true",
+        help="Convert cumulative flow epsilon ladder predictors into ring/delta bins.",
+    )
+    parser.add_argument(
+        "--no-flow-eps-rings",
+        dest="flow_eps_rings",
+        action="store_false",
+        help="Keep cumulative flow epsilon ladder predictors (default).",
     )
     parser.add_argument(
         "--flow-mmd-csv",
@@ -4528,6 +7177,7 @@ def main():
     parser.set_defaults(logit_coverage=True)
     parser.set_defaults(use_flow_eps_predictors=True)
     parser.set_defaults(use_flow_eps_weighted_predictors=False)
+    parser.set_defaults(flow_eps_rings=False)
     parser.add_argument(
         "--rename-coverage",
         action="store_true",
@@ -4657,15 +7307,84 @@ def main():
     parser.add_argument(
         "--cv-standardize-mode",
         choices=["local", "global"],
-        default="global",
+        default="local",
         help="Standardization mode: 'local' = within each CV fold (removes between-group variance), "
-             "'global' = once using all data before CV (preserves between-group variance). Default: global.",
+             "'global' = once using all data before CV (preserves between-group variance). Default: local.",
+    )
+    parser.add_argument(
+        "--collapse-cv-cells",
+        dest="collapse_cv_cells",
+        action="store_true",
+        help=(
+            "Collapse CV rows to one row per (train_dataset, benchmark) cell "
+            "before LOBO/LOTO/joint-OOD; numeric columns use mean."
+        ),
+    )
+    parser.add_argument(
+        "--no-collapse-cv-cells",
+        dest="collapse_cv_cells",
+        action="store_false",
+        help="Disable CV cell collapsing and use raw row-level CV.",
+    )
+    parser.set_defaults(collapse_cv_cells=True)
+    parser.add_argument(
+        "--cv-repeat-aggregation",
+        choices=["none", "mean", "median"],
+        default="none",
+        help=(
+            "Aggregate repeated CV rows before LOBO/LOTO/Joint-OOD using context-aware "
+            "grouping; numeric columns use the selected reducer (default: none)."
+        ),
+    )
+    parser.add_argument(
+        "--fit-sample-weighting",
+        choices=["none", "inverse_benchmark", "inverse_train_dataset", "inverse_task"],
+        default="none",
+        help=(
+            "Training-loss weighting mode for OLS/Ridge in CV folds. "
+            "'inverse_task' uses benchmark x model-family-encoder when available."
+        ),
+    )
+    parser.add_argument(
+        "--fit-balance-real-synth",
+        dest="fit_balance_real_synth",
+        action="store_true",
+        help="Rebalance fit loss so real and synthetic train-dataset rows carry equal total weight.",
+    )
+    parser.add_argument(
+        "--no-fit-balance-real-synth",
+        dest="fit_balance_real_synth",
+        action="store_false",
+        help="Disable real-vs-synthetic fit balancing.",
+    )
+    parser.set_defaults(fit_balance_real_synth=False)
+    parser.add_argument(
+        "--overall-aggregation",
+        choices=["micro", "macro_fold"],
+        default="micro",
+        help=(
+            "How to compute __overall__ prediction metrics in LOBO/LOTO/Joint summaries: "
+            "micro pools all rows; macro_fold averages per-fold metrics."
+        ),
     )
     parser.add_argument(
         "--skip-prediction",
         action="store_true",
         help="Skip LOBO/LOTO prediction validation.",
     )
+    parser.add_argument(
+        "--joint-ood-holdout",
+        dest="joint_ood_holdout",
+        action="store_true",
+        help="Run joint OOD CV: hold out both train_dataset and benchmark per fold.",
+    )
+    parser.add_argument(
+        "--no-joint-ood-holdout",
+        dest="joint_ood_holdout",
+        action="store_false",
+        help="Disable joint OOD CV.",
+    )
+    parser.set_defaults(joint_ood_holdout=False)
     parser.add_argument(
         "--center-predictors-by-benchmark",
         dest="center_predictors_by_benchmark",
@@ -4751,6 +7470,152 @@ def main():
     )
     parser.set_defaults(cv_demean_target_by_encoder=False)
     parser.set_defaults(cv_demean_target_by_benchmark=False)
+    parser.add_argument(
+        "--cv-residualize-target-by-context",
+        dest="cv_residualize_target_by_context",
+        action="store_true",
+        help=(
+            "Residualize target by joint context means computed from training rows "
+            "inside each CV fold."
+        ),
+    )
+    parser.add_argument(
+        "--no-cv-residualize-target-by-context",
+        dest="cv_residualize_target_by_context",
+        action="store_false",
+        help="Disable fold-safe joint-context target residualization.",
+    )
+    parser.set_defaults(cv_residualize_target_by_context=False)
+    parser.add_argument(
+        "--cv-residual-context-cols",
+        default="benchmark,model_family_encoder",
+        help=(
+            "CSV context columns for fold-safe target residualization "
+            "(default: benchmark,model_family_encoder)."
+        ),
+    )
+    parser.add_argument(
+        "--cv-residual-eval-space",
+        choices=["absolute", "residual"],
+        default="residual",
+        help=(
+            "When residualizing target by context: evaluate predictions in residual "
+            "space (default) or map predictions back to absolute space."
+        ),
+    )
+    parser.add_argument(
+        "--cv-residual-target-transform",
+        choices=["residual", "zscore"],
+        default="residual",
+        help=(
+            "Target transform within residual contexts: "
+            "'residual' subtracts train-context mean; "
+            "'zscore' subtracts train-context mean and divides by train-context std."
+        ),
+    )
+    parser.add_argument(
+        "--cv-residual-target-std-eps",
+        type=float,
+        default=1e-9,
+        help="Epsilon floor for context std when --cv-residual-target-transform=zscore.",
+    )
+    parser.add_argument(
+        "--cv-fewshot-context-calibration",
+        dest="cv_fewshot_context_calibration",
+        action="store_true",
+        help=(
+            "Apply leaky per-fold context calibration (mean+std affine) on held-out rows "
+            "after prediction, to estimate few-shot calibration upside."
+        ),
+    )
+    parser.add_argument(
+        "--no-cv-fewshot-context-calibration",
+        dest="cv_fewshot_context_calibration",
+        action="store_false",
+        help="Disable leaky per-fold context calibration (default).",
+    )
+    parser.set_defaults(cv_fewshot_context_calibration=False)
+    parser.add_argument(
+        "--cv-fewshot-context-calibration-cols",
+        default="benchmark,model_family_encoder",
+        help=(
+            "CSV context columns for leaky few-shot calibration stats "
+            "(default: benchmark,model_family_encoder)."
+        ),
+    )
+    parser.add_argument(
+        "--cv-fewshot-context-calibration-std-eps",
+        type=float,
+        default=1e-9,
+        help="Epsilon floor for prediction/target std in few-shot calibration.",
+    )
+    parser.add_argument(
+        "--cv-fewshot-context-calibration-min-group-size",
+        type=int,
+        default=2,
+        help=(
+            "Minimum rows per calibration context group; smaller groups back off to coarser "
+            "contexts (or global if none)."
+        ),
+    )
+    parser.add_argument(
+        "--cv-fewshot-context-calibration-backoff",
+        dest="cv_fewshot_context_calibration_backoff",
+        action="store_true",
+        help=(
+            "Enable hierarchical backoff for few-shot calibration contexts "
+            "(e.g., benchmark,model_family_encoder -> benchmark -> global)."
+        ),
+    )
+    parser.add_argument(
+        "--no-cv-fewshot-context-calibration-backoff",
+        dest="cv_fewshot_context_calibration_backoff",
+        action="store_false",
+        help="Disable hierarchical backoff for few-shot calibration contexts.",
+    )
+    parser.set_defaults(cv_fewshot_context_calibration_backoff=True)
+    parser.add_argument(
+        "--cv-fewshot-context-calibration-k",
+        type=int,
+        default=0,
+        help=(
+            "True few-shot mode: sample up to K calibration rows per context group in each held-out "
+            "fold, fit calibrator on those rows only, and evaluate on remaining rows. "
+            "Use 0 to keep full-fold calibration behavior."
+        ),
+    )
+    parser.add_argument(
+        "--cv-fewshot-context-calibration-seed",
+        type=int,
+        default=0,
+        help="Random seed for fold-level K-shot calibration row sampling.",
+    )
+    parser.add_argument(
+        "--loto-single-predictor-baselines",
+        dest="loto_single_predictor_baselines",
+        action="store_true",
+        help="Compute LOTO holdout-placement single-predictor baseline block (default: on).",
+    )
+    parser.add_argument(
+        "--no-loto-single-predictor-baselines",
+        dest="loto_single_predictor_baselines",
+        action="store_false",
+        help="Skip LOTO holdout-placement single-predictor baseline block.",
+    )
+    parser.set_defaults(loto_single_predictor_baselines=True)
+    parser.add_argument(
+        "--jointood-single-predictor-baselines",
+        dest="jointood_single_predictor_baselines",
+        action="store_true",
+        help="Compute Joint-OOD holdout-placement single-predictor baseline block (default: on).",
+    )
+    parser.add_argument(
+        "--no-jointood-single-predictor-baselines",
+        dest="jointood_single_predictor_baselines",
+        action="store_false",
+        help="Skip Joint-OOD holdout-placement single-predictor baseline block.",
+    )
+    parser.set_defaults(jointood_single_predictor_baselines=True)
     parser.add_argument(
         "--cv-min-predictor-std",
         type=float,
@@ -4977,6 +7842,32 @@ def main():
         ),
     )
     parser.add_argument(
+        "--ranking-context-cols",
+        default="",
+        help=(
+            "Optional CSV of extra grouping columns for rank evaluation "
+            "(e.g., model_family_encoder)."
+        ),
+    )
+    parser.add_argument(
+        "--pairwise-group-cols",
+        default="benchmark",
+        help=(
+            "CSV columns that define independent pairwise training groups "
+            "(default: benchmark; example: benchmark,model_family_encoder)."
+        ),
+    )
+    parser.add_argument(
+        "--allow-benchmark-ranking-group",
+        "--allow-non-benchmark-ranking-group",
+        dest="allow_benchmark_ranking_group",
+        action="store_true",
+        help=(
+            "Allow --ranking-group benchmark for option ranking. "
+            "Default behavior refuses benchmark as an option group because it is the evaluation context."
+        ),
+    )
+    parser.add_argument(
         "--ranking-topk-frac",
         type=float,
         default=0.2,
@@ -5066,6 +7957,19 @@ def main():
     )
     parser.set_defaults(prediction_mixedlm=HAS_STATSMODELS)
     parser.add_argument(
+        "--regression-mixedlm",
+        dest="regression_mixedlm",
+        action="store_true",
+        help="Include MixedLM fit in regression summary.",
+    )
+    parser.add_argument(
+        "--no-regression-mixedlm",
+        dest="regression_mixedlm",
+        action="store_false",
+        help="Disable MixedLM fit in regression summary.",
+    )
+    parser.set_defaults(regression_mixedlm=HAS_STATSMODELS)
+    parser.add_argument(
         "--mixedlm-random-slopes",
         default=None,
         help="Comma-separated predictors to include as random slopes in MixedLM.",
@@ -5107,6 +8011,21 @@ def main():
         help="Collapse spair_synthetic_* to spair_synthetic for LOTO grouping.",
     )
     args = parser.parse_args()
+    if int(args.cv_fewshot_context_calibration_min_group_size) < 1:
+        raise SystemExit(
+            "--cv-fewshot-context-calibration-min-group-size must be >= 1."
+        )
+    if int(args.cv_fewshot_context_calibration_k) < 0:
+        raise SystemExit(
+            "--cv-fewshot-context-calibration-k must be >= 0."
+        )
+    if args.ranking_group == "benchmark" and not args.allow_benchmark_ranking_group:
+        raise SystemExit(
+            "Refusing to run with --ranking-group "
+            f"'{args.ranking_group}'. "
+            "Use --ranking-group train_dataset (recommended), or pass "
+            "--allow-benchmark-ranking-group to override intentionally."
+        )
     target_default = args.target is None
     if args.target is None:
         args.target = "auc_normalized"
@@ -5286,6 +8205,11 @@ def main():
         if args.coverage_dino_csv
         else None
     )
+    hof_lookup = (
+        load_coverage_lookup(args.coverage_hof_csv, allow_unsplit=args.allow_unsplit_coverage)
+        if args.coverage_hof_csv
+        else None
+    )
     flow_mmd_lookup = load_mmd_lookup(args.flow_mmd_csv, allow_unsplit=args.allow_unsplit_mmd)
     feature_mmd_lookup = load_mmd_lookup(
         args.feature_mmd_csv, allow_unsplit=args.allow_unsplit_mmd
@@ -5301,6 +8225,7 @@ def main():
         auc_df,
         flow_lookup,
         resnet_lookup,
+        hof_lookup,
         variogram_lookup,
         flow_mmd_lookup,
         feature_mmd_lookup,
@@ -5518,10 +8443,50 @@ def main():
                 f"Added spair indicator interactions: {indicator_col} "
                 f"({len(interaction_cols)} interactions)"
             )
+    if args.custom_interactions:
+        custom_specs = _parse_custom_interaction_specs(args.custom_interactions)
+        spec_by_col = {f"{left}_x_{right}": (left, right, scale) for left, right, scale in custom_specs}
+        feature_df, custom_cols, custom_skipped = add_custom_interaction_features(
+            feature_df, args.custom_interactions
+        )
+        added_custom = []
+        gated_custom = []
+        if custom_cols:
+            for col in custom_cols:
+                spec = spec_by_col.get(col)
+                # Keep custom interactions only when anchored to a selected
+                # base predictor (left term in col1*col2).
+                if spec is not None and spec[0] not in predictors:
+                    gated_custom.append(col)
+                    continue
+                if col not in predictors:
+                    predictors.append(col)
+                added_custom.append(col)
+            if added_custom:
+                print(
+                    "Added custom interactions: "
+                    + ", ".join(added_custom)
+                )
+            if gated_custom:
+                print(
+                    "Skipped custom interactions (base predictor not selected): "
+                    + ", ".join(gated_custom)
+                )
+        if custom_skipped:
+            skipped_tokens = [f"{l}*{r}" for l, r in custom_skipped]
+            print(
+                "Warning: skipped custom interactions (missing columns): "
+                + ", ".join(skipped_tokens)
+            )
 
     if args.target not in feature_df.columns:
         print(f"Target '{args.target}' not found in auc_with_features table.")
         return
+
+    if args.flow_eps_rings:
+        eps_values = parse_eps_values(args.flow_eps_values)
+        feature_df = apply_flow_eps_ring_features(feature_df, eps_values, weighted=False)
+        feature_df = apply_flow_eps_ring_features(feature_df, eps_values, weighted=True)
 
     missing_predictors = [p for p in predictors if p not in feature_df.columns]
     if missing_predictors:
@@ -5667,6 +8632,7 @@ def main():
             mode_args,
             cv_df=pooled_cv_df,
         )
+        _write_run_metadata(mode_out_dir, pooled_predictors, mode_args)
         if mode_args.run_summary:
             run_summary_report(mode_out_dir, pooled_predictors, mode_args)
         if mode_args.per_encoder:
@@ -5690,6 +8656,7 @@ def main():
                     per_args,
                     cv_df=cv_group,
                 )
+                _write_run_metadata(group_dir, predictors, per_args)
                 if mode_args.run_summary:
                     run_summary_report(group_dir, predictors, per_args)
 
@@ -5740,6 +8707,7 @@ def main():
             args,
             cv_df=pooled_cv_df,
         )
+        _write_run_metadata(out_dir, pooled_predictors, args)
         if args.run_summary:
             run_summary_report(out_dir, pooled_predictors, args)
 

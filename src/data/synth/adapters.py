@@ -16,6 +16,7 @@ from src.data.synth.datasets.SintelDataset import SintelSimpleDataset
 from src.data.synth.datasets.HD1KDataset import HD1KSimpleDataset
 from src.data.synth.datasets.VirtualKitti2Dataset import VirtualKitti2SimpleDataset
 from src.data.synth.datasets.ImageNet2DWarpDataset import ImageNet2DWarpDataset
+from src.data.synth.datasets.MoviFDataset import MoviFSimpleDataset
 
 
 class BaseAdapter:
@@ -362,6 +363,31 @@ class ImageNet2DWarpAdapter(BaseAdapter):
         )
 
 
+class MoviFAdapter(BaseAdapter):
+    name = "movi_f"
+
+    def __init__(self, datapath: str, split: str = "train", reverse_flow: bool = False, **kwargs):
+        self.dataset = MoviFSimpleDataset(
+            datapath=datapath,
+            split=split,
+            reverse_flow=reverse_flow,
+            kubric_dir=kwargs.get("kubric_dir", "/home/spencer/Projects/kubric"),
+            config=kwargs.get("movi_f_config", "512x512"),
+            shuffle_buffer=kwargs.get("movi_f_shuffle_buffer", 64),
+        )
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx) -> CommonSample:
+        raw = self.dataset[idx]
+        return CommonSample(
+            src_img=raw["src_img"],
+            trg_img=raw["trg_img"],
+            flow_full=raw["flow"],
+        )
+
+
 class BenchmarkAdapter(BaseAdapter):
     """PF-Pascal/Willow/SPair; flows are already feature-res in many cases."""
 
@@ -464,6 +490,7 @@ ADAPTER_REGISTRY = {
     "hd1k": HD1KAdapter,
     "virtualkitti2": VirtualKitti2Adapter,
     "imagenet2dwarp": ImageNet2DWarpAdapter,
+    "movi_f": MoviFAdapter,
     "pfpascal": BenchmarkAdapter,
     "pfwillow": BenchmarkAdapter,
     "spair": BenchmarkAdapter,

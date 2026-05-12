@@ -1,0 +1,25 @@
+\begin{table}[t]
+\centering
+\small
+\caption{Kendall $\tau$ between each distance metric and actual transfer performance (peak PCK, best checkpoint, averaged across architectures). t$\to$e = $\varepsilon$-radius coverage in the train$\to$eval direction; e$\to$t = coverage in the eval$\to$train direction; MMD = symmetric flow MMD. Boldface marks the best metric per row. Decomposing the symmetric MMD into two directed distances reveals that the eval$\to$train direction carries the dominant predictive signal, while t$\to$e is orthogonal or negatively correlated with performance. Significance: $^*p{<}0.05$, $^{**}p{<}0.01$, $^{***}p{<}0.001$.}
+\label{tab:directional_tau}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Benchmark} & $\tau$(t$\to$e) & $\tau$(e$\to$t) & $\tau$(MMD) & Best \\
+\midrule
+FlyingThings & +0.429 & +0.619 & \textbf{+0.905$^{**}$} & MMD \\
+KITTI-2012 & +0.524 & +0.524 & \textbf{+0.810$^{*}$} & MMD \\
+KITTI-2015 & +0.238 & \textbf{+0.619} & +0.524 & e$\to$t \\
+PF-Pascal & \textbf{+0.524} & +0.048 & -0.333 & t$\to$e \\
+PF-Willow & \textbf{+0.333} & +0.333 & -0.048 & e$\to$t \\
+PointOdyssey & +0.810$^{*}$ & +0.524 & \textbf{+0.905$^{**}$} & MMD \\
+SPair-71k & -0.429 & -0.238 & \textbf{+0.143} & MMD \\
+TSS & +0.333 & \textbf{+0.429} & -0.048 & e$\to$t \\
+\midrule
+\textit{Mean} & \textit{+0.345} & \textit{+0.357} & \textit{+0.357} & -- \\
+\midrule
+\multicolumn{5}{l}{\small e$\to$t best on 3/8 benchmarks; MMD best on 4/8; t$\to$e best on 1/8} \\
+\bottomrule
+\end{tabular}
+\end{table}

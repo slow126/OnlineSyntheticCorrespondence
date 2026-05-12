@@ -160,6 +160,7 @@ def compute_pairwise_coverage(
     batch_size: Optional[int] = None,
     compute_curves: bool = False,
     curve_quantiles: List[float] = [0.80, 0.90, 0.95, 0.99],
+    curve_max_vectors: int = 500_000,
     filter_duplicates: bool = True,
     verbose: bool = True,
 ) -> Dict[str, any]:
@@ -328,15 +329,30 @@ def compute_pairwise_coverage(
     if compute_curves:
         if verbose:
             print(f"  Computing coverage curves over quantiles: {curve_quantiles}")
-        
-        # Need self-distances for curves - recompute k_max NN for both sets
+
+        # Self-distances are used only for quantile threshold estimation, so a
+        # subsample is sufficient and avoids GPU OOM on large datasets.
+        n_train, n_eval = train_vectors.shape[0], eval_vectors.shape[0]
+        rng_curve = np.random.default_rng(0)
+        curve_train_vecs = train_vectors[
+            rng_curve.choice(n_train, min(n_train, curve_max_vectors), replace=False)
+        ] if n_train > curve_max_vectors else train_vectors
+        curve_eval_vecs = eval_vectors[
+            rng_curve.choice(n_eval, min(n_eval, curve_max_vectors), replace=False)
+        ] if n_eval > curve_max_vectors else eval_vectors
+
+        if verbose:
+            print(f"    Curve self-distances: "
+                  f"train {curve_train_vecs.shape[0]:,}/{n_train:,}, "
+                  f"eval {curve_eval_vecs.shape[0]:,}/{n_eval:,}")
+
         if verbose:
             print(f"    Computing train self-distances for curves...")
-        train_index = faiss_ops.build_index(train_vectors, use_gpu=use_gpu, index_factory=index_factory, verbose=False)
+        train_index = faiss_ops.build_index(curve_train_vecs, use_gpu=use_gpu, index_factory=index_factory, verbose=False)
         try:
             train_self_dists, _ = faiss_ops.compute_knn_distances(
                 train_index,
-                train_vectors,
+                curve_train_vecs,
                 k=k_max,
                 exclude_self=True,
                 filter_duplicates=filter_duplicates,
@@ -345,14 +361,14 @@ def compute_pairwise_coverage(
             )
         finally:
             faiss_ops.release_index(train_index)
-        
+
         if verbose:
             print(f"    Computing eval self-distances for curves...")
-        eval_index = faiss_ops.build_index(eval_vectors, use_gpu=use_gpu, index_factory=index_factory, verbose=False)
+        eval_index = faiss_ops.build_index(curve_eval_vecs, use_gpu=use_gpu, index_factory=index_factory, verbose=False)
         try:
             eval_self_dists, _ = faiss_ops.compute_knn_distances(
                 eval_index,
-                eval_vectors,
+                curve_eval_vecs,
                 k=k_max,
                 exclude_self=True,
                 filter_duplicates=filter_duplicates,

@@ -226,6 +226,115 @@ def cache_exists(
 
 
 # ============================================================================
+# kNN self-distance caching (for KL)
+# ============================================================================
+
+def knn_self_cache_key(
+    dataset: str,
+    split: str,
+    representation: str,
+    space: str,
+    k: int,
+    normalization: str,
+    distance_metric: str,
+    filter_duplicates: bool = True,
+    alpha: Optional[float] = None,
+    ext: str = "npz",
+) -> str:
+    safe_ds = sanitize_name(dataset)
+    safe_split = sanitize_name(split)
+    safe_repr = sanitize_name(representation)
+    safe_space = sanitize_name(space)
+    safe_norm = sanitize_name(normalization)
+    safe_metric = sanitize_name(distance_metric)
+    safe_dups = "dedup" if filter_duplicates else "nodup"
+    alpha_str = f"_a{alpha:.6g}" if alpha is not None else ""
+    return (
+        f"knnself_{safe_ds}_{safe_split}_{safe_repr}_{safe_space}_"
+        f"{safe_norm}_{safe_metric}_k{k}_{safe_dups}{alpha_str}.{ext}"
+    )
+
+
+def load_knn_self_distances(
+    cache_dir: Path,
+    dataset: str,
+    split: str,
+    representation: str,
+    space: str,
+    k: int,
+    normalization: str,
+    distance_metric: str,
+    filter_duplicates: bool = True,
+    alpha: Optional[float] = None,
+    mmap: bool = True,
+) -> Optional[np.ndarray]:
+    knn_dir = cache_dir / "knn_self"
+    # Prefer .npy (supports memmap), fallback to .npz
+    npy_path = knn_dir / knn_self_cache_key(
+        dataset,
+        split,
+        representation,
+        space,
+        k,
+        normalization,
+        distance_metric,
+        filter_duplicates=filter_duplicates,
+        alpha=alpha,
+        ext="npy",
+    )
+    if npy_path.exists():
+        return np.load(npy_path, mmap_mode="r" if mmap else None)
+
+    npz_path = knn_dir / knn_self_cache_key(
+        dataset,
+        split,
+        representation,
+        space,
+        k,
+        normalization,
+        distance_metric,
+        filter_duplicates=filter_duplicates,
+        alpha=alpha,
+        ext="npz",
+    )
+    if not npz_path.exists():
+        return None
+    data = np.load(npz_path)
+    return data["distances"] if "distances" in data else None
+
+
+def save_knn_self_distances(
+    cache_dir: Path,
+    dataset: str,
+    split: str,
+    representation: str,
+    space: str,
+    k: int,
+    normalization: str,
+    distance_metric: str,
+    distances: np.ndarray,
+    filter_duplicates: bool = True,
+    alpha: Optional[float] = None,
+) -> Path:
+    knn_dir = cache_dir / "knn_self"
+    knn_dir.mkdir(parents=True, exist_ok=True)
+    path = knn_dir / knn_self_cache_key(
+        dataset,
+        split,
+        representation,
+        space,
+        k,
+        normalization,
+        distance_metric,
+        filter_duplicates=filter_duplicates,
+        alpha=alpha,
+        ext="npz",
+    )
+    np.savez(path, distances=distances)
+    return path
+
+
+# ============================================================================
 # PCA + L2 Normalization (for Dino/ResNet)
 # ============================================================================
 

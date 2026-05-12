@@ -1,0 +1,344 @@
+representation: hof
+batch_size: 0
+num_workers: 0
+sampling:
+  max_samples: 8000
+hof:
+  l2_normalize: true
+  occupancy_mode: intersection
+  occupancy_weight: 0.3
+  grid_hw: [32, 32]
+  angle_bins: 8
+  mag_edges: [0.0, 0.01, 0.03, 0.08, 0.25]
+faiss:
+  index_factory: IVF4096,Flat
+  metric: l2
+  use_gpu: true
+  nprobe: 32
+  batch_size: 10000
+coverage:
+  self_radius_k: 5
+  radius_quantile: 0.95
+  neighbor_agg: kth
+  k_max: 40
+  k_values:
+  - 1
+  - 5
+  - 10
+  - 20
+  - 40
+  compute_curves: true
+  curve_quantiles:
+  - 0.8
+  - 0.9
+  - 0.95
+  - 0.99
+  filter_duplicates: true
+kl:
+  enabled: true
+  k_values:
+  - 5
+  - 10
+  - 20
+  - 40
+  eps: 1.0e-12
+distance_metric:
+  name: sqL2
+  description: Squared L2 (FAISS default); KL uses sqrt internally.
+cache:
+  hof_dir: /mnt/nvme_1tb_b/hof_cache
+  dir: /mnt/nvme_1tb_b/hof_cache/coverage_cache
+output:
+  results_file: analysis/coverage_v2_hof_full_occ.csv
+  kl_results_file: analysis/kl_v2_hof_full_occ.csv
+dataset_params:
+  size:
+  - 512
+  - 512
+  downsample_flow: 32
+  max_kps: null
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: false
+  kitti_val_use_full_training: true
+dataset_overrides:
+  sintel:
+    sintel_root: /home/spencer/Data
+    normalize_images: true
+  spair:
+    datapath: ./models/Datasets_CATs
+    normalize_images: false
+  pfpascal:
+    datapath: ./models/Datasets_CATs
+    normalize_images: false
+  pfwillow:
+    datapath: ./models/Datasets_CATs
+    normalize_images: false
+  synthetic:
+    geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
+    processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
+    normalize_images: false
+    device: cuda
+  synthetic_2d_warp:
+    geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
+    processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
+    normalize_images: false
+    synthetic_flow_warp: true
+    synthetic_flow_warp_swap: true
+    device: cuda
+  imagenet2dwarp:
+    datapath: hf://ILSVRC/imagenet-1k
+    hf_streaming: false
+    hf_max_samples: 5000
+    hf_cache_dir: /home/spencer/.cache/huggingface/datasets
+    normalize_images: true
+    rotation_range:
+    - -30.0
+    - 30.0
+    scale_range:
+    - 0.5
+    - 2.5
+    translation_range:
+    - -0.1
+    - 0.1
+    shear_range:
+    - -0.2
+    - 0.2
+    cache_warp_params: true
+    cache_dir: ./cache/imagenet2dwarp
+    seed: 42
+  pointodyssey:
+    dataset_location: /home/spencer/Data/PointOdyssey
+    normalize_images: true
+    pointodyssey_sequence_length: 2
+    pointodyssey_num_pts_to_track: 32
+    use_all_valid: true
+  kitti2012:
+    datapath: /home/spencer/Data/correspondence/kitti
+    normalize_images: true
+  kitti2015:
+    datapath: /home/spencer/Data/correspondence/kitti
+    normalize_images: true
+  flyingthings:
+    datapath: /home/spencer/Data/FlyingThings3D_10k
+    normalize_images: true
+  tss:
+    datapath: /home/spencer/Data/correspondence/TSS_CVPR2016
+    normalize_images: true
+  middlebury:
+    datapath: /home/spencer/Data/middlebury/all
+    normalize_images: true
+datasets:
+- name: flyingthings
+  split: train
+  representation: flow
+  is_eval: false
+- name: imagenet2dwarp
+  split: train
+  representation: flow
+  is_eval: false
+- name: synthetic_2d_warp
+  split: train
+  representation: flow
+  is_eval: false
+- name: synthetic
+  split: train
+  representation: flow
+  is_eval: false
+- name: synthetic_small_zoom
+  split: train
+  representation: flow
+  is_eval: false
+  overrides:
+    dataset_name: synthetic
+    geometry_config_overrides:
+      angle_sampler:
+        x_components:
+          loc: 0
+          scale: 0.01
+        y_components:
+          loc: 0
+          scale: 0.01
+      scale_sampler:
+        abs_components:
+          scale: 0.2
+        rel_components:
+          loc: -0.1
+          scale: 0.2
+- name: synthetic_large_zoom
+  split: train
+  representation: flow
+  is_eval: false
+  overrides:
+    dataset_name: synthetic
+    geometry_config_overrides:
+      angle_sampler:
+        x_components:
+          loc: 0
+          scale: 0.01
+        y_components:
+          loc: 0
+          scale: 0.01
+      scale_sampler:
+        abs_components:
+          scale: 0.5
+        rel_components:
+          loc: -0.35
+          scale: 0.5
+- name: synthetic_random_flipping
+  split: train
+  representation: flow
+  is_eval: false
+  overrides:
+    dataset_name: synthetic
+    geometry_config_overrides:
+      random_flip: 0.5
+- name: spair
+  split: train
+  representation: flow
+  is_eval: false
+- name: pointodyssey
+  split: train
+  representation: flow
+  is_eval: false
+- name: sintel
+  split: train
+  representation: flow
+  is_eval: false
+- name: flyingthings
+  split: test
+  representation: flow
+  is_eval: true
+- name: kitti2015
+  split: val
+  representation: flow
+  is_eval: true
+- name: kitti2012
+  split: val
+  representation: flow
+  is_eval: true
+- name: spair
+  split: test
+  representation: flow
+  is_eval: true
+- name: pfpascal
+  split: test
+  representation: flow
+  is_eval: true
+- name: pfwillow
+  split: test
+  representation: flow
+  is_eval: true
+- name: pointodyssey
+  split: test
+  representation: flow
+  is_eval: true
+- name: tss
+  split: val
+  representation: flow
+  is_eval: true
+- name: middlebury
+  split: val
+  representation: flow
+  is_eval: true
+- name: spair_synthetic_30_70
+  split: train
+  mixed: true
+  datasets:
+  - spair
+  - synthetic
+  percentages:
+  - 0.3
+  - 0.7
+  is_eval: false
+- name: spair_synthetic_50_50
+  split: train
+  mixed: true
+  datasets:
+  - spair
+  - synthetic
+  percentages:
+  - 0.5
+  - 0.5
+  is_eval: false
+- name: spair_synthetic_70_30
+  split: train
+  mixed: true
+  datasets:
+  - spair
+  - synthetic
+  percentages:
+  - 0.7
+  - 0.3
+  is_eval: false
+- name: pointodyssey_synthetic_30_70
+  split: train
+  mixed: true
+  datasets:
+  - pointodyssey
+  - synthetic
+  percentages:
+  - 0.3
+  - 0.7
+  is_eval: false
+- name: pointodyssey_synthetic_50_50
+  split: train
+  mixed: true
+  datasets:
+  - pointodyssey
+  - synthetic
+  percentages:
+  - 0.5
+  - 0.5
+  is_eval: false
+- name: pointodyssey_synthetic_70_30
+  split: train
+  mixed: true
+  datasets:
+  - pointodyssey
+  - synthetic
+  percentages:
+  - 0.7
+  - 0.3
+  is_eval: false
+- name: flyingthings_synthetic_30_70
+  split: train
+  mixed: true
+  datasets:
+  - flyingthings
+  - synthetic
+  percentages:
+  - 0.3
+  - 0.7
+  is_eval: false
+- name: flyingthings_synthetic_70_30
+  split: train
+  mixed: true
+  datasets:
+  - flyingthings
+  - synthetic
+  percentages:
+  - 0.7
+  - 0.3
+  is_eval: false
+- name: sintel_synthetic_30_70
+  split: train
+  mixed: true
+  datasets:
+  - sintel
+  - synthetic
+  percentages:
+  - 0.3
+  - 0.7
+  is_eval: false
+- name: sintel_synthetic_70_30
+  split: train
+  mixed: true
+  datasets:
+  - sintel
+  - synthetic
+  percentages:
+  - 0.7
+  - 0.3
+  is_eval: false

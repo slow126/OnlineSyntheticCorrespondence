@@ -456,12 +456,10 @@ def splat_gaussians_2d(
         if w <= 0:
             continue
 
-        # Compute ellipse extent via eigenvalues (sigma ~ sqrt(lambda))
-        vals, vecs = np.linalg.eigh(cov)
-        vals = np.maximum(vals, 1e-6)
-        sigmax = float(math.sqrt(vals[1]))
-        sigmay = float(math.sqrt(vals[0]))
-        # 3-sigma extent, clipped
+        # Axis-aligned bbox extent for rotated Gaussian:
+        # max |x| at support k is k*sqrt(cov_xx), max |y| is k*sqrt(cov_yy).
+        sigmax = float(math.sqrt(max(float(cov[0, 0]), 1e-6)))
+        sigmay = float(math.sqrt(max(float(cov[1, 1]), 1e-6)))
         rx = int(max(3, math.ceil(support_sigma * sigmax)))
         ry = int(max(3, math.ceil(support_sigma * sigmay)))
         if max_radius_px > 0:
@@ -496,10 +494,16 @@ def splat_gaussians_2d(
         )
 
         patch = np.exp(-0.5 * m2).astype(np.float32)
-        if soft_edge > 0:
-            r = np.sqrt((dX / max(rx, 1.0)) ** 2 + (dY / max(ry, 1.0)) ** 2)
-            t = np.clip((r - (1.0 - soft_edge)) / max(soft_edge, 1e-6), 0.0, 1.0)
-            window = 0.5 * (1.0 + np.cos(np.pi * t))
+        # Apply support/taper in Mahalanobis space so rotated splats are not axis-clipped.
+        if support_sigma > 0:
+            m = np.sqrt(np.maximum(m2, 0.0)) / float(support_sigma)
+            if soft_edge > 0:
+                inner = max(0.0, 1.0 - float(soft_edge))
+                t = np.clip((m - inner) / max(float(soft_edge), 1e-6), 0.0, 1.0)
+                window = 0.5 * (1.0 + np.cos(np.pi * t))
+                window[m > 1.0] = 0.0
+            else:
+                window = (m <= 1.0).astype(np.float32)
             patch *= window.astype(np.float32)
 
         dens[y0:y1, x0:x1] += (w * patch)
@@ -531,10 +535,10 @@ def splat_gaussians_color(
         if w <= 0:
             continue
 
-        vals, _ = np.linalg.eigh(cov)
-        vals = np.maximum(vals, 1e-6)
-        sigmax = float(math.sqrt(vals[1]))
-        sigmay = float(math.sqrt(vals[0]))
+        # Axis-aligned bbox extent for rotated Gaussian:
+        # max |x| at support k is k*sqrt(cov_xx), max |y| is k*sqrt(cov_yy).
+        sigmax = float(math.sqrt(max(float(cov[0, 0]), 1e-6)))
+        sigmay = float(math.sqrt(max(float(cov[1, 1]), 1e-6)))
         rx = int(max(3, math.ceil(support_sigma * sigmax)))
         ry = int(max(3, math.ceil(support_sigma * sigmay)))
         if max_radius_px > 0:
@@ -565,10 +569,16 @@ def splat_gaussians_color(
         )
 
         patch = np.exp(-0.5 * m2).astype(np.float32)
-        if soft_edge > 0:
-            r = np.sqrt((dX / max(rx, 1.0)) ** 2 + (dY / max(ry, 1.0)) ** 2)
-            t = np.clip((r - (1.0 - soft_edge)) / max(soft_edge, 1e-6), 0.0, 1.0)
-            window = 0.5 * (1.0 + np.cos(np.pi * t))
+        # Apply support/taper in Mahalanobis space so rotated splats are not axis-clipped.
+        if support_sigma > 0:
+            m = np.sqrt(np.maximum(m2, 0.0)) / float(support_sigma)
+            if soft_edge > 0:
+                inner = max(0.0, 1.0 - float(soft_edge))
+                t = np.clip((m - inner) / max(float(soft_edge), 1e-6), 0.0, 1.0)
+                window = 0.5 * (1.0 + np.cos(np.pi * t))
+                window[m > 1.0] = 0.0
+            else:
+                window = (m <= 1.0).astype(np.float32)
             patch *= window.astype(np.float32)
         patch_w = w * patch
         dens[y0:y1, x0:x1] += patch_w
@@ -641,6 +651,8 @@ def make_figure_for_dataset(
     soft_edge: float,
     support_sigma: float,
     flow_range: Optional[float],
+    show_endpoint: bool,
+    legend_side: str,
 ):
     if flows.shape[0] == 0:
         print(f"[WARN] {dataset_name}: no flows found, skipping")
@@ -657,43 +669,45 @@ def make_figure_for_dataset(
     else:
         H2, W2 = H, W
 
-    # endpoints q = (x+dx, y+dy)
-    q = np.stack([x + dx, y + dy], axis=1).astype(np.float32)
+    dens_xy_tm = None
+    if show_endpoint:
+        # endpoints q = (x+dx, y+dy)
+        q = np.stack([x + dx, y + dy], axis=1).astype(np.float32)
 
-    # keep endpoints inside reasonable bounds (optional; helps if flows go off-image a lot)
-    # Here: just clip to image bounds for clustering stability
-    q[:, 0] = np.clip(q[:, 0], 0, W2 - 1)
-    q[:, 1] = np.clip(q[:, 1], 0, H2 - 1)
+        # keep endpoints inside reasonable bounds (optional; helps if flows go off-image a lot)
+        # Here: just clip to image bounds for clustering stability
+        q[:, 0] = np.clip(q[:, 0], 0, W2 - 1)
+        q[:, 1] = np.clip(q[:, 1], 0, H2 - 1)
 
-    # cluster endpoints -> one splat per cluster
-    labels, centers = fit_endpoint_clusters(q, K=K, seed=seed)
+        # cluster endpoints -> one splat per cluster
+        labels, centers = fit_endpoint_clusters(q, K=K, seed=seed)
 
-    # compute cov + weight per cluster (in endpoint space)
-    covs = np.zeros((K, 2, 2), dtype=np.float32)
-    weights = np.zeros((K,), dtype=np.float32)
+        # compute cov + weight per cluster (in endpoint space)
+        covs = np.zeros((K, 2, 2), dtype=np.float32)
+        weights = np.zeros((K,), dtype=np.float32)
 
-    for k in range(K):
-        idx = (labels == k)
-        nk = int(idx.sum())
-        if nk == 0:
-            covs[k] = np.eye(2, dtype=np.float32) * 4.0
-            weights[k] = 0.0
-            continue
-        pts = q[idx]
-        covs[k] = robust_cov_2d(pts)
-        weights[k] = float(nk)
+        for k in range(K):
+            idx = (labels == k)
+            nk = int(idx.sum())
+            if nk == 0:
+                covs[k] = np.eye(2, dtype=np.float32) * 4.0
+                weights[k] = 0.0
+                continue
+            pts = q[idx]
+            covs[k] = robust_cov_2d(pts)
+            weights[k] = float(nk)
 
-    # normalize weights (log-ish) so a few huge clusters don't dominate
-    weights = np.log1p(weights).astype(np.float32)
+        # normalize weights (log-ish) so a few huge clusters don't dominate
+        weights = np.log1p(weights).astype(np.float32)
 
-    dens_xy = splat_gaussians_2d(
-        H=H2, W=W2,
-        mus=centers, covs=covs, weights=weights,
-        max_radius_px=max_radius_px,
-        soft_edge=soft_edge,
-        support_sigma=support_sigma
-    )
-    dens_xy_tm = tone_map(dens_xy)
+        dens_xy = splat_gaussians_2d(
+            H=H2, W=W2,
+            mus=centers, covs=covs, weights=weights,
+            max_radius_px=max_radius_px,
+            soft_edge=soft_edge,
+            support_sigma=support_sigma
+        )
+        dens_xy_tm = tone_map(dens_xy)
 
     # Directional splats: grid bins or single splat per spatial cluster
     if dir_mode == "grid":
@@ -736,26 +750,44 @@ def make_figure_for_dataset(
     )
 
     # Plot
-    fig = plt.figure(figsize=(17, 5), constrained_layout=True)
-    gs = fig.add_gridspec(1, 3, width_ratios=[1.1, 1.1, 1.0])
+    panels = []
+    if show_endpoint:
+        panels.append(("endpoint", dens_xy_tm, {"cmap": "viridis"}, "Endpoint footprint (Gaussian splats)"))
+    if legend_side == "left":
+        panels.append(("legend", None, {}, "Direction legend"))
+    panels.append(("direction", rgb_xy, {}, dir_title))
+    if legend_side == "right":
+        panels.append(("legend", None, {}, "Direction legend"))
+    panels.append(("flowspace", dens_uv, {"cmap": "plasma", "extent": dens_extent}, "Flow-space density (dx, dy)"))
 
-    ax0 = fig.add_subplot(gs[0, 0])
-    ax0.imshow(dens_xy_tm, origin="upper", cmap="viridis")
-    ax0.set_title(f"{dataset_name}  |  Endpoint footprint (Gaussian splats)")
-    ax0.set_axis_off()
+    width_ratios = []
+    for ptype, _, _, _ in panels:
+        if ptype == "legend":
+            width_ratios.append(0.35)
+        elif ptype == "flowspace":
+            width_ratios.append(1.0)
+        else:
+            width_ratios.append(1.1)
 
-    ax1 = fig.add_subplot(gs[0, 1])
-    ax1.imshow(rgb_xy, origin="upper")
-    ax1.set_title(f"{dataset_name}  |  {dir_title}")
-    ax1.set_axis_off()
-    add_direction_legend(ax1)
+    fig = plt.figure(figsize=(5.5 * sum(width_ratios), 5.0), constrained_layout=True)
+    gs = fig.add_gridspec(1, len(panels), width_ratios=width_ratios)
 
-    ax2 = fig.add_subplot(gs[0, 2])
-    ax2.imshow(dens_uv, origin="upper", cmap="plasma", extent=dens_extent)
-    ax2.set_title(f"{dataset_name}  |  Flow-space density (dx, dy)")
-    ax2.set_xlabel("dx (pixels)")
-    ax2.set_ylabel("dy (pixels)")
-    ax2.set_aspect("equal", adjustable="box")
+    for i, (ptype, img, kw, panel_title) in enumerate(panels):
+        ax = fig.add_subplot(gs[0, i])
+        if ptype == "legend":
+            ax.set_axis_off()
+            add_direction_legend(ax, size=1.0)
+        elif ptype == "flowspace":
+            ax.imshow(img, origin="upper", **kw)
+            ax.set_xlabel("dx (pixels)")
+            ax.set_ylabel("dy (pixels)")
+            ax.set_aspect("equal", adjustable="box")
+        else:
+            ax.imshow(img, origin="upper", **kw)
+            ax.set_axis_off()
+            if ptype == "direction" and legend_side == "inside":
+                add_direction_legend(ax)
+        ax.set_title(f"{dataset_name}  |  {panel_title}")
 
     fig.suptitle("Flow distribution visualization (no mean-canceling)", y=1.02)
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
@@ -793,6 +825,13 @@ def main():
     )
     ap.add_argument("--joint_xy_scale", type=float, default=1.0, help="Joint clustering scale for x,y")
     ap.add_argument("--joint_flow_scale", type=float, default=1.5, help="Joint clustering scale for dx,dy")
+    ap.add_argument("--no-endpoint", action="store_true", help="Disable endpoint footprint panel")
+    ap.add_argument(
+        "--legend-side",
+        choices=["inside", "left", "right"],
+        default="inside",
+        help="Direction colorwheel placement (inside directional panel, or side panel left/right)",
+    )
     args = ap.parse_args()
 
     # Find all matching files
@@ -843,6 +882,8 @@ def main():
                 soft_edge=args.soft_edge,
                 support_sigma=args.support_sigma,
                 flow_range=args.flow_range,
+                show_endpoint=(not args.no_endpoint),
+                legend_side=args.legend_side,
             )
         except Exception as e:
             print(f"  [ERROR] Failed to process {fpath}: {e}")

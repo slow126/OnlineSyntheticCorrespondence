@@ -1,0 +1,422 @@
+# Coverage Pipeline v2.0 - DINO Representation
+# Single feature space with PCA + L2 normalization
+
+representation: dino
+encoder: dinov2_vitg14  # DINO v2 ViT-G/14
+flow_count_logging: true
+batch_size: 4  # Smaller batch for large ViT model
+num_workers: 4
+
+# Vector sampling configuration
+sampling:
+  max_vectors: 8000000  # 8M feature vectors total (~7800 images × 1024 patches)
+  vectors_per_image: 1024  # All spatial patches per image (32×32 grid)
+  seed: 42
+  shuffle: true
+
+# Space configuration for features
+spaces:
+  enabled: ["features"]  # Single feature space (no decomposition)
+  
+# Alpha calibration (disabled for features)
+calibration:
+  enabled: false  # No α for single-space representations
+
+# Flow normalization (disabled for features)
+flow_normalization:
+  enabled: false  # Not applicable to features
+
+# PCA configuration (REQUIRED for DINO - 4096 dims → 256 dims)
+pca:
+  enabled: true  # CRITICAL: Reduce dimensionality for FAISS
+  output_dim: 256  # Target dimensionality
+  fit_on: train  # Fit PCA on training data only
+  whiten: false  # No whitening
+  l2_normalize: true  # CRITICAL: Normalize to unit length after PCA
+  streaming: true  # Fit PCA on a sample, then apply during extraction
+  max_train_vectors: 500000  # Max vectors for fitting PCA
+
+# FAISS configuration (tuned for 3090 24GB VRAM with 256-D vectors)
+faiss:
+  index_factory: IVF4096,Flat
+  metric: l2  # L2 on unit vectors = cosine similarity
+  use_gpu: true
+  nprobe: 4
+  batch_size: 10000
+
+# Coverage metrics configuration
+coverage:
+  # Self-radius computation (Step 3)
+  self_radius_k: 5
+  radius_quantile: 0.95
+  neighbor_agg: kth
+  
+  # Cross-dataset distances (Step 4)
+  k_max: 5
+  k_values: [1, 5]
+  
+  # Dual normalization (Step 5)
+  compute_qnorm: true
+  compute_rnorm: true
+  
+  # Coverage curves (Step 5b)
+  compute_curves: true
+  curve_quantiles: [0.80, 0.90, 0.95, 0.99]
+
+# KL divergence (kNN estimator)
+kl:
+  enabled: false
+  method: knn
+  spaces: ["features"]
+  k_values: [5, 10, 20, 40]
+  eps: 1e-12
+  nprobe: 16
+  filter_duplicates: true
+  cache_self_dists: true
+  cache_self_dists_disk: true
+  resume: true
+  flush_each_pair: true
+  streaming: true
+
+# Distance metric metadata
+distance_metric:
+  name: sqL2  # Squared L2 on unit vectors
+  description: "Squared L2 on L2-normalized vectors (equivalent to cosine distance)"
+
+# Cache configuration
+cache:
+  dir: /mnt/nvme_1tb_b/coverage_vectors
+  mode: read_write
+  format: npy
+  mmap: false
+  lazy_load: true
+  # Cache structure:
+  # - Raw features: {dataset}_{split}_dino.npy (4096-D)
+  # - PCA model: pca_model_dino.pkl
+  # - PCA+L2 features: {dataset}_{split}_dino_pca256_l2norm.npy (256-D unit vectors)
+  # - Radii: radii/radius_{dataset}_{split}_features_norm2x1_sqL2_k{k}_q{q}.npz
+
+# Output configuration
+output:
+  results_file: analysis_v3/coverage_dino_full.csv
+  curves_file: analysis_v3/coverage_dino_curves.csv
+  save_curves_to_main: false
+  kl_results_file: analysis_v3/kl_dino_features.csv
+
+# Dataset parameters
+dataset_params:
+  size: [512, 512]
+  downsample_flow: 32
+  max_kps: null
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: null  # Let CorrespondenceDataset decide (avoids double-normalizing)
+  kitti_val_use_full_training: true
+
+# Dataset overrides (same as flow config)
+dataset_overrides:
+  sintel:
+    sintel_root: /home/spencer/Data
+    normalize_images: true
+  spair:
+    datapath: ./models/Datasets_CATs
+    normalize_images: null
+  pfpascal:
+    datapath: ./models/Datasets_CATs
+    normalize_images: null
+  pfwillow:
+    datapath: ./models/Datasets_CATs
+    normalize_images: null
+  synthetic:
+    geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
+    processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
+    normalize_images: null
+    device: cuda
+  synthetic_2d_warp:
+    geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
+    processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
+    normalize_images: null
+    synthetic_flow_warp: true
+    synthetic_flow_warp_swap: true
+    device: cuda
+  imagenet2dwarp:
+    datapath: hf://ILSVRC/imagenet-1k
+    hf_streaming: false
+    hf_max_samples: 5000
+    hf_cache_dir: /home/spencer/.cache/huggingface/datasets
+    normalize_images: null
+    rotation_range: [-30.0, 30.0]
+    scale_range: [0.5, 2.5]
+    translation_range: [-0.1, 0.1]
+    shear_range: [-0.2, 0.2]
+    cache_warp_params: true
+    cache_dir: ./cache/imagenet2dwarp
+    seed: 42
+  pointodyssey:
+    dataset_location: /home/spencer/Data/PointOdyssey
+    normalize_images: null
+    pointodyssey_sequence_length: 2
+    pointodyssey_num_pts_to_track: 32
+    use_all_valid: true
+  kitti2012:
+    datapath: /home/spencer/Data/correspondence/kitti
+    normalize_images: null
+  kitti2015:
+    datapath: /home/spencer/Data/correspondence/kitti
+    normalize_images: null
+  flyingthings:
+    datapath: /home/spencer/Data/FlyingThings3D_10k
+    normalize_images: null
+  tss:
+    datapath: /home/spencer/Data/correspondence/TSS_CVPR2016
+    normalize_images: null
+  middlebury:
+    datapath: /home/spencer/Data/middlebury/all
+    normalize_images: null
+
+# Dataset list (training and eval sets)
+datasets:
+  # Training sets
+  - name: flyingthings
+    split: train
+    representation: dino
+    is_eval: false
+  
+  - name: imagenet2dwarp
+    split: train
+    representation: dino
+    is_eval: false
+
+  - name: synthetic_2d_warp
+    split: train
+    representation: dino
+    is_eval: false
+  
+  - name: synthetic
+    split: train
+    representation: dino
+    is_eval: false
+  
+  - name: synthetic_small_zoom
+    split: train
+    representation: dino
+    is_eval: false
+    overrides:
+      dataset_name: synthetic
+      geometry_config_overrides:
+        angle_sampler:
+          x_components:
+            loc: 0
+            scale: 0.01
+          y_components:
+            loc: 0
+            scale: 0.01
+        scale_sampler:
+          abs_components:
+            scale: 0.2
+          rel_components:
+            loc: -0.1
+            scale: 0.2
+  
+  - name: synthetic_large_zoom
+    split: train
+    representation: dino
+    is_eval: false
+    overrides:
+      dataset_name: synthetic
+      geometry_config_overrides:
+        angle_sampler:
+          x_components:
+            loc: 0
+            scale: 0.01
+          y_components:
+            loc: 0
+            scale: 0.01
+        scale_sampler:
+          abs_components:
+            scale: 0.5
+          rel_components:
+            loc: -0.35
+            scale: 0.5
+  
+  - name: synthetic_random_flipping
+    split: train
+    representation: dino
+    is_eval: false
+    overrides:
+      dataset_name: synthetic
+      geometry_config_overrides:
+        random_flip: 0.5
+
+  - name: spair
+    split: train
+    representation: dino
+    is_eval: false
+  
+  - name: pointodyssey
+    split: train
+    representation: dino
+    is_eval: false
+  
+  - name: sintel
+    split: train
+    representation: dino
+    is_eval: false
+  
+  # Evaluation sets
+  - name: flyingthings
+    split: test
+    representation: dino
+    is_eval: true
+  
+  - name: kitti2015
+    split: val
+    representation: dino
+    is_eval: true
+  
+  - name: kitti2012
+    split: val
+    representation: dino
+    is_eval: true
+  
+  - name: spair
+    split: test
+    representation: dino
+    is_eval: true
+  
+  - name: pfpascal
+    split: test
+    representation: dino
+    is_eval: true
+  
+  - name: pfwillow
+    split: test
+    representation: dino
+    is_eval: true
+  
+  - name: pointodyssey
+    split: test
+    representation: dino
+    is_eval: true
+  
+  - name: tss
+    split: val
+    representation: dino
+    is_eval: true
+  
+  - name: middlebury
+    split: val
+    representation: dino
+    is_eval: true
+  
+  # Mixed training sets (for coverage analysis)
+  - name: spair_synthetic_30_70
+    split: train
+    mixed: true
+    datasets:
+      - spair
+      - synthetic
+    percentages:
+      - 0.3
+      - 0.7
+    is_eval: false
+  
+  - name: spair_synthetic_50_50
+    split: train
+    mixed: true
+    datasets:
+      - spair
+      - synthetic
+    percentages:
+      - 0.5
+      - 0.5
+    is_eval: false
+  
+  - name: spair_synthetic_70_30
+    split: train
+    mixed: true
+    datasets:
+      - spair
+      - synthetic
+    percentages:
+      - 0.7
+      - 0.3
+    is_eval: false
+
+  - name: pointodyssey_synthetic_30_70
+    split: train
+    mixed: true
+    datasets:
+      - pointodyssey
+      - synthetic
+    percentages:
+      - 0.3
+      - 0.7
+    is_eval: false
+
+  - name: pointodyssey_synthetic_50_50
+    split: train
+    mixed: true
+    datasets:
+      - pointodyssey
+      - synthetic
+    percentages:
+      - 0.5
+      - 0.5
+    is_eval: false
+
+  - name: pointodyssey_synthetic_70_30
+    split: train
+    mixed: true
+    datasets:
+      - pointodyssey
+      - synthetic
+    percentages:
+      - 0.7
+      - 0.3
+    is_eval: false
+
+  - name: flyingthings_synthetic_30_70
+    split: train
+    mixed: true
+    datasets:
+      - flyingthings
+      - synthetic
+    percentages:
+      - 0.3
+      - 0.7
+    is_eval: false
+
+  - name: flyingthings_synthetic_70_30
+    split: train
+    mixed: true
+    datasets:
+      - flyingthings
+      - synthetic
+    percentages:
+      - 0.7
+      - 0.3
+    is_eval: false
+
+  - name: sintel_synthetic_30_70
+    split: train
+    mixed: true
+    datasets:
+      - sintel
+      - synthetic
+    percentages:
+      - 0.3
+      - 0.7
+    is_eval: false
+
+  - name: sintel_synthetic_70_30
+    split: train
+    mixed: true
+    datasets:
+      - sintel
+      - synthetic
+    percentages:
+      - 0.7
+      - 0.3
+    is_eval: false

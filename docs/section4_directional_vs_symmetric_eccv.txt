@@ -1,0 +1,102 @@
+\section{Comparing Datasets: Directional vs. Symmetric Distances}
+\label{sec:directional_vs_symmetric}
+
+\paragraph{Motivation.}
+To predict transfer performance, we need a discrepancy measure that distinguishes \emph{where} mismatch occurs.
+In particular, we separate two failure modes: (i) \emph{under-coverage}, where the evaluation set contains regions not supported by train, and (ii) \emph{extra mass}, where train contains regions irrelevant to evaluation.
+This section formalizes directional discrepancies, contrasts normalization variants, and explains why symmetric baselines (e.g., MMD) can collapse these modes.
+
+\subsection{Directed discrepancy}
+\label{subsec:directed_discrepancy}
+
+Let $T=\{t_i\}_{i=1}^{n_T}$ be train vectors and $E=\{e_j\}_{j=1}^{n_E}$ evaluation vectors in a shared feature space.
+We compute directed nearest-neighbor (NN) distances:
+\begin{equation}
+d_{E\rightarrow T}(j)=\min_i \|e_j-t_i\|_2,\qquad
+d_{T\rightarrow E}(i)=\min_j \|t_i-e_j\|_2.
+\end{equation}
+From these, we use directional statistics (mean/median/p90) and directional coverage at threshold $\epsilon$:
+\begin{equation}
+C_{E\rightarrow T}(\epsilon)=\frac{1}{n_E}\sum_{j=1}^{n_E}\mathbb{1}[d_{E\rightarrow T}(j)\le\epsilon],\quad
+C_{T\rightarrow E}(\epsilon)=\frac{1}{n_T}\sum_{i=1}^{n_T}\mathbb{1}[d_{T\rightarrow E}(i)\le\epsilon].
+\end{equation}
+Intuitively, $E\rightarrow T$ measures missing support, while $T\rightarrow E$ measures extra mass.
+
+In our primary flow pipeline, we use fixed-$\epsilon$ directional curves (``raw epsilon''), which avoids radius-division artifacts and preserves direct geometric interpretability.
+
+\subsection{Normalization variants: qnorm/rnorm}
+\label{subsec:qnorm_rnorm}
+
+When self-radii are available, we evaluate two normalizations:
+\begin{equation}
+C^{\text{qnorm}}_{E\rightarrow T}
+=\frac{1}{n_E}\sum_j\mathbb{1}[d_{E\rightarrow T}(j)\le R_E],\qquad
+C^{\text{rnorm}}_{E\rightarrow T}
+=\frac{1}{n_E}\sum_j\mathbb{1}[d_{E\rightarrow T}(j)\le R_T],
+\end{equation}
+and analogously for $T\rightarrow E$.
+qnorm uses the query-set radius, while rnorm uses the reference-set radius.
+
+We also considered ratio features such as
+\texttt{train\_to\_eval\_mean\_dist\_over\_radius\_eval}
+and
+\texttt{eval\_to\_train\_mean\_dist\_over\_radius\_train}.
+Empirically, these can become heavy-tailed when radii are small, which makes optimization and ranking less stable.
+This behavior is consistent with denominator sensitivity in ratio statistics.
+
+\subsection{Symmetric baseline: MMD}
+\label{subsec:mmd_baseline}
+
+As symmetric baseline, we use Maximum Mean Discrepancy (MMD)~\cite{gretton2012kernel}:
+\begin{equation}
+\text{MMD}^2(T,E)=
+\mathbb{E}_{t,t'}k(t,t')+
+\mathbb{E}_{e,e'}k(e,e')-
+2\mathbb{E}_{t,e}k(t,e),
+\end{equation}
+with kernel $k(\cdot,\cdot)$.
+By construction, $\text{MMD}(T,E)=\text{MMD}(E,T)$; therefore it cannot encode direction.
+Two dataset pairs with opposite directional failure patterns may have similar MMD, despite very different transfer implications.
+
+\subsection{Empirical behavior in our runs}
+\label{subsec:empirical_behavior}
+
+Our strongest mixed setting combines directional flow epsilon predictors, directional DINO KL, HOF density, and MMD:
+\begin{center}
+\small
+\texttt{leakage\_free\_combo\_flow\_eps\_raw\_\_dino\_kl\_k5\_\_hof\_density\_l2\_\_mmd}.
+\end{center}
+This run attains LOTO rank Spearman $0.231$ with regret $4.57$, indicating useful ranking signal under strict leave-one-train-out evaluation.
+
+In contrast, a radius-normalized manifold variant
+(\texttt{leakage\_free\_flow\_joint\_kmeans\_manifold})
+shows substantially weaker ranking behavior (LOTO rank Spearman $-0.17$, regret $52.91$), even though predictive correlation on raw targets remains moderate.
+This supports our use of raw directional distances as primary features.
+
+KL-only runs are informative but unstable across settings.
+For example, flow-KL-only and HOF-KL-only runs exhibit poor LOTO rank behavior (negative rank Spearman in our sweep), consistent with known finite-sample variance of kNN density-ratio estimators~\cite{kozachenko1987sample,perez2008kullback}.
+We therefore treat KL as a diagnostic component rather than the primary discrepancy signal.
+
+\subsection{Conceptual failure-mode separation}
+\label{subsec:conceptual_figure}
+
+Figure~\ref{fig:directional_vs_symmetric_concept} illustrates the key point.
+Case A (under-coverage) and Case B (extra mass) swap directional distances, while symmetric MMD stays nearly unchanged.
+Hence, directional metrics are necessary to disambiguate mismatch modes.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\linewidth]{figures/section4/fig3_directional_vs_symmetric_concept.pdf}
+    \caption{
+    Conceptual two-mode mismatch.
+    Left: under-coverage (evaluation contains unsupported regions).
+    Middle: extra mass (train contains regions unsupported by evaluation).
+    Right: symmetric MMD remains similar across the two cases, while directed NN discrepancies separate them.
+    }
+    \label{fig:directional_vs_symmetric_concept}
+\end{figure}
+
+\paragraph{Takeaway.}
+For transfer-oriented dataset comparison, we recommend reporting both directions explicitly and using directional discrepancy as the primary signal.
+Symmetric distances are useful as complementary summaries, but insufficient on their own to resolve under-coverage versus extra-mass mismatch.
+

@@ -16,6 +16,7 @@ import cv2
 import albumentations as A
 from functools import partial
 import sys
+from collections import OrderedDict
 
 def augment_video(augmenter, **kwargs):
     assert isinstance(augmenter, A.ReplayCompose)
@@ -191,8 +192,15 @@ class PointOdysseyDataset(torch.utils.data.Dataset):
             A.ImageCompression(quality_lower=50, quality_upper=100, p=0.3),
         ], p=0.8)
         
-        # Cache for annotation files (per-worker, since each worker has its own dataset instance)
-        # This avoids reloading the same annotation file when processing multiple clips from the same sequence
+        # Worker-local LRU for decoded annotation arrays. Caching the NpzFile handle is
+        # not enough: accessing a member of a compressed .npz can decompress the full
+        # array again. Keep this small because some PointOdyssey annotations are >1GB.
+        try:
+            self.annotation_cache_size = int(os.environ.get('POINTODYSSEY_ANNOTATION_CACHE_SIZE', '1'))
+        except ValueError:
+            self.annotation_cache_size = 1
+        self.annotation_cache_size = max(0, self.annotation_cache_size)
+        self._annotation_cache = OrderedDict()
         self._cached_annotation_path = None
         self._cached_annotations = None
         
@@ -200,6 +208,31 @@ class PointOdysseyDataset(torch.utils.data.Dataset):
         # Edge computation is only needed for filtering trajectories on segmentation boundaries
         # If disable_motion_filter is True, we're likely doing correspondence and can skip edges
         self.skip_edge_computation = disable_motion_filter
+
+    def _load_annotation_arrays(self, annotations_path):
+        """Load and cache decoded arrays from a PointOdyssey annotation npz."""
+        if self.annotation_cache_size > 0 and annotations_path in self._annotation_cache:
+            annotations = self._annotation_cache.pop(annotations_path)
+            self._annotation_cache[annotations_path] = annotations
+            self._cached_annotation_path = annotations_path
+            self._cached_annotations = annotations
+            return annotations
+
+        with np.load(annotations_path, allow_pickle=True) as npz:
+            annotations = {
+                'trajs_2d': np.asarray(npz['trajs_2d']),
+                'visibs': np.asarray(npz['visibs']),
+                'valids': np.asarray(npz['valids']),
+            }
+
+        if self.annotation_cache_size > 0:
+            self._annotation_cache[annotations_path] = annotations
+            while len(self._annotation_cache) > self.annotation_cache_size:
+                self._annotation_cache.popitem(last=False)
+
+        self._cached_annotation_path = annotations_path
+        self._cached_annotations = annotations
+        return annotations
 
     def getitem_helper(self, index):
         """
@@ -219,48 +252,10 @@ class PointOdysseyDataset(torch.utils.data.Dataset):
             full_idx = self.full_idxs[index]
             annotations_path = self.annotation_paths[index]
             
-            # Use cached annotation if it's the same file
-            if annotations_path != self._cached_annotation_path:
-                # Load new annotation file
-                try:
-                    # Try memory mapping first (fastest for large files)
-                    annotations = np.load(annotations_path, allow_pickle=True, mmap_mode='r')
-                    # Cache the mmap object for reuse (mmap allows concurrent reads)
-                    self._cached_annotations = annotations
-                    self._cached_annotation_path = annotations_path
-                except (OSError, ValueError, TypeError):
-                    # Fallback if mmap fails (e.g., compressed .npz files)
-                    annotations = np.load(annotations_path, allow_pickle=True)
-                    self._cached_annotations = annotations
-                    self._cached_annotation_path = annotations_path
-            else:
-                # Reuse cached annotation
-                annotations = self._cached_annotations
-            
-            # Optimized: Extract slices directly from mmap without intermediate array conversion
-            # This avoids unnecessary memory copies when using mmap_mode='r'
-            if isinstance(annotations, np.lib.npyio.NpzFile):
-                # For .npz files, we need to access the arrays
-                trajs_2d = annotations['trajs_2d']
-                visibs_arr = annotations['visibs']
-                valids_arr = annotations['valids']
-                
-                # Extract slices - use direct indexing for better performance
-                if hasattr(trajs_2d, '__getitem__'):
-                    trajs = np.asarray(trajs_2d[full_idx], dtype=np.float32)
-                    visibs = np.asarray(visibs_arr[full_idx], dtype=np.float32)
-                    valids = np.asarray(valids_arr[full_idx], dtype=np.float32)
-                else:
-                    # Fallback for non-array objects
-                    trajs = np.array(trajs_2d[full_idx]).astype(np.float32)
-                    visibs = np.array(visibs_arr[full_idx]).astype(np.float32)
-                    valids = np.array(valids_arr[full_idx]).astype(np.float32)
-            else:
-                # Fallback for other formats
-                trajs = np.array(annotations['trajs_2d'][full_idx]).astype(np.float32)
-                visibs = np.array(annotations['visibs'][full_idx]).astype(np.float32)
-                valids = np.array(annotations['valids'][full_idx]).astype(np.float32)
-            # Don't delete annotations here - we're caching it for reuse
+            annotations = self._load_annotation_arrays(annotations_path)
+            trajs = np.asarray(annotations['trajs_2d'][full_idx], dtype=np.float32)
+            visibs = np.asarray(annotations['visibs'][full_idx], dtype=np.float32)
+            valids = np.asarray(annotations['valids'][full_idx], dtype=np.float32)
 
             # some data is valid in 3d but invalid in 2d
             # here we will filter to the data which is valid in 2d

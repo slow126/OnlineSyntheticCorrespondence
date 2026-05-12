@@ -133,3 +133,24 @@ insample_analysis*
 # Variogram
 variogram/
 variogram*
+
+# Gaussian splat generated artifacts
+gaussian_splat/out_splats*/
+gaussian_splat/output_splats/
+gaussian_splat/output_*_splats*/
+gaussian_splat/hof_flow_vectors_k*/
+gaussian_splat/joint_flow_support_vectors/
+gaussian_splat/*_splat.png
+gaussian_splat/*_comparison.png
+
+# Transfer analysis generated artifacts
+scripts/transfer_analysis_v3/logs/
+scripts/transfer_analysis_v3/results/
+
+# Local scratch launchers / accidental shell artifacts
+tmp_run_*.sh
+/CUDA_VISIBLE_DEVICES=*
+/bash
+
+*.deb
+ECCV26___Beyond_Realism__Aligning_Flow_Statistics_for_Dense_Correspondence_Pre_training

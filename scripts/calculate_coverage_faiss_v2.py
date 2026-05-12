@@ -44,6 +44,7 @@ from coverage import (
     spaces,
     radius,
     metrics,
+    kl,
     faiss_ops,
 )
 
@@ -617,7 +618,11 @@ def _summarize_vector_stats(
     }
 
 
-def run_pipeline(config_path: str, direction_override: Optional[str] = None):
+def run_pipeline(
+    config_path: str,
+    direction_override: Optional[str] = None,
+    kl_only: bool = False,
+):
     """Run the full coverage pipeline."""
     
     print(f"\n{'='*80}")
@@ -632,6 +637,9 @@ def run_pipeline(config_path: str, direction_override: Optional[str] = None):
     if direction_override:
         config.setdefault("coverage", {})
         config["coverage"]["direction"] = direction_override
+    if kl_only:
+        config.setdefault("cache", {})
+        config["cache"]["lazy_load"] = True
 
     representation = config['representation']
     cache_dir = Path(config['cache']['dir'])
@@ -889,44 +897,47 @@ def run_pipeline(config_path: str, direction_override: Optional[str] = None):
             print(f"\nNormalizing flow vectors to [-1, 1]...")
             img_h, img_w = config['flow_normalization']['image_size']
             
-            # Debug: check vector ranges before normalization
-            sample_key = list(train_vectors.keys())[0]
-            sample_vec = train_vectors[sample_key]
-            print(f"  Before normalization (sample from {sample_key}):")
-            print(f"    x range: [{sample_vec[:, 0].min():.2f}, {sample_vec[:, 0].max():.2f}]")
-            print(f"    y range: [{sample_vec[:, 1].min():.2f}, {sample_vec[:, 1].max():.2f}]")
-            print(f"    dx range: [{sample_vec[:, 2].min():.2f}, {sample_vec[:, 2].max():.2f}]")
-            print(f"    dy range: [{sample_vec[:, 3].min():.2f}, {sample_vec[:, 3].max():.2f}]")
-            
-            # SANITY CHECK: Flow values should be reasonable
-            max_abs_flow = max(abs(sample_vec[:, 2].min()), abs(sample_vec[:, 2].max()),
-                              abs(sample_vec[:, 3].min()), abs(sample_vec[:, 3].max()))
-            if max_abs_flow > 1000:
-                print(f"\n  ⚠️⚠️⚠️  CRITICAL ERROR ⚠️⚠️⚠️")
-                print(f"  Flow values are HUGE (max: {max_abs_flow:.0f} pixels)!")
-                print(f"  Normal optical flow is typically < 200 pixels.")
-                print(f"  Your cached vectors are likely CORRUPTED.")
-                print(f"\n  To fix:")
-                print(f"    1. Delete corrupted cache: rm {cache_dir}/*_flow.npy")
-                print(f"    2. Re-run pipeline to re-extract vectors")
-                print(f"\n  Aborting to prevent invalid results...")
-                raise ValueError(
-                    f"Flow vectors are corrupted! Max abs flow: {max_abs_flow:.0f} pixels. "
-                    f"Expected < 1000 pixels. Delete cache and re-extract."
-                )
-            
-            for key, vectors in train_vectors.items():
-                train_vectors[key] = spaces.normalize_flow_vectors(vectors, img_w, img_h)
-            for key, vectors in eval_vectors.items():
-                eval_vectors[key] = spaces.normalize_flow_vectors(vectors, img_w, img_h)
-            
-            # Debug: check after normalization
-            sample_vec_norm = train_vectors[sample_key]
-            print(f"  After normalization:")
-            print(f"    x range: [{sample_vec_norm[:, 0].min():.4f}, {sample_vec_norm[:, 0].max():.4f}]")
-            print(f"    y range: [{sample_vec_norm[:, 1].min():.4f}, {sample_vec_norm[:, 1].max():.4f}]")
-            print(f"    dx range: [{sample_vec_norm[:, 2].min():.4f}, {sample_vec_norm[:, 2].max():.4f}]")
-            print(f"    dy range: [{sample_vec_norm[:, 3].min():.4f}, {sample_vec_norm[:, 3].max():.4f}]")
+            if lazy_load:
+                print("  Lazy-load enabled; normalization will be applied on load per dataset.")
+            else:
+                # Debug: check vector ranges before normalization
+                sample_key = list(train_vectors.keys())[0]
+                sample_vec = train_vectors[sample_key]
+                print(f"  Before normalization (sample from {sample_key}):")
+                print(f"    x range: [{sample_vec[:, 0].min():.2f}, {sample_vec[:, 0].max():.2f}]")
+                print(f"    y range: [{sample_vec[:, 1].min():.2f}, {sample_vec[:, 1].max():.2f}]")
+                print(f"    dx range: [{sample_vec[:, 2].min():.2f}, {sample_vec[:, 2].max():.2f}]")
+                print(f"    dy range: [{sample_vec[:, 3].min():.2f}, {sample_vec[:, 3].max():.2f}]")
+                
+                # SANITY CHECK: Flow values should be reasonable
+                max_abs_flow = max(abs(sample_vec[:, 2].min()), abs(sample_vec[:, 2].max()),
+                                  abs(sample_vec[:, 3].min()), abs(sample_vec[:, 3].max()))
+                if max_abs_flow > 1000:
+                    print(f"\n  ⚠️⚠️⚠️  CRITICAL ERROR ⚠️⚠️⚠️")
+                    print(f"  Flow values are HUGE (max: {max_abs_flow:.0f} pixels)!")
+                    print(f"  Normal optical flow is typically < 200 pixels.")
+                    print(f"  Your cached vectors are likely CORRUPTED.")
+                    print(f"\n  To fix:")
+                    print(f"    1. Delete corrupted cache: rm {cache_dir}/*_flow.npy")
+                    print(f"    2. Re-run pipeline to re-extract vectors")
+                    print(f"\n  Aborting to prevent invalid results...")
+                    raise ValueError(
+                        f"Flow vectors are corrupted! Max abs flow: {max_abs_flow:.0f} pixels. "
+                        f"Expected < 1000 pixels. Delete cache and re-extract."
+                    )
+                
+                for key, vectors in train_vectors.items():
+                    train_vectors[key] = spaces.normalize_flow_vectors(vectors, img_w, img_h)
+                for key, vectors in eval_vectors.items():
+                    eval_vectors[key] = spaces.normalize_flow_vectors(vectors, img_w, img_h)
+                
+                # Debug: check after normalization
+                sample_vec_norm = train_vectors[sample_key]
+                print(f"  After normalization:")
+                print(f"    x range: [{sample_vec_norm[:, 0].min():.4f}, {sample_vec_norm[:, 0].max():.4f}]")
+                print(f"    y range: [{sample_vec_norm[:, 1].min():.4f}, {sample_vec_norm[:, 1].max():.4f}]")
+                print(f"    dx range: [{sample_vec_norm[:, 2].min():.4f}, {sample_vec_norm[:, 2].max():.4f}]")
+                print(f"    dy range: [{sample_vec_norm[:, 3].min():.4f}, {sample_vec_norm[:, 3].max():.4f}]")
     
     elif representation in ["resnet", "dino"] and not stream_pca:
         # Apply PCA + L2 normalization
@@ -979,6 +990,12 @@ def run_pipeline(config_path: str, direction_override: Optional[str] = None):
         print(f"STEP 1: ALPHA CALIBRATION (DISABLED)")
         print(f"{'='*80}\n")
         print("  ⚠️  Alpha calibration disabled via COVERAGE_DISABLE_ALPHA=1. Using alpha=1.0")
+    elif representation == "flow" and not config['calibration']['enabled']:
+        global_alpha = 1.0
+        print(f"\n{'='*80}")
+        print(f"STEP 1: ALPHA CALIBRATION (DISABLED IN CONFIG)")
+        print(f"{'='*80}\n")
+        print("  ⚠️  Alpha calibration disabled in config. Using alpha=1.0")
     
     # ======================
     # STEP 2: Define Spaces
@@ -1041,6 +1058,378 @@ def run_pipeline(config_path: str, direction_override: Optional[str] = None):
             for key, vectors in eval_vectors.items():
                 space_eval_vectors[space_name][key] = _to_space(vectors, space_name)
             print(f"  {space_name}: {len(space_train_vectors[space_name])} train, {len(space_eval_vectors[space_name])} eval")
+
+    # ======================
+    # OPTIONAL: KL DIVERGENCE (kNN)
+    # ======================
+    kl_cfg = config.get("kl", {}) or {}
+    kl_active = bool(kl_cfg.get("enabled", False) or kl_only)
+    if kl_only and not kl_cfg:
+        raise ValueError("KL-only run requires a 'kl' section in the config.")
+
+    if kl_active:
+        print(f"\n{'='*80}")
+        print(f"KL DIVERGENCE (kNN)")
+        print(f"{'='*80}\n")
+
+        kl_spaces = kl_cfg.get("spaces", enabled_spaces)
+        k_values = [int(k) for k in kl_cfg.get("k_values", [])]
+        if not k_values:
+            raise ValueError("KL config must define k_values (e.g., [5, 10, 20, 40]).")
+        k_values = sorted(set(k_values))
+        k_max = max(k_values)
+        kl_eps = float(kl_cfg.get("eps", 1e-12))
+        kl_index_factory = kl_cfg.get("index_factory", config["faiss"]["index_factory"])
+        kl_nprobe = kl_cfg.get("nprobe", config["faiss"].get("nprobe"))
+        kl_batch_size = kl_cfg.get("batch_size", config["faiss"].get("batch_size"))
+        kl_filter_duplicates = bool(kl_cfg.get("filter_duplicates", True))
+        cache_self_dists = bool(kl_cfg.get("cache_self_dists", True))
+        cache_self_dists_disk = bool(kl_cfg.get("cache_self_dists_disk", False))
+        resume_pairs = bool(kl_cfg.get("resume", False))
+        flush_each_pair = bool(kl_cfg.get("flush_each_pair", False))
+        kl_streaming = bool(kl_cfg.get("streaming", False))
+
+        def _kl_norm_tag() -> str:
+            if representation == "flow":
+                return config.get("flow_normalization", {}).get("scheme", "norm2x1")
+            if representation in ("dino", "resnet") and config.get("pca", {}).get("enabled", False):
+                tag = f"pca{config['pca']['output_dim']}"
+                if config["pca"].get("l2_normalize", False):
+                    tag += "_l2"
+                return tag
+            return "none"
+
+        kl_norm_tag = _kl_norm_tag()
+
+        kl_results = []
+        self_knn_cache = {space: {} for space in kl_spaces}
+
+        output_kl = kl_cfg.get("results_file") or config.get("output", {}).get("kl_results_file")
+        if not output_kl:
+            raise ValueError("KL results_file not specified (set kl.results_file or output.kl_results_file).")
+        output_kl_path = Path(output_kl)
+        output_kl_path.parent.mkdir(parents=True, exist_ok=True)
+
+        done_pairs = set()
+        if resume_pairs and output_kl_path.exists():
+            try:
+                existing = pd.read_csv(output_kl_path)
+                for _, row in existing.iterrows():
+                    key = (
+                        str(row.get("space")),
+                        str(row.get("train_dataset")),
+                        str(row.get("train_split")),
+                        str(row.get("eval_dataset")),
+                        str(row.get("eval_split")),
+                    )
+                    done_pairs.add(key)
+                print(f"  ✓ Resuming from {output_kl_path} ({len(done_pairs)} pairs cached)")
+            except Exception as exc:
+                print(f"  ⚠️  Failed to read existing KL results ({exc}); starting fresh.")
+                done_pairs = set()
+
+        def _write_row(row: dict, header: List[str]) -> None:
+            import csv
+            write_header = (not output_kl_path.exists()) or output_kl_path.stat().st_size == 0
+            mode = "a"
+            with open(output_kl_path, mode, newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=header)
+                if write_header:
+                    writer.writeheader()
+                writer.writerow(row)
+
+        def _load_space_vectors(key: tuple, space_name: str) -> np.ndarray:
+            if lazy_load:
+                vecs = _load_vectors_for_key(key)
+                vecs = _to_space(vecs, space_name)
+            else:
+                if key in space_train_vectors[space_name]:
+                    vecs = space_train_vectors[space_name][key]
+                else:
+                    vecs = space_eval_vectors[space_name][key]
+            return vecs
+
+        def _get_self_knn(
+            key: tuple,
+            space_name: str,
+            vectors: Optional[np.ndarray] = None,
+        ) -> np.ndarray:
+            if cache_self_dists and key in self_knn_cache[space_name]:
+                return self_knn_cache[space_name][key]
+            if cache_self_dists_disk:
+                ds_name, ds_split = key
+                alpha = global_alpha if space_name == "joint" else None
+                cached = cache.load_knn_self_distances(
+                    cache_dir,
+                    ds_name,
+                    ds_split,
+                    representation,
+                    space_name,
+                    k_max,
+                    kl_norm_tag,
+                    config["distance_metric"]["name"],
+                    filter_duplicates=kl_filter_duplicates,
+                    alpha=alpha,
+                )
+                if cached is not None:
+                    if cache_self_dists:
+                        self_knn_cache[space_name][key] = cached
+                    return cached
+            vecs = vectors if vectors is not None else _load_space_vectors(key, space_name)
+            if vecs.shape[0] < 2 or k_max < 1:
+                dists = np.array([], dtype=np.float32).reshape(0, k_max)
+            else:
+                if kl_streaming and cache_self_dists_disk:
+                    ds_name, ds_split = key
+                    alpha = global_alpha if space_name == "joint" else None
+                    knn_dir = cache_dir / "knn_self"
+                    knn_dir.mkdir(parents=True, exist_ok=True)
+                    knn_path = knn_dir / cache.knn_self_cache_key(
+                        ds_name,
+                        ds_split,
+                        representation,
+                        space_name,
+                        k_max,
+                        kl_norm_tag,
+                        config["distance_metric"]["name"],
+                        filter_duplicates=kl_filter_duplicates,
+                        alpha=alpha,
+                        ext="npy",
+                    )
+                    dists = kl.compute_self_knn_distances_streaming(
+                        vecs,
+                        k=k_max,
+                        distance_metric=config["distance_metric"]["name"],
+                        out_path=knn_path,
+                        filter_duplicates=kl_filter_duplicates,
+                        use_gpu=config["faiss"]["use_gpu"],
+                        index_factory=kl_index_factory,
+                        nprobe=kl_nprobe,
+                        batch_size=kl_batch_size,
+                        verbose=True,
+                    )
+                else:
+                    dists = kl.compute_self_knn_distances(
+                        vecs,
+                        k=k_max,
+                        distance_metric=config["distance_metric"]["name"],
+                        filter_duplicates=kl_filter_duplicates,
+                        use_gpu=config["faiss"]["use_gpu"],
+                        index_factory=kl_index_factory,
+                        nprobe=kl_nprobe,
+                        batch_size=kl_batch_size,
+                        verbose=True,
+                    )
+            dists = dists.astype(np.float32, copy=False)
+            if cache_self_dists_disk:
+                ds_name, ds_split = key
+                alpha = global_alpha if space_name == "joint" else None
+                if not (kl_streaming and cache_self_dists_disk):
+                    cache.save_knn_self_distances(
+                        cache_dir,
+                        ds_name,
+                        ds_split,
+                        representation,
+                        space_name,
+                        k_max,
+                        kl_norm_tag,
+                        config["distance_metric"]["name"],
+                        dists,
+                        filter_duplicates=kl_filter_duplicates,
+                        alpha=alpha,
+                    )
+            if cache_self_dists:
+                self_knn_cache[space_name][key] = dists
+            if lazy_load and vectors is None:
+                del vecs
+            return dists
+
+        for space_name in kl_spaces:
+            print(f"\n{'='*60}")
+            print(f"SPACE (KL): {space_name.upper()}")
+            print(f"{'='*60}\n")
+
+            train_iter = train_keys if lazy_load else space_train_vectors[space_name].keys()
+            eval_iter = eval_keys if lazy_load else space_eval_vectors[space_name].keys()
+            eval_keys_list = list(eval_iter) if resume_pairs else eval_iter
+
+            header = [
+                "space",
+                "train_dataset",
+                "train_split",
+                "eval_dataset",
+                "eval_split",
+                "train_n_vectors",
+                "eval_n_vectors",
+                "dim",
+            ]
+            for k in k_values:
+                header.append(f"kl_train_to_eval_k{k}")
+                header.append(f"kl_eval_to_train_k{k}")
+
+            for train_key in train_iter:
+                train_name, train_split = train_key
+                if resume_pairs and eval_keys_list:
+                    any_missing = False
+                    for eval_key in eval_keys_list:
+                        eval_name, eval_split = eval_key
+                        pair_key = (space_name, train_name, train_split, eval_name, eval_split)
+                        if pair_key not in done_pairs:
+                            any_missing = True
+                            break
+                    if not any_missing:
+                        print(f"\n[{train_name}/{train_split}] all eval pairs cached; skipping")
+                        continue
+                if lazy_load:
+                    train_vecs = _load_vectors_for_key(train_key)
+                    train_vecs = _to_space(train_vecs, space_name)
+                else:
+                    train_vecs = space_train_vectors[space_name][train_key]
+
+                train_self = _get_self_knn(train_key, space_name, vectors=train_vecs)
+
+                for eval_key in eval_keys_list:
+                    eval_name, eval_split = eval_key
+                    pair_key = (space_name, train_name, train_split, eval_name, eval_split)
+                    if pair_key in done_pairs:
+                        print("  ✓ Pair already cached; skipping")
+                        continue
+                    print(f"\n[{train_name}/{train_split} → {eval_name}/{eval_split}]")
+
+                    if lazy_load:
+                        eval_vecs = _load_vectors_for_key(eval_key)
+                        eval_vecs = _to_space(eval_vecs, space_name)
+                    else:
+                        eval_vecs = space_eval_vectors[space_name][eval_key]
+
+                    eval_self = _get_self_knn(eval_key, space_name, vectors=eval_vecs)
+
+                    if kl_streaming:
+                        kl_train_to_eval = kl.compute_knn_kl_streaming(
+                            train_vecs,
+                            eval_vecs,
+                            train_self,
+                            k_values=k_values,
+                            distance_metric=config["distance_metric"]["name"],
+                            eps=kl_eps,
+                            filter_duplicates=kl_filter_duplicates,
+                            use_gpu=config["faiss"]["use_gpu"],
+                            index_factory=kl_index_factory,
+                            nprobe=kl_nprobe,
+                            batch_size=kl_batch_size,
+                            verbose=True,
+                        )
+                        kl_eval_to_train = kl.compute_knn_kl_streaming(
+                            eval_vecs,
+                            train_vecs,
+                            eval_self,
+                            k_values=k_values,
+                            distance_metric=config["distance_metric"]["name"],
+                            eps=kl_eps,
+                            filter_duplicates=kl_filter_duplicates,
+                            use_gpu=config["faiss"]["use_gpu"],
+                            index_factory=kl_index_factory,
+                            nprobe=kl_nprobe,
+                            batch_size=kl_batch_size,
+                            verbose=True,
+                        )
+                    else:
+                        # Directed cross distances (exclude self + duplicates)
+                        train_to_eval = kl.compute_cross_knn_distances(
+                            train_vecs,
+                            eval_vecs,
+                            k=k_max,
+                            distance_metric=config["distance_metric"]["name"],
+                            filter_duplicates=kl_filter_duplicates,
+                            use_gpu=config["faiss"]["use_gpu"],
+                            index_factory=kl_index_factory,
+                            nprobe=kl_nprobe,
+                            batch_size=kl_batch_size,
+                            verbose=True,
+                        )
+                        eval_to_train = kl.compute_cross_knn_distances(
+                            eval_vecs,
+                            train_vecs,
+                            k=k_max,
+                            distance_metric=config["distance_metric"]["name"],
+                            filter_duplicates=kl_filter_duplicates,
+                            use_gpu=config["faiss"]["use_gpu"],
+                            index_factory=kl_index_factory,
+                            nprobe=kl_nprobe,
+                            batch_size=kl_batch_size,
+                            verbose=True,
+                        )
+
+                        # KL(P||Q) and KL(Q||P)
+                        kl_train_to_eval = kl.compute_knn_kl_for_k_values(
+                            train_self,
+                            train_to_eval,
+                            m=int(eval_vecs.shape[0]),
+                            dim=int(train_vecs.shape[1]),
+                            k_values=k_values,
+                            eps=kl_eps,
+                        )
+                        kl_eval_to_train = kl.compute_knn_kl_for_k_values(
+                            eval_self,
+                            eval_to_train,
+                            m=int(train_vecs.shape[0]),
+                            dim=int(eval_vecs.shape[1]),
+                            k_values=k_values,
+                            eps=kl_eps,
+                        )
+
+                    row = {
+                        "space": space_name,
+                        "train_dataset": train_name,
+                        "train_split": train_split,
+                        "eval_dataset": eval_name,
+                        "eval_split": eval_split,
+                        "train_n_vectors": int(train_vecs.shape[0]),
+                        "eval_n_vectors": int(eval_vecs.shape[0]),
+                        "dim": int(train_vecs.shape[1]),
+                    }
+                    for k in k_values:
+                        row[f"kl_train_to_eval_k{k}"] = kl_train_to_eval.get(k, float("nan"))
+                        row[f"kl_eval_to_train_k{k}"] = kl_eval_to_train.get(k, float("nan"))
+                    if flush_each_pair:
+                        _write_row(row, header)
+                        done_pairs.add(pair_key)
+                    else:
+                        kl_results.append(row)
+
+                    if not kl_streaming:
+                        del train_to_eval, eval_to_train
+                    del eval_self
+                    if lazy_load:
+                        del eval_vecs
+                    gc.collect()
+                    if device == "cuda":
+                        torch.cuda.empty_cache()
+
+                if lazy_load:
+                    del train_vecs
+                gc.collect()
+                if device == "cuda":
+                    torch.cuda.empty_cache()
+
+        # Save KL results (if not flushed incrementally)
+        if not flush_each_pair:
+            if kl_results:
+                kl_df = pd.DataFrame(kl_results)
+                if resume_pairs and output_kl_path.exists():
+                    kl_df.to_csv(output_kl_path, index=False, mode="a", header=False)
+                else:
+                    kl_df.to_csv(output_kl_path, index=False)
+            print(f"\n✓ KL results saved to: {output_kl_path}")
+            print(f"  Total rows: {len(kl_results)}")
+        else:
+            print(f"\n✓ KL results saved incrementally to: {output_kl_path}")
+
+        if kl_only:
+            print(f"\n{'='*80}")
+            print(f"KL-ONLY PIPELINE COMPLETE")
+            print(f"{'='*80}\n")
+            return
     
     # ======================
     # STEP 3: Self-Radius Computation
@@ -1123,19 +1512,36 @@ def run_pipeline(config_path: str, direction_override: Optional[str] = None):
     print(f"{'='*80}\n")
     
     results = []
-    
+    output_file = Path(config['output']['results_file'])
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    # Resume: load already-completed pairs so we can skip them
+    _done_pairs: set[tuple] = set()
+    if output_file.exists() and output_file.stat().st_size > 0:
+        try:
+            _existing = pd.read_csv(output_file)
+            for _, _r in _existing.iterrows():
+                _done_pairs.add((_r['space'], _r['train_dataset'], _r['train_split'],
+                                 _r['eval_dataset'], _r['eval_split']))
+            print(f"  Resuming: {len(_done_pairs)} pairs already in {output_file.name}")
+        except Exception:
+            pass
+
     for space_name in enabled_spaces:
         print(f"\n{'='*60}")
         print(f"SPACE: {space_name.upper()}")
         print(f"{'='*60}\n")
-        
+
         train_iter = train_keys if lazy_load else space_train_vectors[space_name].keys()
         eval_iter = eval_keys if lazy_load else space_eval_vectors[space_name].keys()
         for train_key in train_iter:
             for eval_key in eval_iter:
                 train_name, train_split = train_key
                 eval_name, eval_split = eval_key
-                
+
+                if (space_name, train_name, train_split, eval_name, eval_split) in _done_pairs:
+                    print(f"\n[{train_name}/{train_split} → {eval_name}/{eval_split}] already done — skipping")
+                    continue
+
                 print(f"\n[{train_name}/{train_split} → {eval_name}/{eval_split}]")
 
                 if lazy_load:
@@ -1169,8 +1575,9 @@ def run_pipeline(config_path: str, direction_override: Optional[str] = None):
                     index_factory=config['faiss']['index_factory'],
                     nprobe=config['faiss'].get('nprobe'),
                     batch_size=config['faiss'].get('batch_size'),
-                    compute_curves=config['coverage']['compute_curves'],
-                    curve_quantiles=config['coverage']['curve_quantiles'],
+                    compute_curves=config['coverage'].get('compute_curves', False),
+                    curve_quantiles=config['coverage'].get('curve_quantiles', [0.80, 0.90, 0.95, 0.99]),
+                    curve_max_vectors=config['coverage'].get('curve_max_vectors', 500_000),
                     filter_duplicates=(representation == "flow"),
                     verbose=True,
                 )
@@ -1192,7 +1599,13 @@ def run_pipeline(config_path: str, direction_override: Optional[str] = None):
                 row.update(coverage_result['metrics'])
                 
                 results.append(row)
-                
+
+                # Flush this pair to disk immediately so progress survives OOM/kill
+                _flush_row = pd.DataFrame([row])
+                _write_header = not output_file.exists() or output_file.stat().st_size == 0
+                _flush_row.to_csv(output_file, mode="a", header=_write_header, index=False)
+                _done_pairs.add((space_name, train_name, train_split, eval_name, eval_split))
+
                 # Print key metrics
                 for k in config['coverage']['k_values']:
                     if f'eval_covered_by_train_qnorm_k{k}' in coverage_result['metrics']:
@@ -1214,11 +1627,9 @@ def run_pipeline(config_path: str, direction_override: Optional[str] = None):
     print(f"SAVING RESULTS")
     print(f"{'='*80}\n")
     
-    results_df = pd.DataFrame(results)
-    output_file = Path(config['output']['results_file'])
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-    results_df.to_csv(output_file, index=False)
-    
+    # Results were flushed pair-by-pair above; just report final count.
+    results_df = pd.read_csv(output_file) if output_file.exists() else pd.DataFrame(results)
+
     print(f"✓ Results saved to: {output_file}")
     print(f"  Total rows: {len(results_df)}")
     print(f"\n{'='*80}")
@@ -1236,9 +1647,14 @@ def main():
         default=None,
         help="Compute only one direction of cross-dataset distances.",
     )
+    parser.add_argument(
+        "--kl-only",
+        action="store_true",
+        help="Compute KL divergence only (skip coverage metrics).",
+    )
     args = parser.parse_args()
     
-    run_pipeline(args.config, direction_override=args.direction)
+    run_pipeline(args.config, direction_override=args.direction, kl_only=args.kl_only)
 
 
 if __name__ == "__main__":

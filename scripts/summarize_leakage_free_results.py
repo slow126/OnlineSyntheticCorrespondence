@@ -4,6 +4,7 @@ Summarize leakage-free analysis outputs into a single text report.
 """
 
 import argparse
+import json
 from pathlib import Path
 
 import numpy as np
@@ -76,6 +77,8 @@ def _bootstrap_corr(x, y, method, n_boot=200, seed=17):
 
 
 def _fit_standardized_model(df, predictors, target, model="ols", ridge_alpha=1.0):
+    if model == "pairwise_rank":
+        return None
     df_sub = df[predictors + [target]].dropna().copy()
     if df_sub.empty:
         return None
@@ -278,6 +281,27 @@ def _format_group_totals(totals):
     return "; ".join(parts)
 
 
+def _append_best_worst_spearman(rows, per_group, label_col, top_n):
+    if per_group is None or per_group.empty:
+        return
+    valid = per_group.copy()
+    valid["spearman"] = pd.to_numeric(valid["spearman"], errors="coerce")
+    valid = valid[np.isfinite(valid["spearman"])].copy()
+    if valid.empty:
+        msg = "n/a (insufficient fold variation for Spearman)"
+        rows.append(f"Best by Spearman: {msg}")
+        rows.append(f"Worst by Spearman: {msg}")
+        return
+    best = valid.sort_values("spearman", ascending=False).head(top_n)
+    worst = valid.sort_values("spearman", ascending=True).head(top_n)
+    rows.append("Best by Spearman: " + ", ".join(
+        f"{r[label_col]} ({r['spearman']:.2f})" for _, r in best.iterrows()
+    ))
+    rows.append("Worst by Spearman: " + ", ".join(
+        f"{r[label_col]} ({r['spearman']:.2f})" for _, r in worst.iterrows()
+    ))
+
+
 def summarize_predictions(summary_df, label_col, top_n=3):
     if summary_df.empty:
         return []
@@ -291,14 +315,7 @@ def summarize_predictions(summary_df, label_col, top_n=3):
         )
     per_group = summary_df[summary_df[label_col] != "__overall__"].copy()
     if not per_group.empty:
-        best = per_group.sort_values("spearman", ascending=False).head(top_n)
-        worst = per_group.sort_values("spearman", ascending=True).head(top_n)
-        rows.append("Best by Spearman: " + ", ".join(
-            f"{r[label_col]} ({r['spearman']:.2f})" for _, r in best.iterrows()
-        ))
-        rows.append("Worst by Spearman: " + ", ".join(
-            f"{r[label_col]} ({r['spearman']:.2f})" for _, r in worst.iterrows()
-        ))
+        _append_best_worst_spearman(rows, per_group, label_col, top_n)
     return rows
 
 
@@ -337,14 +354,7 @@ def summarize_predictions_with_ci(summary_df, rows_df, label_col, top_n=3):
             )
     per_group = summary_df[summary_df[label_col] != "__overall__"].copy()
     if not per_group.empty:
-        best = per_group.sort_values("spearman", ascending=False).head(top_n)
-        worst = per_group.sort_values("spearman", ascending=True).head(top_n)
-        rows.append("Best by Spearman: " + ", ".join(
-            f"{r[label_col]} ({r['spearman']:.2f})" for _, r in best.iterrows()
-        ))
-        rows.append("Worst by Spearman: " + ", ".join(
-            f"{r[label_col]} ({r['spearman']:.2f})" for _, r in worst.iterrows()
-        ))
+        _append_best_worst_spearman(rows, per_group, label_col, top_n)
     return rows
 
 
@@ -373,6 +383,42 @@ def _format_rank_metrics(prefix, row):
     if "mean_abs_rank_pct_error" in row and not pd.isna(row.get("mean_abs_rank_pct_error")):
         parts.append(f"rank_pct_err={row['mean_abs_rank_pct_error']:.2f}")
     parts.append(f"spearman={spearman_str}")
+    if "kendall_tau" in row and not pd.isna(row.get("kendall_tau")):
+        parts.append(f"kendall={row['kendall_tau']:.2f}")
+    if "pairwise_cindex" in row and not pd.isna(row.get("pairwise_cindex")):
+        parts.append(f"cindex={row['pairwise_cindex']:.2f}")
+    return f"{prefix}: " + ", ".join(parts)
+
+
+def _fmt_optional(value, decimals=2):
+    if value is None or pd.isna(value):
+        return "n/a"
+    return f"{float(value):.{decimals}f}"
+
+
+def _format_holdout_placement_metrics(prefix, row):
+    if row is None:
+        return f"{prefix}: n/a"
+    parts = []
+    n_tasks = row.get("n_tasks")
+    if n_tasks is not None and not pd.isna(n_tasks):
+        parts.append(f"n_tasks={int(round(float(n_tasks)))}")
+    parts.append(f"abs_rank_err={_fmt_optional(row.get('abs_rank_error'))}")
+    parts.append(f"rank_pct_err={_fmt_optional(row.get('abs_rank_pct_error'))}")
+    parts.append(f"pair_win={_fmt_optional(row.get('pairwise_win_rate'))}")
+    parts.append(f"regret={_fmt_optional(row.get('regret'))}")
+    parts.append(f"rank_spearman={_fmt_optional(row.get('rank_spearman'))}")
+    if "rank_spearman_micro" in row and not pd.isna(row.get("rank_spearman_micro")):
+        parts.append(f"rank_spearman_micro={_fmt_optional(row.get('rank_spearman_micro'))}")
+    if "rank_spearman_fisher" in row and not pd.isna(row.get("rank_spearman_fisher")):
+        parts.append(f"rank_spearman_fisher={_fmt_optional(row.get('rank_spearman_fisher'))}")
+    if "rank_kendall" in row and not pd.isna(row.get("rank_kendall")):
+        parts.append(f"rank_kendall={_fmt_optional(row.get('rank_kendall'))}")
+    if "rank_kendall_micro" in row and not pd.isna(row.get("rank_kendall_micro")):
+        parts.append(f"rank_kendall_micro={_fmt_optional(row.get('rank_kendall_micro'))}")
+    parts.append(f"holdout_top1={_fmt_optional(row.get('holdout_pred_top1'))}")
+    if "holdout_pred_top1_micro" in row and not pd.isna(row.get("holdout_pred_top1_micro")):
+        parts.append(f"holdout_top1_micro={_fmt_optional(row.get('holdout_pred_top1_micro'))}")
     return f"{prefix}: " + ", ".join(parts)
 
 
@@ -398,6 +444,10 @@ def _rank_family_summary(df, benchmarks):
         summary["mean_abs_rank_error"] = float(sub["mean_abs_rank_error"].mean())
     if "mean_abs_rank_pct_error" in sub.columns:
         summary["mean_abs_rank_pct_error"] = float(sub["mean_abs_rank_pct_error"].mean())
+    if "kendall_tau" in sub.columns:
+        summary["kendall_tau"] = float(sub["kendall_tau"].mean())
+    if "pairwise_cindex" in sub.columns:
+        summary["pairwise_cindex"] = float(sub["pairwise_cindex"].mean())
     return summary
 
 
@@ -430,7 +480,7 @@ def _format_rank_ci(prefix, ci_map):
     if not ci_map:
         return f"{prefix}: n/a"
     parts = []
-    for key in ("top1", "top3", "topk", "regret", "spearman"):
+    for key in ("top1", "top3", "topk", "regret", "spearman", "kendall_tau", "pairwise_cindex"):
         if key not in ci_map:
             continue
         lo, hi = ci_map[key]
@@ -537,6 +587,21 @@ def main():
         help="LOTO ranking detail CSV (optional).",
     )
     parser.add_argument(
+        "--loto-holdout-placement-summary",
+        default=None,
+        help="LOTO holdout placement summary CSV (optional).",
+    )
+    parser.add_argument(
+        "--loto-holdout-placement-detail",
+        default=None,
+        help="LOTO holdout placement detail CSV (optional).",
+    )
+    parser.add_argument(
+        "--loto-holdout-placement-baselines",
+        default=None,
+        help="LOTO holdout placement baseline CSV (optional).",
+    )
+    parser.add_argument(
         "--loto-mixed-summary",
         default="analysis/leakage_free/prediction_loto_mixed_summary.csv",
         help="LOTO MixedLM summary CSV.",
@@ -545,6 +610,41 @@ def main():
         "--loto-mixed-rows",
         default=None,
         help="LOTO MixedLM prediction rows CSV (optional).",
+    )
+    parser.add_argument(
+        "--jointood-summary",
+        default="analysis/leakage_free/prediction_jointood_summary.csv",
+        help="Joint-OOD summary CSV (hold out train_dataset + benchmark).",
+    )
+    parser.add_argument(
+        "--jointood-rows",
+        default=None,
+        help="Joint-OOD prediction rows CSV (optional).",
+    )
+    parser.add_argument(
+        "--jointood-rank-summary",
+        default="analysis/leakage_free/prediction_jointood_rank_summary.csv",
+        help="Joint-OOD ranking summary CSV.",
+    )
+    parser.add_argument(
+        "--jointood-rank-detail",
+        default=None,
+        help="Joint-OOD ranking detail CSV (optional).",
+    )
+    parser.add_argument(
+        "--jointood-holdout-placement-summary",
+        default=None,
+        help="Joint-OOD holdout placement summary CSV (optional).",
+    )
+    parser.add_argument(
+        "--jointood-holdout-placement-detail",
+        default=None,
+        help="Joint-OOD holdout placement detail CSV (optional).",
+    )
+    parser.add_argument(
+        "--jointood-holdout-placement-baselines",
+        default=None,
+        help="Joint-OOD holdout placement baseline CSV (optional).",
     )
     parser.add_argument(
         "--lobo-permutation-summary",
@@ -578,7 +678,7 @@ def main():
     )
     parser.add_argument(
         "--linear-model",
-        choices=["ols", "ridge"],
+        choices=["ols", "ridge", "pairwise_rank"],
         default="ols",
         help="Linear model for summary (default: ols).",
     )
@@ -597,6 +697,21 @@ def main():
         "--standardize",
         default=None,
         help="Whether predictors were standardized in CV (optional).",
+    )
+    parser.add_argument(
+        "--fit-sample-weighting",
+        default="none",
+        help="Fit-time sample weighting mode used in CV (optional).",
+    )
+    parser.add_argument(
+        "--fit-balance-real-synth",
+        default=None,
+        help="Whether real-vs-synthetic fit balancing was enabled (optional).",
+    )
+    parser.add_argument(
+        "--overall-aggregation",
+        default="micro",
+        help="How __overall__ prediction metrics were aggregated (optional).",
     )
     parser.add_argument(
         "--cv-standardize-mode",
@@ -682,6 +797,8 @@ def main():
     _swap_default("loto_summary", "prediction_loto_summary.csv")
     _swap_default("loto_rank_summary", "prediction_loto_rank_summary.csv")
     _swap_default("loto_mixed_summary", "prediction_loto_mixed_summary.csv")
+    _swap_default("jointood_summary", "prediction_jointood_summary.csv")
+    _swap_default("jointood_rank_summary", "prediction_jointood_rank_summary.csv")
     _swap_default("within_benchmark_slopes", "within_benchmark_slopes.csv")
     _swap_default(
         "within_benchmark_slopes_univariate", "within_benchmark_slopes_univariate.csv"
@@ -696,11 +813,39 @@ def main():
     _resolve_path("lobo_mixed_rows", "prediction_lobo_mixed_rows.csv")
     _resolve_path("loto_rows", "prediction_loto_rows.csv")
     _resolve_path("loto_rank_detail", "prediction_loto_rank_detail.csv")
+    _resolve_path("loto_holdout_placement_summary", "prediction_loto_holdout_placement_summary.csv")
+    _resolve_path("loto_holdout_placement_detail", "prediction_loto_holdout_placement_detail.csv")
+    _resolve_path(
+        "loto_holdout_placement_baselines",
+        "prediction_loto_holdout_placement_baselines.csv",
+    )
     _resolve_path("loto_mixed_rows", "prediction_loto_mixed_rows.csv")
+    _resolve_path("jointood_rows", "prediction_jointood_rows.csv")
+    _resolve_path("jointood_rank_detail", "prediction_jointood_rank_detail.csv")
+    _resolve_path(
+        "jointood_holdout_placement_summary",
+        "prediction_jointood_holdout_placement_summary.csv",
+    )
+    _resolve_path(
+        "jointood_holdout_placement_detail",
+        "prediction_jointood_holdout_placement_detail.csv",
+    )
+    _resolve_path(
+        "jointood_holdout_placement_baselines",
+        "prediction_jointood_holdout_placement_baselines.csv",
+    )
     _resolve_path("lobo_permutation_summary", "prediction_lobo_permutation_summary.csv")
     _resolve_path("lobo_permutation_rank_summary", "prediction_lobo_permutation_rank_summary.csv")
     _resolve_path("loto_permutation_summary", "prediction_loto_permutation_summary.csv")
     _resolve_path("loto_permutation_rank_summary", "prediction_loto_permutation_rank_summary.csv")
+
+    run_metadata = {}
+    run_metadata_path = Path(args.output_dir) / "run_metadata.json"
+    if run_metadata_path.exists():
+        try:
+            run_metadata = json.loads(run_metadata_path.read_text())
+        except Exception:
+            run_metadata = {}
 
     out_lines = []
     out_lines.append("LEAKAGE-FREE SUMMARY")
@@ -804,11 +949,38 @@ def main():
         + str(prediction_model)
         + ", standardize="
         + _format_flag(args.standardize)
+        + ", fit_sample_weighting="
+        + str(args.fit_sample_weighting or "none")
+        + ", fit_balance_real_synth="
+        + _format_flag(args.fit_balance_real_synth)
+        + ", overall_aggregation="
+        + str(args.overall_aggregation or "micro")
         + ", cv_standardize_mode="
         + str(args.cv_standardize_mode or "unknown")
         + ", per_encoder="
         + _format_flag(args.per_encoder)
     )
+    if run_metadata:
+        out_lines.append(
+            "  cv_residualize_target_by_context="
+            + _format_flag(run_metadata.get("cv_residualize_target_by_context"))
+            + ", cv_residual_context_cols="
+            + str(run_metadata.get("cv_residual_context_cols", ""))
+            + ", cv_residual_eval_space="
+            + str(run_metadata.get("cv_residual_eval_space", "unknown"))
+            + ", cv_repeat_aggregation="
+            + str(run_metadata.get("cv_repeat_aggregation", "none"))
+        )
+        out_lines.append(
+            "  ranking_group="
+            + str(run_metadata.get("ranking_group", "unknown"))
+            + ", ranking_context_cols="
+            + str(run_metadata.get("ranking_context_cols", ""))
+            + ", pairwise_group_cols="
+            + str(run_metadata.get("pairwise_group_cols", ""))
+            + ", collapse_cv_cells="
+            + _format_flag(run_metadata.get("collapse_cv_cells"))
+        )
 
     out_lines.append("")
     out_lines.append(f"Target: {args.target}")
@@ -817,6 +989,10 @@ def main():
     out_lines.append(f"Predictors: {', '.join(predictors)}")
 
     headline_lines = []
+    lobo_rank_line = None
+    loto_holdout_line = None
+    joint_rank_line = None
+    joint_holdout_line = None
     lobo_summary_path = Path(args.lobo_summary)
     lobo_rows_path = Path(args.lobo_rows)
     if lobo_summary_path.exists():
@@ -830,10 +1006,11 @@ def main():
         lobo_rank_df = pd.read_csv(lobo_rank_path)
         overall = lobo_rank_df[lobo_rank_df["benchmark"] == "__overall__"]
         if not overall.empty:
-            headline_lines.append(_format_rank_metrics("LOBO rank", overall.iloc[0].to_dict()))
+            lobo_rank_line = _format_rank_metrics("LOBO rank", overall.iloc[0].to_dict())
+            headline_lines.append(lobo_rank_line)
             ci = _bootstrap_rank_ci(
                 lobo_rank_df,
-                ["top1", "top3", "topk", "regret", "spearman"],
+                ["top1", "top3", "topk", "regret", "spearman", "kendall_tau", "pairwise_cindex"],
             )
             headline_lines.append(_format_rank_ci("LOBO rank 95% CI", ci))
     loto_summary_path = Path(args.loto_summary)
@@ -853,14 +1030,68 @@ def main():
             headline_lines.append(_format_rank_metrics("LOTO rank", overall.iloc[0].to_dict()))
             ci = _bootstrap_rank_ci(
                 loto_rank_df,
-                ["top1", "top3", "topk", "regret", "spearman"],
+                ["top1", "top3", "topk", "regret", "spearman", "kendall_tau", "pairwise_cindex"],
             )
             headline_lines.append(_format_rank_ci("LOTO rank 95% CI", ci))
+    loto_place_path = Path(args.loto_holdout_placement_summary)
+    if loto_place_path.exists():
+        loto_place_df = pd.read_csv(loto_place_path)
+        overall = loto_place_df[loto_place_df["fold"] == "__overall__"]
+        if not overall.empty:
+            loto_holdout_line = _format_holdout_placement_metrics(
+                "LOTO holdout placement",
+                overall.iloc[0].to_dict(),
+            )
+            headline_lines.append(loto_holdout_line)
+    jointood_summary_path = Path(args.jointood_summary)
+    jointood_rows_path = Path(args.jointood_rows)
+    if jointood_summary_path.exists():
+        jointood_df = pd.read_csv(jointood_summary_path)
+        jointood_rows = pd.read_csv(jointood_rows_path) if jointood_rows_path.exists() else None
+        lines = summarize_predictions_with_ci(jointood_df, jointood_rows, "joint_holdout")
+        if lines:
+            headline_lines.append("Joint-OOD pred: " + lines[0].replace("Overall: ", ""))
+    jointood_rank_path = Path(args.jointood_rank_summary)
+    if jointood_rank_path.exists():
+        jointood_rank_df = pd.read_csv(jointood_rank_path)
+        overall = jointood_rank_df[jointood_rank_df["benchmark"] == "__overall__"]
+        if not overall.empty:
+            joint_rank_line = _format_rank_metrics("Joint-OOD rank", overall.iloc[0].to_dict())
+            headline_lines.append(joint_rank_line)
+            ci = _bootstrap_rank_ci(
+                jointood_rank_df,
+                ["top1", "top3", "topk", "regret", "spearman", "kendall_tau", "pairwise_cindex"],
+            )
+            headline_lines.append(_format_rank_ci("Joint-OOD rank 95% CI", ci))
+    joint_place_path = Path(args.jointood_holdout_placement_summary)
+    if joint_place_path.exists():
+        joint_place_df = pd.read_csv(joint_place_path)
+        overall = joint_place_df[joint_place_df["fold"] == "__overall__"]
+        if not overall.empty:
+            joint_holdout_line = _format_holdout_placement_metrics(
+                "Joint-OOD holdout placement",
+                overall.iloc[0].to_dict(),
+            )
+            headline_lines.append(joint_holdout_line)
 
     if headline_lines:
         out_lines.append("")
         out_lines.append("Headline metrics:")
         out_lines.extend(f"  {line}" for line in headline_lines)
+
+    show_objective_scorecard = bool(
+        run_metadata.get("cv_residualize_target_by_context", False)
+    ) or any(
+        line is not None
+        for line in (lobo_rank_line, loto_holdout_line, joint_rank_line, joint_holdout_line)
+    )
+    if show_objective_scorecard:
+        out_lines.append("")
+        out_lines.append("Objective scorecard (ranking/insertion):")
+        out_lines.append(f"  {(lobo_rank_line or 'LOBO rank: n/a')}")
+        out_lines.append(f"  {(loto_holdout_line or 'LOTO holdout placement: n/a')}")
+        out_lines.append(f"  {(joint_holdout_line or 'Joint-OOD holdout placement: n/a')}")
+        out_lines.append(f"  {(joint_rank_line or 'Joint-OOD rank: n/a')}")
 
     out_lines.append("")
     out_lines.append("Overall predictor signal (pairwise correlations):")
@@ -874,68 +1105,82 @@ def main():
         out_lines.append(f"  {pred}: Pearson={pear:.3f}, Spearman={spear:.3f}")
 
     out_lines.append("")
-    model_label = "OLS" if args.linear_model == "ols" else f"Ridge (alpha={args.ridge_alpha})"
-    out_lines.append(f"Standardized {model_label} (all data):")
-    model = _fit_standardized_model(
-        df,
-        predictors,
-        args.target,
-        model=args.linear_model,
-        ridge_alpha=args.ridge_alpha,
-    )
-    if model is None:
-        out_lines.append("  Not enough complete rows to fit model.")
-    else:
-        out_lines.append(f"  N={model['n']}")
-        if "r2" in model:
-            out_lines.append(f"  R2={model['r2']:.3f}")
-        params = model["params"]
-        pvals = model.get("pvalues")
-        for pred in predictors:
-            coef = params.get(pred, np.nan)
-            pval = pvals.get(pred, np.nan) if pvals else np.nan
-            out_lines.append("  " + _format_coef(pred, coef, pval))
-    out_lines.append("")
-    out_lines.append(f"Benchmark-centered standardized {model_label} (all data):")
-    centered_model = _fit_benchmark_centered_model(
-        df,
-        predictors,
-        args.target,
-        model=args.linear_model,
-        ridge_alpha=args.ridge_alpha,
-    )
-    if centered_model is None:
-        out_lines.append("  Not enough complete rows to fit model.")
-    else:
-        out_lines.append(f"  N={centered_model['n']}")
-        if "r2" in centered_model:
-            out_lines.append(f"  R2={centered_model['r2']:.3f}")
-        params = centered_model["params"]
-        for pred in predictors:
-            coef = params.get(pred, np.nan)
-            out_lines.append("  " + _format_coef(pred, coef, np.nan))
-
-    if model_group_col:
+    model = None
+    params = {}
+    if args.linear_model == "pairwise_rank":
+        model_label = "Pairwise Rank"
+        out_lines.append("Standardized Pairwise Rank (all data):")
+        out_lines.append("  Skipped linear coefficient fits for pairwise_rank.")
         out_lines.append("")
-        out_lines.append(f"Model-centered standardized {model_label} (all data):")
-        model_centered = _fit_group_centered_model(
+        out_lines.append("Benchmark-centered standardized Pairwise Rank (all data):")
+        out_lines.append("  Skipped linear coefficient fits for pairwise_rank.")
+        if model_group_col:
+            out_lines.append("")
+            out_lines.append("Model-centered standardized Pairwise Rank (all data):")
+            out_lines.append("  Skipped linear coefficient fits for pairwise_rank.")
+    else:
+        model_label = "OLS" if args.linear_model == "ols" else f"Ridge (alpha={args.ridge_alpha})"
+        out_lines.append(f"Standardized {model_label} (all data):")
+        model = _fit_standardized_model(
             df,
             predictors,
             args.target,
-            [model_group_col],
             model=args.linear_model,
             ridge_alpha=args.ridge_alpha,
         )
-        if model_centered is None:
+        if model is None:
             out_lines.append("  Not enough complete rows to fit model.")
         else:
-            out_lines.append(f"  N={model_centered['n']}")
-            if "r2" in model_centered:
-                out_lines.append(f"  R2={model_centered['r2']:.3f}")
-            params = model_centered["params"]
+            out_lines.append(f"  N={model['n']}")
+            if "r2" in model:
+                out_lines.append(f"  R2={model['r2']:.3f}")
+            params = model["params"]
+            pvals = model.get("pvalues")
+            for pred in predictors:
+                coef = params.get(pred, np.nan)
+                pval = pvals.get(pred, np.nan) if pvals else np.nan
+                out_lines.append("  " + _format_coef(pred, coef, pval))
+        out_lines.append("")
+        out_lines.append(f"Benchmark-centered standardized {model_label} (all data):")
+        centered_model = _fit_benchmark_centered_model(
+            df,
+            predictors,
+            args.target,
+            model=args.linear_model,
+            ridge_alpha=args.ridge_alpha,
+        )
+        if centered_model is None:
+            out_lines.append("  Not enough complete rows to fit model.")
+        else:
+            out_lines.append(f"  N={centered_model['n']}")
+            if "r2" in centered_model:
+                out_lines.append(f"  R2={centered_model['r2']:.3f}")
+            params = centered_model["params"]
             for pred in predictors:
                 coef = params.get(pred, np.nan)
                 out_lines.append("  " + _format_coef(pred, coef, np.nan))
+
+        if model_group_col:
+            out_lines.append("")
+            out_lines.append(f"Model-centered standardized {model_label} (all data):")
+            model_centered = _fit_group_centered_model(
+                df,
+                predictors,
+                args.target,
+                [model_group_col],
+                model=args.linear_model,
+                ridge_alpha=args.ridge_alpha,
+            )
+            if model_centered is None:
+                out_lines.append("  Not enough complete rows to fit model.")
+            else:
+                out_lines.append(f"  N={model_centered['n']}")
+                if "r2" in model_centered:
+                    out_lines.append(f"  R2={model_centered['r2']:.3f}")
+                params = model_centered["params"]
+                for pred in predictors:
+                    coef = params.get(pred, np.nan)
+                    out_lines.append("  " + _format_coef(pred, coef, np.nan))
 
         out_lines.append("")
         out_lines.append(
@@ -1043,52 +1288,62 @@ def main():
     if "benchmark" in df.columns:
         out_lines.append("")
         out_lines.append(f"Family-specific {model_label} (standardized):")
-        for name, family in (("flow family", flow_family), ("semantic family", semantic_family)):
-            sub = df[df["benchmark"].isin(family)]
-            model = _fit_standardized_model(
-                sub,
-                predictors,
-                args.target,
-                model=args.linear_model,
-                ridge_alpha=args.ridge_alpha,
-            )
-            if model is None or model["n"] < len(predictors) + 5:
-                out_lines.append(f"  {name}: insufficient rows (n={0 if model is None else model['n']})")
-                continue
-            out_lines.append(f"  {name}: n={model['n']}")
-            if "r2" in model and not np.isnan(model["r2"]):
-                out_lines.append(f"    R2={model['r2']:.3f}")
-            params = model["params"]
-            pvals = model.get("pvalues")
-            for pred in predictors:
-                coef = params.get(pred, np.nan)
-                pval = pvals.get(pred, np.nan) if pvals else np.nan
-                out_lines.append("    " + _format_coef(pred, coef, pval))
+        if args.linear_model == "pairwise_rank":
+            out_lines.append("  Skipped linear coefficient fits for pairwise_rank.")
+        else:
+            for name, family in (("flow family", flow_family), ("semantic family", semantic_family)):
+                sub = df[df["benchmark"].isin(family)]
+                model = _fit_standardized_model(
+                    sub,
+                    predictors,
+                    args.target,
+                    model=args.linear_model,
+                    ridge_alpha=args.ridge_alpha,
+                )
+                if model is None or model["n"] < len(predictors) + 5:
+                    out_lines.append(
+                        f"  {name}: insufficient rows (n={0 if model is None else model['n']})"
+                    )
+                    continue
+                out_lines.append(f"  {name}: n={model['n']}")
+                if "r2" in model and not np.isnan(model["r2"]):
+                    out_lines.append(f"    R2={model['r2']:.3f}")
+                params = model["params"]
+                pvals = model.get("pvalues")
+                for pred in predictors:
+                    coef = params.get(pred, np.nan)
+                    pval = pvals.get(pred, np.nan) if pvals else np.nan
+                    out_lines.append("    " + _format_coef(pred, coef, pval))
 
     if "pretrained" in df.columns and "freeze" in df.columns:
         out_lines.append("")
         out_lines.append(f"Encoder-config-specific signal (standardized {model_label}):")
         config_models = {}
-        for (pre, frz), group in df.groupby(["pretrained", "freeze"], dropna=False):
-            label = f"pretrained={pre}, freeze={frz}"
-            model = _fit_standardized_model(
-                group,
-                predictors,
-                args.target,
-                model=args.linear_model,
-                ridge_alpha=args.ridge_alpha,
-            )
-            if model is None or model["n"] < len(predictors) + 5:
-                out_lines.append(f"  {label}: insufficient rows (n={0 if model is None else model['n']})")
-                continue
-            config_models[(pre, frz)] = model
-            out_lines.append(f"  {label}: n={model['n']}")
-            params = model["params"]
-            pvals = model.get("pvalues")
-            for pred in predictors:
-                coef = params.get(pred, np.nan)
-                pval = pvals.get(pred, np.nan) if pvals else np.nan
-                out_lines.append("    " + _format_coef(pred, coef, pval))
+        if args.linear_model == "pairwise_rank":
+            out_lines.append("  Skipped linear coefficient fits for pairwise_rank.")
+        else:
+            for (pre, frz), group in df.groupby(["pretrained", "freeze"], dropna=False):
+                label = f"pretrained={pre}, freeze={frz}"
+                model = _fit_standardized_model(
+                    group,
+                    predictors,
+                    args.target,
+                    model=args.linear_model,
+                    ridge_alpha=args.ridge_alpha,
+                )
+                if model is None or model["n"] < len(predictors) + 5:
+                    out_lines.append(
+                        f"  {label}: insufficient rows (n={0 if model is None else model['n']})"
+                    )
+                    continue
+                config_models[(pre, frz)] = model
+                out_lines.append(f"  {label}: n={model['n']}")
+                params = model["params"]
+                pvals = model.get("pvalues")
+                for pred in predictors:
+                    coef = params.get(pred, np.nan)
+                    pval = pvals.get(pred, np.nan) if pvals else np.nan
+                    out_lines.append("    " + _format_coef(pred, coef, pval))
 
         if (False, False) in config_models and (True, True) in config_models:
             compare_candidates = [
@@ -1141,7 +1396,7 @@ def main():
             )
             ci = _bootstrap_rank_ci(
                 lobo_rank_df,
-                ["top1", "top3", "topk", "regret", "spearman"],
+                ["top1", "top3", "topk", "regret", "spearman", "kendall_tau", "pairwise_cindex"],
             )
             out_lines.append("  " + _format_rank_ci("Rank@benchmark 95% CI", ci))
         per_benchmark = lobo_rank_df[lobo_rank_df["benchmark"] != "__overall__"]
@@ -1297,9 +1552,98 @@ def main():
             )
             ci = _bootstrap_rank_ci(
                 loto_rank_df,
-                ["top1", "top3", "topk", "regret", "spearman"],
+                ["top1", "top3", "topk", "regret", "spearman", "kendall_tau", "pairwise_cindex"],
             )
             out_lines.append("  " + _format_rank_ci("Rank@benchmark 95% CI", ci))
+
+    loto_place_path = Path(args.loto_holdout_placement_summary)
+    if loto_place_path.exists():
+        loto_place_df = pd.read_csv(loto_place_path)
+        overall = loto_place_df[loto_place_df["fold"] == "__overall__"]
+        if not overall.empty:
+            out_lines.append(
+                "  "
+                + _format_holdout_placement_metrics(
+                    "Insertion ranking (LOTO mean)",
+                    overall.iloc[0].to_dict(),
+                )
+            )
+    else:
+        out_lines.append("  Holdout placement (LOTO mean): n/a")
+
+    loto_baseline_path = Path(args.loto_holdout_placement_baselines)
+    if loto_baseline_path.exists():
+        loto_baseline_df = pd.read_csv(loto_baseline_path)
+        baseline_overall = loto_baseline_df[loto_baseline_df["fold"] == "__overall__"]
+        if not baseline_overall.empty:
+            out_lines.append("  Baseline selectors (overall):")
+            available = set(baseline_overall["selector"].astype(str))
+            baseline_order = [p for p in predictors if p in available]
+            constants = [
+                name
+                for name in ["always_flyingthings", "always_best_avg"]
+                if name in available and name not in baseline_order
+            ]
+            for selector in baseline_order + constants:
+                row = baseline_overall[baseline_overall["selector"] == selector]
+                if row.empty:
+                    continue
+                out_lines.append(
+                    "    "
+                    + _format_holdout_placement_metrics(selector, row.iloc[0].to_dict())
+                )
+
+            best_candidates = [p for p in predictors if p in available]
+            if best_candidates:
+                best_pair_win = _best_baseline_overall(
+                    baseline_overall,
+                    "pairwise_win_rate",
+                    higher_better=True,
+                    candidates=best_candidates,
+                )
+                best_rank_pct_err = _best_baseline_overall(
+                    baseline_overall,
+                    "abs_rank_pct_error",
+                    higher_better=False,
+                    candidates=best_candidates,
+                )
+                spearman_metric = "rank_spearman_micro"
+                if (
+                    spearman_metric not in baseline_overall.columns
+                    or baseline_overall[spearman_metric].dropna().empty
+                ):
+                    spearman_metric = "rank_spearman"
+                best_spearman = _best_baseline_overall(
+                    baseline_overall,
+                    spearman_metric,
+                    higher_better=True,
+                    candidates=best_candidates,
+                )
+                out_lines.append("  Best single-predictor baselines (overall):")
+                if best_pair_win is not None:
+                    out_lines.append(
+                        "    pair_win: "
+                        + _format_holdout_placement_metrics(
+                            best_pair_win["selector"],
+                            best_pair_win.to_dict(),
+                        ).replace(f"{best_pair_win['selector']}: ", "")
+                    )
+                if best_rank_pct_err is not None:
+                    out_lines.append(
+                        "    rank_pct_err: "
+                        + _format_holdout_placement_metrics(
+                            best_rank_pct_err["selector"],
+                            best_rank_pct_err.to_dict(),
+                        ).replace(f"{best_rank_pct_err['selector']}: ", "")
+                    )
+                if best_spearman is not None:
+                    out_lines.append(
+                        "    rank_spearman: "
+                        + _format_holdout_placement_metrics(
+                            best_spearman["selector"],
+                            best_spearman.to_dict(),
+                        ).replace(f"{best_spearman['selector']}: ", "")
+                    )
 
     loto_mixed_path = Path(args.loto_mixed_summary)
     if loto_mixed_path.exists():
@@ -1315,6 +1659,129 @@ def main():
             + line
             for line in summarize_predictions_with_ci(loto_mixed_df, loto_mixed_rows, group_col)
         )
+
+    out_lines.append("")
+    out_lines.append("Prediction validation (Joint-OOD: holdout train_dataset+benchmark):")
+    jointood_path = Path(args.jointood_summary)
+    if jointood_path.exists():
+        jointood_df = pd.read_csv(jointood_path)
+        jointood_rows_path = Path(args.jointood_rows)
+        jointood_rows = pd.read_csv(jointood_rows_path) if jointood_rows_path.exists() else None
+        out_lines.extend(
+            "  "
+            + line
+            for line in summarize_predictions_with_ci(jointood_df, jointood_rows, "joint_holdout")
+        )
+    else:
+        out_lines.append("  Not run (enable --joint-ood-holdout).")
+
+    jointood_rank_path = Path(args.jointood_rank_summary)
+    if jointood_rank_path.exists():
+        jointood_rank_df = pd.read_csv(jointood_rank_path)
+        overall = jointood_rank_df[jointood_rank_df["benchmark"] == "__overall__"]
+        if not overall.empty:
+            row = overall.iloc[0]
+            out_lines.append(
+                "  " + _format_rank_metrics("Rank@benchmark (Joint-OOD mean)", row.to_dict())
+            )
+            ci = _bootstrap_rank_ci(
+                jointood_rank_df,
+                ["top1", "top3", "topk", "regret", "spearman", "kendall_tau", "pairwise_cindex"],
+            )
+            out_lines.append("  " + _format_rank_ci("Rank@benchmark 95% CI", ci))
+    else:
+        out_lines.append(
+            "  Rank@benchmark (Joint-OOD mean): n/a (not computed; tasks may mix predictions from different CV folds)."
+        )
+
+    joint_place_path = Path(args.jointood_holdout_placement_summary)
+    if joint_place_path.exists():
+        joint_place_df = pd.read_csv(joint_place_path)
+        overall = joint_place_df[joint_place_df["fold"] == "__overall__"]
+        if not overall.empty:
+            out_lines.append(
+                "  "
+                + _format_holdout_placement_metrics(
+                    "Insertion ranking (Joint-OOD mean)",
+                    overall.iloc[0].to_dict(),
+                )
+            )
+    else:
+        out_lines.append("  Holdout placement (Joint-OOD mean): n/a")
+
+    joint_baseline_path = Path(args.jointood_holdout_placement_baselines)
+    if joint_baseline_path.exists():
+        joint_baseline_df = pd.read_csv(joint_baseline_path)
+        baseline_overall = joint_baseline_df[joint_baseline_df["fold"] == "__overall__"]
+        if not baseline_overall.empty:
+            out_lines.append("  Baseline selectors (overall):")
+            available = set(baseline_overall["selector"].astype(str))
+            baseline_order = [p for p in predictors if p in available]
+            constants = [
+                name
+                for name in ["always_flyingthings", "always_best_avg"]
+                if name in available and name not in baseline_order
+            ]
+            for selector in baseline_order + constants:
+                row = baseline_overall[baseline_overall["selector"] == selector]
+                if row.empty:
+                    continue
+                out_lines.append(
+                    "    "
+                    + _format_holdout_placement_metrics(selector, row.iloc[0].to_dict())
+                )
+
+            best_candidates = [p for p in predictors if p in available]
+            if best_candidates:
+                best_pair_win = _best_baseline_overall(
+                    baseline_overall,
+                    "pairwise_win_rate",
+                    higher_better=True,
+                    candidates=best_candidates,
+                )
+                best_rank_pct_err = _best_baseline_overall(
+                    baseline_overall,
+                    "abs_rank_pct_error",
+                    higher_better=False,
+                    candidates=best_candidates,
+                )
+                spearman_metric = "rank_spearman_micro"
+                if (
+                    spearman_metric not in baseline_overall.columns
+                    or baseline_overall[spearman_metric].dropna().empty
+                ):
+                    spearman_metric = "rank_spearman"
+                best_spearman = _best_baseline_overall(
+                    baseline_overall,
+                    spearman_metric,
+                    higher_better=True,
+                    candidates=best_candidates,
+                )
+                out_lines.append("  Best single-predictor baselines (overall):")
+                if best_pair_win is not None:
+                    out_lines.append(
+                        "    pair_win: "
+                        + _format_holdout_placement_metrics(
+                            best_pair_win["selector"],
+                            best_pair_win.to_dict(),
+                        ).replace(f"{best_pair_win['selector']}: ", "")
+                    )
+                if best_rank_pct_err is not None:
+                    out_lines.append(
+                        "    rank_pct_err: "
+                        + _format_holdout_placement_metrics(
+                            best_rank_pct_err["selector"],
+                            best_rank_pct_err.to_dict(),
+                        ).replace(f"{best_rank_pct_err['selector']}: ", "")
+                    )
+                if best_spearman is not None:
+                    out_lines.append(
+                        "    rank_spearman: "
+                        + _format_holdout_placement_metrics(
+                            best_spearman["selector"],
+                            best_spearman.to_dict(),
+                        ).replace(f"{best_spearman['selector']}: ", "")
+                    )
 
     perm_lines = []
     perm_lobo_path = Path(args.lobo_permutation_summary)
