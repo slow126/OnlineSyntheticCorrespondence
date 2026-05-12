@@ -11,7 +11,7 @@ dataset:
 
   # MOVi-F-specific parameters
   # datapath points at the TFRecord shard directory (no extraction needed)
-  datapath: '/home/slow1/Data/movi_f'
+  datapath: '/home/slow1/Data/movi_f/512x512/1.0.0'
   kubric_dir: '/home/slow1/Projects/kubric'
   movi_f_config: '512x512'
   movi_f_shuffle_buffer: 64
