@@ -60,7 +60,10 @@ def _load_movi_builder(kubric_dir: str, config: str = "512x512"):
                      "etils", "etils.epath", "etils.epy",
                      "etils.edc", "etils.epy.pretty_repr"):
         if mod_name not in sys.modules:
-            sys.modules[mod_name] = types.ModuleType(mod_name)
+            try:
+                importlib.import_module(mod_name)
+            except ImportError:
+                sys.modules[mod_name] = types.ModuleType(mod_name)
 
     builder_path = Path(kubric_dir).resolve() / "challenges" / "movi" / "movi_f.py"
     if not builder_path.exists():
