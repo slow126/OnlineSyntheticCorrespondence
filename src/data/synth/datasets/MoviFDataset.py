@@ -56,7 +56,9 @@ def _load_movi_builder(kubric_dir: str, config: str = "512x512"):
     """
     import types
 
-    for mod_name in ("png", "imageio", "etils", "etils.epath"):
+    for mod_name in ("png", "imageio", "epy",
+                     "etils", "etils.epath", "etils.epy",
+                     "etils.edc", "etils.epy.pretty_repr"):
         if mod_name not in sys.modules:
             sys.modules[mod_name] = types.ModuleType(mod_name)
 
