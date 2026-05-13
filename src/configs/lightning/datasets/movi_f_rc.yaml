@@ -14,5 +14,5 @@ dataset:
   datapath: '/home/slow1/Data/movi_f/512x512/1.0.0'
   kubric_dir: '/home/slow1/Projects/kubric'
   movi_f_config: '512x512'
-  movi_f_shuffle_buffer: 64
+  movi_f_shuffle_buffer: 16
   reverse_flow: false  # backward_flow is already target->source; no swap needed

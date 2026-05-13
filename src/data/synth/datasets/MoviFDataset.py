@@ -48,7 +48,18 @@ _PAIRS_PER_VIDEO = _NUM_FRAMES - 1   # 23
 
 
 def _load_movi_builder(kubric_dir: str, config: str = "512x512"):
-    """Load and return a MoviF builder instance from the kubric repo."""
+    """Load and return a MoviF builder instance from the kubric repo.
+
+    The kubric builder imports png/imageio/etils at the top level but only uses
+    them in _generate_examples (rendering), not in _info() or deserialization.
+    We stub any missing packages so the import succeeds without them installed.
+    """
+    import types
+
+    for mod_name in ("png", "imageio", "etils", "etils.epath"):
+        if mod_name not in sys.modules:
+            sys.modules[mod_name] = types.ModuleType(mod_name)
+
     builder_path = Path(kubric_dir).resolve() / "challenges" / "movi" / "movi_f.py"
     if not builder_path.exists():
         raise FileNotFoundError(
@@ -124,7 +135,7 @@ class MoviFSimpleDataset(Dataset):
         reverse_flow: bool = False,
         kubric_dir: str = _DEFAULT_KUBRIC_DIR,
         config: str = "512x512",
-        shuffle_buffer: int = 64,
+        shuffle_buffer: int = 16,
         **_,
     ):
         super().__init__()
@@ -158,11 +169,28 @@ class MoviFSimpleDataset(Dataset):
         tf.config.set_visible_devices([], "GPU")
 
         features = self.builder.info.features
+
+        def _project(example):
+            # Drop heavy unused fields (segmentations, depth, normal,
+            # object_coordinates, instances, camera, events) before the
+            # shuffle buffer so we only hold ~42 MB/video instead of ~100 MB.
+            return {
+                "video": example["video"],
+                "forward_flow": example["forward_flow"],
+                "backward_flow": example["backward_flow"],
+                "metadata": {
+                    "video_name": example["metadata"]["video_name"],
+                    "forward_flow_range": example["metadata"]["forward_flow_range"],
+                    "backward_flow_range": example["metadata"]["backward_flow_range"],
+                },
+            }
+
         raw_ds = (
             tf.data.TFRecordDataset([str(s) for s in my_shards])
+            .map(features.deserialize_example, num_parallel_calls=1)
+            .map(_project, num_parallel_calls=tf.data.AUTOTUNE)
             .shuffle(buffer_size=self.shuffle_buffer)
             .repeat()
-            .map(features.deserialize_example, num_parallel_calls=2)
         )
         for example in raw_ds.as_numpy_iterator():
             T = example["video"].shape[0]
