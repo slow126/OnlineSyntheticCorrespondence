@@ -25,6 +25,30 @@ flow_normalization:
 flow_space: joint  # flow | xy | joint
 joint_alpha: 1.0  # Only used when flow_space=joint
 
+# Alpha calibration (disabled — alpha fixed at 1.0 for raw joint space)
+calibration:
+  enabled: false
+
+# Space selection (v3 script format — joint = xy + flow combined)
+spaces:
+  enabled: ["joint"]
+
+# PCA (not used for flow)
+pca:
+  enabled: false
+
+# Coverage metrics configuration
+coverage:
+  self_radius_k: 1
+  radius_quantile: 0.95
+  neighbor_agg: kth
+  k_max: 5
+  k_values: [1, 5]
+  compute_qnorm: false
+  compute_rnorm: false
+  compute_curves: true
+  curve_quantiles: [0.80, 0.90, 0.95, 0.99]
+
 # Epsilon curve configuration (pixel space, converted when normalized)
 epsilon_curves:
   enabled: true
@@ -69,6 +93,14 @@ cache:
   mode: read_write
   format: npy
   mmap: true
+
+kl:
+  enabled: true
+  k_values: [5, 20]
+  eps: 1e-12
+  resume: true
+  flush_each_pair: true
+  results_file: analysis_v3/kl_flow_features.csv
 
 # Output configuration
 output:
@@ -149,6 +181,12 @@ dataset_overrides:
   middlebury:
     datapath: /home/spencer/Data/middlebury/all
     normalize_images: true
+  movi_f:
+    datapath: /home/spencer/Data/kubric_tfds/movi_f/512x512/1.0.0
+    kubric_dir: /home/spencer/Projects/kubric
+    normalize_images: false
+    movi_f_config: "512x512"
+    movi_f_shuffle_buffer: 16
 
 # Dataset list (FULL - train and eval sets)
 datasets:
@@ -239,6 +277,11 @@ datasets:
     representation: flow
     is_eval: false
 
+  - name: movi_f
+    split: train
+    representation: flow
+    is_eval: false
+
   # Evaluation sets
   - name: flyingthings
     split: test
@@ -284,6 +327,13 @@ datasets:
     split: val
     representation: flow
     is_eval: true
+
+  - name: synthetic
+    split: val
+    representation: flow
+    is_eval: true
+    overrides:
+      geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig_Val.yaml
 
   # Mixed training sets (for coverage analysis)
   - name: spair_synthetic_30_70

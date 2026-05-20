@@ -112,13 +112,18 @@ def _vec_path(vec_dir: Path, dataset: str, split: str, rep: str) -> Path:
     return vec_dir / f"{dataset}_{split}{suffix}"
 
 
-def load_first_n(path: Path, n: int) -> np.ndarray | None:
-    """Sequential read of first n rows via mmap — fast on NVMe, O(n) memory."""
+def load_random_n(path: Path, n: int, seed: int = 0) -> np.ndarray | None:
+    """Random subsample of n rows — unbiased regardless of on-disk ordering.
+    Indices sorted before mmap access for sequential I/O efficiency."""
     if not path.exists():
         return None
     v = np.load(path, mmap_mode="r")
-    actual = min(n, len(v))
-    return np.array(v[:actual], dtype=np.float32)
+    if len(v) <= n:
+        return np.array(v, dtype=np.float32)
+    rng = np.random.default_rng(seed)
+    idx = rng.choice(len(v), n, replace=False)
+    idx.sort()
+    return np.array(v[idx], dtype=np.float32)
 
 
 # ---------------------------------------------------------------------------
@@ -139,7 +144,8 @@ def compute_all_fid_stats(
         bar.set_postfix_str(f"{dataset}/{split}", refresh=False)
         path = _vec_path(vec_dir, dataset, split, rep)
         t0 = time.time()
-        v = load_first_n(path, fid_samples)
+        seed = int(hash(path.stem) % (2**31))
+        v = load_random_n(path, fid_samples, seed=seed)
         if v is None:
             tqdm.write(f"  MISSING: {path.name}")
             continue
@@ -274,8 +280,9 @@ def main() -> None:
         # --- SW2 (load pair, compute, discard) ---
         if not args.skip_flow:
             t0 = time.time()
-            vt = load_first_n(_vec_path(vec_dir, td, ts, "flow"), args.sw_samples)
-            ve = load_first_n(_vec_path(vec_dir, ed, es, "flow"), args.sw_samples)
+            pt, pe = _vec_path(vec_dir, td, ts, "flow"), _vec_path(vec_dir, ed, es, "flow")
+            vt = load_random_n(pt, args.sw_samples, seed=int(hash(pt.stem) % (2**31)))
+            ve = load_random_n(pe, args.sw_samples, seed=int(hash(pe.stem) % (2**31)))
             load_ms = (time.time() - t0) * 1000
             t0 = time.time()
             if vt is not None and ve is not None:
@@ -287,8 +294,9 @@ def main() -> None:
 
         if not args.skip_dino:
             t0 = time.time()
-            vt = load_first_n(_vec_path(vec_dir, td, ts, "dino"), args.sw_samples)
-            ve = load_first_n(_vec_path(vec_dir, ed, es, "dino"), args.sw_samples)
+            pt, pe = _vec_path(vec_dir, td, ts, "dino"), _vec_path(vec_dir, ed, es, "dino")
+            vt = load_random_n(pt, args.sw_samples, seed=int(hash(pt.stem) % (2**31)))
+            ve = load_random_n(pe, args.sw_samples, seed=int(hash(pe.stem) % (2**31)))
             load_ms = (time.time() - t0) * 1000
             t0 = time.time()
             if vt is not None and ve is not None:

@@ -154,3 +154,4 @@ tmp_run_*.sh
 
 *.deb
 ECCV26___Beyond_Realism__Aligning_Flow_Statistics_for_Dense_Correspondence_Pre_training
+scripts/transfer_analysis_v3/transfer_table.csv

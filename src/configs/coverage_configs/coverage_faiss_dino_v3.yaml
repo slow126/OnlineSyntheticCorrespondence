@@ -65,11 +65,14 @@ coverage:
 
 # KL divergence (kNN estimator)
 kl:
-  enabled: false
+  enabled: true
   method: knn
   spaces: ["features"]
-  k_values: [5, 10, 20, 40]
+  k_values: [5, 20]
   eps: 1e-12
+  resume: true
+  flush_each_pair: true
+  results_file: analysis_v3/kl_dino_features.csv
   nprobe: 16
   filter_duplicates: true
   cache_self_dists: true
@@ -174,6 +177,12 @@ dataset_overrides:
   middlebury:
     datapath: /home/spencer/Data/middlebury/all
     normalize_images: null
+  movi_f:
+    datapath: /home/spencer/Data/kubric_tfds/movi_f/512x512/1.0.0
+    kubric_dir: /home/spencer/Projects/kubric
+    normalize_images: true
+    movi_f_config: "512x512"
+    movi_f_shuffle_buffer: 16
 
 # Dataset list (training and eval sets)
 datasets:
@@ -263,7 +272,12 @@ datasets:
     split: train
     representation: dino
     is_eval: false
-  
+
+  - name: movi_f
+    split: train
+    representation: dino
+    is_eval: false
+
   # Evaluation sets
   - name: flyingthings
     split: test

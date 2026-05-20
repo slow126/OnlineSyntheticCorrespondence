@@ -51,7 +51,11 @@ coverage:
   compute_curves: false
 
 kl:
-  enabled: false
+  enabled: true
+  k_values: [5, 20]
+  resume: true
+  flush_each_pair: true
+  results_file: analysis_v3/kl_dino_features.csv
 
 distance_metric:
   name: sqL2
@@ -139,9 +143,15 @@ dataset_overrides:
   middlebury:
     datapath: /home/spencer/Data/middlebury/all
     normalize_images: null
+  movi_f:
+    datapath: /home/spencer/Data/kubric_tfds/movi_f/512x512/1.0.0
+    kubric_dir: /home/spencer/Projects/kubric
+    normalize_images: true
+    movi_f_config: "512x512"
+    movi_f_shuffle_buffer: 16
 
 datasets:
-  # --- Training sets (10 pure datasets, no mixed) ---
+  # --- Training sets (11 pure datasets, incl. movi_f) ---
   - name: flyingthings
     split: train
     representation: dino
@@ -210,6 +220,11 @@ datasets:
     is_eval: false
 
   - name: sintel
+    split: train
+    representation: dino
+    is_eval: false
+
+  - name: movi_f
     split: train
     representation: dino
     is_eval: false

@@ -3,6 +3,12 @@ datasets:
 - name: flyingthings
   split: train
 
+- name: imagenet2dwarp
+  split: train
+
+- name: movi_f
+  split: train
+
 - name: sintel
   split: train
 
@@ -249,6 +255,25 @@ dataset_overrides:
   flyingthings:
     datapath: /home/spencer/Data/FlyingThings3D_10k
     normalize_images: true
+  imagenet2dwarp:
+    datapath: hf://ILSVRC/imagenet-1k
+    hf_streaming: false
+    hf_max_samples: 5000
+    hf_cache_dir: /home/spencer/.cache/huggingface/datasets
+    normalize_images: true
+    rotation_range: [-30.0, 30.0]
+    scale_range: [0.5, 2.5]
+    translation_range: [-0.1, 0.1]
+    shear_range: [-0.2, 0.2]
+    cache_warp_params: true
+    cache_dir: ./cache/imagenet2dwarp
+    seed: 42
+  movi_f:
+    datapath: /home/spencer/Data/kubric_tfds/movi_f/512x512/1.0.0
+    kubric_dir: /home/spencer/Projects/kubric
+    normalize_images: false
+    movi_f_config: "512x512"
+    movi_f_shuffle_buffer: 16
   tss:
     datapath: /home/spencer/Data/correspondence/TSS_CVPR2016
     normalize_images: true
