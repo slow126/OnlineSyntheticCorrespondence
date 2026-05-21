@@ -17,8 +17,7 @@ mkdir -p $OUT_DIR $REPO/scripts/transfer_analysis_v3/logs
 
 cd $REPO
 
-# Give Faiss 16 GB scratch on the 80 GB A100 for efficient large-tile computation.
-python scripts/transfer_analysis_v3/compute_pairwise_self_distances.py \
+srun python scripts/transfer_analysis_v3/compute_pairwise_self_distances.py \
     --vec-dir    $VEC_DIR \
     --output     $OUT_DIR/rank_${SLURM_ARRAY_TASK_ID}.csv \
     --seed-csv   $SEED_CSV \
