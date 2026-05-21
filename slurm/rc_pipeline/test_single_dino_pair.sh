@@ -17,7 +17,7 @@ mkdir -p $OUT_DIR $REPO/scripts/transfer_analysis_v3/logs
 cd $REPO
 
 # Give Faiss 16 GB scratch on the 80 GB A100 for efficient large-tile computation.
-export FAISS_GPU_TEMP_GB=16
+export FAISS_GPU_TEMP_GB=56
 
 # Smoke test: process rank 0 only (1 pair from the 231-pair dino list).
 # Check logs/test_dino_pair_<jobid>.log to verify it ran correctly.
@@ -29,6 +29,7 @@ python scripts/transfer_analysis_v3/compute_pairwise_self_distances.py \
     --stride     231 \
     --rank       0 \
     --max-dino   8000000 \
+    --batch-size 500000 \
     --gpu
 
 echo "Test complete. Output: $OUT_DIR/test_rank_0.csv"
