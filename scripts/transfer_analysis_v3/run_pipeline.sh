@@ -24,6 +24,9 @@ MINIMAL="${MINIMAL:-0}"
 LOCO="${LOCO:-1}"
 FLOW_ONLY="${FLOW_ONLY:-0}"
 PURE_ONLY="${PURE_ONLY:-1}"
+
+# Path overrides — set VEC_DIR for a non-default vector cache location (e.g. RC cluster).
+VEC_DIR="${VEC_DIR:-$VEC_DIR}"
 CLEAN_RESULTS="${CLEAN_RESULTS:-0}"
 TARGETS="${TARGETS:-auc_normalized peak_pck}"
 FLOW_SPLITS="${FLOW_SPLITS:-loto lobo joint_cell}"
@@ -101,7 +104,7 @@ if [ "$FLOW_ONLY" = "1" ]; then
         log "Flow-only Step 0g: Refreshing flow FID/SW2 train-eval features..."
         python scripts/transfer_analysis_v3/compute_symmetric_distances.py \
             --flow-csv analysis/coverage_v2_flow_only_raw_joint_full.csv \
-            --vec-dir /mnt/nvme_1tb_b/coverage_vectors \
+            --vec-dir $VEC_DIR \
             --output analysis_v3/symmetric_distances.csv \
             --n-proj 200 \
             --sw-samples 100000 \
@@ -143,7 +146,7 @@ else:
             python scripts/transfer_analysis_v3/build_symmetric_self_distances.py \
                 --self-dist analysis_v3/pairwise_self_distances.csv \
                 --output analysis_v3/pairwise_symmetric_distances.csv \
-                --vec-dir /mnt/nvme_1tb_b/coverage_vectors \
+                --vec-dir $VEC_DIR \
                 --flow-mmd-csv flow_mmd_results_fast.csv \
                 --pair-types train_train eval_eval \
                 --fid-samples 200000 \
@@ -316,14 +319,16 @@ else:
     exit 0
 fi
 
+N_EVAL="${N_EVAL:-9}"   # override to 10 on RC (adds synthetic/val)
+
 if [ "$MINIMAL" = "1" ]; then
-    DINO_CONFIG="src/configs/coverage_configs/coverage_faiss_dino_v3_minimal.yaml"
-    DINO_EXPECTED=99  # 11 pure train × 9 eval = 99 pairs
+    DINO_CONFIG="${DINO_CONFIG:-src/configs/coverage_configs/coverage_faiss_dino_v3_minimal.yaml}"
+    DINO_EXPECTED=$((11 * N_EVAL))
     BUILD_TABLE_ARGS="--train-datasets ${PURE_TRAIN_DATASETS} --min-context-size 8"
     log "Mode: MINIMAL (11 pure training datasets incl. movi_f, ${DINO_EXPECTED} DINO pairs expected, min-context-size=8)"
 else
-    DINO_CONFIG="src/configs/coverage_configs/coverage_faiss_dino_v3.yaml"
-    DINO_EXPECTED=198  # 22 train × 9 eval (movi_f adds 2 more self+eval directions)
+    DINO_CONFIG="${DINO_CONFIG:-src/configs/coverage_configs/coverage_faiss_dino_v3.yaml}"
+    DINO_EXPECTED=$((22 * N_EVAL))
     BUILD_TABLE_ARGS="--min-context-size 8"
     log "Mode: FULL (including mixed training sets, ${DINO_EXPECTED} DINO pairs expected, min-context-size=8)"
 fi
@@ -365,7 +370,7 @@ else
     log "Step 0b: Computing DINO null-calibrated coverage..."
     python scripts/transfer_analysis_v3/compute_dino_null_coverage.py \
         --coverage-csv analysis_v3/coverage_dino_full.csv \
-        --vec-dir /mnt/nvme_1tb_b/coverage_vectors \
+        --vec-dir $VEC_DIR \
         --output analysis_v3/dino_null_coverage.csv \
         --null-percentiles 80 90 95 99 \
         --gpu \
@@ -389,7 +394,7 @@ else
     log "Step 0c: Computing FID + sliced Wasserstein (CPU, ~5-10 min)..."
     python scripts/transfer_analysis_v3/compute_symmetric_distances.py \
         --flow-csv analysis/coverage_v2_flow_only_raw_joint_full.csv \
-        --vec-dir /mnt/nvme_1tb_b/coverage_vectors \
+        --vec-dir $VEC_DIR \
         --output "$SYM_CSV" \
         --n-proj 200 \
         --sw-samples 100000 \
@@ -406,7 +411,7 @@ fi
 # ---------------------------------------------------------------------------
 SELF_DIST_CSV="$ROOT/analysis_v3/pairwise_self_distances.csv"
 N_TRAIN=11
-N_EVAL=9
+# N_EVAL is already set above (9 default, 10 on RC with synthetic/val)
 # Rows after symmetrization:
 #   train-train: C(11,2)*2 + 11 = 121   eval-eval: C(9,2)*2 + 9 = 81
 #   train-eval cross (no symmetrization): 11*9 = 99
@@ -428,7 +433,7 @@ if [ "$N_SELF_DIST" -ge "$SELF_DIST_MIN_ROWS" ]; then
 else
     log "Step 0d: Computing all pairwise distances + KL (~2-6 hrs GPU)..."
     python scripts/transfer_analysis_v3/compute_pairwise_self_distances.py \
-        --vec-dir /mnt/nvme_1tb_b/coverage_vectors \
+        --vec-dir $VEC_DIR \
         --output "$SELF_DIST_CSV" \
         --max-flow 16000000 \
         --max-dino 8000000 \
@@ -467,7 +472,7 @@ else:
         python scripts/transfer_analysis_v3/build_symmetric_self_distances.py \
             --self-dist analysis_v3/pairwise_self_distances.csv \
             --output analysis_v3/pairwise_symmetric_distances.csv \
-            --vec-dir /mnt/nvme_1tb_b/coverage_vectors \
+            --vec-dir $VEC_DIR \
             --flow-mmd-csv flow_mmd_results_fast.csv \
             --pair-types train_train eval_eval \
             --fid-samples 200000 \
@@ -559,7 +564,7 @@ else
     log "Step 2b: Running subsampling stability analysis (~30-60 min, GPU)..."
     python scripts/transfer_analysis_v3/run_subsampling_stability.py \
         --coverage-csv analysis/coverage_v2_flow_only_raw_joint_full.csv \
-        --vec-dir /mnt/nvme_1tb_b/coverage_vectors \
+        --vec-dir $VEC_DIR \
         --output-dir scripts/transfer_analysis_v3/results/subsampling_stability \
         --gpu \
         --caps 50000 200000 500000 2000000 -1 \
@@ -577,7 +582,7 @@ else
     log "Step 2b-sym: Running symmetric stability (FID + SW2 vs subsample cap)..."
     python scripts/transfer_analysis_v3/run_symmetric_stability.py \
         --sym-csv analysis_v3/symmetric_distances.csv \
-        --vec-dir /mnt/nvme_1tb_b/coverage_vectors \
+        --vec-dir $VEC_DIR \
         --output-dir scripts/transfer_analysis_v3/results/subsampling_stability \
         --caps 10000 25000 50000 100000 \
         --n-proj 200 \

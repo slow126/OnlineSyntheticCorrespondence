@@ -1,0 +1,93 @@
+# Extract DINO features for synthetic/val on the RC cluster.
+# Loads the existing pca_model_dino.pkl from cache_dir — does NOT refit PCA.
+# Run this before submitting the pairwise distance job array.
+#
+# Usage (from repo root on RC):
+#   python scripts/calculate_coverage_faiss_v2.py \
+#     --config src/configs/coverage_configs/coverage_faiss_dino_synthetic_val_rc.yaml
+
+representation: dino
+encoder: dinov2_vitg14
+flow_count_logging: false
+batch_size: 4
+num_workers: 4
+
+sampling:
+  max_vectors: 8000000
+  vectors_per_image: 1024
+  seed: 42
+  shuffle: true
+
+spaces:
+  enabled: ["features"]
+
+calibration:
+  enabled: false
+
+flow_normalization:
+  enabled: false
+
+pca:
+  enabled: true
+  output_dim: 256
+  fit_on: train
+  whiten: false
+  l2_normalize: true
+  streaming: true
+  max_train_vectors: 500000
+
+faiss:
+  index_factory: IVF4096,Flat
+  metric: l2
+  use_gpu: true
+  nprobe: 4
+  batch_size: 10000
+
+coverage:
+  self_radius_k: 5
+  radius_quantile: 0.95
+  neighbor_agg: kth
+  k_max: 5
+  k_values: [1, 5]
+  compute_qnorm: true
+  compute_rnorm: false
+  compute_curves: false
+
+kl:
+  enabled: false
+
+distance_metric:
+  name: sqL2
+
+cache:
+  dir: /home/slow1/fsl_groups/grp_farrell/slow1/coverage_vectors
+  mode: read_write
+  format: npy
+  mmap: false
+  lazy_load: true
+
+output:
+  results_file: /tmp/synthetic_val_dino_coverage_scratch.csv
+
+dataset_params:
+  size: [512, 512]
+  downsample_flow: 32
+  max_kps: null
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: null
+  kitti_val_use_full_training: true
+
+dataset_overrides:
+  synthetic:
+    geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
+    processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
+    normalize_images: null
+    device: cuda
+
+datasets:
+  - name: synthetic
+    split: val
+    representation: dino
+    is_eval: true

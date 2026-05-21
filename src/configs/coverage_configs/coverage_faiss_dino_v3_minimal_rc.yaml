@@ -1,0 +1,278 @@
+# Coverage Pipeline v2.0 - DINO Representation (minimal, RC cluster version)
+# 11 pure training sets × 10 eval sets = 110 pairs (includes synthetic/val).
+# RC differences vs local minimal config:
+#   - cache.dir → group storage
+#   - dataset paths → /home/slow1/Data/...
+#   - synthetic/val added as 10th eval dataset (extracted on-the-fly, no raw data needed)
+
+representation: dino
+encoder: dinov2_vitg14
+flow_count_logging: true
+batch_size: 4
+num_workers: 4
+
+sampling:
+  max_vectors: 8000000
+  vectors_per_image: 1024
+  seed: 42
+  shuffle: true
+
+spaces:
+  enabled: ["features"]
+
+calibration:
+  enabled: false
+
+flow_normalization:
+  enabled: false
+
+pca:
+  enabled: true
+  output_dim: 256
+  fit_on: train
+  whiten: false
+  l2_normalize: true
+  streaming: true
+  max_train_vectors: 500000
+
+faiss:
+  index_factory: IVF4096,Flat
+  metric: l2
+  use_gpu: true
+  nprobe: 4
+  batch_size: 10000
+
+coverage:
+  self_radius_k: 5
+  radius_quantile: 0.95
+  neighbor_agg: kth
+  k_max: 5
+  k_values: [1, 5]
+  compute_qnorm: true
+  compute_rnorm: false
+  compute_curves: false
+
+kl:
+  enabled: true
+  k_values: [5, 20]
+  resume: true
+  flush_each_pair: true
+  results_file: analysis_v3/kl_dino_features.csv
+
+distance_metric:
+  name: sqL2
+  description: "Squared L2 on L2-normalized vectors (equivalent to cosine distance)"
+
+cache:
+  dir: /home/slow1/fsl_groups/grp_farrell/slow1/coverage_vectors
+  mode: read_write
+  format: npy
+  mmap: false
+  lazy_load: true
+
+output:
+  results_file: analysis_v3/coverage_dino_full.csv
+  curves_file: analysis_v3/coverage_dino_curves.csv
+  save_curves_to_main: false
+  kl_results_file: analysis_v3/kl_dino_features.csv
+
+dataset_params:
+  size: [512, 512]
+  downsample_flow: 32
+  max_kps: null
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: null
+  kitti_val_use_full_training: true
+
+dataset_overrides:
+  sintel:
+    sintel_root: /home/slow1/Data
+    normalize_images: true
+  spair:
+    datapath: ./models/Datasets_CATs
+    normalize_images: null
+  pfpascal:
+    datapath: ./models/Datasets_CATs
+    normalize_images: null
+  pfwillow:
+    datapath: ./models/Datasets_CATs
+    normalize_images: null
+  synthetic:
+    geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
+    processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
+    normalize_images: null
+    device: cuda
+  synthetic_2d_warp:
+    geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
+    processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
+    normalize_images: null
+    synthetic_flow_warp: true
+    synthetic_flow_warp_swap: true
+    device: cuda
+  imagenet2dwarp:
+    datapath: hf://ILSVRC/imagenet-1k
+    hf_streaming: false
+    hf_max_samples: 5000
+    hf_cache_dir: /home/spencer/.cache/huggingface/datasets
+    normalize_images: null
+    rotation_range: [-30.0, 30.0]
+    scale_range: [0.5, 2.5]
+    translation_range: [-0.1, 0.1]
+    shear_range: [-0.2, 0.2]
+    cache_warp_params: true
+    cache_dir: ./cache/imagenet2dwarp
+    seed: 42
+  pointodyssey:
+    dataset_location: /home/slow1/Data/PointOdyssey
+    normalize_images: null
+    pointodyssey_sequence_length: 2
+    pointodyssey_num_pts_to_track: 32
+    use_all_valid: true
+  kitti2012:
+    datapath: /home/slow1/Data/correspondence/kitti
+    normalize_images: null
+  kitti2015:
+    datapath: /home/slow1/Data/correspondence/kitti
+    normalize_images: null
+  flyingthings:
+    datapath: /home/slow1/Data/FlyingThings3D_Pytorch
+    normalize_images: null
+  tss:
+    datapath: /home/slow1/Data/correspondence/TSS_CVPR2016
+    normalize_images: null
+  middlebury:
+    datapath: /home/slow1/Data/middlebury/all
+    normalize_images: null
+  # movi_f: vectors are pre-transferred to cache; no raw data needed on RC.
+
+datasets:
+  # --- Training sets (11 pure datasets, incl. movi_f) ---
+  - name: flyingthings
+    split: train
+    representation: dino
+    is_eval: false
+
+  - name: imagenet2dwarp
+    split: train
+    representation: dino
+    is_eval: false
+
+  - name: synthetic_2d_warp
+    split: train
+    representation: dino
+    is_eval: false
+
+  - name: synthetic
+    split: train
+    representation: dino
+    is_eval: false
+
+  - name: synthetic_small_zoom
+    split: train
+    representation: dino
+    is_eval: false
+    overrides:
+      dataset_name: synthetic
+      geometry_config_overrides:
+        angle_sampler:
+          x_components: {loc: 0, scale: 0.01}
+          y_components: {loc: 0, scale: 0.01}
+        scale_sampler:
+          abs_components: {scale: 0.2}
+          rel_components: {loc: -0.1, scale: 0.2}
+
+  - name: synthetic_large_zoom
+    split: train
+    representation: dino
+    is_eval: false
+    overrides:
+      dataset_name: synthetic
+      geometry_config_overrides:
+        angle_sampler:
+          x_components: {loc: 0, scale: 0.01}
+          y_components: {loc: 0, scale: 0.01}
+        scale_sampler:
+          abs_components: {scale: 0.5}
+          rel_components: {loc: -0.35, scale: 0.5}
+
+  - name: synthetic_random_flipping
+    split: train
+    representation: dino
+    is_eval: false
+    overrides:
+      dataset_name: synthetic
+      geometry_config_overrides:
+        random_flip: 0.5
+
+  - name: spair
+    split: train
+    representation: dino
+    is_eval: false
+
+  - name: pointodyssey
+    split: train
+    representation: dino
+    is_eval: false
+
+  - name: sintel
+    split: train
+    representation: dino
+    is_eval: false
+
+  - name: movi_f
+    split: train
+    representation: dino
+    is_eval: false
+
+  # --- Evaluation sets (10 benchmarks, incl. synthetic/val) ---
+  - name: flyingthings
+    split: test
+    representation: dino
+    is_eval: true
+
+  - name: kitti2015
+    split: val
+    representation: dino
+    is_eval: true
+
+  - name: kitti2012
+    split: val
+    representation: dino
+    is_eval: true
+
+  - name: spair
+    split: test
+    representation: dino
+    is_eval: true
+
+  - name: pfpascal
+    split: test
+    representation: dino
+    is_eval: true
+
+  - name: pfwillow
+    split: test
+    representation: dino
+    is_eval: true
+
+  - name: pointodyssey
+    split: test
+    representation: dino
+    is_eval: true
+
+  - name: tss
+    split: val
+    representation: dino
+    is_eval: true
+
+  - name: middlebury
+    split: val
+    representation: dino
+    is_eval: true
+
+  - name: synthetic
+    split: val
+    representation: dino
+    is_eval: true
