@@ -26,7 +26,7 @@ FLOW_ONLY="${FLOW_ONLY:-0}"
 PURE_ONLY="${PURE_ONLY:-1}"
 
 # Path overrides — set VEC_DIR for a non-default vector cache location (e.g. RC cluster).
-VEC_DIR="${VEC_DIR:-$VEC_DIR}"
+VEC_DIR="${VEC_DIR:-/mnt/nvme_1tb_b/coverage_vectors}"
 CLEAN_RESULTS="${CLEAN_RESULTS:-0}"
 TARGETS="${TARGETS:-auc_normalized peak_pck}"
 FLOW_SPLITS="${FLOW_SPLITS:-loto lobo joint_cell}"
@@ -36,6 +36,14 @@ RUN_SYM_SELF="${RUN_SYM_SELF:-1}"
 REFRESH_FLOW_FEATURES="${REFRESH_FLOW_FEATURES:-0}"
 REFRESH_FLOW_MMD="${REFRESH_FLOW_MMD:-0}"
 REQUIRE_FLOW_AUDIT_CLEAN="${REQUIRE_FLOW_AUDIT_CLEAN:-0}"
+FLOW_REFRESH_MODE="${FLOW_REFRESH_MODE:-append}"
+FLOW_REFRESH_PARALLEL="${FLOW_REFRESH_PARALLEL:-0}"
+FLOW_REFRESH_ONLY="${FLOW_REFRESH_ONLY:-0}"
+FLOW_KMEANS_CUDA_VISIBLE_DEVICES="${FLOW_KMEANS_CUDA_VISIBLE_DEVICES:-${CUDA_VISIBLE_DEVICES:-}}"
+FLOW_SYMMETRIC_CUDA_VISIBLE_DEVICES="${FLOW_SYMMETRIC_CUDA_VISIBLE_DEVICES:-${CUDA_VISIBLE_DEVICES:-}}"
+FLOW_MMD_CUDA_VISIBLE_DEVICES="${FLOW_MMD_CUDA_VISIBLE_DEVICES:-${CUDA_VISIBLE_DEVICES:-}}"
+FLOW_AUDIT_REQUIRE_FAMILIES="${FLOW_AUDIT_REQUIRE_FAMILIES:-flow_raw_coverage flow_kmeans_coverage flow_fid_sw2 pairwise_self_flow_train_eval}"
+FLOW_DIAGNOSTIC_FEATURE_GROUPS="${FLOW_DIAGNOSTIC_FEATURE_GROUPS:-density_train density_eval density_idw random_idw sample_count vector_density_simple train_profile_simple profile_simple flow_fid_only flow_w2_only flow_kl motion_km flow_fid_profile flow_w2_profile flow_kl_profile motion_km_profile}"
 EXCLUDE_FIT_TRAIN_DATASETS="${EXCLUDE_FIT_TRAIN_DATASETS:-}"
 DROP_TRAIN_DATASETS="${DROP_TRAIN_DATASETS:-}"
 
@@ -83,6 +91,27 @@ if [ "$FLOW_ONLY" = "1" ]; then
     log "Experiment splits: $FLOW_SPLITS"
     log "Sweep mode: $FLOW_SWEEP_MODE"
     log "Output prefix: scripts/transfer_analysis_v3/results/${OUT_PREFIX}_<target>"
+    case "$FLOW_REFRESH_MODE" in
+        append|scratch) ;;
+        *)
+            log "ERROR: FLOW_REFRESH_MODE must be 'append' or 'scratch' (got '$FLOW_REFRESH_MODE')."
+            exit 1
+            ;;
+    esac
+    case "$FLOW_REFRESH_PARALLEL" in
+        0|1) ;;
+        *)
+            log "ERROR: FLOW_REFRESH_PARALLEL must be 0 or 1 (got '$FLOW_REFRESH_PARALLEL')."
+            exit 1
+            ;;
+    esac
+    case "$FLOW_REFRESH_ONLY" in
+        0|1) ;;
+        *)
+            log "ERROR: FLOW_REFRESH_ONLY must be 0 or 1 (got '$FLOW_REFRESH_ONLY')."
+            exit 1
+            ;;
+    esac
     if [[ " $FLOW_SPLITS " == *" loco "* ]]; then
         log "NOTE: FLOW_SPLITS includes loco; this is the slow leave-context-out split."
     else
@@ -96,30 +125,141 @@ if [ "$FLOW_ONLY" = "1" ]; then
     fi
 
     if [ "$REFRESH_FLOW_FEATURES" = "1" ]; then
-        log "Flow-only Step 0f: Refreshing directed flow coverage/k-means features..."
-        python scripts/calculate_coverage_faiss_v2.py \
-            --config src/configs/coverage_configs/coverage_faiss_flow_only_raw_joint_full.yaml \
+        if [ "$FLOW_REFRESH_MODE" = "scratch" ]; then
+            STAMP="$(date '+%Y%m%d_%H%M%S')"
+            log "Flow-only feature refresh mode: scratch (archiving existing feature CSVs with suffix .bak_${STAMP})"
+            for csv in \
+                analysis/coverage_v2_flow_only_raw_joint_full.csv \
+                analysis/coverage_v2_flow_only_raw_joint_curves_full.csv \
+                analysis/coverage_v2_flow_only_raw_joint_kmeans_full.csv \
+                analysis/coverage_v2_flow_only_raw_joint_kmeans_curves_full.csv \
+                analysis_v3/kl_flow_features.csv \
+                analysis_v3/symmetric_distances.csv
+            do
+                if [ -f "$csv" ]; then
+                    mv "$csv" "${csv}.bak_${STAMP}"
+                    log "  archived $csv"
+                fi
+            done
+        else
+            log "Flow-only feature refresh mode: append/resume (existing compatible rows are reused)"
+        fi
+        log "Flow-only Step 0f: Materializing directed raw flow coverage from pairwise_self_distances.csv..."
+        python scripts/transfer_analysis_v3/materialize_flow_raw_coverage_from_pairwise.py \
+            --pairwise-self analysis_v3/pairwise_self_distances.csv \
+            --output analysis/coverage_v2_flow_only_raw_joint_full.csv \
             2>&1 | tee "$LOG_DIR/flow_only_refresh_flow_coverage.log"
 
-        log "Flow-only Step 0g: Refreshing flow FID/SW2 train-eval features..."
-        python scripts/transfer_analysis_v3/compute_symmetric_distances.py \
-            --flow-csv analysis/coverage_v2_flow_only_raw_joint_full.csv \
-            --vec-dir $VEC_DIR \
-            --output analysis_v3/symmetric_distances.csv \
-            --n-proj 200 \
-            --sw-samples 100000 \
-            --fid-samples 200000 \
-            --skip-dino \
-            2>&1 | tee "$LOG_DIR/flow_only_refresh_symmetric_distances.log"
+        if [ "$FLOW_REFRESH_PARALLEL" = "1" ]; then
+            log "Flow-only Step 0g/0h: Refreshing k-means and FID/SW2 in parallel."
+            log "  k-means CUDA_VISIBLE_DEVICES=${FLOW_KMEANS_CUDA_VISIBLE_DEVICES:-<inherited>}"
+            log "  FID/SW2  CUDA_VISIBLE_DEVICES=${FLOW_SYMMETRIC_CUDA_VISIBLE_DEVICES:-<inherited>}"
+            (
+                set -o pipefail
+                if [ -n "$FLOW_KMEANS_CUDA_VISIBLE_DEVICES" ]; then
+                    export CUDA_VISIBLE_DEVICES="$FLOW_KMEANS_CUDA_VISIBLE_DEVICES"
+                fi
+                python scripts/calculate_coverage_faiss_flow_kmeans.py \
+                    --config src/configs/coverage_configs/coverage_faiss_flow_only_raw_joint_full.yaml
+            ) 2>&1 | tee "$LOG_DIR/flow_only_refresh_flow_kmeans.log" &
+            KMEANS_PID=$!
+            (
+                set -o pipefail
+                if [ -n "$FLOW_SYMMETRIC_CUDA_VISIBLE_DEVICES" ]; then
+                    export CUDA_VISIBLE_DEVICES="$FLOW_SYMMETRIC_CUDA_VISIBLE_DEVICES"
+                fi
+                python scripts/transfer_analysis_v3/compute_symmetric_distances.py \
+                    --flow-csv analysis/coverage_v2_flow_only_raw_joint_full.csv \
+                    --vec-dir $VEC_DIR \
+                    --output analysis_v3/symmetric_distances.csv \
+                    --n-proj 200 \
+                    --sw-samples 100000 \
+                    --fid-samples 200000 \
+                    --skip-dino
+            ) 2>&1 | tee "$LOG_DIR/flow_only_refresh_symmetric_distances.log" &
+            SYM_PID=$!
+            set +e
+            wait "$KMEANS_PID"
+            KMEANS_STATUS=$?
+            wait "$SYM_PID"
+            SYM_STATUS=$?
+            set -e
+            if [ "$KMEANS_STATUS" -ne 0 ] || [ "$SYM_STATUS" -ne 0 ]; then
+                log "ERROR: parallel flow refresh failed (k-means=$KMEANS_STATUS, FID/SW2=$SYM_STATUS)."
+                exit 1
+            fi
+        else
+            log "Flow-only Step 0g: Refreshing flow k-means coverage features..."
+            if [ -n "$FLOW_KMEANS_CUDA_VISIBLE_DEVICES" ]; then
+                CUDA_VISIBLE_DEVICES="$FLOW_KMEANS_CUDA_VISIBLE_DEVICES" \
+                python scripts/calculate_coverage_faiss_flow_kmeans.py \
+                    --config src/configs/coverage_configs/coverage_faiss_flow_only_raw_joint_full.yaml \
+                    2>&1 | tee "$LOG_DIR/flow_only_refresh_flow_kmeans.log"
+            else
+                python scripts/calculate_coverage_faiss_flow_kmeans.py \
+                    --config src/configs/coverage_configs/coverage_faiss_flow_only_raw_joint_full.yaml \
+                    2>&1 | tee "$LOG_DIR/flow_only_refresh_flow_kmeans.log"
+            fi
+
+            log "Flow-only Step 0h: Refreshing flow FID/SW2 train-eval features..."
+            if [ -n "$FLOW_SYMMETRIC_CUDA_VISIBLE_DEVICES" ]; then
+                CUDA_VISIBLE_DEVICES="$FLOW_SYMMETRIC_CUDA_VISIBLE_DEVICES" \
+                python scripts/transfer_analysis_v3/compute_symmetric_distances.py \
+                    --flow-csv analysis/coverage_v2_flow_only_raw_joint_full.csv \
+                    --vec-dir $VEC_DIR \
+                    --output analysis_v3/symmetric_distances.csv \
+                    --n-proj 200 \
+                    --sw-samples 100000 \
+                    --fid-samples 200000 \
+                    --skip-dino \
+                    2>&1 | tee "$LOG_DIR/flow_only_refresh_symmetric_distances.log"
+            else
+                python scripts/transfer_analysis_v3/compute_symmetric_distances.py \
+                    --flow-csv analysis/coverage_v2_flow_only_raw_joint_full.csv \
+                    --vec-dir $VEC_DIR \
+                    --output analysis_v3/symmetric_distances.csv \
+                    --n-proj 200 \
+                    --sw-samples 100000 \
+                    --fid-samples 200000 \
+                    --skip-dino \
+                    2>&1 | tee "$LOG_DIR/flow_only_refresh_symmetric_distances.log"
+            fi
+        fi
     else
         log "Flow-only feature refresh disabled. Set REFRESH_FLOW_FEATURES=1 to recompute stale raw/k-means/FID/SW2 pairs."
     fi
 
     if [ "$REFRESH_FLOW_MMD" = "1" ]; then
+        if [ "$FLOW_REFRESH_MODE" = "scratch" ] && [ -f flow_mmd_results_fast.csv ]; then
+            STAMP="${STAMP:-$(date '+%Y%m%d_%H%M%S')}"
+            mv flow_mmd_results_fast.csv "flow_mmd_results_fast.csv.bak_${STAMP}"
+            log "  archived flow_mmd_results_fast.csv"
+        fi
         log "Flow-only Step 0m: Refreshing flow MMD features..."
-        python scripts/calculate_flow_mmd.py \
-            --config src/configs/mmd_configs/flow_mmd_config_full.yaml \
-            2>&1 | tee "$LOG_DIR/flow_only_refresh_flow_mmd.log"
+        if [ -n "$FLOW_MMD_CUDA_VISIBLE_DEVICES" ]; then
+            CUDA_VISIBLE_DEVICES="$FLOW_MMD_CUDA_VISIBLE_DEVICES" \
+            python scripts/calculate_flow_mmd.py \
+                --config src/configs/mmd_configs/flow_mmd_config_full.yaml \
+                2>&1 | tee "$LOG_DIR/flow_only_refresh_flow_mmd.log"
+        else
+            python scripts/calculate_flow_mmd.py \
+                --config src/configs/mmd_configs/flow_mmd_config_full.yaml \
+                2>&1 | tee "$LOG_DIR/flow_only_refresh_flow_mmd.log"
+        fi
+    fi
+
+    if [ "$FLOW_REFRESH_ONLY" = "1" ]; then
+        log "Flow-only refresh-only mode: auditing feature coverage and exiting before model sweeps."
+        if [ "$REQUIRE_FLOW_AUDIT_CLEAN" = "1" ]; then
+            # shellcheck disable=SC2086
+            python scripts/transfer_analysis_v3/audit_flow_feature_coverage.py \
+                --require-clean-families $FLOW_AUDIT_REQUIRE_FAMILIES \
+                2>&1 | tee "$LOG_DIR/flow_only_feature_audit.log"
+        else
+            python scripts/transfer_analysis_v3/audit_flow_feature_coverage.py \
+                2>&1 | tee "$LOG_DIR/flow_only_feature_audit.log"
+        fi
+        exit 0
     fi
 
     if [ "$RUN_SYM_SELF" = "1" ]; then
@@ -164,9 +304,9 @@ else:
 
     log "Flow-only Step 1a: Auditing active flow feature coverage..."
     if [ "$REQUIRE_FLOW_AUDIT_CLEAN" = "1" ]; then
+        # shellcheck disable=SC2086
         python scripts/transfer_analysis_v3/audit_flow_feature_coverage.py \
-            --require-clean-families \
-                flow_raw_coverage flow_kmeans_coverage flow_fid_sw2 pairwise_self_flow_train_eval \
+            --require-clean-families $FLOW_AUDIT_REQUIRE_FAMILIES \
             2>&1 | tee "$LOG_DIR/flow_only_feature_audit.log"
     else
         python scripts/transfer_analysis_v3/audit_flow_feature_coverage.py \
@@ -221,12 +361,7 @@ else:
                          ridge_pairwise \
                          idw_prior_two_way idw_prior_two_way_rank \
                          uniform_prior_two_way random_prior_two_way \
-                --feature-groups density_train density_eval density_idw random_idw \
-                                 sample_count vector_density_simple \
-                                 train_profile_simple profile_simple \
-                                 flow_fid_only flow_w2_only flow_kl motion_km \
-                                 flow_fid_profile flow_w2_profile \
-                                 flow_kl_profile motion_km_profile \
+                --feature-groups $FLOW_DIAGNOSTIC_FEATURE_GROUPS \
                 --pairwise-spaces flow \
                 --self-dist-csv analysis_v3/pairwise_self_distances.csv \
                 --target "$TARGET" \

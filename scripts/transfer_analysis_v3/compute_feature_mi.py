@@ -39,6 +39,24 @@ def ksg_mi(X: np.ndarray, y: np.ndarray, k: int, seed: int = 42) -> np.ndarray:
     return mutual_info_regression(X, y, n_neighbors=k, random_state=seed)
 
 
+def _center_by_context(
+    df: pd.DataFrame,
+    feature_cols: list[str],
+    target: str,
+    context_col: str = "context_id",
+) -> pd.DataFrame:
+    """
+    Subtract per-context mean from features and target (within-context centering).
+    Means are derived from df itself, so each bootstrap resample gets its own means.
+    Returns a copy with the same columns.
+    """
+    out = df.copy()
+    for col in feature_cols + [target]:
+        if col in out.columns:
+            out[col] = out[col] - out.groupby(context_col)[col].transform("mean")
+    return out
+
+
 def bootstrap_mi(
     df: pd.DataFrame,
     feature_cols: list[str],
@@ -46,16 +64,36 @@ def bootstrap_mi(
     k: int,
     n_boot: int,
     rng: np.random.Generator,
+    demean_context: bool = False,
 ) -> pd.DataFrame:
     """
     Bootstrap MI(feature; AUC) with cluster resampling at the training-dataset level.
     Returns DataFrame with columns: feature, mi_point, ci_lo, ci_med, ci_hi.
+
+    demean_context: if True, subtract per-context_id mean from features and target
+    before estimating MI, isolating within-context (LOTO-relevant) signal.
+    Context means are recomputed inside each bootstrap resample.
+    Features that become zero-variance after demeaning are assigned MI = 0.
     """
     train_sets = df["train_dataset"].unique()
     n_feat = len(feature_cols)
 
-    point_df = df[feature_cols + [target]].dropna()
-    point_scores = ksg_mi(point_df[feature_cols].values, point_df[target].values, k)
+    point_src = _center_by_context(df, feature_cols, target) if demean_context else df
+    # Drop features that are constant after demeaning (benchmark-level constants)
+    nonzero_mask = np.array([
+        point_src[c].std() > 1e-12 for c in feature_cols
+    ])
+
+    point_df = point_src[feature_cols + [target]].dropna()
+    point_scores = np.zeros(n_feat)
+    if nonzero_mask.any():
+        active_cols = [c for c, ok in zip(feature_cols, nonzero_mask) if ok]
+        active_scores = ksg_mi(point_df[active_cols].values, point_df[target].values, k)
+        for i, (c, ok) in enumerate(zip(feature_cols, nonzero_mask)):
+            if ok:
+                point_scores[i] = active_scores[active_cols.index(c)]
+    else:
+        point_scores = ksg_mi(point_df[feature_cols].values, point_df[target].values, k)
 
     boot_scores = np.zeros((n_boot, n_feat))
     for b in range(n_boot):
@@ -63,11 +101,22 @@ def bootstrap_mi(
         boot_rows = pd.concat(
             [df[df["train_dataset"] == t] for t in sampled], ignore_index=True
         )
+        if demean_context:
+            boot_rows = _center_by_context(boot_rows, feature_cols, target)
         sub = boot_rows[feature_cols + [target]].dropna()
         if len(sub) < k + 1:
             boot_scores[b] = np.nan
             continue
-        boot_scores[b] = ksg_mi(sub[feature_cols].values, sub[target].values, k)
+        if demean_context and nonzero_mask.any():
+            active_cols = [c for c, ok in zip(feature_cols, nonzero_mask) if ok]
+            active_scores = ksg_mi(sub[active_cols].values, sub[target].values, k)
+            row = np.zeros(n_feat)
+            for i, (c, ok) in enumerate(zip(feature_cols, nonzero_mask)):
+                if ok:
+                    row[i] = active_scores[active_cols.index(c)]
+            boot_scores[b] = row
+        else:
+            boot_scores[b] = ksg_mi(sub[feature_cols].values, sub[target].values, k)
 
     ci_lo  = np.nanpercentile(boot_scores, 2.5,  axis=0)
     ci_med = np.nanpercentile(boot_scores, 50.0, axis=0)
@@ -126,6 +175,16 @@ def main() -> None:
         "--exclude-train-datasets", nargs="+", default=[],
         help="Drop rows whose train_dataset is in this list before computing MI.",
     )
+    parser.add_argument(
+        "--demean-context", action="store_true", default=True,
+        help="Subtract per-context_id mean from features and target before MI "
+             "(isolates within-context signal relevant for LOTO/Spearman; "
+             "removes benchmark-difficulty and model-variant effects). Default: on.",
+    )
+    parser.add_argument(
+        "--no-demean-context", dest="demean_context", action="store_false",
+        help="Disable within-context demeaning (computes pooled marginal MI instead).",
+    )
     args = parser.parse_args()
 
     table_path = Path(args.table)
@@ -168,13 +227,23 @@ def main() -> None:
     feature_cols = valid_feats
 
     print(f"  {len(feature_cols)} features, target='{args.target}', "
-          f"n_boot={args.n_boot}, k={args.k_neighbors}")
+          f"n_boot={args.n_boot}, k={args.k_neighbors}, "
+          f"demean_context={args.demean_context}")
+    if args.demean_context:
+        n_constant = sum(
+            df[c].groupby(df["context_id"]).transform("std").max() < 1e-12
+            for c in feature_cols
+        )
+        print(f"  {n_constant} features are benchmark-constant and will score MI=0 after demeaning")
 
     rng = np.random.default_rng(args.seed)
 
     # --- Predictive MI: MI(feature; AUC) with bootstrap CIs ---
     print("\nComputing predictive MI (bootstrap)...")
-    mi_df = bootstrap_mi(df, feature_cols, args.target, args.k_neighbors, args.n_boot, rng)
+    mi_df = bootstrap_mi(
+        df, feature_cols, args.target, args.k_neighbors, args.n_boot, rng,
+        demean_context=args.demean_context,
+    )
 
     mi_path = out_dir / "feature_mi.csv"
     mi_df.to_csv(mi_path, index=False)

@@ -63,9 +63,9 @@ kmeans:
   nredo: 1
   seed: 42
   use_gpu: true
-  force_recompute: true
+  force_recompute: false
   require_cache: true
-  batch_size: 500000
+  batch_size: 100000
 
 # K-means manifold (self-radius on centroids)
 kmeans_manifold:
@@ -80,7 +80,7 @@ faiss:
   metric: l2
   use_gpu: true
   nprobe: 128
-  batch_size: 250000
+  batch_size: 100000
 
 # Distance metric metadata
 distance_metric:
@@ -93,9 +93,10 @@ cache:
   mode: read_write
   format: npy
   mmap: true
+  lazy_load: true
 
 kl:
-  enabled: true
+  enabled: false
   k_values: [5, 20]
   eps: 1e-12
   resume: true

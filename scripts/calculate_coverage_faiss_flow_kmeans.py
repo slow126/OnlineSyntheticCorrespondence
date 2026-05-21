@@ -332,6 +332,110 @@ def _load_or_extract_vectors(
     return train_vectors, eval_vectors
 
 
+def _load_or_extract_vectors_for_dataset(
+    config: Dict,
+    cache_dir: Path,
+    device: str,
+    ds_config: Dict,
+) -> np.ndarray:
+    """Load/extract one dataset's flow vectors, then let caller free it.
+
+    The old k-means path loaded every dataset into memory before training
+    codebooks. For large flow caches that is unnecessary: codebook training
+    needs only one dataset at a time, and the pairwise stage needs only the
+    small centroids/weights.
+    """
+    dataset_name = ds_config.get("name")
+    split = ds_config.get("split")
+    require_cache = bool(config.get("kmeans", {}).get("require_cache", True))
+
+    vectors = cache.load_cached_vectors(
+        cache_dir,
+        dataset_name,
+        split,
+        "flow",
+        mmap=bool(config.get("cache", {}).get("mmap", False)),
+    )
+    if vectors is not None:
+        print(f"  ✓ Loaded {len(vectors):,} cached vectors")
+        return vectors
+
+    if require_cache:
+        raise FileNotFoundError(
+            f"Missing cached vectors for {dataset_name}/{split} (flow). "
+            "Re-run extraction or set kmeans.require_cache=false."
+        )
+
+    dataset = None
+    dataloader = None
+    try:
+        if ds_config.get("mixed", False):
+            print(
+                "  Mixed dataset: "
+                + " + ".join(
+                    [f"{d}({p:.0%})" for d, p in zip(ds_config["datasets"], ds_config["percentages"])]
+                )
+            )
+            dataset = create_mixed_dataset_from_config(
+                ds_config["datasets"],
+                ds_config["percentages"],
+                split,
+                config["dataset_params"],
+                config["dataset_overrides"],
+                seed=config["sampling"]["seed"],
+            )
+            is_synthetic = any(_is_synthetic_dataset(name) for name in ds_config["datasets"])
+        else:
+            dataset = create_dataset_from_config(
+                dataset_name,
+                split,
+                config["dataset_params"],
+                config["dataset_overrides"],
+                entry_overrides=ds_config.get("overrides"),
+            )
+            is_synthetic = _is_synthetic_dataset(dataset_name)
+
+        num_workers = 0 if is_synthetic else config["num_workers"]
+        pin_memory = False if is_synthetic else True
+        if is_synthetic and config["num_workers"] > 0:
+            print("  ⚠️  Synthetic dataset detected - forcing num_workers=0 and pin_memory=False")
+
+        dataloader = DataLoader(
+            dataset,
+            batch_size=config["batch_size"],
+            shuffle=config["sampling"].get("shuffle", True),
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            collate_fn=dataset.collate_fn if hasattr(dataset, "collate_fn") else None,
+        )
+
+        img_size = config.get("flow_normalization", {}).get("image_size", [512, 512])
+        vectors = extract_vectors_from_dataset(
+            dataset,
+            dataloader,
+            "flow",
+            encoder=None,
+            max_vectors=config["sampling"]["max_vectors"],
+            vectors_per_image=config["sampling"].get(
+                "vectors_per_image", config["sampling"].get("flow_per_image_max", 2000)
+            ),
+            seed=config["sampling"]["seed"],
+            device=device,
+            verbose=True,
+            image_size=img_size,
+        )
+        cache.save_cached_vectors(cache_dir, dataset_name, split, "flow", vectors)
+        return vectors
+    finally:
+        if dataset is not None:
+            del dataset
+        if dataloader is not None:
+            del dataloader
+        gc.collect()
+        if device == "cuda":
+            torch.cuda.empty_cache()
+
+
 def run_pipeline(config_path: str):
     print(f"\n{'=' * 80}")
     print("COVERAGE PIPELINE v2.2 - FLOW K-MEANS EPSILON CURVES")
@@ -350,29 +454,20 @@ def run_pipeline(config_path: str):
 
     device = "cuda" if torch.cuda.is_available() and config["faiss"]["use_gpu"] else "cpu"
 
-    # ======================
-    # STEP 0: Load/Extract Vectors
-    # ======================
-    print(f"\n{'=' * 80}")
-    print("STEP 0: LOAD/EXTRACT VECTORS")
-    print(f"{'=' * 80}\n")
+    train_keys = [
+        (d.get("name"), d.get("split"))
+        for d in config["datasets"]
+        if not d.get("is_eval", False)
+    ]
+    eval_keys = [
+        (d.get("name"), d.get("split"))
+        for d in config["datasets"]
+        if d.get("is_eval", False)
+    ]
+    print(f"\nConfigured {len(train_keys)} train sets, {len(eval_keys)} eval sets")
 
-    train_vectors, eval_vectors = _load_or_extract_vectors(config, cache_dir, device)
-    print(f"\nLoaded {len(train_vectors)} train sets, {len(eval_vectors)} eval sets")
-
-    # ======================
-    # PREPROCESSING
-    # ======================
     flow_norm = config.get("flow_normalization", {}).get("enabled", False)
-    if flow_norm:
-        print("\nNormalizing flow vectors to [-1, 1]...")
-        img_h, img_w = config["flow_normalization"]["image_size"]
-        for key, vectors in train_vectors.items():
-            train_vectors[key] = spaces.normalize_flow_vectors(vectors, img_w, img_h)
-        for key, vectors in eval_vectors.items():
-            eval_vectors[key] = spaces.normalize_flow_vectors(vectors, img_w, img_h)
-    else:
-        img_h, img_w = config.get("flow_normalization", {}).get("image_size", [512, 512])
+    img_h, img_w = config.get("flow_normalization", {}).get("image_size", [512, 512])
 
     # ======================
     # STEP 1: Define Space
@@ -390,13 +485,6 @@ def run_pipeline(config_path: str):
     else:
         print(f"STEP 1: DEFINE JOINT SPACE (x, y, {joint_alpha:.3f}*dx, {joint_alpha:.3f}*dy)")
     print(f"{'=' * 80}\n")
-
-    space_train_vectors = {
-        k: spaces.transform_to_space(v, space_name, alpha=joint_alpha) for k, v in train_vectors.items()
-    }
-    space_eval_vectors = {
-        k: spaces.transform_to_space(v, space_name, alpha=joint_alpha) for k, v in eval_vectors.items()
-    }
 
     # ======================
     # STEP 2: K-Means Codebooks
@@ -419,8 +507,17 @@ def run_pipeline(config_path: str):
 
     codebooks: Dict[Tuple[str, str], Dict[str, np.ndarray]] = {}
 
-    all_vectors = {**space_train_vectors, **space_eval_vectors}
-    for (dataset_name, split), vectors in all_vectors.items():
+    for ds_config in config["datasets"]:
+        dataset_name = ds_config.get("name")
+        split = ds_config.get("split")
+        key = (dataset_name, split)
+        print(f"\n[{dataset_name}/{split}] {'(eval)' if ds_config.get('is_eval', False) else '(train)'}")
+
+        vectors = _load_or_extract_vectors_for_dataset(config, cache_dir, device, ds_config)
+        if flow_norm:
+            vectors = spaces.normalize_flow_vectors(vectors, img_w, img_h)
+        vectors = spaces.transform_to_space(vectors, space_name, alpha=joint_alpha)
+
         n_vectors = vectors.shape[0]
         k_eff = min(kmeans_k, n_vectors)
         if k_eff < kmeans_k:
@@ -432,15 +529,15 @@ def run_pipeline(config_path: str):
             print(f"  ✓ Loaded cached k-means for {dataset_name}/{split} (k={k_eff})")
         else:
             print(f"  Training k-means for {dataset_name}/{split} (k={k_eff})")
-            train_vectors = _sample_vectors(vectors, kmeans_train_max, kmeans_seed)
-            train_vectors = np.ascontiguousarray(train_vectors, dtype=np.float32)
-            if train_vectors.shape[0] < k_eff:
+            kmeans_train_vectors = _sample_vectors(vectors, kmeans_train_max, kmeans_seed)
+            kmeans_train_vectors = np.ascontiguousarray(kmeans_train_vectors, dtype=np.float32)
+            if kmeans_train_vectors.shape[0] < k_eff:
                 raise ValueError(
-                    f"Not enough training vectors for k-means: N={train_vectors.shape[0]:,}, k={k_eff}. "
+                    f"Not enough training vectors for k-means: N={kmeans_train_vectors.shape[0]:,}, k={k_eff}. "
                     "Increase kmeans.train_max or reduce kmeans.k."
                 )
             centroids = _train_kmeans(
-                train_vectors,
+                kmeans_train_vectors,
                 k_eff,
                 niter=kmeans_niter,
                 nredo=kmeans_nredo,
@@ -459,8 +556,13 @@ def run_pipeline(config_path: str):
             )
             _save_kmeans(cache_dir, dataset_name, split, space_name, k_eff, centroids, weights)
             print(f"  ✓ Saved k-means for {dataset_name}/{split}")
+            del kmeans_train_vectors
 
-        codebooks[(dataset_name, split)] = {"centroids": centroids, "weights": weights, "k": k_eff}
+        codebooks[key] = {"centroids": centroids, "weights": weights, "k": k_eff}
+        del vectors
+        gc.collect()
+        if device == "cuda":
+            torch.cuda.empty_cache()
 
     # ======================
     # STEP 3: Epsilon Curves
@@ -481,13 +583,41 @@ def run_pipeline(config_path: str):
         else:
             print(f"  {label}px (squared={info['eps_sq']:.6f})")
 
-    results = []
-    curves = []
+    output_file = Path(config["output"]["kmeans_results_file"])
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    curves_file = Path(config["output"]["kmeans_curves_file"])
+    curves_file.parent.mkdir(parents=True, exist_ok=True)
 
-    for train_key in space_train_vectors.keys():
-        for eval_key in space_eval_vectors.keys():
+    done_pairs: set[tuple[str, str, str, str]] = set()
+    if output_file.exists() and output_file.stat().st_size > 0:
+        try:
+            existing = pd.read_csv(output_file)
+            for _, r in existing.iterrows():
+                done_pairs.add(
+                    (
+                        str(r["train_dataset"]),
+                        str(r["train_split"]),
+                        str(r["eval_dataset"]),
+                        str(r["eval_split"]),
+                    )
+                )
+            print(f"  Resuming: {len(done_pairs)} k-means pairs already in {output_file.name}")
+        except Exception as exc:
+            print(f"  ⚠️  Could not read existing k-means results ({exc}); appending from scratch.")
+
+    computed_pairs = 0
+    skipped_pairs = 0
+
+    for train_key in train_keys:
+        for eval_key in eval_keys:
             train_name, train_split = train_key
             eval_name, eval_split = eval_key
+            pair_key = (train_name, train_split, eval_name, eval_split)
+
+            if pair_key in done_pairs:
+                skipped_pairs += 1
+                print(f"\n[{train_name}/{train_split} → {eval_name}/{eval_split}] already done — skipping")
+                continue
 
             print(f"\n[{train_name}/{train_split} → {eval_name}/{eval_split}]")
 
@@ -529,6 +659,7 @@ def run_pipeline(config_path: str):
 
             eval_stats = _distance_stats(eval_to_train)
             train_stats = _distance_stats(train_to_eval)
+            curve_rows = []
 
             row.update(
                 {
@@ -557,7 +688,7 @@ def run_pipeline(config_path: str):
                 row[col_eval] = eval_cov
                 row[col_train] = train_cov
 
-                curves.append(
+                curve_rows.append(
                     {
                         "space": space_name,
                         "train_dataset": train_name,
@@ -574,8 +705,6 @@ def run_pipeline(config_path: str):
                     }
                 )
 
-            results.append(row)
-
             for info in eps_info:
                 eps_label = _format_eps_label(info["eps_px"])
                 col_eval = f"eval_covered_by_train_eps{eps_label}px_weighted"
@@ -586,27 +715,25 @@ def run_pipeline(config_path: str):
                     f"train_covered={row[col_train]:.3f}"
                 )
 
-    # ======================
-    # Save Results
-    # ======================
-    print(f"\n{'=' * 80}")
-    print("SAVING RESULTS")
-    print(f"{'=' * 80}\n")
+            write_header = not output_file.exists() or output_file.stat().st_size == 0
+            pd.DataFrame([row]).to_csv(output_file, mode="a", header=write_header, index=False)
+            curves_header = not curves_file.exists() or curves_file.stat().st_size == 0
+            pd.DataFrame(curve_rows).to_csv(curves_file, mode="a", header=curves_header, index=False)
+            done_pairs.add(pair_key)
+            computed_pairs += 1
+            print(f"  ✓ Checkpoint saved ({computed_pairs} new, {skipped_pairs} skipped)")
 
-    results_df = pd.DataFrame(results)
-    output_file = Path(config["output"]["kmeans_results_file"])
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-    results_df.to_csv(output_file, index=False)
+            del directed, eval_to_train, train_to_eval
+            gc.collect()
+            if device == "cuda":
+                torch.cuda.empty_cache()
 
-    curves_df = pd.DataFrame(curves)
-    curves_file = Path(config["output"]["kmeans_curves_file"])
-    curves_file.parent.mkdir(parents=True, exist_ok=True)
-    curves_df.to_csv(curves_file, index=False)
-
-    print(f"✓ Results saved to: {output_file}")
-    print(f"✓ Curves saved to: {curves_file}")
-    print(f"  Total rows: {len(results_df)}")
-    print(f"  Total curves: {len(curves_df)}")
+    print(f"✓ Results saved incrementally to: {output_file}")
+    print(f"✓ Curves saved incrementally to: {curves_file}")
+    if output_file.exists():
+        print(f"  Total result rows: {len(pd.read_csv(output_file))}")
+    if curves_file.exists():
+        print(f"  Total curve rows: {len(pd.read_csv(curves_file))}")
     print(f"\n{'=' * 80}")
     print("PIPELINE COMPLETE")
     print(f"{'=' * 80}\n")

@@ -413,6 +413,59 @@ def main() -> None:
     flow_cov = load_coverage(flow_raw_path, prefix="flow_")
     auc = join_feature(auc, flow_cov, "flow raw coverage")
 
+    # Backfill directed raw-flow NN/epsilon features from pairwise_self_distances.
+    # This covers newer train/eval pairs when the legacy coverage CSV is stale.
+    if _sd_path.exists():
+        cross = _sd[
+            (_sd["space"] == "flow") &
+            (_sd["pair_type"] == "train_eval")
+        ].copy()
+        fill_map = {
+            "mean_nn_b_to_a": "flow_mean_nn_eval_to_train_k1",
+            "mean_nn_a_to_b": "flow_mean_nn_train_to_eval_k1",
+            "b_covered_by_a_eps1px": "flow_eval_covered_by_train_eps1px",
+            "a_covered_by_b_eps1px": "flow_train_covered_by_eval_eps1px",
+            "b_covered_by_a_eps4px": "flow_eval_covered_by_train_eps4px",
+            "a_covered_by_b_eps4px": "flow_train_covered_by_eval_eps4px",
+            "b_covered_by_a_eps16px": "flow_eval_covered_by_train_eps16px",
+            "a_covered_by_b_eps16px": "flow_train_covered_by_eval_eps16px",
+        }
+        available = [c for c in fill_map if c in cross.columns]
+        if available:
+            fill_feat = cross[["dataset_a", "dataset_b"] + available].rename(
+                columns={"dataset_a": "train_dataset", "dataset_b": "benchmark", **fill_map}
+            )
+            fill_cols = [fill_map[c] for c in available]
+            before_missing = {
+                c: int(auc[c].isna().sum()) if c in auc.columns else len(auc)
+                for c in fill_cols
+            }
+            auc = auc.merge(
+                fill_feat,
+                on=["train_dataset", "benchmark"],
+                how="left",
+                suffixes=("", "__self_fill"),
+            )
+            for col in fill_cols:
+                fill_col = f"{col}__self_fill"
+                if fill_col not in auc.columns:
+                    continue
+                if col in auc.columns:
+                    auc[col] = auc[col].fillna(auc[fill_col])
+                else:
+                    auc[col] = auc[fill_col]
+                auc = auc.drop(columns=[fill_col])
+            filled = {
+                c: before_missing[c] - int(auc[c].isna().sum())
+                for c in fill_cols if c in auc.columns
+            }
+            n_filled = sum(filled.values())
+            if n_filled:
+                print(
+                    "  Backfilled raw flow NN/epsilon features from "
+                    f"pairwise_self_distances.csv ({n_filled} cells)"
+                )
+
     # --- Flow k-means coverage ---
     flow_km_cov = load_coverage(
         root / "analysis/coverage_v2_flow_only_raw_joint_kmeans_full.csv", prefix="flow_km_")

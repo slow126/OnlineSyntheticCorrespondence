@@ -4,6 +4,93 @@ Briefing for an agent continuing work on this pipeline. Read fully before starti
 
 ---
 
+## Current state as of 2026-05-21
+
+The flow feature refresh was reworked after repeated overnight failures in the raw
+FAISS coverage job. The raw directed flow features used by the current sweep are now
+materialized from `analysis_v3/pairwise_self_distances.csv` instead of recomputing the
+huge raw FAISS coverage search. This is intentional:
+
+- `pairwise_self_distances.csv` already has all 110 pure train/eval flow pairs.
+- It contains `mean_nn_*`, epsilon coverage at 1/4/16px, and KL at k=5/20.
+- `build_table.py` already reads `flow_kl` from this file.
+- The legacy `analysis_v3/kl_flow_features.csv` path is not needed for the v3 sweep.
+
+New helper:
+`scripts/transfer_analysis_v3/materialize_flow_raw_coverage_from_pairwise.py`
+
+Current feature status after materialization:
+
+| Family | Source | Current status |
+|---|---|---|
+| raw flow NN/eps (`flow_nn`, `flow_eps`, `motion`) | `analysis/coverage_v2_flow_only_raw_joint_full.csv` materialized from pairwise self | complete, 0/110 missing |
+| flow KL (`flow_kl`) | `analysis_v3/pairwise_self_distances.csv` | complete, 0/110 missing |
+| k-means flow (`flow_km`, `motion_km`) | `analysis/coverage_v2_flow_only_raw_joint_kmeans_full.csv` | needs refresh |
+| flow FID/SW2 | `analysis_v3/symmetric_distances.csv` | needs refresh |
+| flow MMD | `flow_mmd_results_fast.csv` | old/incomplete; needs refresh |
+
+The old CSVs were not deleted. Scratch refresh archives them as `.bak_<timestamp>`.
+Known archives include old raw/kmeans files from 2026-02-03 and old FID/SW2 from
+2026-05-15.
+
+Important run-pipeline flags added recently:
+
+- `FLOW_REFRESH_ONLY=1`: refresh/audit features and exit before model sweeps.
+- `FLOW_REFRESH_MODE=scratch|append`: archive old feature CSVs or resume existing partials.
+- `FLOW_REFRESH_PARALLEL=0|1`: optionally run k-means and FID/SW2 in parallel.
+- `FLOW_KMEANS_CUDA_VISIBLE_DEVICES`, `FLOW_SYMMETRIC_CUDA_VISIBLE_DEVICES`,
+  `FLOW_MMD_CUDA_VISIBLE_DEVICES`: per-stage GPU assignment.
+- `FLOW_DIAGNOSTIC_FEATURE_GROUPS`: shell override for diagnostic feature groups.
+- `FLOW_AUDIT_REQUIRE_FAMILIES`: shell override for which feature families must be complete.
+
+After a crash in `calculate_coverage_faiss_flow_kmeans.py`, a refactor bug was fixed:
+the script no longer references removed `train_vectors`/`eval_vectors` variables. It now
+loads one dataset at a time, builds/loads its k-means codebook, frees vectors, and appends
+each pair result immediately.
+
+If continuing the full feature refresh, run in `screen` on GPU 1:
+
+```bash
+FLOW_ONLY=1 \
+FLOW_REFRESH_ONLY=1 \
+REFRESH_FLOW_FEATURES=1 \
+REFRESH_FLOW_MMD=1 \
+FLOW_REFRESH_MODE=append \
+FLOW_REFRESH_PARALLEL=0 \
+FLOW_KMEANS_CUDA_VISIBLE_DEVICES=1 \
+FLOW_SYMMETRIC_CUDA_VISIBLE_DEVICES=1 \
+FLOW_MMD_CUDA_VISIBLE_DEVICES=1 \
+REQUIRE_FLOW_AUDIT_CLEAN=1 \
+FLOW_AUDIT_REQUIRE_FAMILIES="flow_raw_coverage flow_kmeans_coverage flow_fid_sw2 flow_mmd pairwise_self_flow_train_eval" \
+bash scripts/transfer_analysis_v3/run_pipeline.sh
+```
+
+Use `append` here unless deliberately starting over; `scratch` will archive partial CSVs.
+
+While the refresh runs, it is reasonable to run a reduced model sweep on GPU 0 using only
+currently complete feature families:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 \
+FLOW_ONLY=1 \
+FLOW_SWEEP_MODE=diagnostic \
+FLOW_SPLITS="loto lobo joint_cell" \
+TARGETS="auc_normalized peak_pck" \
+REFRESH_FLOW_FEATURES=0 \
+REFRESH_FLOW_MMD=0 \
+REQUIRE_FLOW_AUDIT_CLEAN=1 \
+FLOW_AUDIT_REQUIRE_FAMILIES="flow_raw_coverage pairwise_self_flow_train_eval" \
+FLOW_DIAGNOSTIC_FEATURE_GROUPS="density_train density_eval density_idw random_idw sample_count vector_density_simple train_profile_simple profile_simple flow_nn flow_eps motion flow_kl flow_kl_profile" \
+CLEAN_RESULTS=1 \
+bash scripts/transfer_analysis_v3/run_pipeline.sh
+```
+
+For a full feature sweep after the refresh audit is clean, restore the broader diagnostic
+feature groups including `motion_km`, `flow_fid_only`, `flow_w2_only`, and their profile
+composites.
+
+---
+
 ## What the project is about
 
 Building a **transfer predictor**: given a synthetic training dataset and an evaluation
@@ -60,11 +147,14 @@ TSS, Middlebury (exact set varies by model variant).
 | `loto` | One training dataset | 25 | Hardest: novel training data |
 | `lobo` | One benchmark | 10 | Realistic: novel eval domain |
 | `loco_cell` | One (train, benchmark) cell | 250 | "Real use case" |
+| `joint_cell` | One (train, benchmark) cell, with both train and benchmark axes excluded from fit | ~110 pure | Strict joint generalization diagnostic |
 | `loto_grouped` | Grouped training variants | ~11 | Robustness check |
 | `loco` | One context_id (bench×variant) | ~250 | Slow, rarely needed |
 | `lomo` | One model family | ~4 | Model-type generalisation |
 
-**Primary splits to focus on: loto, lobo, loco_cell.**
+**Current primary splits to focus on: `loto`, `lobo`, `joint_cell`.**
+`loco_cell` is informative but slower and got less scrutiny; do not run it by default
+while the main architecture sweep is still moving.
 
 ---
 
@@ -75,7 +165,7 @@ TSS, Middlebury (exact set varies by model variant).
 |-------|----------|--------|--------|
 | `flow_nn` | Mean NN dist eval→train + train→eval | 2 | ✓ available |
 | `flow_eps` | ε-coverage at 1/4/16 px both dirs | 6 | ✓ available |
-| `flow_km` | K-means density-weighted ε-coverage | 6 | ✓ available |
+| `flow_km` | K-means density-weighted ε-coverage | 6 | refresh pending after scratch archive |
 | `flow_kl` | kNN KL divergence k=5,20 both dirs | 4 | ✓ in pairwise_self_distances.csv |
 
 ### Directed — DINO appearance space
@@ -205,6 +295,11 @@ This is likely relevant to the SPair low / Sintel high LOTO outliers.
   train anchors, eval anchors, and their full outer product. This tests whether the
   similarity space is useful beyond inverse-distance weighting. It is high-variance and
   should be treated as diagnostic; full bilinear/random-control designs can be ill-conditioned.
+- **`anchor_additive_ridge`**: Anchor model without train×eval interactions. Lower-capacity
+  comparison for checking whether the full bilinear model is memorizing cells.
+- **`anchor_lowrank_bilinear_ridge`**: Additive anchors plus low-rank PCA interaction
+  features. Preferred bilinear-style compromise when overfit risk is a concern.
+- **`anchor_bilinear_shrunk_ridge`**: Full bilinear features with stronger Ridge alphas.
 - **`kernel_mixed_additive`**: Conservative additive kernel mixed-effects model:
   `K = wt*K_train + we*K_eval + wv*K_variant`. Uses the same feature-group→pairwise-distance
   mapping as IDW, so flow/density/random controls are directly comparable. This is the
@@ -391,10 +486,13 @@ for TARGET in auc_normalized peak_pck; do
   OUT_DIR="scripts/transfer_analysis_v3/results/flow_only_pure_diagnostic_${TARGET}"
 
   python scripts/transfer_analysis_v3/run_experiments.py \
-    --splits loto lobo loco_cell \
-    --models ridge_abs two_way_mixed_ridge anchor_bilinear_ridge \
+    --splits loto lobo joint_cell \
+    --models ridge_abs two_way_mixed_ridge \
+             anchor_additive_ridge anchor_lowrank_bilinear_ridge \
+             anchor_bilinear_ridge anchor_bilinear_shrunk_ridge \
              kernel_mixed_additive kernel_mixed_interaction \
-             ridge_pairwise idw_prior_two_way uniform_prior_two_way random_prior_two_way \
+             ridge_pairwise idw_prior_two_way idw_prior_two_way_rank \
+             uniform_prior_two_way random_prior_two_way \
     --feature-groups density_train density_eval density_idw random_idw \
                      sample_count vector_density_simple \
                      train_profile_simple profile_simple \
@@ -415,8 +513,8 @@ done
 
 Pipeline equivalent for canonical reports:
 ```bash
-FLOW_ONLY=1 FLOW_SWEEP_MODE=diagnostic TARGETS="auc_normalized peak_pck" \
-  OUT_PREFIX=flow_only_pure_diagnostic \
+FLOW_ONLY=1 FLOW_SWEEP_MODE=diagnostic FLOW_SPLITS="loto lobo joint_cell" \
+  TARGETS="auc_normalized peak_pck" \
   bash scripts/transfer_analysis_v3/run_pipeline.sh
 ```
 
@@ -575,6 +673,10 @@ For iterative work, use the narrower command above.
 - `kernel_mixed_additive` / `kernel_mixed_interaction` are the preferred principled
   non-IDW tests. They use additive train/eval/model-variant kernels, with only a
   capped train×eval interaction in the interaction variant.
+- **`idw_prior_two_way_rank`**: Axis-aware two-way prior plus a residual ranking stage.
+  LOTO ranks training datasets within `(benchmark, model_variant)` contexts; LOBO ranks
+  benchmarks within `(train_dataset, model_variant)` contexts; `joint_cell` uses both.
+  Keeps absolute predictions while adding a rank-aware residual correction.
 - `anchor_bilinear_ridge` is diagnostic and can overfit. A run crashed at
   `loco_cell / anchor_bilinear_ridge / random_idw` with
   `numpy.linalg.LinAlgError: SVD did not converge`. The shared ridge fitter now
@@ -587,6 +689,48 @@ Logs for current flow-only runs live in:
 
 If `pipeline.log` shows `step0d_pairwise_self_distances`, the non-flow-only pipeline
 was started; the flow-only diagnostic logs are the `flow_only_*` files.
+
+Recent refresh-control updates:
+- `VEC_DIR` default fixed to `/mnt/nvme_1tb_b/coverage_vectors` under `set -u`.
+- `FLOW_REFRESH_ONLY=1` lets the feature refresh/audit run without launching model sweeps.
+- `FLOW_REFRESH_MODE=scratch` archives existing feature CSVs as `.bak_<timestamp>`;
+  `append` resumes partial current CSVs. Use `append` after any crash.
+- `FLOW_REFRESH_PARALLEL=1` can run k-means and FID/SW2 concurrently, but the current
+  recommendation is one refresh GPU and one model-sweep GPU.
+- Per-stage GPU variables are available:
+  `FLOW_KMEANS_CUDA_VISIBLE_DEVICES`, `FLOW_SYMMETRIC_CUDA_VISIBLE_DEVICES`,
+  `FLOW_MMD_CUDA_VISIBLE_DEVICES`.
+- Raw flow coverage refresh no longer calls `calculate_coverage_faiss_v2.py`; it calls
+  `materialize_flow_raw_coverage_from_pairwise.py` instead.
+
+### `scripts/transfer_analysis_v3/materialize_flow_raw_coverage_from_pairwise.py`
+
+New helper that writes a legacy-shaped raw flow coverage CSV from
+`analysis_v3/pairwise_self_distances.csv`. It writes the columns used by `flow_nn`,
+`flow_eps`, and `motion`, with 110 pure train/eval rows. This avoids the raw FAISS
+coverage job that repeatedly crashed in the legacy KL/GPU path.
+
+### `scripts/calculate_coverage_faiss_flow_kmeans.py`
+
+Refactored to avoid loading all flow vectors into RAM. It now:
+- loads one dataset at a time, using mmap when enabled;
+- normalizes/transforms just that dataset;
+- trains or loads its k-means codebook;
+- saves the codebook and frees raw vectors;
+- computes k-means pair metrics from centroids/weights only;
+- appends each pair row and curve rows immediately.
+
+Bug fixed after refactor: removed stale references to deleted `train_vectors` and
+`eval_vectors` variables in the eager space-transform block.
+
+### `scripts/transfer_analysis_v3/compute_symmetric_distances.py`
+
+FID/SW2 now flushes every pair instead of every 20 pairs, so partial runs are resumable
+with at most one pair of lost work.
+
+### `scripts/calculate_flow_mmd.py`
+
+Flow MMD now appends each pair result as it is computed and skips cached pairs on resume.
 
 ### `analysis_v3/pairwise_self_distances.csv`
 

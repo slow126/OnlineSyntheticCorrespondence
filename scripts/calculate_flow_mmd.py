@@ -397,9 +397,25 @@ def main():
     print("CALCULATING MMD BETWEEN DATASETS")
     print("="*60)
     
-    # Calculate pairwise MMD
+    # Calculate pairwise MMD and checkpoint each pair as soon as it is computed.
+    results_file = output_config.get('results_file', 'flow_mmd_results.csv')
+    save_results = bool(output_config.get('save_results', False))
+    done_pairs = set()
+    if save_results and os.path.exists(results_file):
+        import csv
+        with open(results_file, 'r', newline='') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                done_pairs.add((row['dataset1'], row['split1'], row['dataset2'], row['split2']))
+        print(f"Resuming MMD CSV: {len(done_pairs)} pairs already in {results_file}")
+    elif save_results:
+        Path(results_file).parent.mkdir(parents=True, exist_ok=True)
+        import csv
+        with open(results_file, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['dataset1', 'split1', 'dataset2', 'split2', 'mmd2', 'mmd', 'num_vectors1', 'num_vectors2'])
+
     dataset_names = list(dataset_vector_counts.keys())
-    mmd_results = []
     
     print("\nPairwise MMD² results:")
     print("-" * 60)
@@ -409,56 +425,39 @@ def main():
             if dataset_vector_counts[name1] == 0 or dataset_vector_counts[name2] == 0:
                 print(f"  {name1} vs {name2}: SKIPPED (no vectors)")
                 continue
+
+            dataset1_name, split1 = name1.rsplit('_', 1) if '_' in name1 else (name1, 'unknown')
+            dataset2_name, split2 = name2.rsplit('_', 1) if '_' in name2 else (name2, 'unknown')
+            pair_key = (dataset1_name, split1, dataset2_name, split2)
+            if pair_key in done_pairs:
+                print(f"  {name1:15} vs {name2:15}: SKIPPED (cached)")
+                continue
             
             mmd2_val = streaming_mmd.mmd2(name1, name2)
             mmd_val = streaming_mmd.mmd(name1, name2)
             
             print(f"  {name1:15} vs {name2:15}: MMD² = {mmd2_val:.6f}, MMD = {mmd_val:.6f}")
-            
-            mmd_results.append({
-                'dataset1': name1,
-                'dataset2': name2,
-                'mmd2': mmd2_val,
-                'mmd': mmd_val,
-                'num_vectors1': dataset_vector_counts[name1],
-                'num_vectors2': dataset_vector_counts[name2]
-            })
-    
-    # Save results if requested
-    if output_config.get('save_results', False):
-        results_file = output_config.get('results_file', 'flow_mmd_results.csv')
-        import csv
-        
-        with open(results_file, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(['dataset1', 'split1', 'dataset2', 'split2', 'mmd2', 'mmd', 'num_vectors1', 'num_vectors2'])
-            for result in mmd_results:
-                # Parse dataset_id format: "dataset_name_split"
-                dataset1_id = result['dataset1']
-                dataset2_id = result['dataset2']
-                
-                # Split the ID into name and split (handle edge cases)
-                if '_' in dataset1_id:
-                    dataset1_name, split1 = dataset1_id.rsplit('_', 1)
-                else:
-                    dataset1_name, split1 = dataset1_id, 'unknown'
-                
-                if '_' in dataset2_id:
-                    dataset2_name, split2 = dataset2_id.rsplit('_', 1)
-                else:
-                    dataset2_name, split2 = dataset2_id, 'unknown'
-                
-                writer.writerow([
-                    dataset1_name,
-                    split1,
-                    dataset2_name,
-                    split2,
-                    result['mmd2'],
-                    result['mmd'],
-                    result['num_vectors1'],
-                    result['num_vectors2']
-                ])
-        
+
+            if save_results:
+                import csv
+                with open(results_file, 'a', newline='') as f:
+                    writer = csv.writer(f)
+                    # Dataset ids are "dataset_name_split"; split from the right
+                    # because dataset names can contain underscores.
+                    writer.writerow([
+                        dataset1_name,
+                        split1,
+                        dataset2_name,
+                        split2,
+                        mmd2_val,
+                        mmd_val,
+                        dataset_vector_counts[name1],
+                        dataset_vector_counts[name2]
+                    ])
+                done_pairs.add(pair_key)
+                print(f"    Checkpoint saved to {results_file}")
+
+    if save_results:
         print(f"\nResults saved to: {results_file}")
     
     print("="*60)

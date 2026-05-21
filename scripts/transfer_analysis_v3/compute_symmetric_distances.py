@@ -309,12 +309,14 @@ def main() -> None:
         bar.set_postfix(timings, refresh=False)
         rows.append(row)
 
-        # Flush every 20 pairs so progress is saved on interrupt
-        if len(rows) >= 20:
+        # Flush every pair so progress survives OOM/kill and reruns can resume.
+        if len(rows) >= 1:
             batch = pd.DataFrame(rows)
             write_header = not out_path.exists() or out_path.stat().st_size == 0
             batch.to_csv(out_path, mode="a", header=write_header, index=False)
             rows = []
+            if _TORCH_AVAILABLE:
+                torch.cuda.empty_cache()
 
     if rows:
         batch = pd.DataFrame(rows)
