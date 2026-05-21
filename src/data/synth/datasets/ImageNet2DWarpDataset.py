@@ -112,42 +112,57 @@ class ImageNet2DWarpDataset(Dataset):
             load_dataset = datasets_module.load_dataset
             hf_split_name = hf_split or ("validation" if split in ("val", "validation") else split)
             streaming = bool(hf_streaming)
-            try:
-                self.hf_dataset = load_dataset(
-                    self.hf_dataset_name,
-                    split=hf_split_name,
-                    cache_dir=str(hf_cache_dir) if hf_cache_dir else None,
-                    streaming=streaming,
-                )
-                if streaming:
-                    if hf_max_samples is None:
-                        raise ValueError(
-                            "HF streaming requires hf_max_samples to materialize examples "
-                            "for random access."
-                        )
-                    self.hf_samples = list(itertools.islice(self.hf_dataset, int(hf_max_samples)))
-                    self.hf_dataset = None
-                    self.hf_dataset_len = len(self.hf_samples)
+            # Try reading directly from Arrow cache first to avoid re-downloading when the
+            # datasets library version changes (which changes the builder hash).
+            _cache_loaded = False
+            if not streaming:
+                try:
+                    self.hf_dataset = self._load_hf_from_cache(hf_split_name, hf_cache_dir, hf_max_samples)
+                    self.hf_dataset_len = len(self.hf_dataset)
+                    _cache_loaded = True
                     print(
                         f"ImageNet2DWarpDataset: Loaded HF dataset {self.hf_dataset_name} "
-                        f"({hf_split_name}) streaming, cached {self.hf_dataset_len} samples"
+                        f"({hf_split_name}) from cached Arrow files with {self.hf_dataset_len} images"
                     )
-                else:
-                    if hf_max_samples is not None:
-                        limit = min(int(hf_max_samples), len(self.hf_dataset))
-                        self.hf_dataset = self.hf_dataset.select(range(limit))
+                except (ValueError, FileNotFoundError):
+                    pass
+            if not _cache_loaded:
+                try:
+                    self.hf_dataset = load_dataset(
+                        self.hf_dataset_name,
+                        split=hf_split_name,
+                        cache_dir=str(hf_cache_dir) if hf_cache_dir else None,
+                        streaming=streaming,
+                    )
+                    if streaming:
+                        if hf_max_samples is None:
+                            raise ValueError(
+                                "HF streaming requires hf_max_samples to materialize examples "
+                                "for random access."
+                            )
+                        self.hf_samples = list(itertools.islice(self.hf_dataset, int(hf_max_samples)))
+                        self.hf_dataset = None
+                        self.hf_dataset_len = len(self.hf_samples)
+                        print(
+                            f"ImageNet2DWarpDataset: Loaded HF dataset {self.hf_dataset_name} "
+                            f"({hf_split_name}) streaming, cached {self.hf_dataset_len} samples"
+                        )
+                    else:
+                        if hf_max_samples is not None:
+                            limit = min(int(hf_max_samples), len(self.hf_dataset))
+                            self.hf_dataset = self.hf_dataset.select(range(limit))
+                        self.hf_dataset_len = len(self.hf_dataset)
+                        print(
+                            f"ImageNet2DWarpDataset: Loaded HF dataset {self.hf_dataset_name} "
+                            f"({hf_split_name}) with {self.hf_dataset_len} images"
+                        )
+                except (NotImplementedError, ConnectionError):
+                    self.hf_dataset = self._load_hf_from_cache(hf_split_name, hf_cache_dir, hf_max_samples)
                     self.hf_dataset_len = len(self.hf_dataset)
                     print(
                         f"ImageNet2DWarpDataset: Loaded HF dataset {self.hf_dataset_name} "
-                        f"({hf_split_name}) with {self.hf_dataset_len} images"
+                        f"({hf_split_name}) from cached Arrow files with {self.hf_dataset_len} images"
                     )
-            except (NotImplementedError, ConnectionError):
-                self.hf_dataset = self._load_hf_from_cache(hf_split_name, hf_cache_dir, hf_max_samples)
-                self.hf_dataset_len = len(self.hf_dataset)
-                print(
-                    f"ImageNet2DWarpDataset: Loaded HF dataset {self.hf_dataset_name} "
-                    f"({hf_split_name}) from cached Arrow files with {self.hf_dataset_len} images"
-                )
         else:
             split_dir = self.root / split
             if not split_dir.exists():

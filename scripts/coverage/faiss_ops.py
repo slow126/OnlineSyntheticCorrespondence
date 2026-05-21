@@ -27,21 +27,22 @@ except ImportError as exc:
 _GPU_RESOURCES = None
 
 
-def _get_gpu_resources(temp_memory_bytes: int = 512 * 1024 * 1024) -> "faiss.StandardGpuResources":
-    """Reuse a single GPU resource pool to avoid per-index GPU memory growth.
-    512 MB scratch is sufficient for batched IVF train/add/search; the old 12 GB
-    default left no room for two large indices to coexist on a 24 GB card."""
+def _get_gpu_resources() -> "faiss.StandardGpuResources":
+    """Reuse a single GPU resource pool. Uses Faiss default (18% of GPU memory) unless
+    FAISS_GPU_TEMP_GB is set explicitly."""
     global _GPU_RESOURCES
     if _GPU_RESOURCES is None:
         import os
+        _GPU_RESOURCES = faiss.StandardGpuResources()
         env_gb = os.getenv("FAISS_GPU_TEMP_GB")
         if env_gb:
             try:
-                temp_memory_bytes = int(float(env_gb) * 1024 * 1024 * 1024)
+                temp_bytes = int(float(env_gb) * 1024 * 1024 * 1024)
+                _GPU_RESOURCES.setTempMemory(temp_bytes)
             except ValueError:
                 pass
-        _GPU_RESOURCES = faiss.StandardGpuResources()
-        _GPU_RESOURCES.setTempMemory(temp_memory_bytes)
+        # No setTempMemory call by default — Faiss uses 18% of available GPU memory,
+        # which scales correctly across GPUs (4 GB on 24 GB, 14 GB on 80 GB).
     return _GPU_RESOURCES
 
 
