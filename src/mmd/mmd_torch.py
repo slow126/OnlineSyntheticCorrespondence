@@ -81,7 +81,12 @@ class StreamingMMDTorch:
         save_dict = {
             'dataset_ids': list(self.state.keys()),
             'mus': torch.stack([self.state[k]["mu"].cpu() for k in self.state.keys()], dim=0),
-            'counts': torch.tensor([self.state[k]["count"].item() for k in self.state.keys()]),
+            'counts': torch.tensor([
+                float(self.state[k]["count"].item())
+                if hasattr(self.state[k]["count"], "item")
+                else float(self.state[k]["count"])
+                for k in self.state.keys()
+            ]),
         }
         torch.save(save_dict, path)
 
@@ -94,6 +99,5 @@ class StreamingMMDTorch:
         for i, ds_id in enumerate(ids):
             self.state[ds_id] = {
                 "mu": mus[i],
-                "count": float(counts[i].item())
+                "count": counts[i].to(self.device, dtype=torch.float32)
             }
-

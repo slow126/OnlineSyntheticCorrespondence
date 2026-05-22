@@ -283,4 +283,5 @@ dataset_overrides:
 output:
   save_results: true
   results_file: flow_mmd_results_fast.csv
+  required_pairs_file: analysis/coverage_v2_flow_only_raw_joint_full.csv
   print_pairs: true

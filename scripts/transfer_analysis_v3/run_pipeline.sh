@@ -234,6 +234,12 @@ if [ "$FLOW_ONLY" = "1" ]; then
             STAMP="${STAMP:-$(date '+%Y%m%d_%H%M%S')}"
             mv flow_mmd_results_fast.csv "flow_mmd_results_fast.csv.bak_${STAMP}"
             log "  archived flow_mmd_results_fast.csv"
+            for mmd_cache in flow_mmd_results_fast.state.pt flow_mmd_results_fast.state.npz flow_mmd_results_fast.counts.json; do
+                if [ -f "$mmd_cache" ]; then
+                    mv "$mmd_cache" "${mmd_cache}.bak_${STAMP}"
+                    log "  archived $mmd_cache"
+                fi
+            done
         fi
         log "Flow-only Step 0m: Refreshing flow MMD features..."
         if [ -n "$FLOW_MMD_CUDA_VISIBLE_DEVICES" ]; then

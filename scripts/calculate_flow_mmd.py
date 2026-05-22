@@ -12,6 +12,7 @@ This script:
 import argparse
 import sys
 import os
+import json
 import yaml
 import numpy as np
 import torch
@@ -29,6 +30,128 @@ from src.mmd import load_config_from_yaml, StreamingMMD, StreamingMMDTorch, mmd2
 
 def _is_synthetic_dataset(name: Optional[str]) -> bool:
     return isinstance(name, str) and name.startswith("synthetic")
+
+
+def _state_dataset_ids(streaming_mmd) -> set[str]:
+    return set(getattr(streaming_mmd, "state", {}).keys())
+
+
+def _state_count(streaming_mmd, dataset_id: str) -> int:
+    state = getattr(streaming_mmd, "state", {}).get(dataset_id, {})
+    count = state.get("count", 0)
+    if hasattr(count, "item"):
+        count = count.item()
+    return int(count)
+
+
+def _save_mmd_state(streaming_mmd, state_file: str, counts_file: str, counts: dict[str, int]) -> None:
+    Path(state_file).parent.mkdir(parents=True, exist_ok=True)
+    streaming_mmd.save_state(state_file)
+    with open(counts_file, "w") as f:
+        json.dump(counts, f, indent=2, sort_keys=True)
+    print(f"  Saved MMD state cache: {state_file}")
+
+
+def _load_counts(counts_file: str) -> dict[str, int]:
+    if not os.path.exists(counts_file):
+        return {}
+    with open(counts_file, "r") as f:
+        return {str(k): int(v) for k, v in json.load(f).items()}
+
+
+def _dataset_id_from_config(ds_config: dict) -> str:
+    split = ds_config["split"]
+    is_mixed = ds_config.get("mixed", False) or "datasets" in ds_config
+    if is_mixed:
+        label = ds_config.get("name")
+        if not label:
+            datasets_list = ds_config.get("datasets", [])
+            percentages = ds_config.get("percentages", [])
+            if len(percentages) == 2 and len(datasets_list) == 2:
+                pct1 = int(percentages[0] * 100)
+                pct2 = int(percentages[1] * 100)
+                label = f"{datasets_list[0]}_{datasets_list[1]}_{pct1}_{pct2}"
+            else:
+                label = "+".join(datasets_list)
+    else:
+        label = ds_config["name"]
+    return f"{label}_{split}"
+
+
+def _split_dataset_id(dataset_id: str) -> tuple[str, str]:
+    return dataset_id.rsplit("_", 1) if "_" in dataset_id else (dataset_id, "unknown")
+
+
+def _load_done_pairs(results_file: str) -> set[tuple[str, str, str, str]]:
+    if not os.path.exists(results_file):
+        return set()
+    import csv
+    done_pairs = set()
+    with open(results_file, "r", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            done_pairs.add((row["dataset1"], row["split1"], row["dataset2"], row["split2"]))
+    return done_pairs
+
+
+def _reverse_pair(pair: tuple[str, str, str, str]) -> tuple[str, str, str, str]:
+    dataset1, split1, dataset2, split2 = pair
+    return (dataset2, split2, dataset1, split1)
+
+
+def _pair_is_done(pair: tuple[str, str, str, str], done_pairs: set[tuple[str, str, str, str]]) -> bool:
+    return pair in done_pairs or _reverse_pair(pair) in done_pairs
+
+
+def _load_required_pairs(required_pairs_file: str | None) -> list[tuple[str, str, str, str]]:
+    if not required_pairs_file:
+        return []
+    path = Path(required_pairs_file)
+    if not path.exists():
+        print(f"WARNING: required_pairs_file does not exist: {path}; falling back to all configured pairs")
+        return []
+    import csv
+    with open(path, "r", newline="") as f:
+        reader = csv.DictReader(f)
+        cols = set(reader.fieldnames or [])
+        if {"train_dataset", "train_split", "eval_dataset", "eval_split"}.issubset(cols):
+            pairs = [
+                (row["train_dataset"], row["train_split"], row["eval_dataset"], row["eval_split"])
+                for row in reader
+            ]
+        elif {"dataset1", "split1", "dataset2", "split2"}.issubset(cols):
+            pairs = [
+                (row["dataset1"], row["split1"], row["dataset2"], row["split2"])
+                for row in reader
+            ]
+        else:
+            raise ValueError(
+                f"{path} must contain either train/eval pair columns or dataset1/split1/dataset2/split2"
+            )
+    return list(dict.fromkeys(pairs))
+
+
+def _all_configured_pairs(dataset_ids: list[str]) -> list[tuple[str, str, str, str]]:
+    pairs = []
+    for i, name1 in enumerate(dataset_ids):
+        for name2 in dataset_ids[i + 1:]:
+            dataset1_name, split1 = _split_dataset_id(name1)
+            dataset2_name, split2 = _split_dataset_id(name2)
+            pairs.append((dataset1_name, split1, dataset2_name, split2))
+    return pairs
+
+
+def _required_dataset_ids_for_missing_pairs(
+    required_pairs: list[tuple[str, str, str, str]],
+    done_pairs: set[tuple[str, str, str, str]],
+) -> set[str]:
+    required: set[str] = set()
+    for pair in required_pairs:
+        dataset1_name, split1, dataset2_name, split2 = pair
+        if not _pair_is_done(pair, done_pairs):
+            required.add(f"{dataset1_name}_{split1}")
+            required.add(f"{dataset2_name}_{split2}")
+    return required
 
 
 def extract_flow_vectors(flow_full: torch.Tensor) -> np.ndarray:
@@ -328,19 +451,58 @@ def main():
     print(f"Created StreamingMMD with backend: {mmd_config.backend}")
     if device is not None:
         print(f"Using device: {device}")
+
+    results_file = output_config.get('results_file', 'flow_mmd_results.csv')
+    save_results = bool(output_config.get('save_results', False))
+    done_pairs = _load_done_pairs(results_file) if save_results else set()
+    if done_pairs:
+        print(f"Resuming MMD CSV: {len(done_pairs)} pairs already in {results_file}")
+    planned_dataset_ids = [_dataset_id_from_config(ds_config) for ds_config in datasets_config]
+    required_pairs_file = output_config.get("required_pairs_file")
+    required_pairs = _load_required_pairs(required_pairs_file)
+    if required_pairs:
+        print(f"Restricting MMD pair computation to {len(required_pairs)} required pairs from {required_pairs_file}")
+    else:
+        required_pairs = _all_configured_pairs(planned_dataset_ids)
+    required_dataset_ids = _required_dataset_ids_for_missing_pairs(required_pairs, done_pairs)
+    if save_results and done_pairs:
+        print(
+            f"Missing pair endpoints to stream: {len(required_dataset_ids)}/"
+            f"{len(planned_dataset_ids)} configured datasets"
+        )
+
+    state_file = output_config.get(
+        'state_file',
+        str(Path(results_file).with_suffix('.state.pt' if mmd_config.backend == 'torch' else '.state.npz')),
+    )
+    counts_file = output_config.get(
+        'counts_file',
+        str(Path(results_file).with_suffix('.counts.json')),
+    )
+    save_state = bool(output_config.get('save_state', True))
+    if os.path.exists(state_file):
+        print(f"Loading cached MMD streaming state: {state_file}")
+        streaming_mmd.load_state(state_file)
+    dataset_vector_counts = _load_counts(counts_file)
+    for ds_id in _state_dataset_ids(streaming_mmd):
+        dataset_vector_counts.setdefault(ds_id, _state_count(streaming_mmd, ds_id))
+    if dataset_vector_counts:
+        print(f"Cached MMD datasets: {len(dataset_vector_counts)}")
     
     # Process datasets and stream flows directly to MMD (no accumulation!)
     print("\n" + "="*60)
     print("STREAMING FLOWS TO MMD (NO MEMORY ACCUMULATION)")
     print("="*60)
-    
-    dataset_vector_counts = {}
-    
+
     for ds_config in datasets_config:
         is_mixed = ds_config.get('mixed', False) or 'datasets' in ds_config
         split = ds_config['split']
         num_batches = ds_config.get('num_batches', batch_limit_default)
         entry_overrides = ds_config.get('overrides', None)
+        dataset_id = _dataset_id_from_config(ds_config)
+        if save_results and done_pairs and dataset_id not in required_dataset_ids:
+            print(f"Skipping {dataset_id}: all pairwise MMD rows involving this dataset are cached")
+            continue
 
         if is_mixed:
             datasets_list = ds_config.get('datasets', [])
@@ -353,7 +515,10 @@ def main():
                     label = f"{datasets_list[0]}_{datasets_list[1]}_{pct1}_{pct2}"
                 else:
                     label = "+".join(datasets_list)
-            dataset_id = f"{label}_{split}"
+            if dataset_id in _state_dataset_ids(streaming_mmd):
+                dataset_vector_counts[dataset_id] = _state_count(streaming_mmd, dataset_id)
+                print(f"Skipping {dataset_id}: cached MMD state with {dataset_vector_counts[dataset_id]} vectors")
+                continue
             dataset = create_mixed_dataset_from_config(
                 datasets_list,
                 percentages,
@@ -368,7 +533,10 @@ def main():
         else:
             label = ds_config['name']
             dataset_name = ds_config.get('dataset_name', label)
-            dataset_id = f"{label}_{split}"
+            if dataset_id in _state_dataset_ids(streaming_mmd):
+                dataset_vector_counts[dataset_id] = _state_count(streaming_mmd, dataset_id)
+                print(f"Skipping {dataset_id}: cached MMD state with {dataset_vector_counts[dataset_id]} vectors")
+                continue
             dataset = create_dataset_from_config(
                 dataset_name, split, common_params, dataset_overrides, entry_overrides
             )
@@ -391,6 +559,8 @@ def main():
             streaming_mmd, mmd_config.backend, device
         )
         dataset_vector_counts[dataset_id] = vector_count
+        if save_state:
+            _save_mmd_state(streaming_mmd, state_file, counts_file, dataset_vector_counts)
     
     # Now calculate pairwise MMD (all data already streamed)
     print("\n" + "="*60)
@@ -398,64 +568,48 @@ def main():
     print("="*60)
     
     # Calculate pairwise MMD and checkpoint each pair as soon as it is computed.
-    results_file = output_config.get('results_file', 'flow_mmd_results.csv')
-    save_results = bool(output_config.get('save_results', False))
-    done_pairs = set()
-    if save_results and os.path.exists(results_file):
-        import csv
-        with open(results_file, 'r', newline='') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                done_pairs.add((row['dataset1'], row['split1'], row['dataset2'], row['split2']))
-        print(f"Resuming MMD CSV: {len(done_pairs)} pairs already in {results_file}")
-    elif save_results:
+    if save_results and not os.path.exists(results_file):
         Path(results_file).parent.mkdir(parents=True, exist_ok=True)
         import csv
         with open(results_file, 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerow(['dataset1', 'split1', 'dataset2', 'split2', 'mmd2', 'mmd', 'num_vectors1', 'num_vectors2'])
 
-    dataset_names = list(dataset_vector_counts.keys())
-    
     print("\nPairwise MMD² results:")
     print("-" * 60)
-    
-    for i, name1 in enumerate(dataset_names):
-        for name2 in dataset_names[i+1:]:
-            if dataset_vector_counts[name1] == 0 or dataset_vector_counts[name2] == 0:
-                print(f"  {name1} vs {name2}: SKIPPED (no vectors)")
-                continue
 
-            dataset1_name, split1 = name1.rsplit('_', 1) if '_' in name1 else (name1, 'unknown')
-            dataset2_name, split2 = name2.rsplit('_', 1) if '_' in name2 else (name2, 'unknown')
-            pair_key = (dataset1_name, split1, dataset2_name, split2)
-            if pair_key in done_pairs:
-                print(f"  {name1:15} vs {name2:15}: SKIPPED (cached)")
-                continue
-            
-            mmd2_val = streaming_mmd.mmd2(name1, name2)
-            mmd_val = streaming_mmd.mmd(name1, name2)
-            
-            print(f"  {name1:15} vs {name2:15}: MMD² = {mmd2_val:.6f}, MMD = {mmd_val:.6f}")
+    for pair_key in required_pairs:
+        dataset1_name, split1, dataset2_name, split2 = pair_key
+        name1 = f"{dataset1_name}_{split1}"
+        name2 = f"{dataset2_name}_{split2}"
+        if _pair_is_done(pair_key, done_pairs):
+            print(f"  {name1:15} vs {name2:15}: SKIPPED (cached)")
+            continue
+        if dataset_vector_counts.get(name1, 0) == 0 or dataset_vector_counts.get(name2, 0) == 0:
+            print(f"  {name1} vs {name2}: SKIPPED (missing streamed vectors)")
+            continue
 
-            if save_results:
-                import csv
-                with open(results_file, 'a', newline='') as f:
-                    writer = csv.writer(f)
-                    # Dataset ids are "dataset_name_split"; split from the right
-                    # because dataset names can contain underscores.
-                    writer.writerow([
-                        dataset1_name,
-                        split1,
-                        dataset2_name,
-                        split2,
-                        mmd2_val,
-                        mmd_val,
-                        dataset_vector_counts[name1],
-                        dataset_vector_counts[name2]
-                    ])
-                done_pairs.add(pair_key)
-                print(f"    Checkpoint saved to {results_file}")
+        mmd2_val = streaming_mmd.mmd2(name1, name2)
+        mmd_val = streaming_mmd.mmd(name1, name2)
+
+        print(f"  {name1:15} vs {name2:15}: MMD² = {mmd2_val:.6f}, MMD = {mmd_val:.6f}")
+
+        if save_results:
+            import csv
+            with open(results_file, 'a', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    dataset1_name,
+                    split1,
+                    dataset2_name,
+                    split2,
+                    mmd2_val,
+                    mmd_val,
+                    dataset_vector_counts[name1],
+                    dataset_vector_counts[name2]
+                ])
+            done_pairs.add(pair_key)
+            print(f"    Checkpoint saved to {results_file}")
 
     if save_results:
         print(f"\nResults saved to: {results_file}")

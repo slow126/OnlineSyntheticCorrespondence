@@ -1,0 +1,41 @@
+# SPair training with CATs++ encoder grid + RAFT (RC)
+# Validation every 50 epochs (vs default 10) to give more wall-time budget to training.
+# SPair converges slowly; prior runs were killed at ~200/5000 epochs due to expensive PO validation.
+
+project_root: "/home/slow1/Projects/OnlineSyntheticCorrespondence"
+
+training_base: "src/configs/lightning/training_base_rc.yaml"
+eval_base: "src/configs/lightning/eval_base_rc.yaml"
+
+training_datasets:
+  - name: "spair"
+    dataset_config: "src/configs/lightning/datasets/spair_rc.yaml"
+    overrides:
+      training.batch_size: 8
+
+output_dir: "/home/slow1/Projects/OnlineSyntheticCorrespondence/slurm/experiment_configs/generated_spair_rc"
+
+sweeps:
+  # CATs++ encoder grid (4 runs: pretrained x freeze)
+  - name: "cats_encoder_grid"
+    parameters:
+      model.type: cats
+      training.steps_per_epoch: 100
+      training.check_val_every_n_epoch: 50
+      model.pretrained_backbone: [True, False]
+      model.freeze: [True, False]
+    name_template: "cats_steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"
+
+  # RAFT full (1 run)
+  - name: "raft_full"
+    parameters:
+      model.type: raft
+      model.small: false
+      model.iters: 12
+      model.alternate_corr: false
+      model.mixed_precision: false
+      model.dropout: 0.0
+      dataset.downsample_flow: null
+      training.steps_per_epoch: 100
+      training.check_val_every_n_epoch: 50
+    name_template: "raft_full"

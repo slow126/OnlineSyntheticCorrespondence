@@ -23,10 +23,10 @@ def multivariate(covariance, rng, device):
     # sample positive eigenvalues with some buffer to avoid numerical issues
     eig = cov.new_empty(3).uniform_(max(0.1, covariance[0]), covariance[1], generator=rng)
     cov = (cov * eig) @ cov.T
-    cov = cov.float()
-
-    dist = torch.distributions.MultivariateNormal(cov.new_zeros(3), cov)
-    return dist
+    # The 3x3 Cholesky does not need GPU, and cuSolver can be in a bad state
+    # after long FAISS/MMD jobs. Factor on CPU, then sample large noise tensors
+    # on the requested device.
+    return torch.linalg.cholesky(cov.float().cpu()).to(device=device)
 
 
 def normalize(x, rand_mean=None, rand_std=None, rng=None):
@@ -92,9 +92,11 @@ def gaussian_random_field(
     
     if covariance is not None:
         # Complex gaussian random noise with covariance structure
-        mnorm = multivariate(covariance, rng, **d)
+        scale_tril = multivariate(covariance, rng, **d)
         samples = (batch_size,) + tuple(size)
-        noise = torch.complex(mnorm.sample(samples), mnorm.sample(samples)).moveaxis(-1, 1)
+        real = torch.empty(*samples, c, **d).normal_(generator=rng) @ scale_tril.T
+        imag = torch.empty(*samples, c, **d).normal_(generator=rng) @ scale_tril.T
+        noise = torch.complex(real, imag).moveaxis(-1, 1)
     else:
         noise = torch.empty(batch_size, c, *size, dtype=torch.complex64, **d).normal_(generator=rng)
     noise = noise.mul_(amplitude.unsqueeze(1))

@@ -1,0 +1,14 @@
+{
+  "flyingthings_test": 1832910846,
+  "imagenet2dwarp_train": 1154428829,
+  "kitti2012_val": 3152114,
+  "kitti2015_val": 1948559,
+  "middlebury_val": 11171271,
+  "movi_f_train": 2097151973,
+  "pfpascal_test": 2414,
+  "pfwillow_test": 9000,
+  "pointodyssey_test": 23121048,
+  "spair_test": 57497,
+  "synthetic_val": 549043658,
+  "tss_val": 35627876
+}

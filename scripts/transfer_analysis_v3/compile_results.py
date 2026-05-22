@@ -315,6 +315,21 @@ DIAGNOSTIC_FEATURE_FAMILIES = {
     ],
 }
 
+# Main absolute-scale models to show in dense scatter/calibration figures.
+# Full comparison tables still include every completed model; figures use this
+# smaller set so the panels stay readable.
+FIGURE_FOCUS_MODELS = [
+    "ridge_abs",
+    "two_way_mixed_ridge",
+    "anchor_additive_ridge",
+    "anchor_lowrank_bilinear_ridge",
+    "anchor_bilinear_shrunk_ridge",
+    "kernel_mixed_interaction",
+    "ridge_pairwise",
+    "idw_prior_two_way",
+    "idw_prior_two_way_rank",
+]
+
 MODEL_COLORS = {
     "random":               "#aaaaaa",
     "global_prior":         "#888888",
@@ -535,14 +550,11 @@ def _fig1_scatter(results_dir: Path, summary_df: pd.DataFrame, fig_dir: Path,
                   color_by: str = "benchmark",
                   filename: str = "fig1_scatter.png") -> "Path | None":
     """Predicted vs actual AUC scatter, faceted by split × model."""
-    scatter_models = [m for m in
-                      ["ridge", "ridge_abs", "ridge_pairwise", "ridge_pairwise_cross_resid",
-                       "ridge_pairwise_cross_resid_spline",
-                       "idw_prior_residual", "idw_prior_context", "idw_prior_context_local",
-                       "idw_prior_two_way", "idw_prior_two_way_spline",
-                       "ridge_pairwise_nn",
-                       "ridge_pairwise_eps1px"]
-                      if m in available_models]
+    scatter_models = [m for m in FIGURE_FOCUS_MODELS if m in available_models]
+    if not scatter_models:
+        scatter_models = [m for m in
+                          ["ridge", "ridge_abs", "ridge_pairwise", "idw_prior_two_way"]
+                          if m in available_models]
     target_splits = [s for s in ["loto", "lobo", "joint_cell", "loco_cell", "loco"] if s in available_splits]
     if not scatter_models or not target_splits:
         return None
@@ -761,8 +773,10 @@ def _fig2_auc_matrix(results_dir: Path, fig_dir: Path,
 def _fig3_residuals(results_dir: Path, summary_df: pd.DataFrame, fig_dir: Path,
                     available_models: list, available_splits: list,
                     dist_df: "pd.DataFrame | None") -> "Path | None":
-    """Side-by-side residual heatmaps: Ridge vs best IDW variant."""
-    compare = [m for m in ["ridge_abs", "ridge_pairwise", "ridge_pairwise_nn", "ridge_pairwise_eps1px"]
+    """Side-by-side residual heatmaps for representative absolute predictors."""
+    compare = [m for m in
+               ["ridge_abs", "anchor_bilinear_shrunk_ridge", "kernel_mixed_interaction",
+                "ridge_pairwise", "idw_prior_two_way", "idw_prior_two_way_rank"]
                if m in available_models]
     split = next((s for s in ["loto", "lobo", "joint_cell", "loco_cell"] if s in available_splits), None)
     if not compare or split is None:
@@ -916,16 +930,12 @@ def _fig5_calibration(results_dir: Path, summary_df: pd.DataFrame, fig_dir: Path
     distribution into a narrow band, making calibration bins collapse into a
     near-vertical line. Calibration is only meaningful for absolute-scale models.
     """
-    cal_models = [m for m in
-                  ["ridge_abs", "ridge_pairwise", "ridge_pairwise_cross_resid",
-                   "ridge_pairwise_cross_resid_spline",
-                   "idw_prior_residual", "idw_prior_context", "idw_prior_context_local",
-                   "idw_prior_two_way", "idw_prior_two_way_spline",
-                   "ridge_pairwise_cross",
-                   "ridge_pairwise_nn", "ridge_pairwise_eps1px",
-                   "ridge_pairwise_eps16px", "ridge_pairwise_kl",
-                   "krr_tp_flow_nn", "krr_tp_flow_eps", "krr_tp_flow_eps16"]
-                  if m in available_models]
+    cal_models = [m for m in FIGURE_FOCUS_MODELS if m in available_models]
+    if not cal_models:
+        cal_models = [m for m in
+                      ["ridge_abs", "ridge_pairwise", "idw_prior_two_way",
+                       "krr_tp_flow_nn", "krr_tp_flow_eps", "krr_tp_flow_eps16"]
+                      if m in available_models]
     target_splits = [s for s in ["loto", "lobo", "joint_cell", "loco_cell"] if s in available_splits]
     if not cal_models or not target_splits:
         return None
@@ -1019,10 +1029,9 @@ def _fig5_calibration_spread(results_dir: Path, summary_df: pd.DataFrame, fig_di
     10-90% range. This shows dispersion hidden by mean-only calibration curves.
     """
     spread_models = [m for m in
-                     ["ridge_abs", "ridge_pairwise", "ridge_pairwise_cross_resid",
-                      "ridge_pairwise_cross_resid_spline",
-                      "idw_prior_residual", "idw_prior_two_way",
-                      "idw_prior_two_way_spline"]
+                     ["ridge_abs", "anchor_bilinear_shrunk_ridge",
+                      "kernel_mixed_interaction", "ridge_pairwise",
+                      "idw_prior_two_way", "idw_prior_two_way_rank"]
                      if m in available_models]
     target_splits = [s for s in ["loto", "lobo", "joint_cell", "loco_cell"] if s in available_splits]
     if not spread_models or not target_splits:
@@ -1206,11 +1215,12 @@ def figures_md(fig_paths: dict, results_dir: Path) -> str:
             "**Figure 4 — Model Comparison: Best Spearman per Split**",
             "Each bar shows the best Spearman across all feature groups for that model/split pair. "
             "Error bars are 95% bootstrap CIs. "
-            "Baseline group (grey), Ridge family (blue), IDW pairwise (green), TP-KRR (orange).",
+            "Colors follow model family: baselines, Ridge/mixed effects, anchor/kernel models, "
+            "IDW-family models, and TP-KRR when present.",
         ),
         "fig5": (
             "**Figure 5 — Calibration Curves (absolute-scale models)**",
-            "IDW and TP-KRR predictions binned into 10 equal-count bins by predicted AUC; "
+            "Representative absolute-scale models binned into 10 equal-count bins by predicted AUC; "
             "mean actual AUC plotted against mean predicted AUC. "
             "A perfectly calibrated model follows the dashed diagonal. "
             "Ridge/BT/PL are excluded — they produce relative rank scores that are not "
@@ -2220,6 +2230,74 @@ def table_diagnostic_baselines(df: pd.DataFrame, splits: list[str]) -> str:
     return make_markdown_table(pd.DataFrame(rows).T, "Baseline") + "\n" if rows else "_No baselines._\n"
 
 
+def table_new_model_family_readout(df: pd.DataFrame, splits: list[str]) -> str:
+    """Compact comparison for the newer anchor/kernel/rank-aware model families."""
+    legacy_models = [
+        "ridge_abs",
+        "two_way_mixed_ridge",
+        "ridge_pairwise",
+        "idw_prior_two_way",
+    ]
+    anchor_models = [
+        "anchor_additive_ridge",
+        "anchor_lowrank_bilinear_ridge",
+        "anchor_bilinear_ridge",
+        "anchor_bilinear_shrunk_ridge",
+    ]
+    kernel_models = ["kernel_mixed_additive", "kernel_mixed_interaction"]
+    rank_models = ["idw_prior_two_way_rank"]
+    new_models = anchor_models + kernel_models + rank_models
+    feature_groups = [f for f in FEATURE_ORDER if f in df["feature_group"].values]
+
+    def best_among(split: str, models: list[str], metric: str) -> pd.Series | None:
+        candidates = [
+            _best_row(df, split, m, feature_groups, metric=metric)
+            for m in models if m in df["model"].values
+        ]
+        candidates = [r for r in candidates if r is not None]
+        if not candidates:
+            return None
+        lower_is_better = metric in {"mae", "rmse", "rank_mae", "norm_rank_mae"}
+        key = f"{metric}_mean"
+        return min(candidates, key=lambda r: float(r[key])) if lower_is_better else \
+            max(candidates, key=lambda r: float(r[key]))
+
+    def compact(row: pd.Series | None) -> str:
+        if row is None:
+            return "—"
+        return (
+            f"{_mae_rho_cell(row)} "
+            f"*({MODEL_DISPLAY.get(row['model'], row['model'])}; "
+            f"{FEATURE_DISPLAY.get(row['feature_group'], row['feature_group'])})*"
+        )
+
+    rows = {}
+    for split in splits:
+        legacy = best_among(split, legacy_models, metric="mae")
+        anchor = best_among(split, anchor_models, metric="mae")
+        kernel = best_among(split, kernel_models, metric="mae")
+        rank = best_among(split, rank_models, metric="mae")
+        new = best_among(split, new_models, metric="mae")
+        legacy_sp = best_among(split, legacy_models, metric="spearman")
+        new_sp = best_among(split, new_models, metric="spearman")
+
+        legacy_mae = float(legacy["mae_mean"]) if legacy is not None and pd.notna(legacy.get("mae_mean")) else np.nan
+        new_mae = float(new["mae_mean"]) if new is not None and pd.notna(new.get("mae_mean")) else np.nan
+        legacy_rho = float(legacy_sp["spearman_mean"]) if legacy_sp is not None and pd.notna(legacy_sp.get("spearman_mean")) else np.nan
+        new_rho = float(new_sp["spearman_mean"]) if new_sp is not None and pd.notna(new_sp.get("spearman_mean")) else np.nan
+
+        rows[SPLIT_DISPLAY.get(split, split)] = {
+            "Best legacy/core MAE": compact(legacy),
+            "Best anchor MAE": compact(anchor),
+            "Best kernel MAE": compact(kernel),
+            "Rank-aware residual MAE": compact(rank),
+            "Best new MAE gain": _signed_delta(legacy_mae, new_mae, lower_is_better=True),
+            "Best new ρ gain": _signed_delta(legacy_rho, new_rho, lower_is_better=False),
+        }
+
+    return make_markdown_table(pd.DataFrame(rows).T, "Split") + "\n" if rows else "_No new-model data._\n"
+
+
 def _pretty(name: str) -> str:
     """Human-readable feature name for tables."""
     name = name.replace("eval_covered_by_train", "ε-cov E→T")
@@ -2405,6 +2483,16 @@ def main() -> None:
         sections.append(table_diagnostic_model_axis(df, available_splits))
         sections.append("\n")
 
+        sections.append("### New Model Family Readout\n\n")
+        sections.append(
+            "*Compact check for whether the newly added anchor, kernel mixed-effects, "
+            "and rank-aware residual models improve over the older core absolute models. "
+            "Positive gain means the best new model is better than the best legacy/core "
+            "model for that split.*\n\n"
+        )
+        sections.append(table_new_model_family_readout(df, available_splits))
+        sections.append("\n")
+
         sections.append("## 3. Feature Axis — MAE for the Axis-Aware Model\n\n")
         sections.append(
             "*Fixed model: `idw_prior_two_way`. Rows are feature groups; columns are held-out "
@@ -2519,6 +2607,17 @@ def main() -> None:
         sections.append(table_absolute_performance(df, available_splits))
         sections.append("\n")
 
+        sections.append("### New Model Family Readout\n\n")
+        sections.append(
+            "*Compact check for whether the newly added anchor, kernel mixed-effects, "
+            "and rank-aware residual models improve over the older core absolute models. "
+            "Positive gain means the best new model is better than the best legacy/core "
+            "model for that split. Spearman gain is computed from each family's best "
+            "Spearman configuration, separately from the MAE-selected row.*\n\n"
+        )
+        sections.append(table_new_model_family_readout(df, available_splits))
+        sections.append("\n")
+
         sections.append("### MAE by Absolute Model × Feature Group\n\n")
         sections.append("*Bold = lowest MAE per row (best configuration).*\n\n")
         for split in available_splits:
@@ -2541,7 +2640,10 @@ def main() -> None:
     # -----------------------------------------------------------------------
     ablation_models = [m for m in ["ridge_abs",
                                    "two_way_mixed_ridge",
+                                   "anchor_additive_ridge",
+                                   "anchor_lowrank_bilinear_ridge",
                                    "anchor_bilinear_ridge",
+                                   "anchor_bilinear_shrunk_ridge",
                                    "kernel_mixed_additive",
                                    "kernel_mixed_interaction",
                                    "ridge_pairwise",
@@ -2549,6 +2651,7 @@ def main() -> None:
                                    "ridge_pairwise_cross_resid_spline",
                                    "idw_prior_residual",
                                    "idw_prior_two_way",
+                                   "idw_prior_two_way_rank",
                                    "idw_prior_two_way_spline",
                                    "uniform_prior_two_way",
                                    "random_prior_two_way",
@@ -2651,12 +2754,16 @@ def main() -> None:
         sections.append("### 4.x Density Confound Check\n\n")
         confound_models = [m for m in ["ridge_abs",
                                        "two_way_mixed_ridge",
+                                       "anchor_additive_ridge",
+                                       "anchor_lowrank_bilinear_ridge",
                                        "anchor_bilinear_ridge",
+                                       "anchor_bilinear_shrunk_ridge",
                                        "kernel_mixed_additive",
                                        "kernel_mixed_interaction",
                                        "ridge_pairwise",
                                        "ridge_pairwise_cross_resid_spline",
                                        "idw_prior_two_way",
+                                       "idw_prior_two_way_rank",
                                        "idw_prior_two_way_spline",
                                        "uniform_prior_two_way",
                                        "random_prior_two_way",
