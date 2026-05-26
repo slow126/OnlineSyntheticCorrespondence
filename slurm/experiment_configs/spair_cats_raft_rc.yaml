@@ -1,7 +1,6 @@
 # SPair training with CATs++ encoder grid + RAFT (RC)
 # Validation every 50 epochs (vs default 10) to give more wall-time budget to training.
-# SPair converges slowly; prior runs were killed at ~200/5000 epochs due to expensive PO validation.
-# PointOdyssey excluded from intermediate validation (42 min/run); eval against PO on final checkpoint instead.
+# SPair converges slowly; prior runs were dying early due to SLURM preemption.
 
 project_root: "/home/slow1/Projects/OnlineSyntheticCorrespondence"
 
@@ -23,8 +22,6 @@ sweeps:
       model.type: cats
       training.steps_per_epoch: 100
       training.check_val_every_n_epoch: 50
-      evaluation.eval_benchmarks: [["flyingthings", "tss", "middlebury", "synthetic", "pfpascal", "pfwillow", "spair", "kitti2012", "kitti2015"]]
-      evaluation.eval_alphas: [[0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]]
       model.pretrained_backbone: [True, False]
       model.freeze: [True, False]
     name_template: "cats_steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"
@@ -41,6 +38,4 @@ sweeps:
       dataset.downsample_flow: null
       training.steps_per_epoch: 100
       training.check_val_every_n_epoch: 50
-      evaluation.eval_benchmarks: [["flyingthings", "tss", "middlebury", "synthetic", "pfpascal", "pfwillow", "spair", "kitti2012", "kitti2015"]]
-      evaluation.eval_alphas: [[0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]]
     name_template: "raft_full"

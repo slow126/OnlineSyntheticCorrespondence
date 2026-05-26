@@ -44,6 +44,7 @@ FLOW_SYMMETRIC_CUDA_VISIBLE_DEVICES="${FLOW_SYMMETRIC_CUDA_VISIBLE_DEVICES:-${CU
 FLOW_MMD_CUDA_VISIBLE_DEVICES="${FLOW_MMD_CUDA_VISIBLE_DEVICES:-${CUDA_VISIBLE_DEVICES:-}}"
 FLOW_AUDIT_REQUIRE_FAMILIES="${FLOW_AUDIT_REQUIRE_FAMILIES:-flow_raw_coverage flow_kmeans_coverage flow_fid_sw2 pairwise_self_flow_train_eval}"
 FLOW_DIAGNOSTIC_FEATURE_GROUPS="${FLOW_DIAGNOSTIC_FEATURE_GROUPS:-density_train density_eval density_idw random_idw sample_count vector_density_simple train_profile_simple profile_simple flow_fid_only flow_w2_only flow_kl motion_km flow_fid_profile flow_w2_profile flow_kl_profile motion_km_profile}"
+FLOW_DIAGNOSTIC_MODELS="${FLOW_DIAGNOSTIC_MODELS:-ridge_abs two_way_mixed_ridge anchor_additive_ridge anchor_lowrank_bilinear_ridge anchor_bilinear_ridge anchor_bilinear_shrunk_ridge kernel_mixed_additive kernel_mixed_interaction ridge_pairwise idw_prior_two_way idw_prior_two_way_rank uniform_prior_two_way random_prior_two_way}"
 EXCLUDE_FIT_TRAIN_DATASETS="${EXCLUDE_FIT_TRAIN_DATASETS:-}"
 DROP_TRAIN_DATASETS="${DROP_TRAIN_DATASETS:-}"
 
@@ -359,14 +360,7 @@ else:
             # shellcheck disable=SC2086
             PYTHONUNBUFFERED=1 python scripts/transfer_analysis_v3/run_experiments.py \
                 --splits $FLOW_SPLITS \
-                --models ridge_abs \
-                         two_way_mixed_ridge \
-                         anchor_additive_ridge anchor_lowrank_bilinear_ridge \
-                         anchor_bilinear_ridge anchor_bilinear_shrunk_ridge \
-                         kernel_mixed_additive kernel_mixed_interaction \
-                         ridge_pairwise \
-                         idw_prior_two_way idw_prior_two_way_rank \
-                         uniform_prior_two_way random_prior_two_way \
+                --models $FLOW_DIAGNOSTIC_MODELS \
                 --feature-groups $FLOW_DIAGNOSTIC_FEATURE_GROUPS \
                 --pairwise-spaces flow \
                 --self-dist-csv analysis_v3/pairwise_self_distances.csv \

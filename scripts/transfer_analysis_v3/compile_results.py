@@ -661,6 +661,128 @@ def _fig1_scatter(results_dir: Path, summary_df: pd.DataFrame, fig_dir: Path,
     return path
 
 
+def _fig1_residual_scatter(results_dir: Path, summary_df: pd.DataFrame,
+                           fig_dir: Path, available_models: list,
+                           available_splits: list,
+                           color_by: str = "benchmark",
+                           filename: str = "fig1d_context_centered_scatter.png") -> "Path | None":
+    """Context-centered predicted vs actual scatter.
+
+    Subtracts each context's mean predicted and actual score before plotting.
+    This removes the benchmark/model performance band and exposes the residual
+    within-context ordering signal.
+    """
+    scatter_models = [m for m in FIGURE_FOCUS_MODELS if m in available_models]
+    if not scatter_models:
+        scatter_models = [m for m in
+                          ["ridge_abs", "two_way_mixed_ridge",
+                           "ridge_pairwise", "idw_prior_two_way"]
+                          if m in available_models]
+    target_splits = [s for s in ["loto", "lobo", "joint_cell", "loco_cell", "loco"] if s in available_splits]
+    if not scatter_models or not target_splits:
+        return None
+
+    n_m, n_s = len(scatter_models), len(target_splits)
+    fig, axes = plt.subplots(n_s, n_m, figsize=(3.5 * n_m, 3.5 * n_s), squeeze=False)
+
+    if color_by not in {"benchmark", "train_dataset"}:
+        raise ValueError(f"Unsupported scatter color column: {color_by}")
+    color_label = "Benchmark" if color_by == "benchmark" else "Training dataset"
+    palette_lookup: dict = {}
+
+    for ri, split in enumerate(target_splits):
+        for ci, model in enumerate(scatter_models):
+            ax = axes[ri][ci]
+            selection_metric = "mae" if model in ABSOLUTE_MODELS and "mae_mean" in summary_df.columns else "spearman"
+            best_row = _best_result_row(summary_df, model, split,
+                                        selection_metric=selection_metric)
+            preds = _load_preds(results_dir, model, split, summary_df,
+                                selection_metric=selection_metric)
+            if preds is None or preds.empty or "context_id" not in preds.columns:
+                ax.text(0.5, 0.5, "No run for this split", ha="center", va="center",
+                        transform=ax.transAxes, color="grey", fontsize=9)
+                if ri == 0:
+                    ax.set_title(MODEL_DISPLAY.get(model, model), fontsize=8)
+                ax.set_axis_off()
+                continue
+
+            centered = preds.copy()
+            centered["pred_resid"] = (
+                centered["pred_score"].astype(float)
+                - centered.groupby("context_id")["pred_score"].transform("mean").astype(float)
+            )
+            centered["actual_resid"] = (
+                centered["auc_normalized"].astype(float)
+                - centered.groupby("context_id")["auc_normalized"].transform("mean").astype(float)
+            )
+            x = centered["pred_resid"].astype(float)
+            y = centered["actual_resid"].astype(float)
+
+            groups = sorted(centered[color_by].unique())
+            if not palette_lookup:
+                palette_name = "tab10" if len(groups) <= 10 else "tab20"
+                palette = sns.color_palette(palette_name, len(groups))
+                palette_lookup.update(dict(zip(groups, palette)))
+
+            for group_name in groups:
+                mask = centered[color_by] == group_name
+                ax.scatter(x[mask], y[mask],
+                           c=[palette_lookup.get(group_name, "#999")],
+                           alpha=0.55, s=16, linewidths=0)
+
+            x_range = float(x.max() - x.min()) if float(x.max() - x.min()) > 0 else 1.0
+            y_range = float(y.max() - y.min()) if float(y.max() - y.min()) > 0 else 1.0
+            pad = max(x_range, y_range) * 0.05
+            lim = max(abs(float(x.min())), abs(float(x.max())),
+                      abs(float(y.min())), abs(float(y.max()))) + pad
+            lim = max(lim, 1.0)
+            ax.axhline(0.0, color="black", lw=0.6, alpha=0.25)
+            ax.axvline(0.0, color="black", lw=0.6, alpha=0.25)
+            ax.plot([-lim, lim], [-lim, lim], "--", color="black", lw=0.8, alpha=0.45)
+            ax.set_xlim(-lim, lim)
+            ax.set_ylim(-lim, lim)
+
+            labels = []
+            if HAS_SCIPY and len(x) >= 3 and x.nunique() > 1 and y.nunique() > 1:
+                r, _ = _scipy_spearmanr(x.values, y.values)
+                labels.append(f"resid ρ = {r:.2f}")
+            if best_row is not None and "spearman_mean" in best_row and pd.notna(best_row["spearman_mean"]):
+                labels.append(f"ctx ρ = {float(best_row['spearman_mean']):.2f}")
+            if labels:
+                ax.text(0.05, 0.95, "\n".join(labels), transform=ax.transAxes,
+                        va="top", fontsize=8, fontweight="bold",
+                        bbox=dict(facecolor="white", edgecolor="none", alpha=0.65, pad=1.5))
+
+            if ri == 0:
+                metric_label = "MAE" if selection_metric == "mae" else "ρ"
+                fg = best_row["feature_group"] if best_row is not None else "?"
+                ax.set_title(
+                    f"{MODEL_DISPLAY.get(model, model)}\n"
+                    f"{FEATURE_DISPLAY.get(fg, fg)} ({metric_label}-selected)",
+                    fontsize=8,
+                )
+            if ci == 0:
+                ax.set_ylabel(f"{SPLIT_DISPLAY.get(split, split)}\nActual residual", fontsize=8)
+            if ri == n_s - 1:
+                ax.set_xlabel("Predicted residual", fontsize=8)
+            ax.tick_params(labelsize=7)
+
+    if palette_lookup:
+        patches = [mpatches.Patch(color=c, label=b)
+                   for b, c in palette_lookup.items()]
+        fig.legend(handles=patches, loc="lower center", ncol=min(len(patches), 6),
+                   fontsize=7, bbox_to_anchor=(0.5, -0.03), framealpha=0.9,
+                   title=color_label, title_fontsize=7)
+
+    fig.suptitle(f"Context-Centered Predicted vs Actual Residuals — colored by {color_label.lower()}",
+                 fontsize=10, y=1.01)
+    plt.tight_layout()
+    path = fig_dir / filename
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return path
+
+
 def _fig1_random_idw_scatter(results_dir: Path, summary_df: pd.DataFrame,
                              fig_dir: Path, available_models: list,
                              available_splits: list) -> "Path | None":
@@ -1142,6 +1264,8 @@ def generate_figures(results_dir: Path, summary_df: pd.DataFrame,
         ("fig1_train", _fig1_scatter,
          (results_dir, summary_df, fig_dir, available_models, available_splits,
           "train_dataset", "fig1_scatter_by_train.png")),
+        ("fig1_resid", _fig1_residual_scatter,
+         (results_dir, summary_df, fig_dir, available_models, available_splits)),
         ("fig1_random", _fig1_random_idw_scatter,
          (results_dir, summary_df, fig_dir, available_models, available_splits)),
         ("fig2", _fig2_auc_matrix, (results_dir, fig_dir, dist_df)),
@@ -1190,8 +1314,16 @@ def figures_md(fig_paths: dict, results_dir: Path) -> str:
             "row-wise dataset bias, such as one training set being consistently over- or "
             "under-predicted across benchmarks and model variants.",
         ),
+        "fig1_resid": (
+            "**Figure 1c — Context-Centered Residual Scatter**",
+            "Same selected panels as Figure 1, but each point has its context mean subtracted "
+            "from both prediction and target. This removes the average benchmark/model "
+            "performance band and makes the residual within-context ranking signal visible. "
+            "`resid ρ` is pooled Spearman after centering; `ctx ρ` is the mean within-context "
+            "Spearman reported in the tables.",
+        ),
         "fig1_random": (
-            "**Figure 1c — Random-IDW Control Scatter**",
+            "**Figure 1d — Random-IDW Control Scatter**",
             "Same absolute prediction scatter as Figure 1, but forced to the `random_idw` "
             "feature group for the IDW-family models. This isolates how much of the apparent "
             "absolute prediction quality comes from the borrowing mechanism rather than from "

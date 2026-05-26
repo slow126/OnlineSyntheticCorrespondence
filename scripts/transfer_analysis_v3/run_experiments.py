@@ -52,7 +52,7 @@ from scipy.stats import spearmanr, kendalltau
 from sklearn.impute import SimpleImputer
 from sklearn.kernel_ridge import KernelRidge
 from sklearn.linear_model import LogisticRegression, Ridge, RidgeCV
-from sklearn.model_selection import KFold
+from sklearn.model_selection import GroupKFold, KFold
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import SplineTransformer, StandardScaler
 
@@ -359,6 +359,66 @@ def apply_preprocessor(df: pd.DataFrame, feature_cols: list[str], preprocessor: 
     return scaler.transform(imputer.transform(X)).astype(np.float32)
 
 
+def grouped_cv_labels(df: pd.DataFrame, split_name: str | None) -> np.ndarray | None:
+    """Return inner-CV groups that mirror the outer held-out entity.
+
+    This prevents alpha selection from optimizing row-wise interpolation when
+    the outer split is testing entity extrapolation.
+    """
+    if split_name in {"loto", "loto_grouped"} and "train_dataset" in df:
+        return df["train_dataset"].astype(str).values
+    if split_name == "lobo" and "benchmark" in df:
+        return df["benchmark"].astype(str).values
+    if split_name == "lomo" and "model_family" in df:
+        return df["model_family"].astype(str).values
+    if split_name in {"loco", "loco_cell"} and "context_id" in df:
+        return df["context_id"].astype(str).values
+    if split_name == "joint_cell" and {"train_dataset", "benchmark"}.issubset(df.columns):
+        return (df["train_dataset"].astype(str) + "|" + df["benchmark"].astype(str)).values
+    return None
+
+
+def fit_ridge_with_grouped_alpha(
+    X: np.ndarray,
+    y: np.ndarray,
+    alphas: list[float],
+    groups: np.ndarray | None = None,
+) -> Ridge:
+    """Select Ridge alpha with grouped CV when possible, then fit on all rows."""
+    X = np.asarray(X, dtype=np.float64)
+    y = np.asarray(y, dtype=np.float64)
+    if groups is None:
+        return RidgeCV(alphas=alphas).fit(X, y)
+
+    groups = np.asarray(groups)
+    valid = np.isfinite(y)
+    groups = groups[valid]
+    X = X[valid]
+    y = y[valid]
+    unique_groups = np.unique(groups)
+    if len(unique_groups) < 3 or len(y) < 6:
+        return RidgeCV(alphas=alphas).fit(X, y)
+
+    splitter = GroupKFold(n_splits=min(5, len(unique_groups)))
+    best_alpha = float(alphas[0])
+    best_loss = float("inf")
+    for alpha in alphas:
+        losses = []
+        for tr_idx, va_idx in splitter.split(X, y, groups):
+            if len(tr_idx) == 0 or len(va_idx) == 0:
+                continue
+            model = Ridge(alpha=float(alpha), solver="lsqr")
+            model.fit(X[tr_idx], y[tr_idx])
+            pred = model.predict(X[va_idx])
+            losses.append(float(np.mean((pred - y[va_idx]) ** 2)))
+        if losses:
+            loss = float(np.mean(losses))
+            if loss < best_loss:
+                best_loss = loss
+                best_alpha = float(alpha)
+    return Ridge(alpha=best_alpha, solver="lsqr").fit(X, y)
+
+
 # ---------------------------------------------------------------------------
 # Within-context rank target
 # ---------------------------------------------------------------------------
@@ -566,9 +626,11 @@ class TwoWayMixedRidgeModel:
         self,
         feature_cols: list[str] | None = None,
         target_col: str | None = None,
+        split_name: str | None = None,
     ) -> None:
         self._feature_cols = list(feature_cols or [])
         self._target_col = target_col
+        self._split_name = split_name
         self._cat_values: dict[str, list[str]] = {}
         self._imputer = None
         self._scaler = None
@@ -605,8 +667,12 @@ class TwoWayMixedRidgeModel:
         X_imp = self._imputer.transform(X[valid])
         self._scaler = StandardScaler().fit(X_imp)
         X_proc = self._scaler.transform(X_imp)
-        self._model = RidgeCV(alphas=[0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]).fit(
-            X_proc, y[valid].values
+        groups = grouped_cv_labels(train_df, self._split_name)
+        groups = groups[valid] if groups is not None else None
+        self._model = fit_ridge_with_grouped_alpha(
+            X_proc, y[valid].values,
+            alphas=[0.01, 0.1, 1.0, 10.0, 100.0, 1000.0],
+            groups=groups,
         )
 
     def predict_score_df(self, test_df: pd.DataFrame) -> np.ndarray:
@@ -867,6 +933,7 @@ class RidgePairwiseDistModel:
         cross_mode: str = "raw",
         weight_mode: str = "idw",
         use_spline: bool = False,
+        split_name: str | None = None,
     ) -> None:
         self._feature_cols = list(feature_cols)
         self._metric_col = metric_col
@@ -877,6 +944,8 @@ class RidgePairwiseDistModel:
         self._cross_mode = cross_mode
         self._weight_mode = weight_mode
         self._use_spline = use_spline
+        self._split_name = split_name
+        self._ridge_groups: np.ndarray | None = None
         self._fold_trains: list[str] = []
         self._fold_evals: list[str] = []
         self._perf_lookup: dict[tuple, float] = {}
@@ -912,6 +981,8 @@ class RidgePairwiseDistModel:
         X = np.where(np.isfinite(X), X, np.nan)
         y = np.where(np.isfinite(y), y, np.nan)
         valid_rows = np.isfinite(y)
+        groups = self._ridge_groups
+        groups = groups[valid_rows] if groups is not None and len(groups) == len(valid_rows) else None
         X = X[valid_rows]
         y = y[valid_rows]
         keep_cols = ~np.all(~np.isfinite(X), axis=0)
@@ -947,8 +1018,8 @@ class RidgePairwiseDistModel:
 
         alphas = getattr(self, "_ridge_alphas", [0.01, 0.1, 1.0, 10.0, 100.0, 1000.0])
         try:
-            self._model = RidgeCV(alphas=alphas).fit(
-                X_model, y
+            self._model = fit_ridge_with_grouped_alpha(
+                X_model, y, alphas=alphas, groups=groups,
             )
         except Exception:
             # Full anchor-bilinear/random-control designs can be ill-conditioned.
@@ -1259,6 +1330,8 @@ class RidgePairwiseDistModel:
         X_full = np.hstack([orig, aug]) if aug.shape[1] > 0 else orig
         valid = perf_series.notna()
 
+        cv_groups = grouped_cv_labels(train_df.loc[valid], self._split_name)
+        self._ridge_groups = cv_groups
         self._fit_ridge_regressor(X_full[valid.values], perf_series[valid].values)
 
     def predict_score_df(self, test_df: pd.DataFrame) -> np.ndarray:
@@ -1343,6 +1416,7 @@ class AnchorBilinearRidgeModel(RidgePairwiseDistModel):
             perf_series = train_df["auc_normalized"].copy().reindex(train_df.index)
         valid = perf_series.notna().values
         X_full = self._build_bilinear_features(train_df)
+        self._ridge_groups = grouped_cv_labels(train_df.loc[valid], self._split_name)
         self._fit_ridge_regressor(X_full[valid], perf_series[valid].values)
 
     def predict_score_df(self, test_df: pd.DataFrame) -> np.ndarray:
@@ -1434,6 +1508,7 @@ class AnchorLowRankBilinearRidgeModel(AnchorBilinearRidgeModel):
             perf_series = train_df["auc_normalized"].copy().reindex(train_df.index)
         valid = perf_series.notna().values
         X_full = self._build_lowrank_features(train_df, fit_axes=True)
+        self._ridge_groups = grouped_cv_labels(train_df.loc[valid], self._split_name)
         self._fit_ridge_regressor(X_full[valid], perf_series[valid].values)
 
     def predict_score_df(self, test_df: pd.DataFrame) -> np.ndarray:
@@ -1859,6 +1934,7 @@ class IDWPriorResidualModel(RidgePairwiseDistModel):
 
         # Ridge on flow features only, fitted to residuals
         X_orig = train_df[self._feature_cols].values.astype(np.float64)
+        self._ridge_groups = grouped_cv_labels(train_df.loc[valid], self._split_name)
         self._fit_ridge_regressor(X_orig[valid], residuals[valid])
 
     def predict_score_df(self, test_df: pd.DataFrame) -> np.ndarray:
@@ -1958,6 +2034,7 @@ class IDWPriorContextModel(IDWPriorResidualModel):
         valid = perf_series.notna().values
         residuals = perf_series.values - priors
         X_orig = train_df[self._feature_cols].values.astype(np.float64)
+        self._ridge_groups = grouped_cv_labels(train_df.loc[valid], self._split_name)
         self._fit_ridge_regressor(X_orig[valid], residuals[valid])
 
 
@@ -2330,6 +2407,7 @@ class IDWPriorTwoWayModel(IDWPriorResidualModel):
         residuals = perf_series.values - priors
 
         X_orig = train_df[self._feature_cols].values.astype(np.float64)
+        self._ridge_groups = grouped_cv_labels(train_df.loc[valid], self._split_name)
         self._fit_ridge_regressor(X_orig[valid], residuals[valid])
 
     def predict_score_df(self, test_df: pd.DataFrame) -> np.ndarray:
@@ -2966,10 +3044,11 @@ def run_fold(fold_id: str, train_df: pd.DataFrame, test_df: pd.DataFrame,
     model_cls = MODEL_CLASSES[model_name]
     pairwise_metric = resolve_pairwise_metric(model_name, feature_group_name)
     if model_name == "two_way_mixed_ridge":
-        model = model_cls(feature_cols=feature_cols, target_col=target_col)
+        model = model_cls(feature_cols=feature_cols, target_col=target_col,
+                          split_name=split_name)
     elif pairwise_metric is not None and self_dist_df is not None:
         metric_col, is_similarity = pairwise_metric
-        extra_kwargs = {}
+        extra_kwargs = {"split_name": split_name}
         if model_name == "idw_prior_two_way_rank":
             extra_kwargs["split_name"] = split_name
         model = model_cls(

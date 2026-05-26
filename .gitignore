@@ -24,6 +24,8 @@ MANIFEST
 # PyTorch
 *.pth
 *.pt
+*.ckpt
+*.safetensors
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -76,7 +78,16 @@ models/DinoV3/extracted_features/
 *extracted_features/
 
 *.npy
+*.npz
 *.pkl
+*.pickle
+*.h5
+*.hdf5
+*.parquet
+*.arrow
+*.feather
+*.faiss
+*.index
 
 # Textures
 pbr_textures/
@@ -146,6 +157,18 @@ gaussian_splat/*_comparison.png
 # Transfer analysis generated artifacts
 scripts/transfer_analysis_v3/logs/
 scripts/transfer_analysis_v3/results/
+scripts/transfer_analysis_v4/results*/
+scripts/transfer_analysis_v4/_archive*/
+scripts/transfer_analysis_v4/logs/
+
+# Local generated experiment/data dumps
+backups/
+runs/
+coverage_vectors/
+pairwise_ranks/
+pairwise_self_distances_local.csv
+flow_mmd_results_fast*.csv
+flow_mmd_results_fast*.json
 
 # Local scratch launchers / accidental shell artifacts
 tmp_run_*.sh
