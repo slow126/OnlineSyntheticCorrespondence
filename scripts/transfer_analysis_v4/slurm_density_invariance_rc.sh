@@ -55,7 +55,7 @@ echo "levels    : ${LEVEL_ARGS[*]}"
 echo "pair_types: ${PAIR_TYPE_ARGS[*]}"
 nvidia-smi -L || true
 
-python scripts/transfer_analysis_v4/density_invariance_train_eval_only.py \
+srun python -u scripts/transfer_analysis_v4/density_invariance_train_eval_only.py \
     --space "$SPACE" \
     --levels "${LEVEL_ARGS[@]}" \
     --pair-types "${PAIR_TYPE_ARGS[@]}" \
