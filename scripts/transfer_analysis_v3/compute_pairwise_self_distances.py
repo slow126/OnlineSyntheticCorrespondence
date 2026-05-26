@@ -27,7 +27,8 @@ Usage:
     python scripts/transfer_analysis_v3/compute_pairwise_self_distances.py \
         --vec-dir /mnt/nvme_1tb_b/coverage_vectors \
         --output analysis_v3/pairwise_self_distances.csv \
-        --max-flow 1000000 --max-dino 500000 --gpu
+        --max-flow 1000000 --max-dino 500000 --gpu \
+        --pair-types train_eval eval_eval
 
 Parallel / cluster usage (SLURM job array, one GPU per rank):
 
@@ -351,6 +352,13 @@ def main() -> None:
     parser.add_argument("--no-gpu", dest="gpu", action="store_false")
     parser.add_argument("--spaces", nargs="+", default=["flow", "dino"],
                         choices=["flow", "dino"])
+    parser.add_argument("--pair-types", nargs="+",
+                        default=["train_eval", "eval_eval"],
+                        choices=["train_train", "eval_eval", "train_eval"],
+                        help="Pair families to compute. Default is train_eval + "
+                             "eval_eval, matching the final predictor: train_eval "
+                             "feeds ranking features and eval_eval feeds benchmark "
+                             "IDW/calibration. Add train_train for legacy/full runs.")
     parser.add_argument("--stride", type=int, default=1,
                         help="Number of parallel workers. Worker K processes pairs where "
                              "global_index %% stride == rank.")
@@ -393,21 +401,27 @@ def main() -> None:
             except Exception as e:
                 print(f"Warning: could not read seed CSV ({e})")
 
+    pair_types = set(args.pair_types)
+
     # Build pair lists
-    #   self_pairs:  train-train and eval-eval (combinations + self-pairs)
+    #   self_pairs:  train-train and/or eval-eval (combinations + self-pairs)
     #   cross_pairs: train × eval (both KRR features and KL divergence)
     self_pairs: list[tuple] = []
     for datasets, ptype in [(TRAIN_DATASETS, "train_train"), (EVAL_DATASETS, "eval_eval")]:
+        if ptype not in pair_types:
+            continue
         for (na, sa), (nb, sb) in itertools.combinations(datasets, 2):
             self_pairs.append((ptype, na, sa, nb, sb))
         for (na, sa) in datasets:
             self_pairs.append((ptype, na, sa, na, sa))
 
-    cross_pairs: list[tuple] = [
-        ("train_eval", na, sa, nb, sb)
-        for (na, sa) in TRAIN_DATASETS
-        for (nb, sb) in EVAL_DATASETS
-    ]
+    cross_pairs: list[tuple] = []
+    if "train_eval" in pair_types:
+        cross_pairs = [
+            ("train_eval", na, sa, nb, sb)
+            for (na, sa) in TRAIN_DATASETS
+            for (nb, sb) in EVAL_DATASETS
+        ]
 
     # Flatten to (space, ptype, na, sa, nb, sb) and apply stride/rank sharding.
     all_pairs: list[tuple] = [
@@ -422,6 +436,7 @@ def main() -> None:
     else:
         print(f"Total pairs: {len(all_pairs)}  "
               f"({len(self_pairs)} self + {len(cross_pairs)} cross) × {len(args.spaces)} spaces")
+    print(f"Pair types: {', '.join(args.pair_types)}")
 
     n_computed = n_skipped = n_missing = 0
     current_space: str | None = None

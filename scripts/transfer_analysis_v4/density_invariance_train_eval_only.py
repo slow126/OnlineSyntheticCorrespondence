@@ -1,20 +1,21 @@
-"""Density invariance for the interventional-study scenario specifically:
-test only the (train_dataset → benchmark) cross-distance features, not the
-train_train or eval_eval pairs that the predictor's L term needs.
+"""Density invariance for the final predictor scenario.
+
+By default this tests only:
+  - train_eval: source → benchmark ranking features g(i → k)
+  - eval_eval: benchmark → benchmark distances used by LOBO IDW/calibration
+
+It skips train_train by default because the current ablations found source-
+source IDW was not essential; naive/cell averages were sufficient there.
 
 For the interventional study, the candidate dataset's (i → k) features are
 the only NEW features we have to compute per candidate. The benchmark-
-benchmark distances stay cached. So train_eval stability is the relevant
-question for "how many frames does my candidate need?"
+benchmark distances stay cached, but eval_eval stability is useful to defend
+the calibration/IDW side of the pipeline.
 
 This script:
   1. Calls `compute_pairwise_self_distances.py` at the requested N levels.
-  2. Filters output to train_eval pairs only.
-  3. Reports stability vs the full-size baseline.
-
-Compared to `density_invariance.py`, this is ~3× faster because we
-post-filter to train_eval pairs (but the underlying script still computes
-all pair types — see TODO below for a true train_eval-only optimization).
+  2. Computes only the requested pair types; default: train_eval eval_eval.
+  3. Reports stability vs the full-size baseline by pair type.
 
 Run:
     python scripts/transfer_analysis_v4/density_invariance_train_eval_only.py \
@@ -22,10 +23,6 @@ Run:
 
     python scripts/transfer_analysis_v4/density_invariance_train_eval_only.py \
         --space dino --levels 10000 50000 200000
-
-TODO: if even faster is needed, patch compute_pairwise_self_distances.py
-to accept --pair-types train_eval and skip the train_train / eval_eval
-enumeration entirely. That gives the full 3× speedup.
 """
 from __future__ import annotations
 
@@ -50,7 +47,7 @@ SELFDIST_METRIC_COLS = [
 
 
 def run_one_level(space: str, level: int, vec_dir: Path,
-                  output_csv: Path, gpu: bool) -> None:
+                  output_csv: Path, gpu: bool, pair_types: list[str]) -> None:
     if output_csv.exists():
         print(f"  skip (exists): {output_csv}")
         return
@@ -60,6 +57,7 @@ def run_one_level(space: str, level: int, vec_dir: Path,
         "--vec-dir", str(vec_dir),
         "--output", str(output_csv),
         "--spaces", space,
+        "--pair-types", *pair_types,
         f"--max-{space}", str(level),
     ]
     if gpu:
@@ -70,32 +68,32 @@ def run_one_level(space: str, level: int, vec_dir: Path,
 
 
 def stability(baseline_csv: Path, level_csvs: list[tuple[int, Path]],
-              space: str) -> pd.DataFrame:
-    """Spearman ρ between each level and the full-size baseline, train_eval
-    pairs only."""
+              space: str, pair_types: list[str]) -> pd.DataFrame:
+    """Spearman ρ between each level and the full-size baseline."""
     base = pd.read_csv(baseline_csv)
-    base = base[(base["space"] == space) & (base["pair_type"] == "train_eval")]
     key = ["dataset_a", "split_a", "dataset_b", "split_b"]
     rows = []
-    for level, lvl_csv in level_csvs:
-        lvl = pd.read_csv(lvl_csv)
-        lvl = lvl[(lvl["space"] == space) & (lvl["pair_type"] == "train_eval")]
-        merged = base.merge(lvl, on=key, suffixes=("_base", "_lvl"))
-        if len(merged) < 3:
-            print(f"  warning: only {len(merged)} train_eval pairs at N={level}")
-        for metric in SELFDIST_METRIC_COLS:
-            ba = merged.get(f"{metric}_base")
-            lv = merged.get(f"{metric}_lvl")
-            if ba is None or lv is None:
-                rows.append((metric, level, float("nan"), 0))
-                continue
-            mask = ba.notna() & lv.notna()
-            if mask.sum() < 3:
-                rows.append((metric, level, float("nan"), int(mask.sum())))
-                continue
-            rho = spearmanr(ba[mask], lv[mask]).statistic
-            rows.append((metric, level, float(rho), int(mask.sum())))
-    return pd.DataFrame(rows, columns=["metric", "level", "rho", "n_pairs"])
+    for pair_type in pair_types:
+        base_sub = base[(base["space"] == space) & (base["pair_type"] == pair_type)]
+        for level, lvl_csv in level_csvs:
+            lvl = pd.read_csv(lvl_csv)
+            lvl = lvl[(lvl["space"] == space) & (lvl["pair_type"] == pair_type)]
+            merged = base_sub.merge(lvl, on=key, suffixes=("_base", "_lvl"))
+            if len(merged) < 3:
+                print(f"  warning: only {len(merged)} {pair_type} pairs at N={level}")
+            for metric in SELFDIST_METRIC_COLS:
+                ba = merged.get(f"{metric}_base")
+                lv = merged.get(f"{metric}_lvl")
+                if ba is None or lv is None:
+                    rows.append((pair_type, metric, level, float("nan"), 0))
+                    continue
+                mask = ba.notna() & lv.notna()
+                if mask.sum() < 3:
+                    rows.append((pair_type, metric, level, float("nan"), int(mask.sum())))
+                    continue
+                rho = spearmanr(ba[mask], lv[mask]).statistic
+                rows.append((pair_type, metric, level, float(rho), int(mask.sum())))
+    return pd.DataFrame(rows, columns=["pair_type", "metric", "level", "rho", "n_pairs"])
 
 
 def make_heatmap(stab: pd.DataFrame, out_path: Path, title: str) -> None:
@@ -125,7 +123,8 @@ def make_heatmap(stab: pd.DataFrame, out_path: Path, title: str) -> None:
 
 
 def recommend(stab: pd.DataFrame, threshold: float = 0.90) -> None:
-    print(f"\n  Minimum N for ρ >= {threshold} (train_eval pairs only):")
+    pair_label = stab["pair_type"].iloc[0] if "pair_type" in stab.columns and len(stab) else "pairs"
+    print(f"\n  Minimum N for ρ >= {threshold} ({pair_label}):")
     all_n = []
     for metric, sub in stab.groupby("metric"):
         sub_sorted = sub.sort_values("level")
@@ -151,6 +150,11 @@ def main():
     ap.add_argument("--space", required=True, choices=["flow", "dino"])
     ap.add_argument("--levels", nargs="+", type=int, required=True,
                     help="Subsample sizes to test (smaller = faster)")
+    ap.add_argument("--pair-types", nargs="+",
+                    default=["train_eval", "eval_eval"],
+                    choices=["train_eval", "eval_eval", "train_train"],
+                    help="Pair families to recompute/analyze. Default skips "
+                         "train_train and tests final-pipeline features only.")
     ap.add_argument("--threshold", type=float, default=0.90)
     ap.add_argument("--no-gpu", action="store_true")
     ap.add_argument("--compute-only", action="store_true")
@@ -164,7 +168,8 @@ def main():
     if not args.analyze_only:
         for level in sorted(args.levels):
             csv = out_dir / f"pairwise_self_{args.space}_N{level}.csv"
-            run_one_level(args.space, level, vec_dir, csv, gpu=not args.no_gpu)
+            run_one_level(args.space, level, vec_dir, csv,
+                          gpu=not args.no_gpu, pair_types=args.pair_types)
 
     if args.compute_only:
         print("compute-only mode: done")
@@ -176,13 +181,16 @@ def main():
     if not level_csvs:
         print("no level CSVs found, nothing to analyze")
         return
-    stab = stability(baseline_csv, level_csvs, args.space)
-    stab_path = out_dir / f"stability_{args.space}_train_eval.csv"
+    stab = stability(baseline_csv, level_csvs, args.space, args.pair_types)
+    pair_suffix = "__".join(args.pair_types)
+    stab_path = out_dir / f"stability_{args.space}_{pair_suffix}.csv"
     stab.to_csv(stab_path, index=False)
     print(f"  wrote {stab_path}")
-    make_heatmap(stab, out_dir / f"stability_heatmap_{args.space}_train_eval.png",
-                 f"Feature stability (train_eval only) — {args.space}")
-    recommend(stab, threshold=args.threshold)
+    for pair_type in args.pair_types:
+        sub = stab[stab["pair_type"] == pair_type]
+        make_heatmap(sub, out_dir / f"stability_heatmap_{args.space}_{pair_type}.png",
+                     f"Feature stability ({pair_type}) — {args.space}")
+        recommend(sub, threshold=args.threshold)
 
 
 if __name__ == "__main__":

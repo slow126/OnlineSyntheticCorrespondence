@@ -22,6 +22,7 @@ srun python scripts/transfer_analysis_v3/compute_pairwise_self_distances.py \
     --output     $OUT_DIR/rank_${SLURM_ARRAY_TASK_ID}.csv \
     --seed-csv   $SEED_CSV \
     --spaces     dino \
+    --pair-types train_train eval_eval train_eval \
     --stride     231 \
     --rank       $SLURM_ARRAY_TASK_ID \
     --max-dino   8000000 \
