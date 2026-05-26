@@ -52,6 +52,7 @@ Parallel / cluster usage (SLURM job array, one GPU per rank):
 import argparse
 import gc
 import itertools
+import os
 import sys
 from pathlib import Path
 
@@ -171,6 +172,48 @@ def _knnself_path(name: str, split: str, space: str, vec_dir: Path) -> Path | No
     return None
 
 
+def _density_knnself_path(name: str, split: str, space: str, vec_dir: Path,
+                          n_vecs: int) -> Path:
+    """Level-specific persistent self-kNN cache.
+
+    The canonical files under knn_self/ store squared-L2 distances for the full
+    extraction. These density-level files store L2 distances for exactly the
+    deterministic subsample used at this N, so keep them in a separate namespace.
+    """
+    if space == "flow":
+        stem = f"knnself_{name}_{split}_flow_joint_norm2x1_L2_k{_K_MAX}_N{n_vecs}_seed0"
+    else:
+        stem = f"knnself_{name}_{split}_dino_pca256_L2_k{_K_MAX}_N{n_vecs}_seed0"
+    return vec_dir / "knn_self" / "density_levels" / f"{stem}.npy"
+
+
+def _load_density_knnself(path: Path) -> np.ndarray | None:
+    if not path.exists():
+        return None
+    try:
+        arr = np.load(path, mmap_mode="r")
+        if arr.ndim == 2 and arr.shape[1] >= _K_MAX:
+            return np.ascontiguousarray(arr[:, :_K_MAX], dtype=np.float32)
+    except Exception as e:
+        print(f"  Warning: density knn_self cache load failed for {path.name}: {e}")
+    return None
+
+
+def _save_density_knnself(path: Path, arr: np.ndarray) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp.npy")
+    try:
+        np.save(tmp, np.ascontiguousarray(arr, dtype=np.float32))
+        os.replace(tmp, path)
+        print(f"  [knn_self] Cached density-level self-kNN: {path}", flush=True)
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+
+
 def _get_or_compute_knn_self(
     name: str,
     split: str,
@@ -191,7 +234,15 @@ def _get_or_compute_knn_self(
     Because subsampling is deterministic (fixed seed=0), the same (name, split, space)
     always maps to the same vecs, so the memo is valid across all pairs.
     """
-    # 1. File cache
+    # 1a. Density-level persistent cache for exactly this deterministic
+    #     subsample size. This is what lets Slurm pair shards share work.
+    density_path = _density_knnself_path(name, split, space, vec_dir, len(vecs))
+    cached = _load_density_knnself(density_path)
+    if cached is not None:
+        return cached
+
+    # 1b. Full extraction file cache. These canonical files store squared-L2;
+    #     subset by idx and convert to L2.
     path = _knnself_path(name, split, space, vec_dir)
     if path is not None:
         try:
@@ -215,6 +266,10 @@ def _get_or_compute_knn_self(
 
     # 3. Compute on the fly from the already-loaded (and possibly subsampled) vecs.
     #    For low-dimensional flow (4D) this is fast even at 1M vectors.
+    cached = _load_density_knnself(density_path)
+    if cached is not None:
+        return cached
+
     n, dim = vecs.shape
     factory = "Flat" if n < 100_000 else f"IVF{min(1024, max(64, n // 100))},Flat"
     print(f"\n  [knn_self] Computing for {name}/{split}/{space} "
@@ -229,6 +284,8 @@ def _get_or_compute_knn_self(
             verbose=True,
         )
         result: np.ndarray | None = np.ascontiguousarray(dists, dtype=np.float32)
+        if result is not None and result.size:
+            _save_density_knnself(density_path, result)
     except Exception as e:
         print(f"  [knn_self] Computation failed for {name}/{split}/{space}: {e}")
         result = None

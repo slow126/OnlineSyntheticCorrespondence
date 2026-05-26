@@ -19,10 +19,10 @@ This script:
 
 Run:
     python scripts/transfer_analysis_v4/density_invariance_train_eval_only.py \
-        --space flow --levels 50000 200000 1000000
+        --space flow --levels 50000 200000 1000000 4000000 8000000
 
     python scripts/transfer_analysis_v4/density_invariance_train_eval_only.py \
-        --space dino --levels 10000 50000 200000
+        --space dino --levels 25000 100000 500000 2000000 4000000
 """
 from __future__ import annotations
 

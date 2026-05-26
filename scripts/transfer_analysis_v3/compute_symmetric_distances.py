@@ -40,6 +40,20 @@ try:
 except ImportError:
     _TORCH_AVAILABLE = False
 
+PURE_TRAIN_DATASETS = {
+    "flyingthings",
+    "imagenet2dwarp",
+    "movi_f",
+    "pointodyssey",
+    "sintel",
+    "spair",
+    "synthetic",
+    "synthetic_2d_warp",
+    "synthetic_large_zoom",
+    "synthetic_random_flipping",
+    "synthetic_small_zoom",
+}
+
 
 # ---------------------------------------------------------------------------
 # Math
@@ -188,6 +202,9 @@ def main() -> None:
     parser.add_argument("--seed",        type=int, default=42)
     parser.add_argument("--skip-dino",   action="store_true")
     parser.add_argument("--skip-flow",   action="store_true")
+    parser.add_argument("--pure-only",   action="store_true",
+        help="Restrict train_dataset to the 11 pure training sources used by "
+             "the headline v4 ablations.")
     args = parser.parse_args()
 
     vec_dir  = Path(args.vec_dir)
@@ -197,6 +214,10 @@ def main() -> None:
     pairs_df = pd.read_csv(args.flow_csv)[
         ["train_dataset", "train_split", "eval_dataset", "eval_split"]
     ].drop_duplicates().reset_index(drop=True)
+    if args.pure_only:
+        before = len(pairs_df)
+        pairs_df = pairs_df[pairs_df["train_dataset"].isin(PURE_TRAIN_DATASETS)].reset_index(drop=True)
+        print(f"Pure-only filter: {before} -> {len(pairs_df)} pairs")
     print(f"Total pairs: {len(pairs_df)}")
 
     # Resumability

@@ -38,6 +38,7 @@ srun python -u scripts/transfer_analysis_v3/compute_symmetric_distances.py \
     --vec-dir "$VEC_DIR" \
     --output "$OUT_CSV" \
     --skip-flow \
+    --pure-only \
     --n-proj 200 \
     --sw-samples 100000 \
     --fid-samples 200000
