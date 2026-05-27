@@ -39,6 +39,7 @@ srun python -u scripts/transfer_analysis_v3/compute_symmetric_distances.py \
     --output "$OUT_CSV" \
     --skip-flow \
     --pure-only \
+    --pure-grid \
     --n-proj 200 \
     --sw-samples 100000 \
     --fid-samples 200000

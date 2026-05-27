@@ -54,6 +54,33 @@ PURE_TRAIN_DATASETS = {
     "synthetic_small_zoom",
 }
 
+PURE_TRAIN_SPLITS = [(d, "train") for d in [
+    "flyingthings",
+    "imagenet2dwarp",
+    "movi_f",
+    "pointodyssey",
+    "sintel",
+    "spair",
+    "synthetic",
+    "synthetic_2d_warp",
+    "synthetic_large_zoom",
+    "synthetic_random_flipping",
+    "synthetic_small_zoom",
+]]
+
+EVAL_SPLITS = [
+    ("flyingthings", "test"),
+    ("kitti2012", "val"),
+    ("kitti2015", "val"),
+    ("spair", "test"),
+    ("pfpascal", "test"),
+    ("pfwillow", "test"),
+    ("pointodyssey", "test"),
+    ("tss", "val"),
+    ("middlebury", "val"),
+    ("synthetic", "val"),
+]
+
 
 # ---------------------------------------------------------------------------
 # Math
@@ -205,16 +232,33 @@ def main() -> None:
     parser.add_argument("--pure-only",   action="store_true",
         help="Restrict train_dataset to the 11 pure training sources used by "
              "the headline v4 ablations.")
+    parser.add_argument("--pure-grid",   action="store_true",
+        help="Ignore the flow CSV pair list and compute the complete pure "
+             "11-source x 10-benchmark grid. Useful when the coverage CSV is "
+             "missing rows for some DINO-only pairs.")
     args = parser.parse_args()
 
     vec_dir  = Path(args.vec_dir)
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    pairs_df = pd.read_csv(args.flow_csv)[
-        ["train_dataset", "train_split", "eval_dataset", "eval_split"]
-    ].drop_duplicates().reset_index(drop=True)
-    if args.pure_only:
+    if args.pure_grid:
+        pairs_df = pd.DataFrame([
+            {
+                "train_dataset": td,
+                "train_split": ts,
+                "eval_dataset": ed,
+                "eval_split": es,
+            }
+            for td, ts in PURE_TRAIN_SPLITS
+            for ed, es in EVAL_SPLITS
+        ])
+        print(f"Pure-grid pair list: {len(pairs_df)} pairs")
+    else:
+        pairs_df = pd.read_csv(args.flow_csv)[
+            ["train_dataset", "train_split", "eval_dataset", "eval_split"]
+        ].drop_duplicates().reset_index(drop=True)
+    if args.pure_only and not args.pure_grid:
         before = len(pairs_df)
         pairs_df = pairs_df[pairs_df["train_dataset"].isin(PURE_TRAIN_DATASETS)].reset_index(drop=True)
         print(f"Pure-only filter: {before} -> {len(pairs_df)} pairs")

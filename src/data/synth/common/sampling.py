@@ -70,7 +70,7 @@ def weighted_sample_from_flow(
     center_weight = torch.exp(-((xs ** 2 + ys ** 2) / (2 * center_sigma ** 2)))
     flow_mag = flow.norm(dim=0)  # [H, W]
     valid = flow_mag.isfinite()
-    flow_mag = flow_mag.clamp(min=1e-4)
+    flow_mag = torch.where(valid, flow_mag.clamp(min=1e-4), torch.zeros_like(flow_mag))
     mask = (ys.abs() < (1 - border_frac)) & (xs.abs() < (1 - border_frac)) & valid
     weights = (center_weight * flow_mag * mask).reshape(-1)
     valid_mask = weights > 0

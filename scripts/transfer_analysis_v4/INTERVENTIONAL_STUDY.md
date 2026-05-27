@@ -31,8 +31,9 @@ the "we tried this and it failed, don't redo" log.
 From `CLAIMS.md` Claims 1–11:
 
 - **Motion (flow) cross-distance predicts transfer** with within-context
-  Spearman ρ ≈ +0.47 / +0.48 / +0.28 on LOTO / LOBO / JOINT (`peak_pck`
-  target). Paired bootstrap motion − appearance gap has P > 0.997.
+  Spearman ρ ≈ +0.508 / +0.448 / +0.321 on LOTO / LOBO / JOINT
+  (`peak_pck` target). Paired bootstrap motion − appearance gap has
+  P ≥ 0.998.
 - **Appearance (DINO) cross-distance does NOT predict transfer** — weakly
   anti-predicts on LOTO/JOINT, near-zero on LOBO.
 - The result is **robust to L choice, regression head, target metric,
