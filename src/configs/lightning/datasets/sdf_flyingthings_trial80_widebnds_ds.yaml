@@ -1,0 +1,32 @@
+# Dataset-only config (extracted for the GLU-Net unified split-config sweep).
+# Source: src/configs/CorrespondenceConfigs/sdf_flyingthings_trial80_widebnds.yaml -- only the dataset section.
+dataset:
+  dataset_name: synthetic
+  split: train
+  size:
+  - 512
+  - 512
+  downsample_flow: 32
+  max_kps: null
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: false
+  geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
+  processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
+  opengl_device_index: null
+  geometry_config_overrides:
+    angle_sampler:
+      x_components:
+        loc: -0.08348378619994598
+        scale: 0.1692029810449774
+      y_components:
+        loc: -0.05682041531725236
+        scale: 0.24626955865870534
+    scale_sampler:
+      abs_components:
+        loc: 0.6133291018348747
+        scale: 0.10090686513611857
+      rel_components:
+        loc: -0.2214989789803457
+        scale: 0.4831503865963535

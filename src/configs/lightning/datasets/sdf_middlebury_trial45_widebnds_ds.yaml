@@ -1,0 +1,32 @@
+# Dataset-only config (extracted for the GLU-Net unified split-config sweep).
+# Source: src/configs/CorrespondenceConfigs/sdf_middlebury_trial45_widebnds.yaml -- only the dataset section.
+dataset:
+  dataset_name: synthetic
+  split: train
+  size:
+  - 512
+  - 512
+  downsample_flow: 32
+  max_kps: null
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: false
+  geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
+  processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
+  opengl_device_index: null
+  geometry_config_overrides:
+    angle_sampler:
+      x_components:
+        loc: -0.011854751377778491
+        scale: 0.05136006944470483
+      y_components:
+        loc: -0.02296916652373679
+        scale: 0.08326826479805528
+    scale_sampler:
+      abs_components:
+        loc: 0.5531952244765916
+        scale: 0.2702594827281714
+      rel_components:
+        loc: -0.15876931767695324
+        scale: 0.18339804618359434

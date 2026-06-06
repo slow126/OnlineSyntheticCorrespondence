@@ -56,8 +56,11 @@ FAMILY_LABEL = {
 
 
 def _fmt_ci(v, lo, hi):
-    if not all(np.isfinite([v, lo, hi])):
+    if not np.isfinite(v):
         return "—"
+    if not (np.isfinite(lo) and np.isfinite(hi)):
+        # CIs missing (e.g. lean point-estimate runs) — fall back to point value
+        return f"{v:+.3f}"
     return f"{v:+.3f} [{lo:+.3f}, {hi:+.3f}]"
 
 
@@ -214,6 +217,7 @@ def render(all_df: pd.DataFrame) -> str:
             ["motion_sym", "motion_fid", "motion_w2", "motion_mmd",
              "appearance_sym", "appearance_fid", "appearance_w2", "appearance_mmd",
              "appearance_nullk"],
+            with_ci=True,
         ))
 
         out.append(_section_header("3. ctx_rho_L — level-only ranking ρ"))

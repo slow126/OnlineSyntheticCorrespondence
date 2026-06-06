@@ -27,6 +27,8 @@ import numpy as np
 import pandas as pd
 from scipy.stats import rankdata
 
+from experiments import family_of   # generator-family grouping (FAMILY_MAP)
+
 
 HEADS = ["g", "g_zridge", "g_rank", "g_gbm"]
 
@@ -63,9 +65,10 @@ def _pearson(a: np.ndarray, b: np.ndarray) -> float:
 class Prepared:
     """Numpy-array view of a predictions CSV."""
 
-    def __init__(self, df: pd.DataFrame, split: str):
+    def __init__(self, df: pd.DataFrame, split: str, cluster: bool = False):
         df = df.reset_index(drop=True)
         self.split = split
+        self.cluster = cluster
         self.actual = df["actual"].to_numpy(float)
         self.g = df["g"].to_numpy(float)
         self.g_zridge = df["g_zridge"].to_numpy(float) if "g_zridge" in df.columns else self.g.copy()
@@ -75,12 +78,18 @@ class Prepared:
         self.train = df["train_dataset"].to_numpy()
         self.bench = df["benchmark"].to_numpy()
         self.ctx = df["context_id"].to_numpy()
+        # The resampling unit. cluster=True collapses correlated same-generator
+        # sources into one family so the bootstrap counts ~5 effective sources,
+        # not 11 — honest CIs under within-family correlation. Only the SOURCE
+        # axis is clustered (LOTO/JOINT); benchmarks (LOBO) are left as-is.
+        src = (np.array([family_of(t) for t in self.train]) if cluster
+               else self.train)
         if split == "LOTO":
-            ent = self.train
+            ent = src
         elif split == "LOBO":
             ent = self.bench
         else:
-            ent = np.char.add(np.char.add(self.train.astype(str), "|"),
+            ent = np.char.add(np.char.add(src.astype(str), "|"),
                               self.bench.astype(str))
         self.entity = ent
         self.entities = np.array(sorted(set(ent.tolist())))
@@ -193,6 +202,16 @@ def main():
     ap.add_argument("--results", default="scripts/transfer_analysis_v4/results")
     ap.add_argument("--n-boot", type=int, default=1000)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--cluster", action="store_true",
+                    help="Cluster bootstrap (Tier 3): resample at the GENERATOR "
+                         "FAMILY level (~5) instead of the source level (11) so CIs "
+                         "are honest under within-family correlation. Affects LOTO "
+                         "and the source axis of JOINT. Writes *_cluster.csv.")
+    ap.add_argument("--families", nargs="+", default=None, metavar="FAM",
+                    help="Restrict the per-cell bootstrap to these feature families "
+                         "(default: all ~20). The robustness pipeline only consumes "
+                         "'motion' and 'appearance' (+ their paired gap), so passing "
+                         "'--families motion appearance' is ~6-8x faster with no loss.")
     args = ap.parse_args()
 
     root = Path(".").resolve()
@@ -204,11 +223,25 @@ def main():
     targets = [p.name for p in preds_root.iterdir() if p.is_dir()]
     if not targets:
         raise SystemExit(f"no per-target subdirs under {preds_root}")
-    print(f"bootstrap  targets={targets}  n_boot={args.n_boot}\n")
+    tag = "_cluster" if args.cluster else ""
+    print(f"bootstrap  targets={targets}  n_boot={args.n_boot}"
+          f"{'  [CLUSTER: resampling generator families]' if args.cluster else ''}\n")
 
     splits = ["LOTO", "LOBO", "JOINT"]
     families = ["motion", "appearance", "both", "random",
-                "density", "motion_density"]
+                "density", "motion_density",
+                "size", "supervision_density",
+                "motion_size", "motion_supdensity",
+                "motion_km", "motion_sym", "motion_mmd", "motion_fid", "motion_w2",
+                "appearance_mmd", "appearance_nullk",
+                "appearance_sym", "appearance_fid", "appearance_w2"]
+    if args.families:
+        keep = set(args.families)
+        unknown = keep - set(families)
+        if unknown:
+            raise SystemExit(f"--families: unknown {sorted(unknown)}; valid: {families}")
+        families = [f for f in families if f in keep]
+        print(f"  [--families filter: {families}]")
     labels = [("main", ""), ("shuffle", "_shuffle"), ("uniform_level", "_uniformL")]
 
     # 1. Per-cell CIs --------------------------------------------------------
@@ -222,7 +255,7 @@ def main():
                     if not path.exists():
                         continue
                     df = pd.read_csv(path)
-                    prep = Prepared(df, split)
+                    prep = Prepared(df, split, cluster=args.cluster)
                     for head in HEADS:
                         if head not in df.columns and head != "g":
                             continue
@@ -239,8 +272,8 @@ def main():
                                   f"[{m['ctx_rho_g_lo']:+.3f}, {m['ctx_rho_g_hi']:+.3f}]")
 
     summary_df = pd.DataFrame(rows)
-    summary_df.to_csv(out_dir / "summary.csv", index=False)
-    print(f"\nsummary -> {out_dir}/summary.csv  ({len(summary_df)} cells)")
+    summary_df.to_csv(out_dir / f"summary{tag}.csv", index=False)
+    print(f"\nsummary -> {out_dir}/summary{tag}.csv  ({len(summary_df)} cells)")
 
     # 2. Motion − appearance gap CIs (paired) -------------------------------
     print("\nMotion − appearance gap (paired bootstrap):")
@@ -252,8 +285,8 @@ def main():
             a_path = pred_dir / f"rows_{split}_appearance.csv"
             if not (m_path.exists() and a_path.exists()):
                 continue
-            prep_m = Prepared(pd.read_csv(m_path), split)
-            prep_a = Prepared(pd.read_csv(a_path), split)
+            prep_m = Prepared(pd.read_csv(m_path), split, cluster=args.cluster)
+            prep_a = Prepared(pd.read_csv(a_path), split, cluster=args.cluster)
             for head in HEADS:
                 seed = (args.seed
                         + abs(hash(("gap", target, split, head))) % 10_000)
@@ -268,8 +301,8 @@ def main():
                           f"{g['ctx_rho_g_gap_hi']:+.3f}]  "
                           f"P(>0) = {g['ctx_rho_g_gap_p_gt_0']:.3f}")
 
-    pd.DataFrame(gap_rows).to_csv(out_dir / "bootstrap_gap.csv", index=False)
-    print(f"\ngap -> {out_dir}/bootstrap_gap.csv")
+    pd.DataFrame(gap_rows).to_csv(out_dir / f"bootstrap_gap{tag}.csv", index=False)
+    print(f"\ngap -> {out_dir}/bootstrap_gap{tag}.csv")
 
 
 if __name__ == "__main__":

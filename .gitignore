@@ -178,3 +178,12 @@ tmp_run_*.sh
 *.deb
 ECCV26___Beyond_Realism__Aligning_Flow_Statistics_for_Dense_Correspondence_Pre_training
 scripts/transfer_analysis_v3/transfer_table.csv
+
+# Generated SLURM experiment configs + job-script output dirs
+# (sweeps write to slurm/experiment_configs/generated_<name>/ and jobs to slurm/<name>_jobs/)
+slurm/experiment_configs/generated*/
+slurm/*jobs*/
+
+# Backup files (e.g. transfer_table.csv.bak_pre_*)
+*.bak
+*.bak_*

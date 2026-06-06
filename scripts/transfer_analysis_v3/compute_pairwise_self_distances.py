@@ -79,6 +79,8 @@ TRAIN_DATASETS = [
     ("synthetic_large_zoom",      "train"),
     ("synthetic_random_flipping", "train"),
     ("synthetic_small_zoom",      "train"),
+    ("kitti2015_hq_trial19",      "train"),   # kubric appearance ablation
+    ("kitti2015_lowtex_matte",    "train"),   # kubric appearance ablation
 ]
 
 EVAL_DATASETS = [

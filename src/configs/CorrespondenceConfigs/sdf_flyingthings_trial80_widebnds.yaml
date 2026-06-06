@@ -1,0 +1,121 @@
+# Search-discovered θ from interventional-study LOTO widebnds 100-trial run.
+# Study: search_sdf_flyingthings_loto_widebnds_200k_100t  (seed=19, 96/100 complete)
+# Trial #80 — best across the run.
+#
+# ⚠ NEGATIVE-RESULT EXPERIMENT.
+# Unlike the KITTI (trial 76) and middlebury (trial 45) cases where the predictor
+# found a clearly-better-than-baseline candidate, the flyingthings predictor
+# couldn't separate candidates well — all 96 trials scored within raw_g [-1.35, -0.16].
+# This config IS the "best" TPE found, but its predicted improvement over baseline
+# is essentially zero (+0.04 raw_g).
+#
+# Predictor: full_fit/peak_pck/motion_mean_nn__score-flyingthings.pkl
+# Search-time prediction (predicted, not empirical):
+#   raw_g            = -0.16
+#   calibrated_g     = -1.22  (= fitness, penalized_calibrated_g)
+#   pred flyingthings = 62.33
+# Anchor comparison:
+#   baseline:    raw_g=-0.20, fitness=-1.58, pred=62.28  (essentially tied)
+#   large_zoom:  raw_g=-0.23, fitness=-1.81, pred=62.25  (essentially tied)
+#
+# Hypothesis to test by training this:
+#   (A) If trial 80 trains to roughly the same flyingthings PCK as the
+#       baseline anchor (~83.75 from v3 table), the proxy correctly
+#       identified "no improvement available."
+#   (B) If trial 80 trains substantially better than baseline (e.g.
+#       ≥+1 PCK), the predictor's gradient was real but too small for
+#       the mean_nn features to expose — would motivate trying a
+#       stronger feature set (motion_w2 / motion_fid).
+#   (C) If trial 80 trains worse than baseline, the search picked a
+#       genuinely worse config under the flat landscape — diagnostic of
+#       predictor noise rather than gradient.
+#
+# Pretrained-but-frozen ResNet101 encoder, flyingthings val only —
+# matches the model/training config used for trial 76 (KITTI) and
+# trial 45 (middlebury) for apples-to-apples comparison.
+
+model:
+  backbone: 'resnet101'
+  freeze: true
+  pretrained_backbone: true
+
+training:
+  epochs: 50
+  batch_size: 8
+  n_threads: 0
+  seed: 2021
+  lr: 3e-4
+  lr_backbone: 3e-6
+  weight_decay: 0.05
+  momentum: 0.9
+  scheduler: 'step'
+  step: '[70, 80, 90]'
+  step_gamma: 0.5
+  steps_per_epoch: 100
+  augmentation: true
+  min_flow_length: null
+  max_flow_length: null
+  mmd_every_n_epochs: 0
+  eval_initial: false
+  enable_debug: false
+  debug_visualization_benchmarks: null
+  debug_visualization_persist: false
+
+dataset:
+  dataset_name: 'synthetic'
+  split: 'train'
+  size: [512, 512]
+  downsample_flow: 32
+  max_kps: null
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: false
+  geometry_config_path: 'src/configs/online_synth_configs/OnlineGeometryConfig.yaml'
+  processor_config_path: 'src/configs/online_synth_configs/OnlineProcessorConfig.yaml'
+  opengl_device_index: null
+  geometry_config_overrides:
+    angle_sampler:
+      x_components:
+        loc: -0.08348378619994598
+        scale: 0.1692029810449774
+      y_components:
+        loc: -0.05682041531725236
+        scale: 0.24626955865870534
+    scale_sampler:
+      abs_components:
+        loc: 0.6133291018348747
+        scale: 0.10090686513611857
+      rel_components:
+        loc: -0.2214989789803457
+        scale: 0.4831503865963535
+
+evaluation:
+  eval_benchmarks: ['flyingthings']
+  eval_alphas: [0.05]
+  thres: 'img'
+  split_to_use_for_validation: 'val'
+  val_batch_size: 8
+  val_num_workers: 32
+  prefetch_factor: 4
+  use_motion_aware: false
+  min_motion_pixels: 5.0
+  zero_threshold: 0.5
+  datapath: './models/Datasets_CATs'
+  tss_root: '/home/spencer/Data/correspondence/TSS_CVPR2016'
+  kitti_root: '/home/spencer/Data/correspondence/kitti'
+  kitti_val_use_full_training: true
+  pointodyssey_root: '/home/spencer/Data/PointOdyssey'
+  flyingthings_root: '/home/spencer/Data/FlyingThings3D_tiny'
+  middlebury_root: '/home/spencer/Data/middlebury/all'
+  val_datasets:
+    flyingthings:
+      split: 'test'   # torchvision FlyingThings3D only accepts train/test (matches movi-f baseline)
+      normalize_images: true
+      max_pts: 200
+
+paths:
+  snapshots: '/mnt/nvme_1tb_b/snapshots'   # off the full root disk; _1tb_a has 3x more free if preferred
+  save_epoch_checkpoints: false            # keep only model_best/{benchmark}_best/last.pth (~0.7GB vs ~12GB)
+  pretrained: null
+  start_epoch: 0

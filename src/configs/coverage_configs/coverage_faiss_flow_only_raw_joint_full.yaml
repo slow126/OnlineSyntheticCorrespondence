@@ -446,3 +446,20 @@ datasets:
       - 0.7
       - 0.3
     is_eval: false
+
+  # --- Kubric appearance ablation (trial19 camera held fixed) ---
+  - name: kitti2015_hq_trial19
+    split: train
+    representation: flow
+    is_eval: false
+    overrides:
+      dataset_name: kubric_intervention
+      datapath: /mnt/nvme_1tb_a/kubric_interventions/datasets/kitti2015_hq_trial19_5000
+
+  - name: kitti2015_lowtex_matte
+    split: train
+    representation: flow
+    is_eval: false
+    overrides:
+      dataset_name: kubric_intervention
+      datapath: /mnt/nvme_1tb_a/kubric_interventions/datasets/kitti2015_lowtex_matte_5000

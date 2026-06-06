@@ -1,0 +1,86 @@
+# Kubric intervention search-optimized run — KITTI-2015 validation.
+# Materialized dataset: kubric_hq search trial #19 (target KITTI-2015), 5000 pairs.
+#   datapath: /mnt/nvme_1tb_a/kubric_interventions/datasets/kitti2015_hq_trial19_5000
+#   provenance theta: <datapath>/theta.json
+#
+# Hypothesis under test: the search-optimized Kubric config should beat generic
+# movi-f on KITTI-2015 (surrogate predicted ~+3.6 PCK gain). For the A/B, run the
+# matching movi-f config with the SAME model + training budget + eval, swapping
+# only the dataset: block to src/configs/lightning/datasets/movi_f.yaml.
+#
+# Model/training hyperparameters MATCHED to the existing movi-f baseline run
+#   /mnt/nvme_1tb_b/kubric_snapshots/movi_f_movi_f_cats_pretrainedTrue_freezeTrue_2026_05_12_19_36
+# (frozen pretrained ResNet101, lr=3e-5, augmentation off, batch 8 x 100 steps)
+# for an apples-to-apples Kubric-vs-movi-f A/B.
+#   movi-f baseline best KITTI-2015 = 94.82% PCK @ alpha=0.05 (its epoch 20).
+# Launch:
+#   python train_lightning.py --config src/configs/lightning/kubric_intervention_kitti2015_trial19.yaml
+
+model:
+  backbone: 'resnet101'
+  freeze: true
+  pretrained_backbone: true
+
+training:
+  epochs: 50
+  batch_size: 8
+  n_threads: 4
+  seed: 2021
+  lr: 3e-5            # matched to movi-f baseline (movi_f_..._pretrainedTrue_freezeTrue)
+  lr_backbone: 3e-6
+  weight_decay: 0.05
+  momentum: 0.9
+  scheduler: 'step'
+  step: '[70, 80, 90]'
+  step_gamma: 0.5
+  steps_per_epoch: 100
+  check_val_every_n_epoch: 1   # dense KITTI-2015 PCK curve; converges fast so 50 ep is plenty
+  augmentation: false   # matched to movi-f baseline
+  min_flow_length: null
+  max_flow_length: null
+  mmd_every_n_epochs: 0
+  eval_initial: false
+  enable_debug: false
+  debug_visualization_benchmarks: null
+  debug_visualization_persist: false
+
+dataset:
+  dataset_name: 'kubric_intervention'
+  split: 'train'
+  size: [512, 512]
+  downsample_flow: 32
+  max_kps: null
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: true            # matches movi_f.yaml (materialized PNG frames)
+  datapath: '/mnt/nvme_1tb_a/kubric_interventions/datasets/kitti2015_hq_trial19_5000'
+  reverse_flow: false               # backward_flow is already target->source
+
+evaluation:
+  eval_benchmarks: ['kitti2015']
+  eval_alphas: [0.05]
+  thres: 'img'
+  split_to_use_for_validation: 'val'
+  val_batch_size: 8
+  val_num_workers: 32
+  prefetch_factor: 4
+  use_motion_aware: false
+  min_motion_pixels: 5.0
+  zero_threshold: 0.5
+  datapath: './models/Datasets_CATs'
+  tss_root: '/home/spencer/Data/correspondence/TSS_CVPR2016'
+  kitti_root: '/home/spencer/Data/correspondence/kitti'
+  kitti_val_use_full_training: true   # whole KITTI-2015 labeled set as val (no 80/20 split)
+  pointodyssey_root: '/home/spencer/Data/PointOdyssey'
+  flyingthings_root: '/home/spencer/Data/FlyingThings3D_tiny'
+  val_datasets:
+    kitti2015:
+      split: 'val'
+      normalize_images: true
+      max_pts: 200
+
+paths:
+  snapshots: './snapshots'
+  pretrained: null
+  start_epoch: 0

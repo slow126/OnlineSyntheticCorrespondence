@@ -422,3 +422,91 @@ Append the highlights from each session here:
   signal (more variance from training data).
 - LOO anti-correlation framing settled (Mundlak + Efron-Morris citations).
 - `CLAIMS.md` and `compile_ablation_summary.py` added.
+
+### 2026-05-28
+- Added residual-calibration diagnostics after inspecting mean_nn peak_pck
+  residual scatter/hexbin underdispersion. No full v4 sweep was relaunched.
+- `zscore_residual_diagnostics.py` writes standardized residual scatter/hexbin
+  figures from existing prediction rows. This is a visualization diagnostic:
+  both axes are centered within context and divided by the actual context std.
+- `residual_calibration_diagnostics.py` writes
+  `results_fsub_mean_nn/RESIDUAL_CALIBRATION.md`, a CSV, and post-hoc
+  gain-calibrated residual scatter/hexbin figures. It reports residual
+  Pearson, slope/gain, std-ratio, RMSE, and Spearman side by side.
+- Main outcome on `results_fsub_mean_nn`, `peak_pck`, ridge `g`: motion has
+  residual association but conservative magnitudes. LOBO motion:
+  ctx Spearman +0.501, ctx Pearson +0.563, median std-ratio 0.262.
+- Interpretation to carry forward: the scientific model remains a
+  within-context ranking estimator. Residual magnitude calibration is weaker
+  and should be discussed separately, especially for the interventional search.
+
+### 2026-05-28 PM — motion_sym calibration extension
+- Extended `FAMILIES` in `residual_calibration_diagnostics.py` and
+  `zscore_residual_diagnostics.py` to include `motion_sym`, `motion_fid`,
+  `motion_w2`, `appearance_sym`. Re-ran both on `results_mixed`; the 8-family
+  RESIDUAL_CALIBRATION.md is at `results_mixed/RESIDUAL_CALIBRATION.md`.
+- Ran `context_scale_calibration.py --family motion_sym --feature-subset all`
+  for both variant filters (`all_variants` and `drop_false_true`). Output
+  tree: `results_mixed/context_scale_calibration_motion_sym/` (summary CSVs +
+  54 figures including `grid_*` overview plots).
+- Patched `plot_context_scale_calibration.py` default `--heads` list to include
+  `g_benchsim_gain` (it was being dropped before).
+- **End-to-end calibration winner is `motion_sym + g_benchsim_gain`.** LOBO:
+  ctx_spearman +0.536, ctx_pearson +0.691, median std ratio 1.111, pooled std
+  ratio 0.990. LOTO: spearman +0.466, pearson +0.511. JOINT: profilesim slightly
+  preferred on pearson (+0.468 vs +0.448) but benchsim has better pooled std
+  ratio. Ranking is preserved across all calibrated heads (the gain is a
+  positive scalar per context).
+- **Why benchsim works for motion_sym but failed on mean_nn — CORRECTED by
+  next-session sanity checks**: not feature axis alignment. The driver is
+  raw-prediction under-dispersion severity. mean_nn's `--feature-subset
+  mean_nn` collapses ridge predictions to median std ratio 0.26 LOBO;
+  per-context gains needed to fix that are large (~3–5×) and noisy; IDW
+  smoothing them produces over-amplification. motion_sym's natural raw std
+  ratio is 0.69 LOBO; gains are modest (~1.2×), IDW well-behaved.
+- Paper / interventional-study framing: ridge fits motion_sym features for
+  ranking; a leakage-clean per-fold scale gain — IDW-smoothed across
+  same-variant other-benchmarks using flow `mean_nn_sym` as the kernel —
+  recovers residual magnitude calibration without changing ranks. Use
+  `g_benchsim_gain` for LOTO/LOBO; `g_profilesim_gain` as JOINT fallback.
+- Updated STATUS.md (TL;DR + session entry), CLAIMS.md (Methods §Ranking vs
+  residual calibration replaced + TODO #8 closed), README.md (diagnostics
+  block extended to include the leakage-clean replay command).
+
+### 2026-05-28 PM (later) — sanity-check verified calibration mechanism, wiring decided
+- Three sanity checks on the motion_sym + benchsim claim, all against
+  `transfer_table.csv` (post arch-fix) via `context_scale_calibration.py`:
+  - `--family motion --feature-subset all` (all 13 motion features). Raw
+    median std ratio 0.72 LOTO / 0.87 LOBO / 0.63 JOINT. Benchsim improves
+    pearson without over-amplifying (LOBO 0.520 → 0.626).
+  - `--family motion_fid` and `--family motion_w2` (single-feature). Both
+    have raw std ratio ≥ 0.49; benchsim cleanly improves pearson.
+  - Added `--kernel-space {flow,dino}` flag (default `flow`); ran
+    `--family motion_sym --kernel-space dino`. DINO kernel works almost as
+    well as flow (LOBO pearson 0.646 vs 0.691). The "geometric axis
+    alignment" claim from earlier in this session does NOT hold.
+- **Real mechanism**: benchsim's IDW gain smoothing fails when raw ridge
+  predictions are heavily under-dispersed (median std ratio < ~0.3-0.4).
+  The per-context gains needed to fix the dispersion become large and noisy,
+  and IDW-averaging large noisy numbers across benchmarks amplifies the
+  wrong scale. For any family with raw std ratio ≥ ~0.4, gains are modest
+  and benchsim recovers calibration cleanly. The mean_nn restriction is the
+  only tested family that violates the threshold — it's a feature-subset
+  artifact (too little predictive variance concentrated in too few features),
+  not a feature-axis story.
+- **Wiring decision: KEEP CALIBRATION SEPARATE FROM v4 PIPELINE.** Ranking
+  ρ_g stays in ABLATION.md / ABLATION_strength.md (headline claim).
+  Residual calibration lives in ABLATION_calibration.md (methodological
+  deliverable for the interventional search). Reasoning: v4's claim is
+  "motion features predict transfer better than appearance" — a ranking
+  statement. Mixing in calibration changes the scope of the headline.
+  Better to keep clean separation and reference the calibrated head in the
+  interventional study writeup.
+- **New compiler**: `compile_calibration_ablation.py` scans
+  `results_*/context_scale_calibration*/` dirs and produces a single
+  ABLATION_calibration.md aggregating all calibration runs (currently 6:
+  mean_nn + motion all 13 + motion_fid + motion_w2 + motion_sym flow + dino).
+- Updated STATUS.md TL;DR (corrected mechanism), CLAIMS.md §Ranking vs
+  residual calibration (replaced with the under-dispersion threshold
+  story), and this HANDOFF entry. Earlier same-day edits about geometric
+  alignment have been corrected throughout.

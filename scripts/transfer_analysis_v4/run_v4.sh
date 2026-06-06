@@ -73,6 +73,18 @@ if [ "${PURE_ONLY:-1}" = "1" ]; then
     EXTRA_ARGS="$EXTRA_ARGS --pure-only"
     log "Source filter: 11 pure training datasets (set PURE_ONLY=0 to include mixed variants)"
 fi
+if [ -n "${DROP_FAMILY:-}" ]; then
+    EXTRA_ARGS="$EXTRA_ARGS --drop-family $DROP_FAMILY"
+    log "Robustness (Tier 2): leave-one-generator-family-out, dropping family '$DROP_FAMILY'"
+fi
+if [ -n "${DROP_SOURCE:-}" ]; then
+    EXTRA_ARGS="$EXTRA_ARGS --drop-source $DROP_SOURCE"
+    log "Robustness (Tier 1): drop-one-source, dropping '$DROP_SOURCE'"
+fi
+if [ -n "${DIST:-}" ]; then
+    EXTRA_ARGS="$EXTRA_ARGS --dist $DIST"
+    log "Pairwise self-distances override: $DIST"
+fi
 
 log "Step 1: Running experiments (targets=$TARGETS)..."
 # shellcheck disable=SC2086
@@ -116,9 +128,20 @@ print('wrote summary.csv from point estimates (no CIs)')
 "
 else
     log "Step 2: Bootstrap CIs (n_boot=$N_BOOT)..."
+    BOOT_ARGS=""
+    if [ "${CLUSTER:-0}" = "1" ]; then
+        BOOT_ARGS="--cluster"
+        log "Bootstrap mode: CLUSTER (resampling ~5 generator families, not 11 sources)"
+    fi
+    if [ -n "${BOOT_FAMILIES:-}" ]; then
+        BOOT_ARGS="$BOOT_ARGS --families $BOOT_FAMILIES"
+        log "Bootstrap families restricted to: $BOOT_FAMILIES"
+    fi
+    # shellcheck disable=SC2086
     python scripts/transfer_analysis_v4/bootstrap.py \
         --results "$OUT_DIR" \
         --n-boot "$N_BOOT" \
+        $BOOT_ARGS \
         2>&1 | tee "$LOG_DIR/bootstrap.log"
 fi
 
@@ -131,10 +154,14 @@ else
         2>&1 | tee "$LOG_DIR/figures.log"
 fi
 
-log "Step 4: Compiling results.md..."
-python scripts/transfer_analysis_v4/compile_v4.py \
-    --results "$OUT_DIR" \
-    2>&1 | tee "$LOG_DIR/compile.log"
+if [ "${SKIP_COMPILE:-0}" = "1" ]; then
+    log "Step 4: SKIPPED (SKIP_COMPILE=1)"
+else
+    log "Step 4: Compiling results.md..."
+    python scripts/transfer_analysis_v4/compile_v4.py \
+        --results "$OUT_DIR" \
+        2>&1 | tee "$LOG_DIR/compile.log"
+fi
 
 log "Done."
 log "  report : $OUT_DIR/results.md"

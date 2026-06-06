@@ -1,0 +1,101 @@
+# Search-discovered θ from interventional-study LOTO widebnds 100-trial run.
+# Study: search_sdf_middlebury_loto_widebnds_200k_100t  (seed=11, 100 trials)
+# Trial #45 — best across the run.
+# Predictor: full_fit/peak_pck/motion_mean_nn__score-middlebury.pkl
+#   (LOTO, --feature-subset mean_nn, --exclude-false-true)
+# Search-time prediction (predicted, not empirical):
+#   raw_g           = +3.74
+#   calibrated_g    = +5.85  (= fitness, penalized_calibrated_g)
+#   pred middlebury = 53.57
+# Anchor for comparison:
+#   synthetic_large_zoom: raw_g=+2.71, fitness=+3.79, pred=52.54
+#   synthetic baseline:   raw_g=-1.38, fitness=-4.41, pred=48.45
+#
+# Pretrained-but-frozen ResNet101 encoder, middlebury val only —
+# mirrors sdf_kitti2015_trial76_widebnds.yaml's model/training config for
+# apples-to-apples comparison against the KITTI-targeted result.
+
+model:
+  backbone: 'resnet101'
+  freeze: true
+  pretrained_backbone: true
+
+training:
+  epochs: 50
+  batch_size: 8
+  n_threads: 0
+  seed: 2021
+  lr: 3e-4
+  lr_backbone: 3e-6
+  weight_decay: 0.05
+  momentum: 0.9
+  scheduler: 'step'
+  step: '[70, 80, 90]'
+  step_gamma: 0.5
+  steps_per_epoch: 100
+  augmentation: true
+  min_flow_length: null
+  max_flow_length: null
+  mmd_every_n_epochs: 0
+  eval_initial: false
+  enable_debug: false
+  debug_visualization_benchmarks: null
+  debug_visualization_persist: false
+
+dataset:
+  dataset_name: 'synthetic'
+  split: 'train'
+  size: [512, 512]
+  downsample_flow: 32
+  max_kps: null
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: false
+  geometry_config_path: 'src/configs/online_synth_configs/OnlineGeometryConfig.yaml'
+  processor_config_path: 'src/configs/online_synth_configs/OnlineProcessorConfig.yaml'
+  opengl_device_index: null
+  geometry_config_overrides:
+    angle_sampler:
+      x_components:
+        loc: -0.011854751377778491
+        scale: 0.05136006944470483
+      y_components:
+        loc: -0.02296916652373679
+        scale: 0.08326826479805528
+    scale_sampler:
+      abs_components:
+        loc: 0.5531952244765916
+        scale: 0.2702594827281714
+      rel_components:
+        loc: -0.15876931767695324
+        scale: 0.18339804618359434
+
+evaluation:
+  eval_benchmarks: ['middlebury']
+  eval_alphas: [0.05]
+  thres: 'img'
+  split_to_use_for_validation: 'val'
+  val_batch_size: 8
+  val_num_workers: 32
+  prefetch_factor: 4
+  use_motion_aware: false
+  min_motion_pixels: 5.0
+  zero_threshold: 0.5
+  datapath: './models/Datasets_CATs'
+  tss_root: '/home/spencer/Data/correspondence/TSS_CVPR2016'
+  kitti_root: '/home/spencer/Data/correspondence/kitti'
+  kitti_val_use_full_training: true
+  pointodyssey_root: '/home/spencer/Data/PointOdyssey'
+  flyingthings_root: '/home/spencer/Data/FlyingThings3D_tiny'
+  middlebury_root: '/home/spencer/Data/middlebury/all'
+  val_datasets:
+    middlebury:
+      split: 'val'
+      normalize_images: true
+      max_pts: 200
+
+paths:
+  snapshots: './snapshots'
+  pretrained: null
+  start_epoch: 0

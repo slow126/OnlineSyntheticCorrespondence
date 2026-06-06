@@ -92,6 +92,32 @@ PURE_TRAIN_DATASETS = [
     "spair", "synthetic", "synthetic_2d_warp", "synthetic_large_zoom",
     "synthetic_random_flipping", "synthetic_small_zoom",
 ]
+
+# Generator-family grouping for robustness. The 11 "pure" sources are not 11
+# independent draws: several are variants from the same generator and share
+# appearance/motion statistics, so treating them as independent overstates how
+# many effective sources back the result. The honest unit of resampling /
+# hold-out is the GENERATOR FAMILY (~5), not the source (11). Used by:
+#   - experiments.py --drop-family  (leave-one-generator-family-out, Tier 2)
+#   - bootstrap.py    --cluster     (cluster bootstrap CIs, Tier 3)
+FAMILY_MAP = {
+    "synthetic":                  "sdf3d",     # SDF-3D procedural + its zoom/flip variants
+    "synthetic_large_zoom":       "sdf3d",
+    "synthetic_small_zoom":       "sdf3d",
+    "synthetic_random_flipping":  "sdf3d",
+    "synthetic_2d_warp":          "warp2d",    # 2D image-warp augmentations
+    "imagenet2dwarp":             "warp2d",
+    "movi_f":                     "kubric",    # Kubric / MOVi physical renderer
+    "flyingthings":               "realflow",  # real/quasi-real optical-flow datasets
+    "pointodyssey":               "realflow",
+    "sintel":                     "realflow",
+    "spair":                      "semantic",  # semantic-keypoint (no dense flow)
+}
+
+def family_of(src: str) -> str:
+    """Generator family for a source (falls back to the source name itself)."""
+    return FAMILY_MAP.get(src, src)
+
 SPLITS = ["LOTO", "LOBO", "JOINT"]
 N_RANDOM_FEATS = 13            # dim-match to motion / appearance
 
@@ -1112,6 +1138,15 @@ def main():
                     help="Restrict training datasets to the original 11 pure "
                          "sources (drop mixed variants like spair_synthetic_70_30). "
                          "Matches the analysis scope used in CLAIMS.md.")
+    ap.add_argument("--drop-family", nargs="+", default=None,
+                    metavar="FAMILY",
+                    help="Leave-one-generator-family-out robustness (Tier 2): drop "
+                         "ALL sources whose generator family is in this list before "
+                         "fitting. Families: " + ", ".join(sorted(set(FAMILY_MAP.values()))) +
+                         ". Tests that no single family drives the result.")
+    ap.add_argument("--drop-source", nargs="+", default=None, metavar="SOURCE",
+                    help="Drop specific train_dataset(s) before fitting "
+                         "(drop-one-source robustness, Tier 1).")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
 
@@ -1128,6 +1163,24 @@ def main():
         table = table[table["train_dataset"].isin(PURE_TRAIN_DATASETS)].copy()
         print(f"--pure-only: filtered {before} -> {len(table)} rows "
               f"({table['train_dataset'].nunique()} pure sources)")
+    if args.drop_family:
+        fams = set(args.drop_family)
+        unknown = fams - set(FAMILY_MAP.values())
+        if unknown:
+            raise SystemExit(f"--drop-family: unknown families {sorted(unknown)}; "
+                             f"valid: {sorted(set(FAMILY_MAP.values()))}")
+        dropped = sorted(s for s in table["train_dataset"].unique()
+                         if family_of(s) in fams)
+        before = table["train_dataset"].nunique()
+        table = table[~table["train_dataset"].isin(dropped)].copy()
+        print(f"--drop-family {sorted(fams)}: dropped {len(dropped)} sources "
+              f"{dropped} ({before} -> {table['train_dataset'].nunique()} sources)")
+    if args.drop_source:
+        srcs = set(args.drop_source)
+        before = table["train_dataset"].nunique()
+        table = table[~table["train_dataset"].isin(srcs)].copy()
+        print(f"--drop-source {sorted(srcs)}: "
+              f"{before} -> {table['train_dataset'].nunique()} sources")
     table["variant"] = table.apply(variant_key, axis=1)
     table["cv"] = table["benchmark"] + "|" + table["variant"]
     dist_df = pd.read_csv(root / args.dist)

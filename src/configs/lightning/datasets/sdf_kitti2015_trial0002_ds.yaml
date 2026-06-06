@@ -1,0 +1,39 @@
+# Dataset-only config (extracted for the GLU-Net unified split-config sweep).
+# Source: src/configs/CorrespondenceConfigs/sdf_kitti2015_trial0002.yaml -- only the dataset section.
+dataset:
+  dataset_name: synthetic
+  split: train
+  size:
+  - 512
+  - 512
+  downsample_flow: 32
+  max_kps: null
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: false
+  geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
+  processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
+  opengl_device_index: null
+  geometry_config_overrides:
+    angle_sampler:
+      x_components:
+        distribution: uniform
+        loc: -0.4795163872087673
+        scale: 0.11420549782900892
+      y_components:
+        distribution: uniform
+        loc: -0.20577840020033744
+        scale: 0.1368517686712153
+      bounds:
+      - 0.5
+      - 0.25
+    scale_sampler:
+      abs_components:
+        distribution: uniform
+        loc: 0.6553877528963032
+        scale: 0.4182239110388646
+      rel_components:
+        distribution: uniform
+        loc: -0.09322530542446952
+        scale: 0.19345945858809516

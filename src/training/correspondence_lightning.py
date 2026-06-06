@@ -120,8 +120,8 @@ class CorrespondenceLightningModule(pl.LightningModule):
         # CATs outputs downsampled flow (32x32), RAFT/FlowFormer output full-resolution flow
         model_type = self.model_config.get('type', 'cats').lower()
         
-        if model_type in ['raft', 'flowformer']:
-            # RAFT/FlowFormer: use full-resolution flow
+        if model_type in ['raft', 'flowformer', 'glunet']:
+            # RAFT/FlowFormer/GLU-Net: use full-resolution flow
             flow_gt_key = 'flow'
             if 'flow' not in gpu_batch:
                 raise ValueError(f"Model type '{model_type}' requires full-resolution flow, but 'flow' not found in batch")
@@ -137,7 +137,15 @@ class CorrespondenceLightningModule(pl.LightningModule):
             gpu_batch[flow_gt_key] = self.flow_filter.filter_batch_flow(gpu_batch[flow_gt_key])
         
         flow_gt = gpu_batch[flow_gt_key]
-        
+
+        # GLU-Net uses its native multi-scale endpoint-error loss over the flow
+        # pyramid (coarsest -> finest), matching the standalone GLUNet module.
+        if model_type == 'glunet':
+            preds = self.model.forward_train(gpu_batch['trg_img'], gpu_batch['src_img'])
+            loss = self.model.loss_fn(list(preds.values()), flow_gt)
+            self.log('train/loss', loss, on_step=True, on_epoch=True, prog_bar=True)
+            return {'loss': loss}
+
         # Forward pass
         pred_flow = self.model(gpu_batch['trg_img'], gpu_batch['src_img'])
         
@@ -205,9 +213,14 @@ class CorrespondenceLightningModule(pl.LightningModule):
         lr_backbone = _to_float(self.training_config.get('lr_backbone', 3e-6), 'lr_backbone')
         weight_decay = _to_float(self.training_config.get('weight_decay', 0.05), 'weight_decay')
         
-        # Separate parameters for model vs backbone
-        param_model = [param for name, param in self.model.named_parameters() if 'backbone' not in name]
-        param_backbone = [param for name, param in self.model.named_parameters() if 'backbone' in name]
+        # Separate parameters for model vs backbone.
+        # GLU-Net's encoder is named 'feature_extractor' (not 'backbone'), so match
+        # both so the lr_backbone group applies to the encoder when it is unfrozen.
+        def _is_backbone(name):
+            return 'backbone' in name or 'feature_extractor' in name
+
+        param_model = [param for name, param in self.model.named_parameters() if not _is_backbone(name)]
+        param_backbone = [param for name, param in self.model.named_parameters() if _is_backbone(name)]
         
         optimizer = optim.AdamW([
             {'params': param_model, 'lr': lr},

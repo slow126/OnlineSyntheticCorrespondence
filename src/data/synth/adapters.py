@@ -17,6 +17,7 @@ from src.data.synth.datasets.HD1KDataset import HD1KSimpleDataset
 from src.data.synth.datasets.VirtualKitti2Dataset import VirtualKitti2SimpleDataset
 from src.data.synth.datasets.ImageNet2DWarpDataset import ImageNet2DWarpDataset
 from src.data.synth.datasets.MoviFDataset import MoviFSimpleDataset
+from src.data.synth.datasets.KubricInterventionDataset import KubricInterventionDataset
 
 
 class BaseAdapter:
@@ -388,6 +389,30 @@ class MoviFAdapter(BaseAdapter):
         )
 
 
+class KubricInterventionAdapter(BaseAdapter):
+    name = "kubric_intervention"
+
+    def __init__(self, datapath: str, split: str = "train", reverse_flow: bool = False, **kwargs):
+        self.dataset = KubricInterventionDataset(
+            datapath=datapath,
+            split=split,
+            reverse_flow=reverse_flow,
+            max_pairs=kwargs.get("kubric_max_pairs", None),
+            seed=kwargs.get("seed", None),
+        )
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx) -> CommonSample:
+        raw = self.dataset[idx]
+        return CommonSample(
+            src_img=raw["src_img"],
+            trg_img=raw["trg_img"],
+            flow_full=raw["flow"],
+        )
+
+
 class BenchmarkAdapter(BaseAdapter):
     """PF-Pascal/Willow/SPair; flows are already feature-res in many cases."""
 
@@ -491,6 +516,7 @@ ADAPTER_REGISTRY = {
     "virtualkitti2": VirtualKitti2Adapter,
     "imagenet2dwarp": ImageNet2DWarpAdapter,
     "movi_f": MoviFAdapter,
+    "kubric_intervention": KubricInterventionAdapter,
     "pfpascal": BenchmarkAdapter,
     "pfwillow": BenchmarkAdapter,
     "spair": BenchmarkAdapter,

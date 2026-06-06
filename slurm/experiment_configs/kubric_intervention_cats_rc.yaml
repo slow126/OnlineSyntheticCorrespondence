@@ -1,0 +1,25 @@
+# Kubric intervention baseline sweep. Materialize the selected candidate first,
+# then point dataset.datapath at that root.
+
+project_root: "/home/slow1/Projects/OnlineSyntheticCorrespondence"
+
+training_base: "src/configs/lightning/training_base_rc.yaml"
+eval_base: "src/configs/lightning/eval_base_rc.yaml"
+
+training_datasets:
+  - name: "kubric_intervention"
+    dataset_config: "src/configs/lightning/datasets/kubric_intervention_rc.yaml"
+    overrides:
+      training.batch_size: 8
+      training.n_threads: 4
+
+output_dir: "/home/slow1/Projects/OnlineSyntheticCorrespondence/slurm/experiment_configs/generated_kubric_intervention"
+
+sweeps:
+  - name: "cats_encoder_grid"
+    parameters:
+      model.pretrained_backbone: [true, false]
+      model.freeze: [true, false]
+      training.steps_per_epoch: 100
+    name_template: "kubric_intervention_cats_pretrained{model.pretrained_backbone}_freeze{model.freeze}"
+

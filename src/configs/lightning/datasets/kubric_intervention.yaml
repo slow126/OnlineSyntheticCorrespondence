@@ -1,0 +1,15 @@
+dataset:
+  dataset_name: 'kubric_intervention'
+  split: 'train'
+  size: [512, 512]
+  downsample_flow: 32
+  max_kps: null
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: true
+
+  # Root can either contain scene_* directly or contain train/scene_*.
+  datapath: '/mnt/nvme_1tb_a/kubric_interventions/datasets/kitti2015_hq_trial19_5000'
+  reverse_flow: false
+

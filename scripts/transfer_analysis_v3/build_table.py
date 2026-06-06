@@ -38,12 +38,26 @@ def load_auc(root: Path) -> pd.DataFrame:
     path = root / "analysis/leakage_free_flow_kmeans_manifold/auc_results.csv"
     df = pd.read_csv(path)
     # Remap model_family to architecture (raft/catspp) from run_name.
-    # The original model_family reflects snapshot directory names (e.g. raft_2d_mix,
-    # synth_2d, 2d_warps, synthetic_long) which are the same RAFT/CATS++ architectures
-    # trained on different data — not different model families.
-    arch = df["run_name"].str.extract(r"_(raft_full|raft_baseline|cats)_", expand=False)
-    df.loc[arch.isin(["raft_full", "raft_baseline"]), "model_family"] = "raft"
-    df.loc[arch == "cats", "model_family"] = "catspp"
+    # Upstream model_family carries the snapshot-directory name (raft_2d_mix,
+    # synth_2d, 2d_warps, synthetic_long, spair_only, ptody_fix, ...) which are
+    # the same RAFT or CATS++ architecture trained on different data, captured
+    # at different times — not real model families. The arch token in run_name
+    # is the source of truth; check raft first because some run_names contain
+    # both raft and cats substrings.
+    def _detect_arch(run_name: str) -> str | None:
+        n = str(run_name)
+        if "raft_full" in n or "raft_baseline" in n:
+            return "raft"
+        if ("cats_steps100" in n or "steps100" in n
+                or "_cats_" in n or n.endswith("_cats")):
+            return "catspp"
+        return None
+    df["model_family"] = df["run_name"].apply(_detect_arch)
+    n_unmatched = df["model_family"].isna().sum()
+    if n_unmatched:
+        print(f"  WARN: {n_unmatched} rows have no detectable arch in run_name; "
+              f"will be dropped")
+        df = df.dropna(subset=["model_family"]).copy()
     # Drop early-terminated runs — fewer than 3 checkpoints in the 5000-step window
     # means the run was killed before it produced useful data.
     n_early = (df["auc_points"] < 3).sum()

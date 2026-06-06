@@ -7,13 +7,21 @@ machine:
   python_path: "python3"
 
 datasets:
+  # These roots are injected into the generated configs by generate_experiments.py
+  # (single source of truth). Only non-null keys override the dataset/eval config
+  # defaults, so an unset root keeps the config's own path.
   flyingthings_root: "/home/slow1/Data/FlyingThings3D_Pytorch"
   pointodyssey_root: "/home/slow1/Data/PointOdyssey"
   tss_root: "/home/slow1/Data/correspondence/TSS_CVPR2016"
   kitti_root: "/home/slow1/Data/correspondence/kitti-split"
   kitti_unsplit_root: "/home/slow1/Data/correspondence/kitti"
+  middlebury_root: "/home/slow1/Data/middlebury/all"
+  movi_f_root: "/home/slow1/Data/movi_f/512x512/1.0.0"
   datapath: "./models/Datasets_CATs"
   hf_cache_dir: "/home/slow1/Data/hf_cache/datasets"
+  # Kubric interventions are not staged on RC yet -- set after copying them over,
+  # then re-enable the kubric_* entries in the sweep config.
+  # kubric_root: "/home/slow1/.../kubric_intervention_train10k"
 
 slurm:
   time: "23:59:00"

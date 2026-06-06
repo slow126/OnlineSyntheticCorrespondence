@@ -1,0 +1,105 @@
+# GLU-Net: ONE run per pure training set (pretrained=True, freeze=False), RC cluster.
+#
+# A 16-job validation batch (one config per dataset, NOT the full 2x2 grid) to
+# shake out per-dataset failures before committing the 64-job grid
+# (glunet_all_pure_rc.yaml).
+#
+# Generate + submit ON RC:
+#   python slurm/generate_experiments.py \
+#       -M slurm/machine_configs/remote_long.yaml \
+#       -S slurm/experiment_configs/glunet_oneeach_rc.yaml \
+#       -O slurm/glunet_jobs_oneeach
+#   bash slurm/glunet_jobs_oneeach/submit_all.sh
+#
+# PREREQ (offline compute nodes): pre-cache the ResNet-50 backbone weights on the
+# login node first (see note at bottom).
+
+project_root: "/home/slow1/Projects/OnlineSyntheticCorrespondence"
+
+training_base: "src/configs/lightning/glunet_training_base_rc.yaml"
+eval_base: "src/configs/lightning/eval_base_rc.yaml"
+
+training_datasets:
+  # --- 7 base pure training sets ---
+  - name: "synthetic"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "spair"
+    dataset_config: "src/configs/lightning/datasets/spair_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 32}
+  - name: "flyingthings"
+    dataset_config: "src/configs/lightning/datasets/flyingthings_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 32}
+  - name: "pointodyssey"
+    dataset_config: "src/configs/lightning/datasets/pointodyssey_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 4}
+  - name: "sintel"
+    dataset_config: "src/configs/lightning/datasets/sintel_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 32}
+  - name: "imagenet2dwarp"
+    dataset_config: "src/configs/lightning/datasets/imagenet2dwarp_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 32}
+  - name: "movi_f"
+    dataset_config: "src/configs/lightning/datasets/movi_f_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 4}
+
+  # --- 4 synthetic variants ---
+  - name: "synthetic_2d_warp"
+    dataset_config: "src/configs/lightning/datasets/synthetic_2d_warp_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "synthetic_random_flipping"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc_random_flipping.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "synthetic_small_zoom"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc_small_zoom.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "synthetic_large_zoom"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc_large_zoom.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+
+  # --- 5 SDF synthetic interventions ---
+  - name: "sdf_flyingthings_trial80_widebnds"
+    dataset_config: "src/configs/lightning/datasets/sdf_flyingthings_trial80_widebnds_ds.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "sdf_kitti2015_trial0002"
+    dataset_config: "src/configs/lightning/datasets/sdf_kitti2015_trial0002_ds.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "sdf_kitti2015_trial76_widebnds"
+    dataset_config: "src/configs/lightning/datasets/sdf_kitti2015_trial76_widebnds_ds.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "sdf_middlebury_trial45_widebnds"
+    dataset_config: "src/configs/lightning/datasets/sdf_middlebury_trial45_widebnds_ds.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "sdf_kitti2015_large_zoom"
+    dataset_config: "src/configs/lightning/datasets/sdf_kitti2015_large_zoom_ds.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+
+  # --- kubric interventions: not staged on RC yet (see glunet_all_pure_rc.yaml) ---
+
+output_dir: "/home/slow1/Projects/OnlineSyntheticCorrespondence/slurm/experiment_configs/generated_glunet_oneeach"
+
+sweeps:
+  # Single point per dataset: ImageNet-pretrained backbone, fine-tuned (16 jobs).
+  - name: "glunet_oneeach"
+    parameters:
+      model.type: glunet
+      training.steps_per_epoch: 100
+      training.check_val_every_n_epoch: 20
+      dataset.downsample_flow: null
+      model.pretrained_backbone: true
+      model.freeze: false
+    name_template: "glunet_steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"
+
+# -----------------------------------------------------------------------------
+# OFFLINE PREREQ: pre-cache the ResNet-50 IMAGENET1K_V2 backbone weights on the
+# login node (has internet, no CUDA needed) so the offline compute nodes can load
+# them from the shared torch cache:
+#
+#   python -c "from torchvision.models import resnet50, ResNet50_Weights; \
+#              resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)"
+#
+# This writes ~/.cache/torch/hub/checkpoints/resnet50-11ad3fa6.pth (shared home,
+# visible on compute nodes). pretrained=False runs need no weights.
+# Also ensure models/Datasets_CATs has SPair-71k / PF-PASCAL / PF-WILLOW already
+# (download_dataset skips when present; otherwise it tries to fetch from the node).
+# -----------------------------------------------------------------------------

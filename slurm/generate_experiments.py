@@ -111,7 +111,7 @@ def generate_slurm_script(
 #SBATCH --nodes={slurm_config.get('nodes', 1)}
 #SBATCH --ntasks={slurm_config.get('ntasks', 1)}
 #SBATCH --cpus-per-task={slurm_config.get('cpus_per_task', 32)}
-#SBATCH --gpus={slurm_config.get('gpus', 1)}
+#SBATCH --gres=gpu:{slurm_config.get('gpus', 1)}
 #SBATCH --mem={memory}
 #SBATCH --qos={slurm_config.get('qos', 'cs')}
 
@@ -169,6 +169,63 @@ echo "Training completed at: $(date)"
     return job_path
 
 
+# Evaluation-root keys copied straight from machine_config['datasets'] -> config['evaluation'].
+_EVAL_ROOT_KEYS = [
+    'datapath', 'tss_root', 'kitti_root', 'flyingthings_root',
+    'pointodyssey_root', 'middlebury_root',
+]
+
+# Per-training-dataset root: maps dataset_name -> (config key under dataset:, machine datasets: key).
+# Different datasets reference their root under different keys (datapath vs dataset_location).
+_TRAIN_ROOT_MAP = {
+    'flyingthings': ('datapath', 'flyingthings_root'),
+    'pointodyssey': ('dataset_location', 'pointodyssey_root'),
+    'movi_f': ('datapath', 'movi_f_root'),
+    'kubric_intervention': ('datapath', 'kubric_root'),
+}
+
+
+def inject_machine_data_paths(configs, machine_config) -> int:
+    """Rewrite generated configs so data roots come from the machine config.
+
+    For each generated config, overrides evaluation.<root> and the training
+    dataset's root from machine_config['datasets']. Only keys that are present
+    and non-null in the machine config are applied, so a dataset config's own
+    default path is kept whenever the machine config does not specify that root.
+
+    Returns the number of configs modified.
+    """
+    datasets = (machine_config or {}).get('datasets', {}) or {}
+    if not datasets:
+        return 0
+
+    n_modified = 0
+    for config_path, _exp_name in configs:
+        config = yaml.safe_load(open(config_path, 'r'))
+        changed = False
+
+        ev = config.get('evaluation')
+        if isinstance(ev, dict):
+            for key in _EVAL_ROOT_KEYS:
+                if datasets.get(key) is not None and ev.get(key) != datasets[key]:
+                    ev[key] = datasets[key]
+                    changed = True
+
+        ds = config.get('dataset')
+        if isinstance(ds, dict):
+            cfg_key, machine_key = _TRAIN_ROOT_MAP.get(ds.get('dataset_name'), (None, None))
+            if cfg_key and datasets.get(machine_key) is not None and ds.get(cfg_key) != datasets[machine_key]:
+                ds[cfg_key] = datasets[machine_key]
+                changed = True
+
+        if changed:
+            with open(config_path, 'w') as f:
+                yaml.dump(config, f, default_flow_style=False)
+            n_modified += 1
+
+    return n_modified
+
+
 def main():
     parser = argparse.ArgumentParser(description='Generate SLURM job scripts for training experiments')
     parser.add_argument('-M', '--machine_config', type=str, default='slurm/machine_configs/local.yaml',
@@ -210,6 +267,14 @@ def main():
     print("Generating training configs from sweep...")
     configs = generate_all_configs(args.sweep_config, args.config_output_dir)
     print(f"Generated {len(configs)} config files\n")
+
+    # Inject machine-specific data paths so the generated configs point at the
+    # right roots for THIS machine (single source of truth = the machine config's
+    # `datasets:` block). Only keys present (non-null) in the machine config are
+    # applied, so dataset-config defaults survive when a root is not specified.
+    n_injected = inject_machine_data_paths(configs, machine_config)
+    if n_injected:
+        print(f"Injected machine data paths into {n_injected} configs\n")
     
     # Create output directory
     job_dir = Path(args.output_dir)

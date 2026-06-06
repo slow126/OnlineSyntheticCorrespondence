@@ -131,9 +131,38 @@ def create_model(model_config, paths_config):
         # Count all trainable parameters for FlowFormer
         def count_parameters(model):
             return sum(p.numel() for p in model.parameters() if p.requires_grad)
-        
+
+    elif model_type == 'glunet':
+        # GLU-Net model (native multi-scale EPE loss, ImageNet-normalized inputs)
+        print("Initializing GLU-Net model...")
+        from src.training.glunet_wrapper import GLUNetWrapper
+
+        pretrained_backbone = model_config.get('pretrained_backbone', True)
+        freeze = model_config.get('freeze', False)
+        if not pretrained_backbone:
+            print('='*60)
+            print('TRAINING FROM SCRATCH (pretrained_backbone=False)')
+            print('='*60)
+        print(f'Pretrained backbone: {pretrained_backbone} | Freeze backbone: {freeze}')
+
+        # GLU-Net-specific knobs live under model.glunet (kept separate from cats keys).
+        glunet_kwargs = dict(model_config.get('glunet', {}) or {})
+
+        model = GLUNetWrapper(
+            pretrained_backbone=pretrained_backbone,
+            freeze=freeze,
+            model_name=glunet_kwargs.pop('model_name', 'resnet50'),
+            local_window_size=glunet_kwargs.pop('local_window_size', 9),
+            decoder_dense_connect=glunet_kwargs.pop('decoder_dense_connect', False),
+            **glunet_kwargs,
+        )
+
+        # Count all trainable parameters for GLU-Net
+        def count_parameters(model):
+            return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
     else:
-        raise ValueError(f"Unknown model type: {model_type}. Supported types: 'cats', 'raft', 'flowformer'")
+        raise ValueError(f"Unknown model type: {model_type}. Supported types: 'cats', 'raft', 'flowformer', 'glunet'")
     
     print(f'The number of trainable parameters: {count_parameters(model)}')
     

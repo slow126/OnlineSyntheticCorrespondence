@@ -1,0 +1,16 @@
+# Dataset-only config (extracted for the GLU-Net unified split-config sweep).
+# Source: src/configs/CorrespondenceConfigs/kubric_kitti2015_lowtex_matte.yaml -- only the dataset section.
+dataset:
+  datapath: /mnt/nvme_1tb_a/kubric_interventions/datasets/kitti2015_lowtex_matte_5000
+  dataset_name: kubric_intervention
+  debug: false
+  dense_kps_use_all: true
+  downsample_flow: 32
+  max_kps: null
+  normalize_images: true
+  reverse_flow: false
+  size:
+  - 512
+  - 512
+  split: train
+  verbose: false

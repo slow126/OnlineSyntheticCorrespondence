@@ -1,0 +1,65 @@
+# Local GLU-Net convergence run on FlyingThings (real dense flow).
+# Train on FlyingThings TRAIN, evaluate PCK@0.05 on FlyingThings TEST (20% subset).
+# Uses the unified train_lightning.py pipeline with model.type: glunet.
+
+model:
+  type: glunet
+  pretrained_backbone: true
+  freeze: false
+  glunet:
+    model_name: resnet50
+    local_window_size: 9
+    decoder_dense_connect: false
+
+training:
+  epochs: 60
+  batch_size: 8
+  n_threads: 8
+  seed: 2021
+  lr: 1.0e-3
+  lr_backbone: 1.0e-5
+  weight_decay: 5.0e-4
+  scheduler: 'step'
+  step: '[40, 50]'
+  step_gamma: 0.5
+  steps_per_epoch: 100
+  check_val_every_n_epoch: 2
+  augmentation: false
+  mmd_every_n_epochs: 0
+  enable_debug: false
+  eval_initial: true
+
+dataset:
+  dataset_name: 'flyingthings'
+  split: 'train'
+  size: [512, 512]
+  downsample_flow: null
+  max_kps: null
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: true
+  datapath: '/home/spencer/Data/FlyingThings3D_tiny'
+  reverse_flow: true
+
+evaluation:
+  eval_benchmarks: ['flyingthings']
+  eval_alphas: [0.05]
+  thres: 'img'
+  split_to_use_for_validation: 'test'
+  val_batch_size: 8
+  val_num_workers: 8
+  prefetch_factor: 2
+  use_motion_aware: false
+  datapath: './models/Datasets_CATs'
+  flyingthings_root: '/home/spencer/Data/FlyingThings3D_tiny'
+  val_datasets:
+    flyingthings:
+      split: 'test'
+      normalize_images: true
+      val_dataset_fraction: 0.2
+
+paths:
+  snapshots: './snapshots'
+  pretrained: null
+  start_epoch: 0

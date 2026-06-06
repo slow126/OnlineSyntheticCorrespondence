@@ -1,0 +1,56 @@
+# Base training configuration for GLU-Net on the unified pipeline (RC cluster).
+#
+# Pairs with eval_base_rc.yaml and the glunet_all_pure_rc.yaml sweep.
+# GLU-Net plugs in via model.type: glunet (src/training/glunet_wrapper.py) and
+# trains with its NATIVE multi-scale endpoint-error loss over the flow pyramid
+# (handled in CorrespondenceLightningModule.training_step). Unlike CATs++, the
+# loss is multi-scale, so runs use full-resolution flow (dataset.downsample_flow:
+# null is set in the sweep).
+#
+# GLU-Net expects ImageNet-normalized inputs (its ResNet encoder + feature
+# instance-norm) -- same normalization convention as CATs++, so the existing
+# per-dataset configs are reused unchanged.
+
+model:
+  type: glunet
+  pretrained_backbone: true   # ImageNet ResNet-50 encoder; swept on RC
+  freeze: false               # freeze encoder; swept on RC
+  glunet:
+    model_name: resnet50
+    local_window_size: 9
+    decoder_dense_connect: false
+
+training:
+  epochs: 5000
+  batch_size: 8
+  n_threads: 32
+  seed: 2021
+  lr: 1.0e-3          # GLU-Net decoders / neighbourhood-consensus (native GLU-Net default)
+  lr_backbone: 1.0e-5 # encoder when unfrozen (ft_lr_scale 0.01 of main lr)
+  weight_decay: 5.0e-4
+  momentum: 0.9
+  scheduler: 'step'   # 'step' or 'cosine'
+  step: '[70, 80, 90]'
+  step_gamma: 0.5
+  steps_per_epoch: 100  # compute-budget cap so validation fires early (matches recent runs)
+
+  # Validation frequency control
+  check_val_every_n_epoch: 20
+
+  augmentation: false
+  min_flow_length: null
+  max_flow_length: null
+
+  # MMD calculation during validation
+  mmd_every_n_epochs: 0
+
+  enable_debug: false
+  debug_visualization_benchmarks: None
+  debug_visualization_persist: true
+
+  eval_initial: true
+
+paths:
+  snapshots: './snapshots'
+  pretrained: null  # GLU-Net loads its ImageNet backbone internally; no checkpoint resume
+  start_epoch: 0

@@ -1,0 +1,98 @@
+# GLU-Net on ALL pure (non-mix) training sets, 2x2 (pretrained x freeze) grid, RC cluster.
+#
+# Covers: 7 base pure sets + 4 synthetic variants + 5 SDF synthetic interventions
+#         = 16 training sets x 4 (pretrained x freeze) = 64 jobs.
+# (+ 2 kubric interventions, currently disabled below until staged on RC.)
+#
+# Generate + submit ON the RC cluster:
+#   python slurm/generate_experiments.py \
+#       -M slurm/machine_configs/remote_long.yaml \
+#       -S slurm/experiment_configs/glunet_all_pure_rc.yaml
+#   bash slurm/experiment_configs/generated_glunet_all_pure/submit_all.sh
+#
+# NOTE: the kubric_* entries require their materialized dataset roots to exist on
+# the RC node (see dataset.datapath in the kubric dataset configs). Drop or fix
+# those two entries if the roots are not present.
+
+project_root: "/home/slow1/Projects/OnlineSyntheticCorrespondence"
+
+training_base: "src/configs/lightning/glunet_training_base_rc.yaml"
+eval_base: "src/configs/lightning/eval_base_rc.yaml"
+
+training_datasets:
+  # --- 7 base pure training sets ---
+  - name: "synthetic"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}  # GPU-bound rendering
+  - name: "spair"
+    dataset_config: "src/configs/lightning/datasets/spair_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 32}
+  - name: "flyingthings"
+    dataset_config: "src/configs/lightning/datasets/flyingthings_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 32}
+  - name: "pointodyssey"
+    dataset_config: "src/configs/lightning/datasets/pointodyssey_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 4}
+  - name: "sintel"
+    dataset_config: "src/configs/lightning/datasets/sintel_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 32}
+  - name: "imagenet2dwarp"
+    dataset_config: "src/configs/lightning/datasets/imagenet2dwarp_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 32}
+  - name: "movi_f"
+    dataset_config: "src/configs/lightning/datasets/movi_f_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 4}
+
+  # --- 4 synthetic variants ---
+  - name: "synthetic_2d_warp"
+    dataset_config: "src/configs/lightning/datasets/synthetic_2d_warp_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "synthetic_random_flipping"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc_random_flipping.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "synthetic_small_zoom"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc_small_zoom.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "synthetic_large_zoom"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc_large_zoom.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+
+  # --- 5 SDF synthetic interventions (dataset_name: synthetic + geometry overrides) ---
+  - name: "sdf_flyingthings_trial80_widebnds"
+    dataset_config: "src/configs/lightning/datasets/sdf_flyingthings_trial80_widebnds_ds.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "sdf_kitti2015_trial0002"
+    dataset_config: "src/configs/lightning/datasets/sdf_kitti2015_trial0002_ds.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "sdf_kitti2015_trial76_widebnds"
+    dataset_config: "src/configs/lightning/datasets/sdf_kitti2015_trial76_widebnds_ds.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "sdf_middlebury_trial45_widebnds"
+    dataset_config: "src/configs/lightning/datasets/sdf_middlebury_trial45_widebnds_ds.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "sdf_kitti2015_large_zoom"
+    dataset_config: "src/configs/lightning/datasets/sdf_kitti2015_large_zoom_ds.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+
+  # --- 2 kubric interventions: NOT staged on RC yet (being materialized locally,
+  #     then copied over). Re-enable after setting machine.datasets.kubric_root. ---
+  # - name: "kubric_kitti2015_lowtex_matte"
+  #   dataset_config: "src/configs/lightning/datasets/kubric_kitti2015_lowtex_matte_ds.yaml"
+  #   overrides: {training.batch_size: 8, training.n_threads: 4}
+  # - name: "kubric_intervention"
+  #   dataset_config: "src/configs/lightning/datasets/kubric_intervention_rc.yaml"
+  #   overrides: {training.batch_size: 8, training.n_threads: 4}
+
+output_dir: "/home/slow1/Projects/OnlineSyntheticCorrespondence/slurm/experiment_configs/generated_glunet_all_pure"
+
+sweeps:
+  # 2x2 GLU-Net encoder grid: ImageNet-pretrained backbone x frozen encoder (4 runs each)
+  - name: "glunet_grid"
+    parameters:
+      model.type: glunet
+      training.steps_per_epoch: 100
+      training.check_val_every_n_epoch: 20
+      dataset.downsample_flow: null   # full-res flow for multi-scale loss + eval
+      model.pretrained_backbone: [true, false]
+      model.freeze: [true, false]
+    name_template: "glunet_steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"

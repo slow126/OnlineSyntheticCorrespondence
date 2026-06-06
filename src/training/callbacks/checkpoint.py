@@ -146,11 +146,19 @@ class CheckpointCallback(pl.Callback):
             'best_avg_epoch': self.best_avg_epoch,
         }
         
+        # When paths.save_epoch_checkpoints is False, reuse a single rolling
+        # 'last.pth' instead of one file per epoch. model_best.pth and
+        # {benchmark}_best.pth are still written independently (is_best copy
+        # below + _save_benchmark_model), so only the best models persist and
+        # disk stays bounded regardless of epoch count.
+        save_epoch_checkpoints = self.config.get('paths', {}).get('save_epoch_checkpoints', True)
+        epoch_filename = f'epoch_{epoch + 1}.pth' if save_epoch_checkpoints else 'last.pth'
+
         save_checkpoint(
             checkpoint_data,
             is_best=is_best,
             save_path=self.save_path,
-            filename=f'epoch_{epoch + 1}.pth'
+            filename=epoch_filename
         )
         
         if is_best:
