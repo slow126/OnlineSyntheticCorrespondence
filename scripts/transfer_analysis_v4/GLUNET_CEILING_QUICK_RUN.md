@@ -118,3 +118,54 @@ Interpretation:
 - `scripts/transfer_analysis_v3/transfer_table_glunet_snapshot_10k_rebuilt.csv`
 - `analysis/leakage_free_flow_kmeans_manifold/auc_results_glunet_snapshot_10k.csv`
 
+## Full-Grid Download Audit (2026-06-07)
+
+The later `glunet_fullgrid_snapshots` download is not a completed grid, but the
+5,000-epoch setting should be treated as a maximum rather than a convergence
+target:
+
+- 22 of 33 directories contain validation results.
+- 11 directories contain configuration only.
+- Only 13 runs have at least three evaluation checkpoints.
+- No model checkpoint files were downloaded.
+- The configs instantiate `resnet50`; the `resnet101` text in the summaries is
+  a summary-writer fallback bug, now fixed for future runs.
+
+The downloaded SLURM logs show that these jobs did not stop through an
+early-stopping callback:
+
+- 22 jobs stopped together between 02:03:46 and 02:07:54 local time, strongly
+  indicating an external cancellation or cluster event.
+- 6 jobs ended with a native core dump during synthetic validation.
+- 1 FlyingThings job was killed for host-memory OOM.
+- 4 base-synthetic jobs ended earlier without a terminal error record.
+
+Validation-curve behavior is mixed. Mean transfer PCK clearly peaks and then
+declines in 6 runs, is still improving or at its latest plateau in 5, is
+ambiguous in 2, collapses in 1 ImageNet-2D-warp run, and is too short to judge
+in 8. FlyingThings PCK is still best at the latest checkpoint in 15 of the 22
+evaluated runs. Training-loss curves are not present in the downloaded `.err`
+files.
+
+A sidecar 2,000-step sensitivity imports the 22 valid runs as four sparse
+GLU-Net variants. It does not replace the standardized 10,000-step result.
+
+| quantity | 2k full-grid sensitivity | standardized 10k |
+|---|---:|---:|
+| motion LOTO | +0.447 | +0.451 |
+| appearance LOTO | -0.287 | -0.249 |
+| held-variant consensus | +0.682 | +0.666 |
+| architecture-balanced consensus | +0.674 | +0.643 |
+| held-architecture consensus | +0.716 | +0.668 |
+
+For the pretrained/unfrozen GLU-Net variant, the five overlapping source
+rankings have mean benchmark-wise Spearman rho 0.74 between 2,000 and 10,000
+steps, while absolute PCK increases substantially. This supports the qualitative
+ranking sensitivity but not a convergence claim.
+
+Additional outputs:
+
+- `scripts/transfer_analysis_v4/results_glunet_fullgrid_2k/GRID_AUDIT.md`
+- `scripts/transfer_analysis_v4/results_glunet_fullgrid_2k/EMPIRICAL_REFERENCES.md`
+- `scripts/transfer_analysis_v3/transfer_table_glunet_fullgrid_2k.csv`
+- `analysis/leakage_free_flow_kmeans_manifold/auc_results_glunet_fullgrid_2k.csv`

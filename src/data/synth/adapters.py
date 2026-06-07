@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Dict, Optional
 import torch
 import torch.nn.functional as F
@@ -180,6 +181,41 @@ class SyntheticAdapter(BaseAdapter):
 
     def __getitem__(self, idx):
         return self.dataset[idx]
+
+
+class CachedSyntheticAdapter(BaseAdapter):
+    """Serves a pre-rendered synthetic validation set from disk.
+
+    Drop-in replacement for SyntheticAdapter at VALIDATION time: it returns a
+    CommonSample (like every flow adapter) instead of raw geometry, so
+    CorrespondenceDataset.collate_fn routes it through the generic pipeline
+    (resize -> kps_from_flow -> downsample -> normalize) with NO renderer. The
+    cache is produced by scripts/precompute_synthetic_val.py. See that script for
+    why (renderer SIGABRT, ~52 min/validation, drifting RNG val set).
+    """
+
+    name = "synthetic_cached"
+    normalize_images = False
+
+    def __init__(self, cache_dir: str, **kwargs):
+        self.cache_dir = Path(cache_dir)
+        self.files = sorted(self.cache_dir.glob("sample_*.pt"))
+        if not self.files:
+            raise FileNotFoundError(
+                f"CachedSyntheticAdapter: no 'sample_*.pt' files in {cache_dir}. "
+                f"Run scripts/precompute_synthetic_val.py first."
+            )
+
+    def __len__(self):
+        return len(self.files)
+
+    def __getitem__(self, idx) -> CommonSample:
+        rec = torch.load(self.files[idx], map_location="cpu")
+        return CommonSample(
+            src_img=rec["src_img"].float(),
+            trg_img=rec["trg_img"].float(),
+            flow_full=rec["flow_full"].float(),
+        )
 
 
 class MonkaaAdapter(BaseAdapter):
@@ -524,6 +560,17 @@ ADAPTER_REGISTRY = {
 
 
 def build_adapter(dataset_name: str, **kwargs) -> BaseAdapter:
+    # Synthetic VALIDATION can be served from a pre-rendered on-disk cache instead
+    # of the live moderngl renderer. Only the eval config sets synthetic_val_cache,
+    # so training synthetic sources are unaffected and keep rendering live.
+    cache_dir = kwargs.pop("synthetic_val_cache", None)
+    if dataset_name.startswith("synthetic") and cache_dir:
+        if Path(cache_dir).exists():
+            print(f"[synthetic val] using pre-rendered cache: {cache_dir}")
+            return CachedSyntheticAdapter(cache_dir=cache_dir, **kwargs)
+        print(f"[synthetic val] WARNING: synthetic_val_cache not found ({cache_dir}); "
+              f"falling back to LIVE rendering")
+
     cls = ADAPTER_REGISTRY.get(dataset_name)
     if cls is None:
         raise ValueError(f"Unknown dataset {dataset_name}")

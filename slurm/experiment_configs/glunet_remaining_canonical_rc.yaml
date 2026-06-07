@@ -23,7 +23,7 @@
 project_root: "/home/slow1/Projects/OnlineSyntheticCorrespondence"
 
 training_base: "src/configs/lightning/glunet_training_base_rc.yaml"
-eval_base: "src/configs/lightning/eval_base_rc.yaml"
+eval_base: "src/configs/lightning/eval_base_rc_fastsynth.yaml"  # 256-sample synthetic val: dodges renderer abort + cuts ~40 min/validation
 
 training_datasets:
   - name: "synthetic"

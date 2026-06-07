@@ -252,6 +252,32 @@ def benchmark_bootstrap(
     }
 
 
+def paired_ratio_bootstrap(
+    per_benchmark: pd.DataFrame,
+    numerator: str,
+    denominator: str,
+    n_boot: int,
+    seed: int,
+) -> tuple[float, float] | None:
+    """Bootstrap a ratio of means while preserving benchmark pairing."""
+    values = per_benchmark[["benchmark", numerator, denominator]].dropna()
+    if values.empty or n_boot <= 0:
+        return None
+    rng = np.random.default_rng(seed)
+    benches = values["benchmark"].to_numpy()
+    indexed = values.set_index("benchmark")
+    draws = []
+    for _ in range(n_boot):
+        sample = rng.choice(benches, size=len(benches), replace=True)
+        selected = indexed.loc[sample]
+        den = float(selected[denominator].mean())
+        if den > 0:
+            draws.append(float(selected[numerator].mean()) / den)
+    if not draws:
+        return None
+    return tuple(np.nanpercentile(draws, [2.5, 97.5]))
+
+
 def fmt(value: float, digits: int = 3) -> str:
     return "NA" if not np.isfinite(value) else f"{value:+.{digits}f}"
 
@@ -355,6 +381,27 @@ def main() -> None:
         args.n_boot,
         args.seed,
     )
+    ratio_interval = paired_ratio_bootstrap(
+        by_benchmark,
+        "feature_rho",
+        "consensus_rho",
+        args.n_boot,
+        args.seed,
+    )
+    ratio_bal_interval = paired_ratio_bootstrap(
+        by_benchmark,
+        "feature_rho",
+        "balanced_consensus_rho",
+        args.n_boot,
+        args.seed,
+    )
+    ratio_group_interval = paired_ratio_bootstrap(
+        by_benchmark,
+        "held_arch_feature_rho",
+        "held_arch_consensus_rho",
+        args.n_boot,
+        args.seed,
+    )
 
     pair_r = float(pair_variant["pairwise_rho"].mean())
     median_reps = int(round(pair_variant["n_replicates"].median()))
@@ -375,6 +422,11 @@ def main() -> None:
         bounds = intervals.get(name)
         return "" if bounds is None else f" [{bounds[0]:+.3f}, {bounds[1]:+.3f}]"
 
+    def ratio_ci(bounds: tuple[float, float] | None) -> str:
+        if bounds is None:
+            return ""
+        return f" [bootstrap 95%: {bounds[0]:.0%}, {bounds[1]:.0%}]"
+
     lines = [
         "# Empirical Predictability References",
         "",
@@ -393,14 +445,17 @@ def main() -> None:
         f"- Held-variant rank consensus: **rho = {consensus_mean:+.3f}**"
         f"{ci('consensus_rho')}.",
         f"- Motion on the same eligible contexts: **rho = {matched_feature:+.3f}**, "
-        f"or **{pct(fraction)} of this empirical reference**.",
+        f"or **{pct(fraction)} of this empirical reference**"
+        f"{ratio_ci(ratio_interval)}.",
         f"- Architecture-balanced consensus sensitivity: "
         f"**rho = {consensus_bal_mean:+.3f}**{ci('balanced_consensus_rho')}; "
-        f"motion is **{pct(fraction_bal)}** of that reference.",
+        f"motion is **{pct(fraction_bal)}** of that reference"
+        f"{ratio_ci(ratio_bal_interval)}.",
         f"- Architecture-aggregated holdout sensitivity: motion "
         f"**rho = {feature_group_mean:+.3f}** versus consensus "
         f"**rho = {consensus_group_mean:+.3f}**"
-        f"{ci('held_arch_consensus_rho')} ({pct(fraction_group)}).",
+        f"{ci('held_arch_consensus_rho')} ({pct(fraction_group)})"
+        f"{ratio_ci(ratio_group_interval)}.",
         "",
         "The percentage is descriptive, not a theorem: the consensus itself can be "
         "beaten by features that predict stable structure shared across variants, "

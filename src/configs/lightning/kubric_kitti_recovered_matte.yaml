@@ -82,3 +82,4 @@ paths:
   snapshots: ./snapshots/kitti_recovered_matte
   pretrained: null
   start_epoch: 0
+  save_epoch_checkpoints: false

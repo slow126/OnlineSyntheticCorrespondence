@@ -39,6 +39,12 @@ class SummaryCallback(pl.Callback):
         self.eval_config = config['evaluation']
         
         self.summary_file = os.path.join(save_path, 'training_summary.txt')
+
+    def _backbone_name(self) -> str:
+        if self.model_config.get('type') == 'glunet':
+            glunet_config = self.model_config.get('glunet', {}) or {}
+            return glunet_config.get('model_name', 'resnet50')
+        return self.model_config.get('backbone', 'resnet101')
     
     def on_validation_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule):
         """Write training summary after validation epoch."""
@@ -112,7 +118,7 @@ class SummaryCallback(pl.Callback):
             f.write(f"Feature size: {self.dataset_config['downsample_flow']}\n")
             f.write(f"Evaluation benchmarks: {', '.join(self.eval_config['eval_benchmarks'])}\n")
             f.write(f"Evaluation alphas: {', '.join(map(str, self.eval_config['eval_alphas']))}\n")
-            f.write(f"Backbone: {self.model_config.get('backbone', 'resnet101')}\n")
+            f.write(f"Backbone: {self._backbone_name()}\n")
             f.write(f"Freeze backbone: {self.model_config.get('freeze', True)}\n")
             f.write(f"Pretrained backbone: {self.model_config.get('pretrained_backbone', True)}\n")
             f.write(f"Augmentation: {self.training_config.get('augmentation', False)}\n")

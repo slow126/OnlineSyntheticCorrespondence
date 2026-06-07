@@ -392,6 +392,9 @@ def create_validation_datasets(config, device=None):
             )
             val_dataset_config['opengl_device_index'] = config['dataset'].get('opengl_device_index', None)
             val_dataset_config['geometry_config_overrides'] = config['dataset'].get('geometry_config_overrides', None)
+            # If set, serve a pre-rendered synthetic val set from disk (no live
+            # renderer): see scripts/precompute_synthetic_val.py + CachedSyntheticAdapter.
+            val_dataset_config['synthetic_val_cache'] = val_datasets_config.get('synthetic_val_cache', None)
         
         elif benchmark == 'tss':
             val_dataset_config['datapath'] = eval_config['tss_root']
