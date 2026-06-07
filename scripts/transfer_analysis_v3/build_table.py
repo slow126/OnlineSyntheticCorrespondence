@@ -34,36 +34,54 @@ import pandas as pd
 VECTOR_DENSITY_CAP = 10_000.0
 
 
-def load_auc(root: Path) -> pd.DataFrame:
-    path = root / "analysis/leakage_free_flow_kmeans_manifold/auc_results.csv"
+def load_auc(root: Path, path: Path | None = None) -> pd.DataFrame:
+    if path is None:
+        path = root / "analysis/leakage_free_flow_kmeans_manifold/auc_results.csv"
     df = pd.read_csv(path)
-    # Remap model_family to architecture (raft/catspp) from run_name.
+    # Remap model_family to architecture from run_name.
     # Upstream model_family carries the snapshot-directory name (raft_2d_mix,
     # synth_2d, 2d_warps, synthetic_long, spair_only, ptody_fix, ...) which are
     # the same RAFT or CATS++ architecture trained on different data, captured
     # at different times — not real model families. The arch token in run_name
     # is the source of truth; check raft first because some run_names contain
     # both raft and cats substrings.
-    def _detect_arch(run_name: str) -> str | None:
-        n = str(run_name)
+    def _detect_arch(row: pd.Series) -> str | None:
+        n = str(row["run_name"]).lower()
+        upstream = str(row.get("model_family", "")).lower()
+        # Check GLU-Net before the generic `steps100` CATs++ pattern.
+        if "glunet" in n or upstream == "glunet":
+            return "glunet"
         if "raft_full" in n or "raft_baseline" in n:
             return "raft"
         if ("cats_steps100" in n or "steps100" in n
                 or "_cats_" in n or n.endswith("_cats")):
             return "catspp"
         return None
-    df["model_family"] = df["run_name"].apply(_detect_arch)
+    df["model_family"] = df.apply(_detect_arch, axis=1)
     n_unmatched = df["model_family"].isna().sum()
     if n_unmatched:
         print(f"  WARN: {n_unmatched} rows have no detectable arch in run_name; "
               f"will be dropped")
         df = df.dropna(subset=["model_family"]).copy()
-    # Drop early-terminated runs — fewer than 3 checkpoints in the 5000-step window
-    # means the run was killed before it produced useful data.
-    n_early = (df["auc_points"] < 3).sum()
-    if n_early:
-        print(f"  Dropping {n_early} early-terminated rows (auc_points < 3)")
-        df = df[df["auc_points"] >= 3].copy()
+    # Fewer than 3 checkpoints cannot support a defensible 5000-step AUC.
+    # GLU-Net validates every 2000 steps, so keep its independently valid global
+    # peak while excluding only its AUC target. Other short rows remain treated
+    # as early-terminated runs.
+    early = df["auc_points"] < 3
+    peak_only = (
+        early
+        & df["model_family"].eq("glunet")
+        & df["peak_pck"].notna()
+    )
+    if peak_only.any():
+        print(f"  Keeping {int(peak_only.sum())} GLU-Net peak-only rows "
+              "(auc_points < 3; auc_normalized set to NaN)")
+        df.loc[peak_only, "auc_normalized"] = np.nan
+    drop_early = early & ~peak_only
+    if drop_early.any():
+        print(f"  Dropping {int(drop_early.sum())} early-terminated rows "
+              "(auc_points < 3)")
+        df = df[~drop_early].copy()
     cols = ["train_dataset", "benchmark", "model_family", "pretrained", "freeze",
             "auc_normalized", "peak_pck"]
     df = df[cols].copy()
@@ -328,6 +346,26 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", default=".", help="Project root directory.")
     parser.add_argument(
+        "--auc-csv",
+        default="analysis/leakage_free_flow_kmeans_manifold/auc_results.csv",
+        help="AUC/peak result CSV, relative to --root unless absolute.",
+    )
+    parser.add_argument(
+        "--out",
+        default="scripts/transfer_analysis_v3/transfer_table.csv",
+        help="Output table path, relative to --root unless absolute.",
+    )
+    parser.add_argument(
+        "--flow-raw-csv",
+        default="analysis/coverage_v2_flow_only_raw_joint_full.csv",
+        help="Raw flow coverage CSV, relative to --root unless absolute.",
+    )
+    parser.add_argument(
+        "--flow-kmeans-csv",
+        default="analysis/coverage_v2_flow_only_raw_joint_kmeans_full.csv",
+        help="K-means flow coverage CSV, relative to --root unless absolute.",
+    )
+    parser.add_argument(
         "--vec-dir", default="/mnt/nvme_1tb_b/coverage_vectors",
         help="Coverage vector directory containing stats/flow_counts_*.json. "
              "Used for sample-count and vectors-per-sample profile controls.",
@@ -347,10 +385,21 @@ def main() -> None:
     args = parser.parse_args()
 
     root = Path(args.root).resolve()
-    out_path = root / "scripts/transfer_analysis_v3/transfer_table.csv"
+    auc_path = Path(args.auc_csv)
+    if not auc_path.is_absolute():
+        auc_path = root / auc_path
+    out_path = Path(args.out)
+    if not out_path.is_absolute():
+        out_path = root / out_path
+    flow_raw_path = Path(args.flow_raw_csv)
+    if not flow_raw_path.is_absolute():
+        flow_raw_path = root / flow_raw_path
+    flow_kmeans_path = Path(args.flow_kmeans_csv)
+    if not flow_kmeans_path.is_absolute():
+        flow_kmeans_path = root / flow_kmeans_path
 
     print("Loading AUC results...")
-    auc = load_auc(root)
+    auc = load_auc(root, auc_path)
     if args.train_datasets is not None:
         allowed = set(args.train_datasets)
         before = len(auc)
@@ -385,7 +434,6 @@ def main() -> None:
     print("\nLoading and joining feature CSVs...")
 
     # --- Flow raw coverage (also extract density counts) ---
-    flow_raw_path = root / "analysis/coverage_v2_flow_only_raw_joint_full.csv"
     if flow_raw_path.exists():
         _raw = pd.read_csv(flow_raw_path)
         density_df = _raw[["train_dataset", "eval_dataset", "train_n_vectors", "eval_n_vectors"]].rename(
@@ -482,7 +530,7 @@ def main() -> None:
 
     # --- Flow k-means coverage ---
     flow_km_cov = load_coverage(
-        root / "analysis/coverage_v2_flow_only_raw_joint_kmeans_full.csv", prefix="flow_km_")
+        flow_kmeans_path, prefix="flow_km_")
     auc = join_feature(auc, flow_km_cov, "flow k-means coverage")
 
     # --- DINO coverage (after Step 0a) ---

@@ -187,3 +187,7 @@ slurm/*jobs*/
 # Backup files (e.g. transfer_table.csv.bak_pre_*)
 *.bak
 *.bak_*
+
+# Required runtime asset: Julia-set curvature map loaded by the synthetic geometry
+# sampler (src/.../computed/curvature.py). Must stay tracked despite the *.npz rule.
+!src/data/synth/datasets/computed/julia_curvature_13.npz

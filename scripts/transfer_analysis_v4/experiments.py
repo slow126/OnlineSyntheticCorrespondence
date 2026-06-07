@@ -992,6 +992,17 @@ def run_one_target(root: Path, table_in: pd.DataFrame, dist_df: pd.DataFrame,
 
     rng = np.random.default_rng(args.seed)
     table = table_in.dropna(subset=[target]).copy()
+    context_sizes = table.groupby("cv")["train_dataset"].nunique()
+    valid_contexts = context_sizes[
+        context_sizes >= args.min_context_sources
+    ].index
+    dropped = len(table) - int(table["cv"].isin(valid_contexts).sum())
+    if dropped:
+        print(
+            f"  Dropping {dropped} rows from contexts with fewer than "
+            f"{args.min_context_sources} sources for target {target}"
+        )
+    table = table[table["cv"].isin(valid_contexts)].copy()
     # Internally everything reads 'auc_normalized' as the target column.
     table["auc_normalized"] = table[target]
     table_sh = shuffle_within_context(table, rng)
@@ -1148,6 +1159,13 @@ def main():
                     help="Drop specific train_dataset(s) before fitting "
                          "(drop-one-source robustness, Tier 1).")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument(
+        "--min-context-sources",
+        type=int,
+        default=3,
+        help="Exclude contexts with fewer sources before fitting. Such contexts "
+             "cannot define the within-context ranking estimand.",
+    )
     args = ap.parse_args()
 
     if args.target is not None:

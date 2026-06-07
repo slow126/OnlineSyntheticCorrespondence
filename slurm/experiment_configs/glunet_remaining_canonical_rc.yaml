@@ -1,0 +1,103 @@
+# GLU-Net camera-ready architecture grid: the 33 canonical jobs not covered by
+# the existing pretrained=True, freeze=False one-each batch.
+#
+# Scope: 11 canonical source datasets x 3 remaining pretrain/freeze cells.
+# This completes a 44-run canonical grid without duplicating the 11 one-each
+# jobs. The five SDF interventions are intentionally excluded because they do
+# not enter the pure-source ceiling/oracle table.
+#
+# Camera-ready stopping rule: every source/variant receives the same 8,000
+# optimizer-step budget (80 epochs x 100 steps), and analysis selects the peak
+# validation checkpoint inside that budget. This is short enough for the slow
+# PointOdyssey jobs to finish inside one 24-hour RC allocation.
+#
+# Generate on RC:
+#   python slurm/generate_experiments.py \
+#       -M slurm/machine_configs/remote_long.yaml \
+#       -S slurm/experiment_configs/glunet_remaining_canonical_rc.yaml \
+#       -O slurm/glunet_jobs_remaining_canonical
+#
+# Inspect the generated configs before submission, then:
+#   bash slurm/glunet_jobs_remaining_canonical/submit_all.sh
+
+project_root: "/home/slow1/Projects/OnlineSyntheticCorrespondence"
+
+training_base: "src/configs/lightning/glunet_training_base_rc.yaml"
+eval_base: "src/configs/lightning/eval_base_rc.yaml"
+
+training_datasets:
+  - name: "synthetic"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "spair"
+    dataset_config: "src/configs/lightning/datasets/spair_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 32}
+  - name: "flyingthings"
+    dataset_config: "src/configs/lightning/datasets/flyingthings_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 32}
+  - name: "pointodyssey"
+    dataset_config: "src/configs/lightning/datasets/pointodyssey_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 4}
+  - name: "sintel"
+    dataset_config: "src/configs/lightning/datasets/sintel_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 32}
+  - name: "imagenet2dwarp"
+    dataset_config: "src/configs/lightning/datasets/imagenet2dwarp_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 32}
+  - name: "movi_f"
+    dataset_config: "src/configs/lightning/datasets/movi_f_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 4}
+  - name: "synthetic_2d_warp"
+    dataset_config: "src/configs/lightning/datasets/synthetic_2d_warp_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "synthetic_random_flipping"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc_random_flipping.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "synthetic_small_zoom"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc_small_zoom.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "synthetic_large_zoom"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc_large_zoom.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+
+output_dir: "/home/slow1/Projects/OnlineSyntheticCorrespondence/slurm/experiment_configs/generated_glunet_remaining_canonical"
+
+sweeps:
+  - name: "pretrained_frozen"
+    parameters:
+      model.type: glunet
+      training.epochs: 80
+      training.steps_per_epoch: 100
+      training.check_val_every_n_epoch: 20
+      training.seed: 2021
+      paths.save_epoch_checkpoints: false
+      dataset.downsample_flow: null
+      model.pretrained_backbone: true
+      model.freeze: true
+    name_template: "glunet_steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"
+
+  - name: "scratch_unfrozen"
+    parameters:
+      model.type: glunet
+      training.epochs: 80
+      training.steps_per_epoch: 100
+      training.check_val_every_n_epoch: 20
+      training.seed: 2021
+      paths.save_epoch_checkpoints: false
+      dataset.downsample_flow: null
+      model.pretrained_backbone: false
+      model.freeze: false
+    name_template: "glunet_steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"
+
+  - name: "scratch_frozen"
+    parameters:
+      model.type: glunet
+      training.epochs: 80
+      training.steps_per_epoch: 100
+      training.check_val_every_n_epoch: 20
+      training.seed: 2021
+      paths.save_epoch_checkpoints: false
+      dataset.downsample_flow: null
+      model.pretrained_backbone: false
+      model.freeze: true
+    name_template: "glunet_steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"

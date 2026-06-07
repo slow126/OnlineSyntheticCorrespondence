@@ -155,8 +155,11 @@ export HF_HUB_OFFLINE=1
 echo "Starting training..."
 echo "Command: python3 -u train_lightning.py --config {config_path_abs}"
 srun --ntasks=1 python3 -u train_lightning.py --config {config_path_abs}
+training_exit=$?
 
-echo "Training completed at: $(date)"
+# Propagate srun's exit code so SLURM reports FAILED (not COMPLETED) on a crash.
+echo "Training finished at: $(date) (exit code: $training_exit)"
+exit $training_exit
 """
     
     # Write script
@@ -169,11 +172,18 @@ echo "Training completed at: $(date)"
     return job_path
 
 
-# Evaluation-root keys copied straight from machine_config['datasets'] -> config['evaluation'].
-_EVAL_ROOT_KEYS = [
-    'datapath', 'tss_root', 'kitti_root', 'flyingthings_root',
-    'pointodyssey_root', 'middlebury_root',
-]
+# Evaluation-root injection: config['evaluation'][eval_key] <- machine['datasets'][machine_key].
+# NOTE kitti: evaluation uses the FULL (unsplit) kitti with kitti_val_use_full_training
+# (split='training', old testing/training layout), so it must point at kitti_unsplit_root,
+# NOT the train/val 'kitti-split' root used for actual kitti training.
+_EVAL_ROOT_MAP = {
+    'datapath': 'datapath',
+    'tss_root': 'tss_root',
+    'kitti_root': 'kitti_unsplit_root',
+    'flyingthings_root': 'flyingthings_root',
+    'pointodyssey_root': 'pointodyssey_root',
+    'middlebury_root': 'middlebury_root',
+}
 
 # Per-training-dataset root: maps dataset_name -> (config key under dataset:, machine datasets: key).
 # Different datasets reference their root under different keys (datapath vs dataset_location).
@@ -206,9 +216,13 @@ def inject_machine_data_paths(configs, machine_config) -> int:
 
         ev = config.get('evaluation')
         if isinstance(ev, dict):
-            for key in _EVAL_ROOT_KEYS:
-                if datasets.get(key) is not None and ev.get(key) != datasets[key]:
-                    ev[key] = datasets[key]
+            for eval_key, machine_key in _EVAL_ROOT_MAP.items():
+                val = datasets.get(machine_key)
+                # kitti fallback: if unsplit root not declared, use kitti_root.
+                if val is None and eval_key == 'kitti_root':
+                    val = datasets.get('kitti_root')
+                if val is not None and ev.get(eval_key) != val:
+                    ev[eval_key] = val
                     changed = True
 
         ds = config.get('dataset')
