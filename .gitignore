@@ -73,6 +73,15 @@ sorted_snapshots/
 snapshots_mixed/
 snapshots*
 
+# Model training output dirs that don't start with "snapshots"
+# (GLU-Net / FlowFormer grid snapshots + eval CSVs land in these)
+*_snapshots/
+glunet_snapshots/
+glunet_fullgrid_snapshots/
+glunet_cos_clean/
+flowformer_snapshots/
+flowformer_fullgrid_snapshots/
+
 # Dino Outputs
 models/DinoV3/extracted_features/
 *extracted_features/
@@ -151,6 +160,7 @@ gaussian_splat/output_splats/
 gaussian_splat/output_*_splats*/
 gaussian_splat/hof_flow_vectors_k*/
 gaussian_splat/joint_flow_support_vectors/
+gaussian_splat/output_*/
 gaussian_splat/*_splat.png
 gaussian_splat/*_comparison.png
 
@@ -160,6 +170,8 @@ scripts/transfer_analysis_v3/results/
 scripts/transfer_analysis_v4/results*/
 scripts/transfer_analysis_v4/_archive*/
 scripts/transfer_analysis_v4/logs/
+scripts/transfer_analysis_v4/*_verification/
+scripts/transfer_analysis_v4/*_verification_*backup/
 
 # Local generated experiment/data dumps
 backups/

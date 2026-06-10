@@ -22,7 +22,11 @@ from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 from timm.models.layers import Mlp, DropPath, to_2tuple, trunc_normal_
 from timm.models.registry import register_model
 from timm.models.vision_transformer import Attention
-from timm.models.helpers import build_model_with_cfg, overlay_external_default_cfg
+# NOTE: ``overlay_external_default_cfg`` was removed in newer timm (>=0.9); it
+# was only referenced by the commented-out ``_create_twins`` helpers below, so
+# dropping it keeps this module importable under timm 1.x. The backbone itself
+# is built via ``timm.create_model('twins_svt_large', ...)`` in encoders.py.
+from timm.models.helpers import build_model_with_cfg
 from .attention import MultiHeadAttention, LinearPositionEmbeddingSine
 from utils.utils import coords_grid, bilinear_sampler, upflow8
 

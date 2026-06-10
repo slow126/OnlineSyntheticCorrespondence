@@ -207,10 +207,9 @@ class MiddleburySimpleDataset(Dataset):
             src_img = self._load_image(scene_dir / 'im1.png')
             trg_img = self._load_image(scene_dir / 'im0.png')
             disp0 = self._load_disparity(scene_dir / 'disp0.pfm')
-            # For flow from im0 to im1, we need -disp0 (negative direction)
+            # For flow from im0 to im1, we need -disp0 (negative direction).
+            # reverse=True already yields flow_x = -disp0 — do NOT negate again.
             flow = self._disparity_to_flow(disp0, reverse=not self.reverse_flow)
-            # Since we're reversing the direction, we need to negate the flow
-            flow[0] = -flow[0]
         
         # Ensure flow matches image dimensions (in case of size mismatch)
         _, img_h, img_w = src_img.shape

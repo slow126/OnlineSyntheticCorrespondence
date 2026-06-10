@@ -122,8 +122,13 @@ def create_model(model_config, paths_config):
         
         pretrained_path = paths_config.get('pretrained', model_config.get('pretrained_path', None))
         
+        pretrain = model_config.get('pretrain', True)
+        freeze = model_config.get('freeze', False)
+        print(f'Pretrained Twins-SVT backbones: {pretrain} | Freeze backbones: {freeze}')
+
         model = FlowFormerWrapper(
-            pretrain=model_config.get('pretrain', True),
+            pretrain=pretrain,
+            freeze=freeze,
             iters=model_config.get('iters', 12),
             pretrained_path=pretrained_path,
         )
@@ -403,7 +408,19 @@ def main():
     # Validation frequency options
     check_val_every_n_epoch = training_config.get('check_val_every_n_epoch', 1)
     val_check_interval = training_config.get('val_check_interval', 1.0)
-    
+
+    # Optional gradient clipping (off by default for backward compatibility).
+    # Stabilises training when the LR is high / annealed (kills loss spikes).
+    gradient_clip_val = training_config.get('gradient_clip_val', None)
+    if gradient_clip_val is not None:
+        gradient_clip_val = float(gradient_clip_val)
+    gradient_clip_algorithm = training_config.get('gradient_clip_algorithm', 'norm')
+
+    # Gradient accumulation: lets memory-heavy models (e.g. FlowFormer) keep a
+    # larger *effective* batch than fits in GPU memory. Default 1 = no-op, so
+    # existing configs are unaffected. Effective batch = batch_size * this.
+    accumulate_grad_batches = int(training_config.get('accumulate_grad_batches', 1))
+
     trainer = pl.Trainer(
         max_epochs=training_config.get('epochs', 50),
         accelerator='gpu' if torch.cuda.is_available() else 'cpu',
@@ -416,6 +433,9 @@ def main():
         check_val_every_n_epoch=check_val_every_n_epoch,  # Check validation every N epochs
         val_check_interval=val_check_interval,  # Check validation at end of epoch (1.0) or after N steps (int)
         limit_train_batches=limit_train_batches,  # Limit training batches if specified
+        gradient_clip_val=gradient_clip_val,  # None = disabled (default)
+        gradient_clip_algorithm=gradient_clip_algorithm if gradient_clip_val is not None else None,
+        accumulate_grad_batches=accumulate_grad_batches,  # 1 = disabled (default)
     )
     
     # Initial evaluation is handled by MMDValidationCallback's on_train_start

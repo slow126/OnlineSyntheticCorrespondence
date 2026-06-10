@@ -34,6 +34,13 @@ class CheckpointCallback(pl.Callback):
         self.save_path = save_path
         self.config = config
         self.eval_config = config['evaluation']
+
+        # Optimizer + scheduler state (AdamW keeps two momentum buffers per
+        # parameter) roughly triples checkpoint size and is ONLY needed to
+        # resume training, which is not wired here. Eval/inference loads the
+        # weights identically without it. Default off; flip on by setting
+        # paths.save_optimizer_state: true if you ever wire resume.
+        self.save_optimizer_state = config.get('paths', {}).get('save_optimizer_state', False)
         
         # Track best performance per benchmark
         # Initialize from pretrained checkpoint if provided (for finetuning)
@@ -60,6 +67,19 @@ class CheckpointCallback(pl.Callback):
                 self.best_val_per_benchmark[benchmark] = 0.0
                 self.best_epoch_per_benchmark[benchmark] = 0
     
+    def _optim_states(self, trainer: pl.Trainer):
+        """Return (optimizer_state, scheduler_state).
+
+        Both are None unless paths.save_optimizer_state is enabled, so the
+        checkpoints carry only the model weights needed for eval/inference.
+        """
+        if not self.save_optimizer_state:
+            return None, None
+        optimizer_state = trainer.optimizers[0].state_dict() if trainer.optimizers else None
+        scheduler_state = (trainer.lr_scheduler_configs[0].scheduler.state_dict()
+                           if trainer.lr_scheduler_configs else None)
+        return optimizer_state, scheduler_state
+
     def on_validation_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule):
         """Save best models after validation epoch."""
         val_results = pl_module.get_val_results()
@@ -75,14 +95,9 @@ class CheckpointCallback(pl.Callback):
                 self.best_epoch_per_benchmark[benchmark] = epoch + 1
                 print(f"New best {benchmark} PCK: {results['pck']:.2f}% (epoch {epoch + 1})")
                 
-                # Get optimizer and scheduler states from Lightning
-                optimizer_state = None
-                scheduler_state = None
-                if trainer.optimizers:
-                    optimizer_state = trainer.optimizers[0].state_dict()
-                if trainer.lr_scheduler_configs:
-                    scheduler_state = trainer.lr_scheduler_configs[0].scheduler.state_dict()
-                
+                # Optimizer/scheduler states (None unless save_optimizer_state).
+                optimizer_state, scheduler_state = self._optim_states(trainer)
+
                 # Save individual benchmark best model
                 self._save_benchmark_model(
                     benchmark, epoch, results['pck'],
@@ -102,13 +117,8 @@ class CheckpointCallback(pl.Callback):
             self.best_avg_epoch = epoch + 1
             print(f"New best average PCK: {avg_pck:.2f}% (epoch {epoch + 1})")
             
-            # Get optimizer and scheduler states from Lightning
-            optimizer_state = None
-            scheduler_state = None
-            if trainer.optimizers:
-                optimizer_state = trainer.optimizers[0].state_dict()
-            if trainer.lr_scheduler_configs:
-                scheduler_state = trainer.lr_scheduler_configs[0].scheduler.state_dict()
+            # Optimizer/scheduler states (None unless save_optimizer_state).
+            optimizer_state, scheduler_state = self._optim_states(trainer)
             
             # Save overall best model
             self._save_overall_best_model(

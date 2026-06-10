@@ -1,0 +1,71 @@
+# Base training configuration for FlowFormer on the unified pipeline (RC cluster).
+#
+# Mirrors glunet_training_base_rc.yaml so the FlowFormer 2x2 grid is a held-out
+# replication of the GLU-Net / CATs++ pretrained-vs-scratch x freeze design.
+# Pairs with eval_base_rc.yaml and the flowformer_all_pure_rc.yaml sweep.
+#
+# FlowFormer plugs in via model.type: flowformer (models/FlowFormer-Official/
+# flowformer_wrapper.py). It is a cost-volume model whose feature/context
+# encoders are ImageNet-pretrained Twins-SVT transformers; model.pretrain toggles
+# those ImageNet weights and model.freeze freezes both Twins backbones (the
+# cost-volume fnet + the context cnet), leaving the cost-memory encoder and the
+# recurrent decoder trainable. These are the two grid axes.
+#
+# FlowFormer outputs FULL-RESOLUTION flow (handled like RAFT/GLU-Net in
+# CorrespondenceLightningModule), so the sweep sets dataset.downsample_flow: null.
+#
+# FlowFormer expects ImageNet-normalized inputs; the wrapper converts back to the
+# 0-255 range the model wants internally. This is the same normalization
+# convention as GLU-Net/CATs++, so the existing per-dataset configs are reused
+# unchanged.
+#
+# NOTE on optimizer: FlowFormer's encoders are named context_encoder /
+# memory_encoder.feat_encoder -- neither matches the 'backbone'/'feature_extractor'
+# rule in configure_optimizers, so ALL params train at `lr` (single-LR AdamW,
+# matching official FlowFormer) and `lr_backbone` is inert here (kept for config
+# compatibility). When freeze=true the frozen params simply receive no gradient.
+
+model:
+  type: flowformer
+  pretrain: true   # ImageNet-pretrained Twins-SVT encoders; swept on RC
+  freeze: false    # freeze both Twins backbones; swept on RC
+  iters: 12        # decoder refinement iterations (cfg.decoder_depth)
+  pretrained_path: null  # no full-FlowFormer checkpoint resume; backbone loads ImageNet internally
+
+training:
+  epochs: 5000
+  batch_size: 8          # fits an 80GB GPU at 512x512 (~60-65GB); ~16.7GB/sample-pair otherwise
+  accumulate_grad_batches: 1  # raise (e.g. 2-4) with a smaller batch_size to keep effective batch on <80GB GPUs
+  n_threads: 32
+  seed: 2021
+  lr: 2.5e-4          # FlowFormer canonical_lr (single-LR AdamW over the whole model)
+  lr_backbone: 2.5e-6 # inert for FlowFormer (no param name matches the backbone group); kept for compatibility
+  weight_decay: 1.0e-4  # FlowFormer adamw_decay
+  momentum: 0.9
+  scheduler: 'step'   # 'step' or 'cosine'
+  step: '[70, 80, 90]'
+  step_gamma: 0.5
+  steps_per_epoch: 100  # compute-budget cap so validation fires early (matches GLU-Net grid)
+  gradient_clip_val: 1.0  # FlowFormer trains with grad clipping (official: clip_grad_norm 1.0)
+  gradient_clip_algorithm: 'norm'
+
+  # Validation frequency control
+  check_val_every_n_epoch: 20
+
+  augmentation: false
+  min_flow_length: null
+  max_flow_length: null
+
+  # MMD calculation during validation
+  mmd_every_n_epochs: 0
+
+  enable_debug: false
+  debug_visualization_benchmarks: None
+  debug_visualization_persist: true
+
+  eval_initial: true
+
+paths:
+  snapshots: './snapshots'
+  pretrained: null  # FlowFormer loads its ImageNet Twins backbone internally; no checkpoint resume
+  start_epoch: 0

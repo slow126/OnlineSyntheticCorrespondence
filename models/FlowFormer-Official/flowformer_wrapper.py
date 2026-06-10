@@ -46,13 +46,21 @@ def _load_flowformer_modules():
         return _FLOWFORMER_BUILD, _FLOWFORMER_GET_CFG
 
     flowformer_dir = Path(__file__).parent.resolve()
-    # Avoid RAFT's core package shadowing FlowFormer's core (both use "core").
+    core_dir = flowformer_dir / "core"
+    # FlowFormer's own modules import its helpers as top-level packages
+    # (``from utils.utils import ...``, ``from utils import frame_utils``), which
+    # only resolve with ``core/`` on the path. RAFT also ships ``core`` and
+    # ``utils`` packages, so purge any of theirs already imported to stop them
+    # shadowing FlowFormer's (and vice-versa).
     _purge_package("core", flowformer_dir)
     _purge_package("configs", flowformer_dir)
+    _purge_package("utils", core_dir)
 
-    flowformer_path = str(flowformer_dir)
-    if flowformer_path not in sys.path:
-        sys.path.insert(0, flowformer_path)
+    # core/ must precede the FF root so ``utils`` resolves to ``core/utils``.
+    for path in (str(core_dir), str(flowformer_dir)):
+        if path in sys.path:
+            sys.path.remove(path)
+        sys.path.insert(0, path)
 
     from core.FlowFormer import build_flowformer  # pylint: disable=import-error
     from configs.default import get_cfg  # pylint: disable=import-error
@@ -73,34 +81,43 @@ class FlowFormerWrapper(nn.Module):
     def __init__(
         self,
         pretrain: bool = True,
+        freeze: bool = False,
         iters: int = 12,
         pretrained_path: Optional[str] = None,
     ):
         """
         Initialize FlowFormer wrapper.
-        
+
         Args:
-            pretrain: If True, use pretrained Twins-SVT encoder
+            pretrain: If True, initialize the Twins-SVT feature/context encoders
+                with ImageNet-pretrained weights; otherwise train them from scratch.
+            freeze: If True, freeze the two Twins-SVT backbones (the cost-volume
+                feature net ``memory_encoder.feat_encoder`` and the context net
+                ``context_encoder``), leaving the cost-memory encoder and the
+                recurrent decoder trainable. Mirrors the GLU-Net wrapper's
+                ``freeze`` semantics so the 2x2 (pretrain x freeze) grid is
+                directly comparable across architectures.
             iters: Number of refinement iterations (used by decoder)
             pretrained_path: Optional path to pretrained FlowFormer checkpoint
         """
         super().__init__()
 
         build_flowformer, get_cfg = _load_flowformer_modules()
-        
+
         # Get default config
         cfg = get_cfg()
-        
+
         # Override config parameters
         cfg.latentcostformer.pretrain = pretrain
         # Note: decoder_depth controls number of iterations (default is 12)
         # If iters is different, we could override cfg.latentcostformer.decoder_depth = iters
         # But for now, we'll use the default decoder_depth from config
-        
+
         # Build FlowFormer model
         self.flowformer = build_flowformer(cfg)
         self.iters = iters  # Store for reference (decoder_depth in config controls actual iterations)
-        
+        self.freeze = freeze
+
         # Load pretrained weights if provided
         if pretrained_path is not None:
             print(f"Loading pretrained FlowFormer weights from: {pretrained_path}")
@@ -110,7 +127,20 @@ class FlowFormerWrapper(nn.Module):
                 state_dict = {k[7:]: v for k, v in state_dict.items() if k.startswith('module.')}
             self.flowformer.load_state_dict(state_dict, strict=False)
             print("Pretrained FlowFormer weights loaded")
-        
+
+        # Optionally freeze the two Twins-SVT backbones. We match the repo-wide
+        # freeze convention (FeatureExtractor: ``requires_grad_(not freeze)``) --
+        # just drop the encoder params from the autograd graph; the optimizer
+        # skips params with no grad, so no param-group surgery is needed.
+        if freeze:
+            frozen = 0
+            # fnet: builds the cost volume; cnet: context encoder.
+            for enc in (self.flowformer.memory_encoder.feat_encoder,
+                        self.flowformer.context_encoder):
+                enc.requires_grad_(False)
+                frozen += sum(p.numel() for p in enc.parameters())
+            print(f"Froze Twins-SVT fnet+cnet backbones ({frozen:,} params)")
+
         # ImageNet normalization constants (for conversion)
         self.register_buffer('mean', torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1))
         self.register_buffer('std', torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))

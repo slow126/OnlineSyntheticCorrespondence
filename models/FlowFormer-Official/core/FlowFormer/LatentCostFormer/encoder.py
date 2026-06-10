@@ -19,7 +19,8 @@ from .mlpmixer import MLPMixerLayer
 from .convnext import ConvNextLayer
 import time
 
-from timm.models.layers import Mlp, DropPath, activations, to_2tuple, trunc_normal_
+# ``activations`` (unused here) was dropped from timm.models.layers in timm 1.x.
+from timm.models.layers import Mlp, DropPath, to_2tuple, trunc_normal_
 
 class PatchEmbed(nn.Module):
     def __init__(self, patch_size=16, in_chans=1, embed_dim=64, pe='linear'):

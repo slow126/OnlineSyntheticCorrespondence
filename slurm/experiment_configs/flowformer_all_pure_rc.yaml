@@ -1,0 +1,108 @@
+# FlowFormer on ALL pure (non-mix) training sets, 2x2 (pretrain x freeze) grid, RC cluster.
+#
+# Held-out replication of the GLU-Net grid (glunet_all_pure_rc.yaml): same training
+# sets, same eval, same 2x2 encoder design -- only the architecture changes. Tests
+# whether the pretrained-backbone -> recall-bound / scratch -> precision-bound split
+# generalizes to another cost-volume model (FlowFormer = Twins-SVT + latent cost
+# transformer).
+#
+# Covers: 7 base pure sets + 4 synthetic variants + 5 SDF synthetic interventions
+#         = 16 training sets x 4 (pretrain x freeze) = 64 jobs.
+# (+ 2 kubric interventions, currently disabled below until staged on RC.)
+#
+# Generate + submit ON the RC cluster:
+#   python slurm/generate_experiments.py \
+#       -M slurm/machine_configs/remote_long.yaml \
+#       -S slurm/experiment_configs/flowformer_all_pure_rc.yaml
+#   bash slurm/experiment_configs/generated_flowformer_all_pure/submit_all.sh
+#
+# MEMORY: FlowFormer needs ~16.7GB/batch=2 at 512x512; batch 8 fits the 80GB RC
+# GPU (~60-65GB). On a smaller GPU, drop training.batch_size and raise
+# training.accumulate_grad_batches to keep the effective batch at 8.
+#
+# NOTE: the kubric_* entries require their materialized dataset roots to exist on
+# the RC node (see dataset.datapath in the kubric dataset configs). Drop or fix
+# those two entries if the roots are not present.
+
+project_root: "/home/slow1/Projects/OnlineSyntheticCorrespondence"
+
+training_base: "src/configs/lightning/flowformer_training_base_rc.yaml"
+eval_base: "src/configs/lightning/eval_base_rc.yaml"
+
+training_datasets:
+  # --- 7 base pure training sets ---
+  - name: "synthetic"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}  # GPU-bound rendering
+  - name: "spair"
+    dataset_config: "src/configs/lightning/datasets/spair_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 32}
+  - name: "flyingthings"
+    dataset_config: "src/configs/lightning/datasets/flyingthings_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 32}
+  - name: "pointodyssey"
+    dataset_config: "src/configs/lightning/datasets/pointodyssey_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 4}
+  - name: "sintel"
+    dataset_config: "src/configs/lightning/datasets/sintel_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 32}
+  - name: "imagenet2dwarp"
+    dataset_config: "src/configs/lightning/datasets/imagenet2dwarp_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 32}
+  - name: "movi_f"
+    dataset_config: "src/configs/lightning/datasets/movi_f_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 4}
+
+  # --- 4 synthetic variants ---
+  - name: "synthetic_2d_warp"
+    dataset_config: "src/configs/lightning/datasets/synthetic_2d_warp_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "synthetic_random_flipping"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc_random_flipping.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "synthetic_small_zoom"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc_small_zoom.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "synthetic_large_zoom"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc_large_zoom.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+
+  # --- 5 SDF synthetic interventions (dataset_name: synthetic + geometry overrides) ---
+  - name: "sdf_flyingthings_trial80_widebnds"
+    dataset_config: "src/configs/lightning/datasets/sdf_flyingthings_trial80_widebnds_ds.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "sdf_kitti2015_trial0002"
+    dataset_config: "src/configs/lightning/datasets/sdf_kitti2015_trial0002_ds.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "sdf_kitti2015_trial76_widebnds"
+    dataset_config: "src/configs/lightning/datasets/sdf_kitti2015_trial76_widebnds_ds.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "sdf_middlebury_trial45_widebnds"
+    dataset_config: "src/configs/lightning/datasets/sdf_middlebury_trial45_widebnds_ds.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "sdf_kitti2015_large_zoom"
+    dataset_config: "src/configs/lightning/datasets/sdf_kitti2015_large_zoom_ds.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+
+  # --- 2 kubric interventions: NOT staged on RC yet (being materialized locally,
+  #     then copied over). Re-enable after setting machine.datasets.kubric_root. ---
+  # - name: "kubric_kitti2015_lowtex_matte"
+  #   dataset_config: "src/configs/lightning/datasets/kubric_kitti2015_lowtex_matte_ds.yaml"
+  #   overrides: {training.batch_size: 8, training.n_threads: 4}
+  # - name: "kubric_intervention"
+  #   dataset_config: "src/configs/lightning/datasets/kubric_intervention_rc.yaml"
+  #   overrides: {training.batch_size: 8, training.n_threads: 4}
+
+output_dir: "/home/slow1/Projects/OnlineSyntheticCorrespondence/slurm/experiment_configs/generated_flowformer_all_pure"
+
+sweeps:
+  # 2x2 FlowFormer encoder grid: ImageNet-pretrained Twins backbone x frozen backbone (4 runs each)
+  - name: "flowformer_grid"
+    parameters:
+      model.type: flowformer
+      training.steps_per_epoch: 100
+      training.check_val_every_n_epoch: 20
+      dataset.downsample_flow: null   # full-res flow (FlowFormer outputs full-resolution flow) + eval
+      model.pretrain: [true, false]
+      model.freeze: [true, false]
+    name_template: "flowformer_steps{training.steps_per_epoch}_pretrain{model.pretrain}_freeze{model.freeze}"
