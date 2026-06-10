@@ -27,7 +27,11 @@
 project_root: "/home/slow1/Projects/OnlineSyntheticCorrespondence"
 
 training_base: "src/configs/lightning/flowformer_training_base_rc.yaml"
-eval_base: "src/configs/lightning/eval_base_rc.yaml"
+# Fast-synthetic eval base: serves the 1000-sample pre-rendered synthetic val set
+# from /home/slow1/Data/synthetic_val_cache_v1 (no live renderer -> no SIGABRT, much
+# faster), and uses val_num_workers: 8 to avoid the host-RAM oom_kill. Otherwise
+# identical to eval_base_rc.yaml (same 10 benchmarks, same roots).
+eval_base: "src/configs/lightning/eval_base_rc_fastsynth.yaml"
 
 training_datasets:
   # --- 7 base pure training sets ---
@@ -103,6 +107,9 @@ sweeps:
       training.steps_per_epoch: 100
       training.check_val_every_n_epoch: 20
       dataset.downsample_flow: null   # full-res flow (FlowFormer outputs full-resolution flow) + eval
+      # FlowFormer eval uses only ~14GB at batch 8 on the 80GB GPU; batch 32 (~56GB)
+      # gives ~4x eval throughput. Eval is forward-only, so this is well within memory.
+      evaluation.val_batch_size: 32
       model.pretrain: [true, false]
       model.freeze: [true, false]
     name_template: "flowformer_steps{training.steps_per_epoch}_pretrain{model.pretrain}_freeze{model.freeze}"
