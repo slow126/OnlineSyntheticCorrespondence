@@ -161,12 +161,16 @@ class FlowFormerWrapper(nn.Module):
         trg_img_255 = ((trg_img * self.std + self.mean) * 255.0).clamp(0, 255)
         src_img_255 = ((src_img * self.std + self.mean) * 255.0).clamp(0, 255)
         
-        # Forward pass through FlowFormer - returns list of predictions
-        # Note: FlowFormer expects (image1, image2) where image1 is source, image2 is target
-        flow_predictions = self.flowformer(src_img_255, trg_img_255, output={}, flow_init=None)
-        
-        # Extract final prediction for dense correspondence
-        # flow_predictions is a list, last element is the final refined prediction
-        final_flow = flow_predictions[-1]  # (B, 2, H, W)
-        
-        return final_flow
+        # Note: FlowFormer expects (image1, image2) where image1 is source, image2 is target.
+        # The decoder's return signature DIFFERS by mode (see LatentCostFormer/decoder.py):
+        #   - training:  a list of full-resolution predictions; [-1] is the final refined one.
+        #   - eval:      a tuple (full_res_flow, low_res_flow_at_1/8); [0] is full-resolution.
+        # Taking [-1] unconditionally would grab the 1/8-res flow at eval time (B,2,H/8,W/8),
+        # which then mismatches the full-res GT in the evaluator. Always return full-res.
+        out = self.flowformer(src_img_255, trg_img_255, output={}, flow_init=None)
+        if self.training:
+            final_flow = out[-1]   # list of full-res preds -> last/final
+        else:
+            final_flow = out[0]    # (full_res_flow, low_res_flow) -> full-res
+
+        return final_flow  # (B, 2, H, W)
