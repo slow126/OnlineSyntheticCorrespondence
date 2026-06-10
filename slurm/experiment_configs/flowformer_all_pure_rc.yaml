@@ -105,7 +105,11 @@ sweeps:
     parameters:
       model.type: flowformer
       training.steps_per_epoch: 100
-      training.check_val_every_n_epoch: 20
+      # Eval every 50 epochs (=5000 steps). FlowFormer's 10-benchmark eval is
+      # compute-bound (~20-30 min); at the old cadence of 20 it ate ~25% of the
+      # 24h walltime. 50 keeps ~5 convergence-tracking points while leaving more
+      # walltime for training. Best-per-benchmark checkpointing still captures peaks.
+      training.check_val_every_n_epoch: 50
       dataset.downsample_flow: null   # full-res flow (FlowFormer outputs full-resolution flow) + eval
       # FlowFormer eval uses only ~14GB at batch 8 on the 80GB GPU; batch 32 (~56GB)
       # gives ~4x eval throughput. Eval is forward-only, so this is well within memory.

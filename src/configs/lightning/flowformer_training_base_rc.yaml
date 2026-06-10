@@ -49,8 +49,10 @@ training:
   gradient_clip_val: 1.0  # FlowFormer trains with grad clipping (official: clip_grad_norm 1.0)
   gradient_clip_algorithm: 'norm'
 
-  # Validation frequency control
-  check_val_every_n_epoch: 20
+  # Validation frequency control (eval every 50 epochs = 5000 steps; the grid
+  # sweep also pins this. FlowFormer's 10-benchmark eval is compute-bound, so
+  # evaluating less often is the main lever for fitting training into 24h.)
+  check_val_every_n_epoch: 50
 
   augmentation: false
   min_flow_length: null
