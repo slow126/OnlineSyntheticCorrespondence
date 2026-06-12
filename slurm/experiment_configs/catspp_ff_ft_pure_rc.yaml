@@ -1,0 +1,77 @@
+# CATs++ scratch re-run: FF (pretrained=False, freeze=False) + FT (pretrained=False, freeze=True)
+# across all 11 PURE training sources, to a COMMON converged horizon.
+#
+# WHY: the existing CATs++ FF/FT snapshots are mostly failed/short (inventory 2026-06-12):
+#   FF converged only for movi_f (38ep) + pointodyssey (31ep); spair FAILED (1ep);
+#   flyingthings + sintel MISSING; synthetic family 9-12ep (synthetic_2d_warp still
+#   climbing at 9ep). The CATs++-FF directional anomaly (precision-leaning) is computed
+#   on undertrained data -> retrain clean before trusting it.
+#
+# Launch ON the RC cluster after git pull:
+#   python slurm/generate_experiments.py \
+#       -M slurm/machine_configs/remote_long.yaml \
+#       -S slurm/experiment_configs/catspp_ff_ft_pure_rc.yaml \
+#       -O slurm/experiment_configs/generated_catspp_ff_ft_pure_rc
+#   bash slurm/experiment_configs/generated_catspp_ff_ft_pure_rc/submit_all.sh
+#
+# 11 sources x 2 regimes = 22 jobs, 24h walltime each. check_val every 5 epochs so
+# convergence is visible per source. epochs:50 is a CEILING (materialized reach ~38 in
+# 24h; render-bound synthetic ~12 and plateau there). Verify convergence from each run's
+# validation curve (peak plateaus; last-5-epoch slope ~0) rather than a fixed epoch;
+# truncate to the converged peak. Resubmit (resume from last.ckpt) any still climbing.
+
+project_root: "/home/slow1/Projects/OnlineSyntheticCorrespondence"
+
+training_base: "src/configs/lightning/training_base_rc.yaml"
+eval_base: "src/configs/lightning/eval_base_rc.yaml"
+
+training_datasets:
+  # --- online SDF-rendered synthetic (GPU-bound; n_threads 0) ---
+  - name: "synthetic"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "synthetic_2d_warp"
+    dataset_config: "src/configs/lightning/datasets/synthetic_2d_warp_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "synthetic_large_zoom"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc_large_zoom.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "synthetic_small_zoom"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc_small_zoom.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "synthetic_random_flipping"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc_random_flipping.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  # --- materialized / disk-backed (n_threads 4) ---
+  - name: "movi_f"
+    dataset_config: "src/configs/lightning/datasets/movi_f_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 4}
+  - name: "flyingthings"
+    dataset_config: "src/configs/lightning/datasets/flyingthings_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 4}
+  - name: "pointodyssey"
+    dataset_config: "src/configs/lightning/datasets/pointodyssey_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 4}
+  - name: "sintel"
+    dataset_config: "src/configs/lightning/datasets/sintel_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 4}
+  - name: "imagenet2dwarp"
+    dataset_config: "src/configs/lightning/datasets/imagenet2dwarp_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 4}
+  - name: "spair"
+    dataset_config: "src/configs/lightning/datasets/spair_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 4}
+
+output_dir: "/home/slow1/Projects/OnlineSyntheticCorrespondence/slurm/experiment_configs/generated_catspp_ff_ft_pure_rc"
+
+sweeps:
+  # CATs++ scratch only: pretrained_backbone=False, freeze in {False, True} -> FF + FT
+  - name: "catspp_scratch_ff_ft"
+    parameters:
+      model.type: cats
+      model.pretrained_backbone: [false]
+      model.freeze: [false, true]
+      training.steps_per_epoch: 100
+      training.epochs: 50
+      training.check_val_every_n_epoch: 5
+    name_template: "cats_steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"
