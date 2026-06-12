@@ -74,4 +74,5 @@ sweeps:
       training.steps_per_epoch: 100
       training.epochs: 50
       training.check_val_every_n_epoch: 5
+      paths.save_epoch_checkpoints: false   # best-only (model_best + {benchmark}_best); no 186MB/epoch waste
     name_template: "cats_steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"
