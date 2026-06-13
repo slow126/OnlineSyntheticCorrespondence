@@ -1,0 +1,87 @@
+# CATs++ scratch re-run #2 — HIGH backbone LR + long horizon.
+# FF (pretrained=False, freeze=False) + FT (pretrained=False, freeze=True), 11 PURE sources.
+#
+# WHY: in the first scratch re-run (catspp_ff_ft_pure_rc), FF agreed with FT at
+#   rho~0.87 AND barely beat it in absolute PCK (movi_f FF 45.85 vs FT 45.74). FT is
+#   a FROZEN RANDOM encoder, so FF ~= FT means the FF encoder is near-noise: it was
+#   trained at the default lr_backbone=3e-6 (a *fine-tuning* LR) for only 50 epochs,
+#   far too little to bring up a random ResNet101. Test: with a from-scratch-appropriate
+#   backbone LR (3e-4, 100x) and a 4x horizon (200 ep), does FF's encoder actually learn
+#   -> FF pulls AWAY from FT (and maybe toward the pretrained TF/TT camp = coverage law)?
+#   If FF still ~= FT, scratch CATs++ is encoder-bottlenecked in this compute regime.
+#   Baseline (3e-6/50ep) curves archived at snapshots_archive/undertrained_ff_ft_baseline_2026_06_13.
+#
+#   ONLY changes vs the first re-run: training.lr_backbone 3e-6->3e-4, epochs 50->200,
+#   step milestones scaled to the 200ep horizon ([140,160,180]). Everything else identical.
+#   FT's lr_backbone is inert (frozen) -> FT changes only via the longer head-training
+#   horizon, which is exactly the matched-head-budget control for the FF-vs-FT test.
+#
+# Launch ON RC after git pull:
+#   python slurm/generate_experiments.py \
+#       -M slurm/machine_configs/remote_long.yaml \
+#       -S slurm/experiment_configs/catspp_ff_ft_hilr_rc.yaml \
+#       -O slurm/experiment_configs/generated_catspp_ff_ft_hilr_rc
+#   bash slurm/experiment_configs/generated_catspp_ff_ft_hilr_rc/submit_all.sh
+#
+# 11 sources x 2 regimes = 22 jobs, 24h walltime. epochs:200 is a CEILING; walltime
+# caps actual epochs. ulimit -c 0 is now baked into the generated job scripts (no cores).
+
+project_root: "/home/slow1/Projects/OnlineSyntheticCorrespondence"
+
+training_base: "src/configs/lightning/training_base_rc.yaml"
+eval_base: "src/configs/lightning/eval_base_rc.yaml"
+
+training_datasets:
+  # --- online SDF-rendered synthetic (GPU-bound; n_threads 0) ---
+  - name: "synthetic"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "synthetic_2d_warp"
+    dataset_config: "src/configs/lightning/datasets/synthetic_2d_warp_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "synthetic_large_zoom"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc_large_zoom.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "synthetic_small_zoom"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc_small_zoom.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "synthetic_random_flipping"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc_random_flipping.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  # --- materialized / disk-backed (n_threads 4) ---
+  - name: "movi_f"
+    dataset_config: "src/configs/lightning/datasets/movi_f_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 4}
+  - name: "flyingthings"
+    dataset_config: "src/configs/lightning/datasets/flyingthings_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 4}
+  - name: "pointodyssey"
+    dataset_config: "src/configs/lightning/datasets/pointodyssey_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 4}
+  - name: "sintel"
+    dataset_config: "src/configs/lightning/datasets/sintel_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 4}
+  - name: "imagenet2dwarp"
+    dataset_config: "src/configs/lightning/datasets/imagenet2dwarp_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 4}
+  - name: "spair"
+    dataset_config: "src/configs/lightning/datasets/spair_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 4}
+
+output_dir: "/home/slow1/Projects/OnlineSyntheticCorrespondence/slurm/experiment_configs/generated_catspp_ff_ft_hilr_rc"
+
+sweeps:
+  # CATs++ scratch only: pretrained_backbone=False, freeze in {False, True} -> FF + FT
+  # HIGH backbone LR (3e-4) + 200-epoch horizon + scaled step schedule.
+  - name: "catspp_scratch_ff_ft_hilr"
+    parameters:
+      model.type: cats
+      model.pretrained_backbone: [false]
+      model.freeze: [false, true]
+      training.lr_backbone: 3e-4           # was 3e-6 (fine-tuning LR); 100x for from-scratch encoder
+      training.epochs: 200                  # was 50; 4x horizon
+      training.step: "[140, 160, 180]"      # scale milestones to the 200ep horizon (long high-LR phase, then anneal)
+      training.steps_per_epoch: 100
+      training.check_val_every_n_epoch: 10
+      paths.save_epoch_checkpoints: false   # best-only; no 186MB/epoch waste
+    name_template: "cats_hilr_steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"

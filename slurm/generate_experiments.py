@@ -141,6 +141,11 @@ echo "Activated conda environment: {conda_env}"
 """
     
     script_content += f"""
+# Disable core dumps. A crash here (notably the live renderer's SIGABRT) otherwise
+# writes a 20+GB core to the shared home filesystem; a few of those fill the disk
+# and cascade-kill every other running job. ulimit -c 0 => crash cleanly, no core.
+ulimit -c 0
+
 # Force HF offline mode for isolated clusters
 export HF_DATASETS_OFFLINE=1
 export HF_HUB_OFFLINE=1
