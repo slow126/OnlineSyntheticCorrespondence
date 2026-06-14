@@ -1,0 +1,77 @@
+project_root: /home/slow1/Projects/OnlineSyntheticCorrespondence
+training_base: src/configs/lightning/training_base_rc.yaml
+eval_base: src/configs/lightning/eval_base_rc.yaml
+training_datasets:
+- name: synthetic
+  dataset_config: src/configs/lightning/datasets/synthetic_rc.yaml
+  overrides:
+    training.batch_size: 8
+    training.n_threads: 0
+- name: synthetic_2d_warp
+  dataset_config: src/configs/lightning/datasets/synthetic_2d_warp_rc.yaml
+  overrides:
+    training.batch_size: 8
+    training.n_threads: 0
+- name: synthetic_large_zoom
+  dataset_config: src/configs/lightning/datasets/synthetic_rc_large_zoom.yaml
+  overrides:
+    training.batch_size: 8
+    training.n_threads: 0
+- name: synthetic_small_zoom
+  dataset_config: src/configs/lightning/datasets/synthetic_rc_small_zoom.yaml
+  overrides:
+    training.batch_size: 8
+    training.n_threads: 0
+- name: synthetic_random_flipping
+  dataset_config: src/configs/lightning/datasets/synthetic_rc_random_flipping.yaml
+  overrides:
+    training.batch_size: 8
+    training.n_threads: 0
+- name: movi_f
+  dataset_config: src/configs/lightning/datasets/movi_f_rc.yaml
+  overrides:
+    training.batch_size: 8
+    training.n_threads: 4
+- name: flyingthings
+  dataset_config: src/configs/lightning/datasets/flyingthings_rc.yaml
+  overrides:
+    training.batch_size: 8
+    training.n_threads: 4
+- name: pointodyssey
+  dataset_config: src/configs/lightning/datasets/pointodyssey_rc.yaml
+  overrides:
+    training.batch_size: 8
+    training.n_threads: 4
+- name: sintel
+  dataset_config: src/configs/lightning/datasets/sintel_rc.yaml
+  overrides:
+    training.batch_size: 8
+    training.n_threads: 4
+- name: imagenet2dwarp
+  dataset_config: src/configs/lightning/datasets/imagenet2dwarp_rc.yaml
+  overrides:
+    training.batch_size: 8
+    training.n_threads: 4
+- name: spair
+  dataset_config: src/configs/lightning/datasets/spair_rc.yaml
+  overrides:
+    training.batch_size: 8
+    training.n_threads: 4
+output_dir: /home/slow1/Projects/OnlineSyntheticCorrespondence/slurm/experiment_configs/generated_catspp_ff_ft_lolr_rc
+sweeps:
+- name: catspp_scratch_ff_ft_lolr
+  parameters:
+    model.type: cats
+    model.pretrained_backbone:
+    - false
+    model.freeze:
+    - false
+    - true
+    training.lr_backbone: 3e-5
+    training.epochs: 200
+    training.step: '[140, 160, 180]'
+    training.steps_per_epoch: 100
+    training.check_val_every_n_epoch: 5
+    paths.save_epoch_checkpoints: false
+    training.lr: 1e-5
+  name_template: cats_lolr_steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}

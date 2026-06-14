@@ -159,7 +159,7 @@ export HF_HUB_OFFLINE=1
 # -u flag disables Python buffering for real-time log output
 echo "Starting training..."
 echo "Command: python3 -u train_lightning.py --config {config_path_abs}"
-srun --ntasks=1 python3 -u train_lightning.py --config {config_path_abs}
+srun --ntasks=1 bash -c "ulimit -c 0; python3 -u train_lightning.py --config {config_path_abs}"
 training_exit=$?
 
 # Propagate srun's exit code so SLURM reports FAILED (not COMPLETED) on a crash.
