@@ -1,0 +1,108 @@
+# GLU-Net motion-ladder grid (FF + TF) on the 20 kitti motion x appearance datasets.
+# FF = scratch trainable encoder, TF = ImageNet-pretrained trainable encoder
+# (apples-to-apples: both freeze=False, only init differs). Eval on full suite
+# incl. kitti2012/kitti2015/flyingthings. Datapaths are per-dataset (kubric_root
+# stays unset in the machine config, so each config's own path is kept).
+#
+# Generate on RC:
+#   python slurm/generate_experiments.py -M slurm/machine_configs/remote_long.yaml \
+#       -S slurm/experiment_configs/glunet_ladder_ff_tf_rc.yaml -O slurm/glunet_jobs_ladder
+#   bash slurm/glunet_jobs_ladder/submit_all.sh
+
+project_root: "/home/slow1/Projects/OnlineSyntheticCorrespondence"
+training_base: "src/configs/lightning/glunet_training_base_rc.yaml"
+eval_base: "src/configs/lightning/eval_base_rc_fastsynth.yaml"
+
+training_datasets:
+  - name: "kitti_m025_hq"
+    dataset_config: "src/configs/lightning/datasets/ladder/kitti_m025_hq_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 16}
+  - name: "kitti_m050_hq"
+    dataset_config: "src/configs/lightning/datasets/ladder/kitti_m050_hq_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 16}
+  - name: "kitti_m100_hq"
+    dataset_config: "src/configs/lightning/datasets/ladder/kitti_m100_hq_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 16}
+  - name: "kitti_m150_hq"
+    dataset_config: "src/configs/lightning/datasets/ladder/kitti_m150_hq_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 16}
+  - name: "kitti_m200_hq"
+    dataset_config: "src/configs/lightning/datasets/ladder/kitti_m200_hq_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 16}
+  - name: "kitti_m025_matte"
+    dataset_config: "src/configs/lightning/datasets/ladder/kitti_m025_matte_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 16}
+  - name: "kitti_m050_matte"
+    dataset_config: "src/configs/lightning/datasets/ladder/kitti_m050_matte_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 16}
+  - name: "kitti_m100_matte"
+    dataset_config: "src/configs/lightning/datasets/ladder/kitti_m100_matte_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 16}
+  - name: "kitti_m150_matte"
+    dataset_config: "src/configs/lightning/datasets/ladder/kitti_m150_matte_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 16}
+  - name: "kitti_m200_matte"
+    dataset_config: "src/configs/lightning/datasets/ladder/kitti_m200_matte_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 16}
+  - name: "kitti_m025_gsohq"
+    dataset_config: "src/configs/lightning/datasets/ladder/kitti_m025_gsohq_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 16}
+  - name: "kitti_m050_gsohq"
+    dataset_config: "src/configs/lightning/datasets/ladder/kitti_m050_gsohq_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 16}
+  - name: "kitti_m100_gsohq"
+    dataset_config: "src/configs/lightning/datasets/ladder/kitti_m100_gsohq_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 16}
+  - name: "kitti_m150_gsohq"
+    dataset_config: "src/configs/lightning/datasets/ladder/kitti_m150_gsohq_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 16}
+  - name: "kitti_m200_gsohq"
+    dataset_config: "src/configs/lightning/datasets/ladder/kitti_m200_gsohq_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 16}
+  - name: "kitti_m025_gsomatte"
+    dataset_config: "src/configs/lightning/datasets/ladder/kitti_m025_gsomatte_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 16}
+  - name: "kitti_m050_gsomatte"
+    dataset_config: "src/configs/lightning/datasets/ladder/kitti_m050_gsomatte_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 16}
+  - name: "kitti_m100_gsomatte"
+    dataset_config: "src/configs/lightning/datasets/ladder/kitti_m100_gsomatte_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 16}
+  - name: "kitti_m150_gsomatte"
+    dataset_config: "src/configs/lightning/datasets/ladder/kitti_m150_gsomatte_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 16}
+  - name: "kitti_m200_gsomatte"
+    dataset_config: "src/configs/lightning/datasets/ladder/kitti_m200_gsomatte_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 16}
+
+output_dir: "/home/slow1/Projects/OnlineSyntheticCorrespondence/slurm/experiment_configs/generated_glunet_ladder"
+
+sweeps:
+  - name: "scratch_unfrozen"
+    parameters:
+      model.type: glunet
+      training.epochs: 100
+      training.steps_per_epoch: 100
+      training.check_val_every_n_epoch: 20
+      training.seed: 2021
+      training.scheduler: cosine
+      training.gradient_clip_val: 1.0
+      paths.save_epoch_checkpoints: false
+      dataset.downsample_flow: null
+      model.pretrained_backbone: false
+      model.freeze: false
+    name_template: "glunet_ladder_steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"
+  - name: "pretrained_unfrozen"
+    parameters:
+      model.type: glunet
+      training.epochs: 100
+      training.steps_per_epoch: 100
+      training.check_val_every_n_epoch: 20
+      training.seed: 2021
+      training.scheduler: cosine
+      training.gradient_clip_val: 1.0
+      paths.save_epoch_checkpoints: false
+      dataset.downsample_flow: null
+      model.pretrained_backbone: true
+      model.freeze: false
+    name_template: "glunet_ladder_steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"
