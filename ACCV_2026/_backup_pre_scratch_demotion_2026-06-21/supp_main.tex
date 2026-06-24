@@ -1,0 +1,670 @@
+\documentclass[runningheads]{llncs}
+\usepackage[review,year=2026,ID=*****]{accv}
+\usepackage{accvabbrv}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb}
+\usepackage{multirow}
+\usepackage{pifont}
+\newcommand{\cmark}{\ding{51}}
+\usepackage[accsupp]{axessibility}
+\usepackage{colortbl}
+\usepackage[pagebackref,breaklinks,colorlinks,citecolor=accvblue]{hyperref}
+
+\usepackage{fontawesome5}
+\newcommand{\dtb}{d_{T\to B}}
+\newcommand{\dbt}{d_{B\to T}}
+\newcommand{\pck}{PCK}
+% encoder-state glyphs (shared with the main paper): fire = trained, snowflake = frozen
+\newcommand{\enctrained}{\textcolor{orange!90!red}{\faFire}}
+\newcommand{\encfrozen}{\textcolor{cyan!55!blue}{\faSnowflake[regular]}}
+\newcommand{\bst}[1]{\textcolor{green!60!black}{#1}}
+
+\begin{document}
+
+\title{Supplementary Material:\\Cover the Motion, Not the Look}
+\titlerunning{Cover the Motion, Not the Look (Supplementary)}
+\author{Anonymous ACCV 2026 Submission}
+\authorrunning{ACCV-26 submission ID *****}
+\institute{Paper ID *****}
+\maketitle
+
+\noindent This supplement provides: the full per-configuration
+estimator-replication and appearance-control tables behind the coverage law,
+together with the pooled ``flip'' statistic and the analysis showing it to be a
+stratification artifact (Sec.~\ref{supp:law}); robustness controls
+(Sec.~\ref{supp:robust}); predictor ablations including the feature-set
+comparison for the per-regime linear models (Sec.~\ref{supp:predict});
+sampling-stability measurements justifying the choice of support-geometry
+estimators (Sec.~\ref{supp:sampling}); the Middlebury exclusion
+(Sec.~\ref{supp:mid}); the encoder-degeneracy analysis of off-target mass, the density
+negative control, and the spatial-vs-flow decomposition of the coverage signal
+(Sec.~\ref{supp:newrobust}); and additional figures (Sec.~\ref{supp:figs}).
+
+% =====================================================================
+\section{The Design Cut: Off-Design From-Scratch Training}
+\label{supp:designcut}
+
+The main analysis reports each architecture in its designed training regime: the
+backbone-dependent matchers (CATs++, GLU-Net, FlowFormer) with a pretrained
+backbone, and RAFT---the one architecture built for it---from scratch
+(main Sec.~3). This section documents the off-design configurations (training the
+backbone-dependent matchers from scratch) in full, together with the two
+motion-free checks behind the cut. The partition is a property of architecture
+design, fixed before any motion distance is computed, so it is not an
+outcome-based exclusion: it follows from how the architectures were built.
+
+\noindent\textbf{Source-sensitivity exposes the collapse.} Holding the target
+image fixed, we swap the source image and record how far the predicted flow field
+moves relative to its own magnitude---its \emph{source-sensitivity}. A genuine
+matcher must move a great deal (a different source implies a different
+correspondence); a model collapsed to a fixed field barely moves.
+Table~\ref{tab:staticprior} reports it for the from-scratch backbone-dependent
+matchers, averaged by target type and training-source type. The working matchers
+on real motion (GLU-Net/FlowFormer) set the healthy scale at $5$--$9$; on semantic
+targets every model falls to $\le0.5$, and under the semantic source to
+${\approx}0.1$. The failed models stop tracking their input.
+
+\begin{table}[h]
+\centering
+\caption{\textbf{Source-sensitivity exposes the static-prior collapse} of
+off-design from-scratch training. How far a from-scratch model's predicted flow
+moves when the source image is swapped (target fixed), relative to its magnitude:
+large $=$ a working matcher, $\to0$ $=$ a static prior that ignores the input.
+\colorbox{green!16}{Green}: working ($5$--$9$ for GLU-Net/FlowFormer, \textbf{bold});
+\colorbox{gray!15}{Gray}: collapsed ($\le0.5$). $^{\dagger}$CATs++ from scratch
+still responds on real motion but transfers below random features
+($\Delta_{\text{enc}}<0$, Table~\ref{tab:degenerate}).}
+\label{tab:staticprior}
+\footnotesize
+\renewcommand{\arraystretch}{0.95}
+\setlength{\tabcolsep}{5pt}
+\input{tables/tab_staticprior}
+\end{table}
+
+\noindent\textbf{Encoder gain $\Delta_{\text{enc}}$.} The second check asks
+whether training a from-scratch encoder beats \emph{leaving it random}.
+Table~\ref{tab:degenerate} reports each from-scratch model's peak \pck{} with the
+encoder trained end-to-end (\enctrained) versus frozen at its random
+initialization (\encfrozen); $\Delta_{\text{enc}}{\le}0$ means training the
+encoder fails to beat leaving it random---the network never learned to match. This
+holds for every architecture on semantic targets and, uniquely, for CATs++ even on
+real motion (training the encoder \emph{costs} $8$ \pck). Because the criterion
+never looks at a motion distance, it corroborates the cut without circularity, and
+a higher-learning-rate schedule only collapses CATs++ further (not undertraining).
+
+\begin{table}[h]
+\centering
+\caption{\textbf{Does training the backbone from scratch beat \emph{not} training
+it? ($\Delta_{\text{enc}}$).} \emph{Both} encoders start from the same random
+initialization---no pretrained weights anywhere. $\Delta_{\text{enc}}{\le}0$
+(\textbf{bold}) means training a random encoder fails to beat leaving it random
+(\emph{not} that a pretrained encoder underperforms).}
+\label{tab:degenerate}
+\small
+\setlength{\tabcolsep}{3pt}
+\input{tables/tab_degenerate}
+\end{table}
+
+\noindent\textbf{Complete coverage tables (every configuration).}
+Tables~\ref{tab:law_full} (motion) and~\ref{tab:lawdino_full} (appearance) give
+the within-context coverage correlations for \emph{all} configurations, including
+the off-design from-scratch ones dropped from the main tables. The pattern
+confirms the cut: from scratch, the backbone-dependent matchers' real-motion
+coverage looks superficially positive (GLU-Net/FlowFormer), but CATs++ from
+scratch \emph{anti}-predicts on semantic targets ($\dbt$ $-0.42$/$-0.51$)---%
+coverage cannot rank sources for a model that ignores its input---and the
+off-target ($\dtb$) signal that surfaces from scratch is the bias signature of the
+static-prior collapse, not a second selection law. Under a backbone (and for
+RAFT, by design), coverage is the consistent positive predictor.
+
+\begin{table}[h]
+\centering
+\caption{\textbf{Motion-coverage law, every configuration} (main-paper
+Table~3 plus the off-design from-scratch rows). Within-context Spearman $\rho$
+(transfer vs.\ $-$distance); $\dbt$ (coverage) in \textbf{bold}.}
+\label{tab:law_full}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\input{tables/tab_law_full}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{\textbf{Appearance (DINO) control, every configuration} (main-paper
+Table~4 plus the off-design from-scratch rows). No direction carries usable
+ranking signal in any regime.}
+\label{tab:lawdino_full}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\input{tables/tab_law_dino_full}
+\end{table}
+
+% =====================================================================
+\section{Per-Configuration Evidence and the Pooled Flip}
+\label{supp:law}
+
+An earlier version of this analysis reported a pooled ``flip'' statistic---which
+single direction predicts better, averaged over configurations. We document it
+here, and show it is an artifact of pooling real-motion and semantic benchmarks
+(main Sec.~4): once the from-scratch$\times$semantic regime is separated
+out, there is no flip to explain. We give the per-configuration evidence
+together with the flip statistic and its (genuinely tight) robustness, so the
+artifact is documented rather than hidden. The takeaway matches the main text:
+coverage is the consistent predictor under a backbone, the symmetric metrics
+hedge, and the pooled flip is real \emph{as a pooled statistic} but is not a
+separate law.
+
+\subsection{Per-configuration coverage vs.\ symmetric, all metrics}
+Table~\ref{tab:supp_asym} reports, per configuration, the regime-matched
+coverage correlation against both fixed directions and three symmetric baselines
+(the symmetric mean-NN average, FID, and sliced Wasserstein-2, all in the
+same BFV motion space). We also evaluated MMD but exclude it throughout, as its
+kernel estimate was unstable across bandwidths and sampling budgets. Coverage's margin over the symmetric metrics is largest
+exactly where the two directions disagree most (pretrained GLU-Net), and the
+symmetric metrics hedge everywhere---consistent with the main-paper claim that
+direction-blind distances average the two failure modes together and so dilute
+coverage under a backbone.
+
+\begin{table}[h]
+\centering
+\caption{Per-configuration ranking correlations behind the coverage law: the
+regime-matched rule vs.\ the two fixed directions ($\dtb$ off-target, $\dbt$
+coverage) and three symmetric baselines (mean-NN sym, FID, sliced-$W_2$), all in
+BFV motion space. Encoder: \enctrained\ trained, \encfrozen\ frozen. Coverage
+($\dbt$) is the consistent positive predictor under a pretrained backbone, where
+the two directions disagree most; the symmetric metrics hedge everywhere.}
+\label{tab:supp_asym}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\input{tables/tab_supp_asym}
+\end{table}
+
+\subsection{Estimator replication: $\epsilon$-radius coverage}
+Table~\ref{tab:supp_eps} replicates the coverage signal with a Monte-Carlo
+$\epsilon$-radius support-overlap estimator at 1, 4, and 16\,px (thresholds
+mapped into the normalized BFV space), in both the directed and the symmetric
+framing. The directional structure is identical to mean-NN---coverage is the
+predictive direction, off-target near-dead, symmetric in between---so the
+asymmetry is not an artifact of the mean-NN estimator. On the design-defined set,
+$\epsilon$-4\,px coverage slightly \emph{edges} mean-NN on real-motion targets
+(within-context $\rho$ $+0.64$ vs.\ $+0.60$) but trails it on semantic ($+0.36$
+vs.\ $+0.53$) and overall ($+0.53$ vs.\ $+0.57$); 1\,px saturates (too strict) and
+16\,px loosens. We keep the single mean-NN distance as the default: best
+all-round, and with no radius to tune. \emph{Learning a combination does not
+help.} A linear combiner over all six directional $\epsilon$ features (three radii
+$\times$ two directions), fit leave-one-source-out, overfits---within-context
+$\rho{=}0.56$ in-fold but only $0.34$ held out, \emph{below} the single fit-free
+distance ($0.57$), and even adding mean-NN to the six reaches just $0.45$. This is
+a further instance of the learned-combiner negative control (main Sec.~5): the
+extra granularity is fitting noise, not signal.
+
+\begin{table}[h]
+\centering
+\caption{$\epsilon$-radius coverage replication of the rule (per variant,
+regime-grouped).}
+\label{tab:supp_eps}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\input{tables/tab_supp_eps}
+\end{table}
+
+\subsection{The appearance-space mirror (negative control)}
+Table~\ref{tab:supp_dino} runs the identical per-variant analysis in DINOv3
+appearance space. Correlations are weak-to-negative in both directions for
+every variant; the flip statistic is $+0.018$ (exact permutation $p{=}0.43$)
+and its leave-one-benchmark-out range crosses zero. The verification verdict
+for the appearance run is ``control confirmed: no appearance-space flip.''
+
+\begin{table}[h]
+\centering
+\caption{The same analysis as main-paper Table~3 (the coverage law), in appearance (DINO) space.
+No direction carries usable signal (all $\rho \in [-0.35,-0.15]$) and the
+aggregate flip is null ($+0.018$, $p{=}0.43$).}
+\label{tab:supp_dino}
+\scriptsize
+\input{tables/tab_supp_dino}
+\end{table}
+
+% =====================================================================
+\section{Robustness Controls}
+\label{supp:robust}
+
+Table~\ref{tab:supp_controls} summarizes the controls. The shuffle null is
+centered at zero (empirical $p{<}0.005$ for the observed rule); dropping any
+of the five generator families, or any single benchmark, moves the rule by at
+most $0.09$; and fit-free ranking by dataset size, vector count, or
+supervision density reaches at most $\rho{=}0.27$---``more data'' does not
+explain the signal, which also carries the main paper's claim that off-target
+mass is harmful rather than merely wasted.
+
+\begin{table}[h]
+\centering
+\caption{Robustness controls for the fit-free rule.}
+\label{tab:supp_controls}
+\small
+\input{tables/tab_supp_controls}
+\end{table}
+
+% =====================================================================
+\section{Predictor Analyses}
+\label{supp:predict}
+
+\subsection{Reproducibility oracles, per variant}
+Table~\ref{tab:supp_oracles} reports, per variant, the rule's ranking
+correlation against two retraining oracles: $O_2$, the mean pairwise
+rank-agreement with the \emph{other variants of the same regime} (the fair
+oracle), and $O_3$, agreement with the same-regime rank-averaged consensus
+(strictest). Both pretrained GLU-Net variants reach or exceed their oracles
+(fractions ${\approx}1.1$--$1.4$): in that regime the two distances rank
+training sets about as well as retraining a sibling variant does---parity,
+not an information gain over retraining.
+
+\begin{table}[h]
+\centering
+\caption{Rule vs.\ retraining-reproducibility oracles, per variant.}
+\label{tab:supp_oracles}
+\small
+\input{tables/tab_supp_oracles}
+\end{table}
+
+\subsection{Gap-stratified pairwise accuracy}
+Table~\ref{tab:supp_gap} gives the full gap-stratified comparison behind
+main-paper Fig.~3: the probability the rule orders a source pair correctly,
+per true-gap bin and protocol, against the empirical agreement of independent
+retrainings.
+
+\begin{table}[h]
+\centering
+\caption{Pairwise ordering accuracy by true \pck{} gap.}
+\label{tab:supp_gap}
+\small
+\input{tables/tab_supp_gap}
+\end{table}
+
+\subsection{Feature sets for the per-regime linear model}
+Table~\ref{tab:supp_featuresets} swaps the two mean-NN distances for
+$\epsilon$-coverage features (both directions; one or three radii), their
+combination, and---as the control---the same two directed distances measured
+in DINO appearance space. For ranking, mean-NN wins in the scratch regime
+and the coverage features edge it in the pretrained regime, with all motion
+sets far above appearance ($\rho \le 0.16$ under the identical protocol);
+the combined set gives the best absolute error. The practical recipe:
+rank with the rule (or the per-regime mean-NN model from scratch), calibrate
+units with the combined set.
+
+\begin{table}[h]
+\centering
+\caption{Per-regime linear model under different feature sets. MAE is
+held-out-source, anchor $+$ model.}
+\label{tab:supp_featuresets}
+\scriptsize
+\setlength{\tabcolsep}{3.5pt}
+\input{tables/tab_supp_featuresets}
+\end{table}
+
+\subsection{Where directionality does \emph{not} live: the anchor}
+Directional borrowing of the level anchor $L$ (interpolating observed cells
+with regime-matched directed similarities) \emph{loses} to plain symmetric
+inverse-distance weighting on both anchor-interpolation problems
+(held-out-benchmark MAE 16.9 symmetric vs.\ 18.9--24.1 directional;
+held-out-source 8.6 vs.\ 8.7--10.1). Directionality lives where learning
+happens (the ranking term $g$), not where measurement is interpolated---a
+clean separation between the principle and the plumbing.
+
+\subsection{Pretrained arm of the generated grid}
+The pretrained (frozen-backbone) arm of the intervention grid spans nine
+sources, but the grid was constructed to vary off-target mass, so the
+missing-support distance is near-constant across these sources and any ranking
+it induces is estimator-noise-limited. Its unstable point estimates nominally
+favor the off-target direction ($\dtb$ $+0.64$, $\dbt$ $+0.21$, sym $+0.37$)
+---the \emph{opposite} of the pretrained prediction---which we report
+undiscounted rather than omit, and we do not treat this arm as a test of the
+pretrained half. A coverage-varying pretrained grid (varying $\dbt$ at fixed
+$\dtb$) is the natural follow-up experiment.
+
+\subsection{BFV construct validity: full recovered parameters}
+Table~\ref{tab:recovery_full} gives the complete recovered generator
+parameters behind main-paper Fig.~6 and Table~7. The camera dolly magnitude and the object
+vertical-motion fraction are the two axes that separate the regimes; the
+remaining object-motion parameters (translation, rotation, number of movers)
+are reported for completeness. \textbf{The known blind spot:} BFV aggregates
+flow vectors and is therefore invariant to whether a given aggregate field was
+produced by a moving camera or by correspondingly moving objects---a lateral
+camera pan and a lateral object slide yield near-identical BFV histograms. This
+is a feature of the analysis, not a failure: the descriptor recovers
+\emph{aggregate} motion (the quantity that drives transfer) faithfully, and is
+knowably agnostic to the camera/object factorization that produces it. A
+target whose motion is dominated by camera/object ambiguity (e.g.\ a pure
+lateral pan) is recovered as the corresponding object motion---the same
+aggregate field, a different mechanism. Disentangling the two would require a
+descriptor that encodes scene geometry, which is beyond the scope of this
+motion-only study.
+
+\begin{table}[h]
+\centering
+\caption{Full recovered generator parameters from BFV-only search.}
+\label{tab:recovery_full}
+\small
+\input{tables/tab_recovery_full}
+\end{table}
+
+% =====================================================================
+\section{Sampling Stability of the Estimators}
+\label{supp:sampling}
+
+We recompute every feature at flow-vector budgets from $5{\times}10^4$ to
+$8{\times}10^6$ and correlate each budget's value against the largest
+budget's, across all 110 train$\to$benchmark pairs. Mean-NN distances in both
+directions reach $\rho \ge 0.96$ by $5{\times}10^4$ vectors and $1.000$ at
+the reference budget; $\epsilon$-coverage at 4\,px behaves similarly. In
+contrast, kNN-KL estimators plateau near $\rho{=}0.5$ ($T{\to}B$) and
+$\rho{=}0.2$ ($B{\to}T$) and never stabilize---they measure density, which
+for procedurally generated data is an artifact of the sampling budget rather
+than an intrinsic property. This motivates the main paper's restriction to
+support-geometry estimators. Within the near-tied intervention family, the
+$\dtb$ ranking remains estimator-noise-limited even after 5-seed averaging;
+out-of-sample correlations there are attenuated (conservative), and the
+canonical training sets, whose spreads are an order of magnitude wider, are
+unaffected.
+
+% =====================================================================
+\section{The Middlebury Exclusion}
+\label{supp:mid}
+
+During analysis we observed that for pretrained variants the Middlebury
+evaluation returned $52.6 \pm 4.7$ \pck{} regardless of training source
+(within-context spread 4.7 vs.\ 10--17 on other benchmarks), while
+from-scratch variants spread normally (15.3). Inspection identified a defect
+in our Middlebury evaluation harness; pending re-evaluation, all reported
+numbers exclude Middlebury (the remaining 9 benchmarks; 99 models, 891
+evaluations). Sensitivity: with Middlebury included, every headline conclusion
+is unchanged---the flip statistic is $+0.82$ rather than $+0.90$, and the
+policy's held-out correlations shift by at most ${\sim}0.03$; the largest
+single effect of the exclusion is on the pretrained-regime oracle fraction
+($0.554\!\to\!0.612$), because
+near-invariant contexts are unrankable and dilute within-context averages.
+
+% =====================================================================
+\section{Additional Robustness and Disentangling Analyses}
+\label{supp:newrobust}
+This section collects diagnostics that probe how far the coverage law
+generalizes and separate the two confounds---transfer level and
+appearance---from the motion-coverage signal. All use the nine-benchmark
+(Middlebury-free) table.
+
+\subsection{Static-prior diagnostics, per training source}
+The main-text static-prior table reports config means of the two input-ablation
+diagnostics; Table~\ref{tab:staticprior_persource} gives the per-source values
+over 37 CATs++ checkpoints (best peak-\pck{} snapshot each). We label the four
+backbone configurations \emph{S-t}, \emph{S-f}, \emph{I-t}, \emph{I-f}, where
+S/I denotes a scratch or ImageNet-pretrained backbone and t/f denotes a trained
+or frozen encoder. The pattern is systematic: scratch encoders (S-t, S-f) sit
+near the input-blind ceiling (id/real ratio $0.6$--$1.0$, source-sensitivity
+${\sim}2$) on every source, while pretrained encoders (I-t, I-f) use the input
+(ratio ${\le}0.5$, sensitivity $5$--$15$) wherever they are available. The
+trained scratch encoder (S-t) is the more degenerate of the two scratch columns
+on most sources, consistent with S-t transferring below its random-frozen twin
+(S-f)---the $\Delta_{\text{enc}}<0$ result reported in the main paper.
+SPair, the lone semantic source, is fully input-blind from scratch (ratio
+$1.00$). Pretrained controls were unavailable for movi\_f, FlyingThings, and
+Sintel.
+
+\begin{table}[h]\centering\small\setlength{\tabcolsep}{4pt}
+\input{tables/tab_staticprior_persource}
+\caption{Per-source input-ablation diagnostics (CATs++, best snapshots).
+id/real flow ratio (${\to}1$ input-blind) and source-sensitivity (high $=$ uses
+the input), by training source and backbone configuration. Columns: S/I $=$
+scratch / ImageNet-pretrained backbone, t/f $=$ trained / frozen encoder.}
+\label{tab:staticprior_persource}
+\end{table}
+
+\subsection{Off-target mass from scratch tracks encoder-degeneracy}
+
+The encoder-degeneracy criterion itself---whether a trained-from-scratch encoder
+beats a frozen random one ($\Delta_{\text{enc}}$)---is reported in the main paper,
+where it underwrites every exclusion. Here we add a complementary observation:
+from scratch, off-target mass ($\dtb$) carries a weak secondary signal, and it is
+concentrated in the one architecture whose scratch encoder fails to learn. The table below gives, per
+architecture, the within-context off-target and coverage correlations on
+from-scratch real-motion cells, alongside how much training the scratch encoder
+gains over a frozen random one (trained $-$ frozen):
+\begin{center}\small
+\begin{tabular}{lccc}
+\toprule
+Arch. & off-target $\rho$ & coverage $\rho$ & encoder gain (trained $-$ frozen) \\
+\midrule
+CATs++ & $+0.65$ & $+0.11$ & $+1.3$ (\(\approx\)random) \\
+GLU-Net & $+0.19$ & $+0.64$ & $+4.6$ \\
+RAFT & $+0.32$ & $+0.44$ & --- \\
+FlowFormer & $+0.17$ & $+0.49$ & $+7.7$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+The relationship is monotone: the more the scratch encoder actually learns, the
+less off-target mass matters and the more coverage dominates. Off-target mass
+``working'' from scratch is therefore the same bias signature as the
+scratch-semantic floor---it appears where the model leans on a prediction prior
+rather than learned features---not a second selection law. Pooled over scratch
+real-motion cells it falls from $+0.33$ (all architectures) to $+0.18$ once the
+encoder-degenerate CATs++ is removed, while coverage rises from $+0.42$ to
+$+0.57$.
+
+\subsection{Density is not the from-scratch--semantic signal (negative control)}
+A natural alternative to the floor explanation is that from-scratch--semantic
+transfer is helped by denser or more spatially-aligned supervision rather than
+by motion. We tested this with source-side richness features (flow entropy,
+moving-pixel fraction, log point count), a statistical partial-correlation
+control, and a physical magnitude-equalization of the coverage distance. The
+motion-richness features are \emph{negative} on from-scratch--semantic
+($-0.38$/$-0.29$) and equally negative on from-scratch--real-motion---they track
+unnatural, extreme motion (the high-entropy sources are the 2D-warp and
+random-flipping variants), not a semantic-specific benefit. Spatial alignment is
+a saturated non-signal for dense sources. And motion coverage on
+from-scratch--semantic stays at the floor under both controls (raw $-0.20$,
+statistical-partial $+0.14$, magnitude-equalized $-0.18$). Nothing source-side
+cleanly ranks sources there; the floor is a floor. (Caveat: in our source set
+label density is entangled with motion naturalness, so a clean causal test is a
+label-density \emph{training} ablation, which we have not run.)
+
+\subsection{Spatial vs.\ flow: decomposing the coverage distance}
+BFV is four-dimensional ($x,y,\Delta x,\Delta y$), and the normalization gives
+the spatial coordinates a wider range than the displacements, so the joint
+nearest-neighbour distance is partly spatial. We recompute the two directed
+distances in three sub-spaces of the same cloud---full, spatial-only ($x,y$),
+and flow-only ($\Delta x,\Delta y$)---and re-run the stratified within-context
+correlations. The clean axis is flow-coverage: it is positive wherever the
+network can exploit motion (real-motion in both regimes, $+0.18$ scratch /
+$+0.26$ pretrained; semantic only under a backbone, $+0.53$) and negative for
+from-scratch--semantic ($-0.20$). The semantic precision signal is not a pure
+spatial artifact (spatial-only off-target $\approx0$), and the spatial component
+of coverage helps only in the from-scratch--semantic floor cell ($+0.43$),
+exactly where flow-coverage is anti-predictive. So real-motion transfer is
+predicted by motion coverage; from-scratch--semantic transfer, where it moves at
+all, is predicted by spatial sampling rather than motion---reinforcing that the
+floor is a place where motion is unusable.
+
+\subsection{Is the binding direction carried by specific datasets?}
+We jackknife the regime-mean directed correlations, dropping each source
+(leave-one-source-out, $\times 11$) and each generator family
+(leave-one-family-out, $\times 5$), and report the range of the
+regime-relevant direction. The pretrained missing-support signal is
+dataset-independent (range $[{+}0.57,{+}0.65]$, no family load-bearing); the
+from-scratch off-target signal is real but softer and leans on the semantic
+source (spair): dropping it halves the correlation, though it never flips sign.
+This is why we present the pretrained half as the robust core and the
+from-scratch off-target lean as a weaker, source-dependent effect.
+\begin{table}[h]\centering\small
+\resizebox{\linewidth}{!}{\input{tables/tab_new_jackknife}}
+\caption{Per-regime source/family jackknife. ``Span'' is the spread of the
+regime-relevant correlation over all 16 single drops.}
+\label{tab:new_jackknife}
+\end{table}
+
+\subsection{Appearance vs.\ motion: partial correlations}
+Within each context we partial the directed motion and appearance (DINO)
+distances against one another. Motion's ranking signal survives controlling
+for appearance (pretrained recall $+0.61\!\to\!+0.54$; scratch symmetric
+$+0.50\!\to\!+0.51$), so it is not an appearance confound. Appearance distance
+controlling for motion is wrong-signed ($-0.20$ to $-0.36$)---no usable ranking
+signal, consistent with the synthetic$\to$real distance being dominated by a
+near-constant domain gap.
+\begin{table}[h]\centering\small
+\input{tables/tab_new_partial}
+\caption{Raw and partial within-context Spearman correlations of transfer with
+the directed motion and appearance distances.}
+\label{tab:new_partial}
+\end{table}
+
+\subsection{Fixed-motion appearance: level vs.\ selection}
+Four appearance variants of one camera-dominant source (mesh $\times$ texture)
+share motion (flow-distance spread $\le 1.03\times$). Within each benchmark,
+appearance distance orders transfer ($\rho$ up to $+0.80$)---but the
+\emph{same} variant wins on every benchmark (cross-benchmark ordering
+$\rho \approx +0.8$ to $+1.0$). Appearance therefore sets a target-invariant
+\emph{level}, not a target-selective ranking; the within-benchmark correlation
+is the level effect, since realistic texture is uniformly both better and
+appearance-closer.
+\begin{table}[h]\centering\small
+\input{tables/tab_new_fixedmotion}
+\caption{Peak PCK of four fixed-motion appearance variants across benchmarks.
+Within-benchmark $\rho$(pck,$-$appearance dist.) is $+0.60/+0.80/+0.80$; the
+cross-benchmark ordering correlation is $+0.80/+1.00/+0.80$---the same variant
+wins everywhere (level, not selection).}
+\label{tab:new_fixedmotion}
+\end{table}
+
+\subsection{The flip is regime, not transfer level}
+At the variant grain regime and mean transfer level are nearly collinear; at
+the context grain (variant $\times$ benchmark, $n{=}81$) they separate.
+Regressing the per-context direction gap ($\rho[\dbt]-\rho[\dtb]$) on a regime
+indicator and level, regime is strongly significant and level is not, and
+within the pretrained regime the gap--level association is \emph{negative}---the
+opposite of a dynamic-range artifact.
+\begin{table}[h]\centering\small
+\input{tables/tab_new_regimelevel}
+\caption{Deconfounding the direction flip from transfer level. $R^2$ is
+$0.41$ regime-only vs $0.11$ level-only; within the pretrained regime
+$\rho$(gap,level)$=-0.41$ (scratch $+0.42$).}
+\label{tab:new_regimelevel}
+\end{table}
+
+\subsection{Which OOS cells are interpretable}
+On the generated grid, a directed correlation is interpretable only where its
+distance has dynamic range. The from-scratch FlyingThings off-target cell has
+large spread and is rank-stable; the pretrained KITTI precision cells, despite
+large $\rho$, have $\le 4\%$ distance spread and collapse under $5\%$
+perturbation (rank self-correlation $0.15$--$0.28$)---so they cannot support a
+conclusion. The pretrained FlyingThings precision cell ($+0.73$, $p{=}0.03$,
+$139\%$ spread) is the exception we flag in the main text.
+\begin{table}[h]\centering\small
+\input{tables/tab_new_ttarm}
+\caption{Intervention-grid precision cells: correlation, exact $n{=}9$ $p$,
+relative distance spread, and rank self-correlation under $5\%$ noise.}
+\label{tab:new_ttarm}
+\end{table}
+
+\subsection{Seed robustness of the out-of-sample distances}
+The intervention-grid distances are five-seed averages. Re-generating them at
+each seed leaves the headline FlyingThings off-target correlation stable
+($+0.58$ to $+0.67$), so the pre-registered result is not an averaging
+artifact.
+\begin{table}[h]\centering\small
+\input{tables/tab_new_seedaudit}
+\caption{From-scratch off-target correlation by distance-estimation seed.}
+\label{tab:new_seedaudit}
+\end{table}
+
+\subsection{Heterogeneity of the off-target/missing-support trade-off}
+The two directed distances are anti-correlated on average ($-0.37$), but the
+strength varies sharply by benchmark---strong on semantic/TSS targets, near
+zero on KITTI-2015 and SPair, and \emph{positive} on KITTI-2012. The
+``averaging corrupts'' mechanism is therefore benchmark-dependent.
+\begin{table}[h]\centering\small
+\input{tables/tab_new_anticorr}
+\caption{Within-context Spearman between $\dtb$ and $\dbt$ across sources,
+per benchmark.}
+\label{tab:new_anticorr}
+\end{table}
+
+\subsection{In-domain diagonal cells}
+Four of the eleven sources are also benchmarks, so the analysis includes
+cells in which the training set is also the evaluation benchmark. Dropping all
+36 moves the matched-direction rule from
+$+0.507$ to $+0.498$ with no variant changing sign.
+\begin{table}[h]\centering\small
+\resizebox{\linewidth}{!}{\input{tables/tab_new_diagonal}}
+\caption{Matched-direction rule with and without in-domain diagonal cells.}
+\label{tab:new_diagonal}
+\end{table}
+
+% =====================================================================
+\section{Additional Figures}
+\label{supp:figs}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\linewidth]{figures/results/F5supp_decomposition.png}
+\caption{\textbf{Decomposing the absolute predictor into ranking and level.}
+Each panel shows the same predicted-vs-actual points; the lines are
+per-context linear fits. \textbf{Top row, one fit per benchmark:} each
+benchmark forms its own diagonal band whose slope tracks the \emph{within-context
+ranking} correlation (median slope ${\approx}0.3$--$0.7$ across the three splits,
+in line with the reproducibility ceiling), the order coverage supplies. The bands
+persist even when the benchmark is held out (LOBO/JOINT), the within-context claim
+surviving leakage-safe evaluation. \textbf{Bottom row, one fit per training
+set:} each training set instead cuts \emph{across} benchmark levels, so its
+slope is ${\approx}1$ (median $0.75$--$1.0$), the absolute scale the level
+estimate supplies. The two groupings are orthogonal: the ranking signal lives
+within a benchmark, the level signal across them.}
+\label{fig:supp_decomp}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\linewidth]{figures/results/F5grid_color_views.png}
+\caption{\textbf{The ranking signal, two color stories.} Identical panels
+(rule score vs.\ actual-minus-anchor, both z-scored within context; columns
+$=$ the three protocols); top row colored by benchmark, bottom row by
+training set. No single benchmark forms its own stripe (the Middlebury
+defect, before exclusion, was visible here as exactly such a stripe), and
+the far-off-target sources (SPair, 2D-warp family) are correctly scored
+low-and-land-low.}
+\label{fig:supp_grid}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\linewidth]{figures/results/F5supp_lobo_joint.png}
+\caption{\textbf{Full calibrated predictor, colored by benchmark} (anchor
+$+$ dispersion-calibrated rule score). The both-held-out panel stands on the
+two-way kernel anchor: in-fold cells weighted by benchmark-similarity
+$\times$ source-similarity jointly.}
+\label{fig:supp_abs}
+\end{figure}
+
+\section{Off-Target Mass at Fixed Coverage (the Precision Ladder)}
+\label{supp:precision}
+The main-paper intervention section reports that off-target mass is nearly free at
+fixed coverage; Table~\ref{tab:precision} gives the full ladder. Starting from the
+KITTI-recovered source, a fraction $f$ of training pairs is replaced with
+horizontally-mirrored copies (mirrored frame $+$ exact mirror flow), which raises
+off-target mass while holding coverage \emph{pinned} (verified BFV ladder:
+$d_{B\to T}$ flat at ${\approx}0.0017$, $d_{T\to B}$ ramps $16\times$,
+$0.04{\to}0.66$). $\Delta_f$ is peak \pck{} at $f{=}0.5$ minus $f{=}0$. The
+configurations that learn the task lose at most $2.4$ \pck{} with half their motion
+pushed off-target, and a pretrained backbone is flat; KITTI-2015 is consistent. The
+from-scratch CATs++ config is degenerate (it fails the beat-random criterion of the
+main-paper setup) and is excluded.
+
+\begin{table}[h]
+\centering
+\caption{Off-target mass at fixed coverage. Peak \pck{} on KITTI-2012 across the
+mirror-flip off-target ladder; coverage pinned (see text).}
+\label{tab:precision}
+\small
+\setlength{\tabcolsep}{5pt}
+\input{tables/tab_precision}
+\end{table}
+
+\end{document}

@@ -1,0 +1,15 @@
+\begin{tabular}{l l rrrrr}
+\toprule
+Variant & Regime & rule $\rho$ & oracle $O_2$ & oracle $O_3$ & frac.\ $O_2$ & frac.\ $O_3$ \\
+\midrule
+CATs++ -- -- & scratch & +0.53 & +0.69 & +0.73 & +0.77 & +0.72 \\
+CATs++ -- \cmark & scratch & +0.51 & +0.70 & +0.75 & +0.72 & +0.68 \\
+GLU-Net -- -- & scratch & +0.31 & +0.69 & +0.74 & +0.44 & +0.41 \\
+GLU-Net -- \cmark & scratch & +0.37 & +0.71 & +0.79 & +0.52 & +0.47 \\
+RAFT \cmark -- & scratch & +0.40 & +0.70 & +0.76 & +0.57 & +0.53 \\
+CATs++ \cmark -- & pretrained & +0.51 & +0.61 & +0.72 & +0.84 & +0.71 \\
+CATs++ \cmark \cmark & pretrained & +0.50 & +0.57 & +0.64 & +0.87 & +0.79 \\
+GLU-Net \cmark -- & pretrained & +0.67 & +0.49 & +0.53 & +1.37 & +1.26 \\
+GLU-Net \cmark \cmark & pretrained & +0.76 & +0.58 & +0.67 & +1.31 & +1.14 \\
+\bottomrule
+\end{tabular}

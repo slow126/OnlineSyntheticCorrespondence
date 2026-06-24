@@ -1,0 +1,20 @@
+control,value,note
+observed_rule,0.5067340067340068,baseline
+shuffle_null_mean,-0.00016778900112233473,sd=0.0345; p_emp(obs)=0.0000 (200 perms)
+drop_family_kubric,0.5444818555929667,dropped 1 sources
+drop_family_realflow,0.5323339212228102,dropped 3 sources
+drop_family_sdf3d,0.5154320987654322,dropped 4 sources
+drop_family_semantic,0.4246165357276468,dropped 1 sources
+drop_family_warp2d,0.4722222222222222,dropped 2 sources
+control_size_n_samples,0.04275245011538045,fit-free rank
+control_size_n_vectors,0.26661057572765373,fit-free rank
+control_supervision_density,0.19926351490580266,fit-free rank
+drop_benchmark_flyingthings,0.5041666666666668,
+drop_benchmark_kitti2012,0.4960858585858586,
+drop_benchmark_kitti2015,0.5167929292929294,
+drop_benchmark_pfpascal,0.4948232323232323,
+drop_benchmark_pfwillow,0.5027777777777778,
+drop_benchmark_pointodyssey,0.5122474747474749,
+drop_benchmark_spair,0.5025252525252526,
+drop_benchmark_synthetic,0.5319444444444446,
+drop_benchmark_tss,0.4992424242424243,

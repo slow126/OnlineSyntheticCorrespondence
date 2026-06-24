@@ -141,6 +141,16 @@ def _prepare_table(args) -> tuple[pd.DataFrame, pd.DataFrame]:
     dist = pd.read_csv(args.dist)
     table = add_selfdist_features(table, dist)
     table = add_random_features(table, seed=42)
+    # Regime-Direction rule column (mirrors experiments.py main()): scratch
+    # models (and RAFT, scratch-by-construction) read precision (a->b),
+    # pretrained read recall (b->a).
+    if {"se_flow_mean_nn_a_to_b", "se_flow_mean_nn_b_to_a"} <= set(table.columns):
+        is_scratch = ((table["pretrained"].astype(str) == "False")
+                      | (table["model_family"] == "raft"))
+        table["se_flow_rule_dist"] = np.where(
+            is_scratch,
+            table["se_flow_mean_nn_a_to_b"],
+            table["se_flow_mean_nn_b_to_a"])
     table = table.dropna(subset=[args.target]).copy()
     table["auc_normalized"] = table[args.target]
     return table, dist

@@ -1,0 +1,84 @@
+\documentclass[runningheads]{llncs}
+% ---------------------------------------------------------------
+\usepackage[review,year=2026,ID=*****]{accv}
+%\usepackage{accv} % camera-ready
+\usepackage{accvabbrv}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb}
+\usepackage{multirow}
+\usepackage{pifont}
+\usepackage{makecell}
+\usepackage{colortbl}
+\definecolor{bestgreen}{rgb}{0.0,0.50,0.0}
+\newcommand{\best}[1]{\textbf{\textcolor{bestgreen}{#1}}}
+\newcommand{\cmark}{\ding{51}}
+\usepackage[accsupp]{axessibility}
+\usepackage[pagebackref,breaklinks,colorlinks,citecolor=accvblue]{hyperref}
+\usepackage{orcidlink}
+\usepackage{fontawesome5}
+\usepackage{subcaption}
+
+% notation macros
+\newcommand{\dtb}{d_{T\to B}}
+\newcommand{\dbt}{d_{B\to T}}
+\newcommand{\pck}{PCK}
+% encoder-state glyphs: fire = trained, snowflake = frozen
+\newcommand{\enctrained}{\textcolor{orange!90!red}{\faFire}}
+\newcommand{\encfrozen}{\textcolor{cyan!55!blue}{\faSnowflake[regular]}}
+% best coverage-family predictor in a cell (green); bold marks recall (dBT), our claim
+\newcommand{\bst}[1]{\textcolor{green!60!black}{#1}}
+
+\begin{document}
+
+\title{Cover the Motion, Not the Look: Motion Coverage Predicts
+Synthetic-to-Real Correspondence Transfer}
+\titlerunning{Cover the Motion, Not the Look}
+
+\author{Anonymous ACCV 2026 Submission}
+\authorrunning{ACCV-26 submission ID *****}
+\institute{Paper ID *****}
+
+\maketitle
+
+\begin{abstract}
+Correspondence tasks---dense optical flow, geometric matching, and semantic
+matching---rely heavily on synthetic training data, but relatively little
+attention has gone to a prior question: given a synthetic generator,
+\emph{what} should it render for a particular target?
+We study this across dense, geometric, and semantic correspondence and find
+that motion coverage---how
+well a source covers the motions a target uses---is the most reliable predictor
+of transfer, while appearance similarity carries little target-selective signal.
+Standard symmetric distances (FID, sliced Wasserstein) blend two asymmetric
+failure modes: missing coverage and excess off-target mass.
+Decomposing into the two directed halves recovers sharper and more stable signal,
+with the coverage half driving the finding.
+Across 76 trained models spanning four architecture families, a single directed
+distance over a compact flow-vector representation ranks training sources about
+as reliably as training a second model from scratch.
+Given a few reference runs it also predicts absolute performance.
+A render-free generator search, scored only on motion, tunes a synthetic source
+to outperform a generic Kubric baseline on target benchmarks.
+Cover the motion, not the look.
+
+\keywords{Dense correspondence \and Synthetic training data \and Dataset
+selection \and Transferability}
+\end{abstract}
+
+
+\input{sections/01_introduction}
+\input{sections/02_related_work}
+\input{sections/03_setup}
+\input{sections/04_coverage_law}
+\input{sections/05_selecting_data}
+\input{sections/06_absolute_prediction}
+\input{sections/07_interventions}
+%\input{sections/08_limitations}
+\input{sections/09_conclusion}
+
+% ---------------------------------------------------------------
+\bibliographystyle{splncs04}
+\bibliography{main}
+
+\end{document}

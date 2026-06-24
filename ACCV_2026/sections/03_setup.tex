@@ -1,0 +1,160 @@
+% =====================================================================
+\section{Setup: Two Directed Distances and a Decomposition}
+\label{sec:setup}
+
+\begin{figure}[t]
+\centering
+\begin{subfigure}[b]{\linewidth}
+  \centering
+  \includegraphics[width=\linewidth]{figures/splats/fig2a_splats.png}
+  \caption{Motion fingerprints (BFV splats).}
+  \label{fig:splats:motion}
+\end{subfigure}
+\par\vspace{2pt}
+\begin{subfigure}[b]{\linewidth}
+  \centering
+  \includegraphics[width=\linewidth]{figures/splats/fig2b_rgb.png}
+  \caption{RGB samples, same column order.}
+  \label{fig:splats:rgb}
+\end{subfigure}
+\caption{\textbf{Motion fingerprints (BFV splats) and RGB samples.}
+\subref{fig:splats:motion}~Each panel aggregates a dataset's joint flow vectors
+$[\hat x,\hat y,\Delta\hat x,\Delta\hat y]$ into spatial clusters rendered as
+directional splats: color $=$ dominant flow direction (legend), extent $=$
+spread; training sets (upper row) above benchmarks (lower row). The first three
+columns show the same dataset in both rows, confirming the fingerprint is
+dataset-intrinsic rather than split-dependent.
+\subref{fig:splats:rgb}~One RGB sample per dataset, same column order.}
+\label{fig:splats}
+\end{figure}
+
+We describe each dataset's motion and appearance as a point cloud and measure directed distances between them; the direction matters because a coverage gap and excess off-target mass are distinct failure modes that a symmetric measure averages away (Fig.~\ref{fig:concept}).
+
+\noindent\textbf{Motion representation.}
+We summarize each dataset as a point cloud of flow vectors, each recording a
+pixel's image-space location alongside its optical flow displacement:
+\begin{equation}
+\mathbf{f}_{\text{flow}} = \bigl[\hat{x},\;\hat{y},\;\Delta\hat{x},\;\Delta\hat{y}\bigr],
+\label{eq:bfv}
+\end{equation}
+where pixel coordinates are normalized to $[-1,1]$ by image dimensions
+($\hat{x} = 2x/W - 1$, $\hat{y} = 2y/H - 1$), and flow displacements are
+expressed in the same spatial units ($\Delta\hat{x} = 2\,\Delta x/W$,
+$\Delta\hat{y} = 2\,\Delta y/H$), so a displacement of $\pm 1$ corresponds to
+half the image width or height.
+This bag-of-flow-vectors (BFV) representation (Fig.~\ref{fig:splats}) retains
+\emph{where} motion occurs and \emph{how} content moves while remaining invariant
+to image resolution and free of any spatial binning; the joint encoding is
+intentional---spatially-grounded motion patterns (e.g., a radial expansion field
+for ego-motion, vertical scatter for object-centric scenes) carry information that
+flow direction alone discards.
+BFV is intentionally coarse: it collapses each frame pair into a bag of
+pixel-level displacements without decomposing motion into its underlying physical
+causes (parallax, depth discontinuities, occluder boundaries, surface velocity),
+and it carries no appearance information.
+This simplification is the design choice under test---we ask whether a crude
+motion fingerprint, requiring no scene understanding and no photorealistic
+rendering, is sufficient to predict where a source will transfer.
+
+\noindent\textbf{Appearance representation.}
+As an appearance control we represent each dataset using DINOv3 patch
+features~\cite{simeoni2025dinov3}, reduced by PCA and $\ell_2$-normalized.
+DINOv3 is trained by self-supervision on natural images with no exposure to any
+of our correspondence tasks, so its feature space is not shaped by transfer
+outcomes---though it naturally reflects the texture, illumination, and material
+statistics of the images it was trained on rather than providing a neutral
+decomposition of scene properties.
+We apply the same distance framework to both descriptors so that
+any difference in predictive power reflects the descriptor's content, not the
+measurement procedure.
+A reproducibility ceiling (Sect.~\ref{sec:predict}) contextualizes how much
+systematic ranking signal is available at all: for each architecture family we
+measure how often two same-family models trained under different backbone
+configurations (frozen vs.\ fine-tuned) agree on which training source is better,
+bounding what any data-only predictor could achieve on these benchmarks.
+Motion coverage accounts for $\approx$78\% of this ceiling within our study; the
+remaining gap reflects a combination of architectural sensitivity to the backbone
+freeze choice and any factors our benchmarks do not cleanly separate---including
+appearance effects that DINOv3 features aggregated over large natural-image
+corpora may not resolve for synthetic training sets.
+
+\noindent\textbf{Distribution distances.}
+We evaluate several standard distribution distances---symmetric Chamfer,
+FID~\cite{heusel2018ganstrainedtimescaleupdate}, and sliced Wasserstein-2---and
+find that decomposing the Chamfer into its two directed halves is the more
+reliable choice on aggregate; on individual benchmarks, particularly semantic
+targets, symmetric distances remain competitive and for FlowFormer on semantic
+targets are clearly stronger (Sect.~\ref{sec:law}).
+Writing $d_{A \to B}$ for the directed distance from a training cloud $A$ to a
+target cloud $B$,
+\begin{equation}
+d_{A \to B} \;=\; \frac{1}{|A|}\sum_{a \in A}\; \min_{b \in B}\,
+\lVert a - b \rVert_2^2,
+\label{eq:dirdist}
+\end{equation}
+this is the one-sided Chamfer distance~\cite{fan2017pointcloud}.
+Writing $\dtb$ for the train-to-target direction and $\dbt$ for the reverse,
+$\dtb$ is large when much of the training distribution lies far from anything
+the target uses (\textbf{off-target mass}), and $\dbt$ is large when target
+motions have no nearby training example (\textbf{missing support}).
+Whether a symmetric measure meaningfully conflates these two cases is an empirical
+question; we find the directed split to be the more reliable predictor on balance
+(Table~\ref{tab:predictors}).
+
+We use support-geometry estimators rather than density-based divergences (e.g., KL): on procedurally generated clouds, rendering more frames changes estimated density without changing support geometry, so KL does not converge; support-geometry estimators are stable, and the alternatives we evaluate all agree on the central finding (supp., Sect.~\ref{sec:law}).
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Transfer study.} Four architecture families---the semantic
+matcher CATs++, the dense matcher GLU-Net, and the optical-flow networks RAFT and
+FlowFormer---over 11 synthetic and real training sources, evaluated by peak
+\pck@0.05 on 9 benchmarks. For the three backbone matchers the pretrained image
+backbone (ImageNet ResNet-101 / VGG / Twins-SVT) is either frozen (\encfrozen) or
+fine-tuned (\enctrained) jointly with the correspondence head (two configurations
+each); RAFT has no image backbone and trains end-to-end (one). Targets are stratified into
+\emph{real-motion} (dense pixel-motion ground truth; KITTI real, the other three
+synthetic) and \emph{semantic} (sparse keypoint ground truth) sets.}
+\label{tab:study}
+\footnotesize
+\input{tables/tab_study}
+\end{table}
+
+\noindent\textbf{Transfer study.}
+We study four architecture families over 11 synthetic and real training sources,
+evaluated on 9 benchmarks (Table~\ref{tab:study}). Six of the nine targets are
+real images (KITTI-2012/2015, SPair-71K, PF-Pascal, PF-Willow, TSS); FlyingThings,
+PointOdyssey, and the procedural split are synthetic targets, included for their
+controlled motion and exact labels. These have real 3D geometry and look markedly
+different from one another and from the sources, so coverage-predictable
+cross-transfer among them is itself a test of the motion-over-appearance thesis.
+Among \emph{real} images, dense-motion transfer is carried mainly by KITTI---real
+dense flow labels are scarce, which is the premise of this work.
+The coverage score depends only on the (source, target) pair, but a source's
+realized transfer also depends on the model, so we evaluate every ranking claim
+within a fixed (benchmark, architecture, configuration) \emph{context}; this
+same context indexes the level term of the absolute predictor
+(Sect.~\ref{sec:absolute}). We report \emph{peak} \pck{} (the best checkpoint per
+run) so data quality is not confounded with convergence speed: peak selection is a
+constant, monotone treatment that leaves source rankings untouched while affecting
+only the absolute level, which we predict separately. Throughout, coverage is
+stratified into \emph{real-motion} and \emph{semantic} targets
+(Table~\ref{tab:study}), as the two strata behave differently (Sect.~\ref{sec:law}).
+We use Spearman $\rho$ for all \emph{ranking} claims and Pearson $r$ (with MAE)
+for \emph{absolute-\pck} prediction (Sect.~\ref{sec:absolute}); the pooled scatter
+(Fig.~\ref{fig:coverage_law_a}) shows Pearson $r$ on within-context-standardized
+values for visualization, but the load-bearing statistic throughout is Spearman
+$\rho$.
+
+\noindent\textbf{From-scratch training (out-of-distribution probe).}
+We also trained each backbone matcher with randomly-initialized feature extractors
+to probe whether appearance becomes a stronger signal when pretrained semantics are
+absent.
+The from-scratch encoders collapse to a near-static prior that ignores the image
+pair entirely, so neither descriptor is a meaningful source-ranking predictor
+there: a model insensitive to its input provides no data-selection signal for
+either modality.
+We treat this regime as out-of-distribution, report it in full in the supplement,
+and note that the null result for appearance here is a consequence of input-blindness
+rather than an independent test of the appearance hypothesis.
+The configurations were fixed before any motion distance was measured.
+

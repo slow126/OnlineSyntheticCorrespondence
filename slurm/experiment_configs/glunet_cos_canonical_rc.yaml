@@ -1,0 +1,134 @@
+# GLU-Net cosine-anneal redo of the canonical pure-source grid.
+#
+# Motivation: the original `glunet_remaining_canonical_rc.yaml` runs used
+# scheduler='step' with milestones [70,80,90] but epochs=80, i.e. effectively a
+# CONSTANT lr=1e-3 for 70 epochs and a single 0.5 drop at epoch 70. Train-loss
+# curves showed a noisy high plateau with loss spikes (~218) and val PCK still
+# climbing at the end -- the model parked on a suboptimal plateau because there
+# was no real anneal.
+#
+# This redo changes three things and NOTHING about the data/eval:
+#   1. scheduler='cosine'  -> smooth 1e-3 -> 1e-6 decay over the full run.
+#   2. gradient_clip_val=1.0 -> kills the training-loss spikes.
+#   3. epochs=100 (uniform) -> same budget for every dataset so the transfer
+#      comparison stays fair; 100 still fits one 24h allocation for the slow
+#      single-process synthetic renderers (n_threads=0, ~4-5 epoch/hr).
+#
+# Distinct labelling: name_template is `glunet_cos_...` so new snapshots land as
+#   <dataset>_glunet_cos_steps100_pretrained{T/F}_freeze{T/F}_<timestamp>
+# and never collide with the old `<dataset>_glunet_steps100_...` snapshots,
+# which are left untouched (still available for model-averaging later).
+#
+# Full 2x2 (pretrained x freeze) x 11 sources = 44 jobs.
+#
+# Generate on RC:
+#   python slurm/generate_experiments.py \
+#       -M slurm/machine_configs/remote_long.yaml \
+#       -S slurm/experiment_configs/glunet_cos_canonical_rc.yaml \
+#       -O slurm/glunet_jobs_cos_canonical
+#
+#   Inspect the generated configs, then:
+#   bash slurm/glunet_jobs_cos_canonical/submit_all.sh
+
+project_root: "/home/slow1/Projects/OnlineSyntheticCorrespondence"
+
+training_base: "src/configs/lightning/glunet_training_base_rc.yaml"
+eval_base: "src/configs/lightning/eval_base_rc_fastsynth.yaml"  # 256-sample synthetic val: dodges renderer abort + cuts ~40 min/validation
+
+training_datasets:
+  - name: "synthetic"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "spair"
+    dataset_config: "src/configs/lightning/datasets/spair_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 32}
+  - name: "flyingthings"
+    dataset_config: "src/configs/lightning/datasets/flyingthings_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 32}
+  - name: "pointodyssey"
+    dataset_config: "src/configs/lightning/datasets/pointodyssey_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 4}
+  - name: "sintel"
+    dataset_config: "src/configs/lightning/datasets/sintel_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 32}
+  - name: "imagenet2dwarp"
+    dataset_config: "src/configs/lightning/datasets/imagenet2dwarp_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 32}
+  - name: "movi_f"
+    dataset_config: "src/configs/lightning/datasets/movi_f_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 4}
+  - name: "synthetic_2d_warp"
+    dataset_config: "src/configs/lightning/datasets/synthetic_2d_warp_rc.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "synthetic_random_flipping"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc_random_flipping.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "synthetic_small_zoom"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc_small_zoom.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+  - name: "synthetic_large_zoom"
+    dataset_config: "src/configs/lightning/datasets/synthetic_rc_large_zoom.yaml"
+    overrides: {training.batch_size: 8, training.n_threads: 0}
+
+output_dir: "/home/slow1/Projects/OnlineSyntheticCorrespondence/slurm/experiment_configs/generated_glunet_cos_canonical"
+
+sweeps:
+  - name: "pretrained_unfrozen"
+    parameters:
+      model.type: glunet
+      training.epochs: 100
+      training.steps_per_epoch: 100
+      training.check_val_every_n_epoch: 20
+      training.seed: 2021
+      training.scheduler: cosine
+      training.gradient_clip_val: 1.0
+      paths.save_epoch_checkpoints: false
+      dataset.downsample_flow: null
+      model.pretrained_backbone: true
+      model.freeze: false
+    name_template: "glunet_cos_steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"
+
+  - name: "pretrained_frozen"
+    parameters:
+      model.type: glunet
+      training.epochs: 100
+      training.steps_per_epoch: 100
+      training.check_val_every_n_epoch: 20
+      training.seed: 2021
+      training.scheduler: cosine
+      training.gradient_clip_val: 1.0
+      paths.save_epoch_checkpoints: false
+      dataset.downsample_flow: null
+      model.pretrained_backbone: true
+      model.freeze: true
+    name_template: "glunet_cos_steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"
+
+  - name: "scratch_unfrozen"
+    parameters:
+      model.type: glunet
+      training.epochs: 100
+      training.steps_per_epoch: 100
+      training.check_val_every_n_epoch: 20
+      training.seed: 2021
+      training.scheduler: cosine
+      training.gradient_clip_val: 1.0
+      paths.save_epoch_checkpoints: false
+      dataset.downsample_flow: null
+      model.pretrained_backbone: false
+      model.freeze: false
+    name_template: "glunet_cos_steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"
+
+  - name: "scratch_frozen"
+    parameters:
+      model.type: glunet
+      training.epochs: 100
+      training.steps_per_epoch: 100
+      training.check_val_every_n_epoch: 20
+      training.seed: 2021
+      training.scheduler: cosine
+      training.gradient_clip_val: 1.0
+      paths.save_epoch_checkpoints: false
+      dataset.downsample_flow: null
+      model.pretrained_backbone: false
+      model.freeze: true
+    name_template: "glunet_cos_steps{training.steps_per_epoch}_pretrained{model.pretrained_backbone}_freeze{model.freeze}"

@@ -1,0 +1,15 @@
+\begin{tabular}{l cc c c cc c}
+\toprule
+ & \multicolumn{3}{c}{Real-motion Targets} & & \multicolumn{3}{c}{Semantic Targets} \\
+\cmidrule(lr){2-4}\cmidrule(lr){6-8}
+ & \multicolumn{2}{c}{peak \pck} & & & \multicolumn{2}{c}{peak \pck} & \\
+\cmidrule(lr){2-3}\cmidrule(lr){6-7}
+Architecture
+ & \shortstack{\enctrained\,trained\\from scratch} & \shortstack{\encfrozen\,frozen\\from scratch} & $\Delta_{\text{enc}}$
+ & & \shortstack{\enctrained\,trained\\from scratch} & \shortstack{\encfrozen\,frozen\\from scratch} & $\Delta_{\text{enc}}$ \\
+\midrule
+CATs++     & $58.6$ & $66.6$ & $\mathbf{-8.0}$ & & $11.0$ & $12.7$ & $\mathbf{-1.7}$ \\
+GLU-Net    & $68.0$ & $66.1$ & $+1.9$          & & $14.8$ & $14.9$ & $\mathbf{-0.1}$ \\
+FlowFormer$^{\ddagger}$ & $73.3$ & $65.1$ & $+8.2$ & & $11.0$ & $13.1$ & $\mathbf{-2.1}$ \\
+\bottomrule
+\end{tabular}

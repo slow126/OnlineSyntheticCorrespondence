@@ -1,0 +1,110 @@
+[
+ null,
+ {
+  "checks": [
+   {
+    "claim": "tab_recovery.tex row 'KITTI-2015 & \\textbf{2.18} & \\textbf{0.00} & camera-centric' (ACCV_2026/tables/tab_recovery.tex line 5)",
+    "status": "confirmed",
+    "detail": "scripts/transfer_analysis_v5/recovered_theta.csv row KITTI-2015: dolly_delta=2.18, vertical_frac=0.0006 (0.00 at 2dp), regime='camera-centric (forward dolly)'. Independently verified against upstream theta /home/spencer/Projects/interventional-study/thetas/theta_kitti_recovered_gso_hq_jitter_fitted.json: start_distance 9.0 - end_distance 6.8202706578105206 = 2.1797 -> 2.18; motion_vertical_frac 0.0006208990421787131."
+   },
+   {
+    "claim": "tab_recovery.tex row 'FlyingThings & \\textbf{0.32} & \\textbf{0.92} & object-centric' (line 6)",
+    "status": "confirmed",
+    "detail": "recovered_theta.csv row FlyingThings: dolly_delta=0.32, vertical_frac=0.92, regime='object-centric (flying objects)'. Upstream theta /home/spencer/Projects/interventional-study/thetas/theta_kitti_badmotion_ft_gso_matte.json: 9.0 - 8.6826391663265 = 0.3174 -> 0.32; motion_vertical_frac 0.9200084776359568."
+   },
+   {
+    "claim": "tab_recovery_full.tex row 'KITTI-2015 & 2.18 & 4 & 0.92 & 0.39 & 0.001 & camera-centric (forward dolly)' (line 7)",
+    "status": "confirmed",
+    "detail": "recovered_theta.csv: 2.18, num_movers=4, obj_translation=0.92, obj_rotation=0.39, vertical_frac=0.0006 (0.001 at 3dp). Upstream theta json: num_moving=4, motion_translation=0.9208254469407637, motion_rotation=0.38846073997873, motion_vertical_frac=0.000621."
+   },
+   {
+    "claim": "tab_recovery_full.tex row 'FlyingThings & 0.32 & 2 & 1.41 & 1.36 & 0.920 & object-centric (flying objects)' (line 8)",
+    "status": "confirmed",
+    "detail": "recovered_theta.csv: 0.32, 2, 1.41, 1.36, 0.92. Upstream theta json: num_moving=2, motion_translation=1.4103628841564295, motion_rotation=1.3616631438754772, motion_vertical_frac=0.9200084776359568."
+   },
+   {
+    "claim": "tab_recovery.tex / tab_recovery_full.tex generating code (audit requirement: find which script generates them)",
+    "status": "unverifiable",
+    "detail": "No script in the repo writes these two .tex files. make_paper_tables.py does not produce them; make_recovery_figure.py (same mtime 13:29 as the .tex files) only writes the F8 figure PNG from recovered_theta.csv. grep over scripts/ and gaussian_splat/ for 'tab_recovery'/'recovered regime'/'camera-centric' finds no generator -> the .tex files are hand-transcribed. Every number nonetheless matches recovered_theta.csv (13:28) and the upstream theta JSONs, so the hand transcription is currently faithful."
+   },
+   {
+    "claim": "tab_oos.tex row 'flyingthings & 9 & 3.12$\\times$ & \\textbf{+0.67} & 1.26$\\times$ & -0.38' (line 7)",
+    "status": "confirmed",
+    "detail": "scripts/transfer_analysis_v5/results/intervention_oos.csv FF/flyingthings row: n=9, prec_spread=3.1185582055186303 (3.12x), precision=0.6666666666666667 (+0.67, bolded because prec_spread>1.5 per make_paper_tables.py 'disc = r.prec_spread > 1.5'), rec_spread=1.2622803407777297 (1.26x), recall=-0.38333333333333336 (-0.38)."
+   },
+   {
+    "claim": "tab_oos.tex row 'kitti2012 & 9 & 1.04$\\times$ & +0.92 & 2.63$\\times$ & +0.30' (line 8)",
+    "status": "confirmed",
+    "detail": "intervention_oos.csv FF/kitti2012: n=9, prec_spread=1.0420797401142914, precision=0.9166666666666666, rec_spread=2.634506985064683, recall=0.3. Not bolded, consistent with spread 1.04 < 1.5."
+   },
+   {
+    "claim": "tab_oos.tex row 'kitti2015 & 9 & 1.02$\\times$ & +0.38 & 1.67$\\times$ & -0.70' (line 9)",
+    "status": "confirmed",
+    "detail": "intervention_oos.csv FF/kitti2015: n=9, prec_spread=1.0235154669598412, precision=0.38333333333333336, rec_spread=1.6654204938676418, recall=-0.7."
+   },
+   {
+    "claim": "tab_dirtest.tex row 'off-target mass $\\dtb$ & +0.42 & \\best{+0.66} & -0.08 & \\best{+0.64}' (line 8)",
+    "status": "confirmed",
+    "detail": "Recomputed from artifacts: scratch-canonical mean of 'precision' over the 5 scratch rows of results/asym_vs_sym.csv = 0.42222; FF-arm mean precision in intervention_oos.csv = (0.66667+0.91667+0.38333)/3 = 0.65556; pretrained-canonical mean precision = -0.07500; TT-arm mean = (0.73333+0.80+0.38333)/3 = 0.63889. Green-best placement matches column maxima."
+   },
+   {
+    "claim": "tab_dirtest.tex row 'missing support $\\dbt$ & +0.23 & -0.26 & \\best{+0.61} & +0.21' (line 9)",
+    "status": "confirmed",
+    "detail": "Recomputed: scratch canonical recall mean 0.23293; FF grid recall mean (-0.38333+0.3-0.7)/3 = -0.26111; pretrained canonical recall mean 0.61237; TT grid recall mean (0.08333+0.65-0.1)/3 = 0.21111."
+   },
+   {
+    "claim": "tab_dirtest.tex row 'symmetric (mean of the two) & \\best{+0.50} & -0.01 & +0.39 & +0.37' (line 10) and the two composite rows '+0.42 & +0.66 & +0.61 & +0.21' / '+0.50 & -0.01 & +0.61 & +0.21' (lines 12-13)",
+    "status": "confirmed",
+    "detail": "Recomputed: scratch canonical sym mean 0.49899; FF grid sym mean (-0.28333+0.88333-0.63333)/3 = -0.01111; pretrained canonical sym mean 0.39343; TT grid sym mean (0.13333+0.93333+0.03333)/3 = 0.36667. Composite rows are exact read-offs of the rows above per the code in make_paper_tables.py (_comp block, lines 388-395)."
+   },
+   {
+    "claim": "tab_dirtest.tex is part of the paper (it sits in ACCV_2026/tables/ and is regenerated by make_paper_tables.py)",
+    "status": "mismatch",
+    "detail": "tab_dirtest.tex is ORPHANED: grep 'input{tables/' over ACCV_2026/main.tex and supp_main.tex shows it is \\input nowhere. The main.tex table environment carrying \\label{tab:dirtest} (main.tex lines 797-820) actually does '\\input{tables/tab_oos}' (line 819) -- the label was reused for the minimal OOS table (DRAFT_NOTES.md Round 10/11 describe this redesign; Round 6 line 224 lists tab_dirtest under 'NOT rebuilt'). The file is still regenerated (mtime Jun 10 22:04) and current, but a reader of the repo could mistake it for a paper table."
+   },
+   {
+    "claim": "main.tex line 849: pretrained grid arm point estimates '($\\dtb$ $+0.64$, $\\dbt$ $+0.31$, sym $+0.43$)'",
+    "status": "mismatch",
+    "detail": "Current artifact disagrees on 2 of 3 numbers. intervention_oos.csv (mtime Jun 10 21:11) TT-arm means: precision +0.639 (matches +0.64), recall +0.211 (prose says +0.31), sym +0.367 (prose says +0.43). A live read-only recompute from /mnt/nvme_1tb_a/snapshots/transfer_grid reproduces the CSV exactly (+0.64/+0.21/+0.37, kitti2015 TT n=9). The orphaned-but-regenerated tab_dirtest.tex shows +0.21/+0.37 from the same CSV, so the paper's prose contradicts its own generated table source. Root cause documented in ACCV_2026/DRAFT_NOTES.md lines 132-141: 'LIVE ARTIFACT: intervention_oos.csv moves while the local grid trains... TT means now prec +0.64 / rec +0.31 / sym +0.43, prose synced... RE-RUN the OOS script + grep prose numbers when the grid finishes/freezes' -- the prose was synced to a superseded intermediate run (kitti2015 TT n 9->8) and never re-synced. A Middlebury-included computation does not explain it either (gives +0.53/+0.03/+0.15)."
+   },
+   {
+    "claim": "supp_main.tex lines 178-182: 'The pretrained (fine-tuned) arm of the intervention grid contains only three sources... reported for completeness: all three orderings agree with transfer on 2 of 3 benchmarks'",
+    "status": "mismatch",
+    "detail": "Current intervention_oos.csv TT rows all have n=9 (TT arm was brought to parity per HANDOFF_tt_grid_parity.md harvest). The 'three sources' description matches only the stale backup scripts/transfer_analysis_v5/results_with_middlebury_backup/intervention_oos.csv (TT rows n=3: +0.5/+1.0/-0.5 on ft/k12/k15, where 'agree on 2 of 3' held). With the current n=9 TT arm, precision is positive on 3/3 benchmarks, recall on 2/3, sym on 3/3, so the sentence is no longer an accurate summary. supp_main.tex mtime Jun 10 13:46 predates the CSV regen at 21:11. Also 'fine-tuned' misdescribes the TT arm: per intervention_oos_test.py and the handoff it is pretrained+FROZEN (pt1_fz1)."
+   },
+   {
+    "claim": "main.tex tab:dirtest caption (lines 799-816): 'off-target mass varies $3.1\\times$ and ranks transfer ($+0.67$, bold); coverage is comparatively flat ($1.3\\times$) and does not ($-0.38$...)' and 'off-target spread $\\le 1.04\\times$' (line 808); also abstract line 70 '$\\rho{=}{+}0.67$' and line 182 'FlyingThings, $\\rho{=}{+}0.67$, against the symmetric average's $-0.28$'",
+    "status": "confirmed",
+    "detail": "intervention_oos.csv FF/flyingthings: prec_spread 3.1186 (3.1x), precision 0.66667 (+0.67), rec_spread 1.26228 (1.3x), recall -0.38333 (-0.38), sym -0.28333 (-0.28); KITTI prec_spreads 1.0421 and 1.0235, both <= 1.04x."
+   },
+   {
+    "claim": "main.tex line 810 (tab:dirtest caption): appearance 'whose from-scratch cost of $9$--$11$~\\pck{} dominates transfer there'",
+    "status": "mismatch",
+    "detail": "No current artifact yields a 9-11 range. results/decomp_2x2.csv (Jun 11 00:02) main_appearance_hq_minus_matte: kitti2012 = 9.6713, kitti2015 = 7.2132 (flyingthings 7.3496). Per-twin HQ-matte gaps from results/decomp_cells.csv on the KITTI benchmarks: kitti2012 gso 5.38 / kubasic 7.56 / ft-family 11.79; kitti2015 gso 9.38 / kubasic 3.68 / ft-family 10.75 -- i.e. observed twin costs span 3.7-11.8, and the benchmark-level main effects are 7.2-9.7. '9-11' matches neither set; likely written against an older decomp run (decomp CSVs and tab_decomp.tex were regenerated Jun 11 00:02, same minute as the last main.tex edit) and not re-checked."
+   },
+   {
+    "claim": "main.tex lines 846-847: pretrained grid transfer 'compresses into a band a few seed-widths wide (3--8~\\pck{} vs.\\ 15--22 from scratch)'",
+    "status": "confirmed",
+    "detail": "Live recompute of per-benchmark peak-PCK spreads on /mnt/nvme_1tb_a/snapshots/transfer_grid (middlebury dropped): TT 3.16 (kitti2012) / 5.69 (kitti2015) / 8.50 (flyingthings) -> '3-8'; FF 14.77 (flyingthings) / 19.82 (kitti2012) / 21.95 (kitti2015) -> '15-22'. Caveat: the FF 21.95 spread requires the full finished grid (n=11 sources on kitti2015); restricted to the 9 sources actually in intervention_oos.csv the FF kitti2015 spread is 14.68 and the max is 19.82, which would read '15-20'. The claim is consistent with the grid band, ambiguous about which source set it describes."
+   },
+   {
+    "claim": "main.tex lines 437-438: 'scratch $\\rho[\\dtb]{=}{+}0.42$ vs.\\ $\\rho[\\dbt]{=}{+}0.23$; pretrained-backbone $\\rho[\\dbt]{=}{+}0.61$ vs.\\ $\\rho[\\dtb]{=}{-}0.08$'; line 454 'group mean $+0.50$ vs.\\ $+0.42$'; lines 459-461 'dragged from the matched direction's $+0.61$ down to $+0.39$... ($+0.26$/$+0.33$ vs.\\ $+0.67$/$+0.76$)'",
+    "status": "confirmed",
+    "detail": "All recomputed from results/asym_vs_sym.csv: scratch means precision 0.42222 / recall 0.23293 / sym 0.49899; pretrained means recall 0.61237 / precision -0.07500 / sym 0.39343; glunet|True|False sym 0.26061, glunet|True|True sym 0.33232, recalls 0.67374 and 0.76263. These are the same numbers as the canonical columns of tab_dirtest.tex."
+   },
+   {
+    "claim": "Middlebury exclusion in these tables (audit requirement: 'any Middlebury values that survived the claimed exclusion')",
+    "status": "confirmed",
+    "detail": "No survivors found in the four tables. (1) intervention_oos.csv: intervention_oos_test.py line 69 drops middlebury by default; current CSV has no middlebury row (the contaminated version exists only in results_with_middlebury_backup/, unused). (2) asym_vs_sym.csv (canonical columns of tab_dirtest): byte-for-byte reproduction test shows it equals a recompute from transfer_table_nomid.csv (max abs diff 0.000000) and differs from the middlebury-containing transfer_table.csv (max diff 0.0958) -- even though asym_vs_sym_table.py's DEFAULT --table argument is the contaminated transfer_table.csv (which still holds 162 middlebury rows) and run_v5.sh Stage 3 invokes it without overriding that default. The stored CSV is clean, but a naive rerun of run_v5.sh would silently re-introduce Middlebury into asym_vs_sym.csv and hence into tab_dirtest/tab_law/tab_perregime_ablation. (3) recovered_theta.csv: Middlebury target dropped per DRAFT_NOTES Round 4. (4) tab_oos prose: Middlebury exclusion correctly disclosed at main.tex lines 1020-1023."
+   },
+   {
+    "claim": "Tables whose generating code changed after the table was written (mtime audit)",
+    "status": "confirmed",
+    "detail": "No drift for the generated tables: make_paper_tables.py (Jun 10 22:03) predates tab_oos.tex and tab_dirtest.tex (both Jun 10 22:04); intervention_oos_test.py (21:10) predates its CSV (21:11); asym_vs_sym_table.py (Jun 9 22:58) predates asym_vs_sym.csv (Jun 10 12:47). tab_recovery.tex/tab_recovery_full.tex (Jun 10 13:29) sit next to recovered_theta.csv (13:28) and have no generator. The stale-document risks run the other way: supp_main.tex (Jun 10 13:46) predates the intervention_oos.csv regen (21:11), and intervention_oos_test.py's own docstring (line 22, 'TT arm has n=3 sources -> sign checks only, no significance') contradicts its current output (TT n=9)."
+   }
+  ],
+  "notes": "Adversarial audit of tab_recovery.tex, tab_recovery_full.tex, tab_oos.tex, tab_dirtest.tex in /home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/tables/. Every numeric cell in all four tables verifies against its artifact CSV (recovered_theta.csv for the recovery tables -- additionally traced to the upstream theta JSONs in /home/spencer/Projects/interventional-study/thetas/; intervention_oos.csv for tab_oos; asym_vs_sym.csv + intervention_oos.csv for tab_dirtest, with all 20 cells recomputed independently). The real findings are structural and in the prose: (1) main.tex line 849 cites stale TT-arm rhos (+0.31/+0.43 vs the artifact's +0.21/+0.37; +0.64 is correct) -- DRAFT_NOTES.md lines 132-141 explicitly flagged this re-sync as pending; (2) supp_main.tex lines 178-182 still describe the pretrained grid arm as 3 sources ('fine-tuned', 'agree on 2 of 3 benchmarks') while the current artifact has n=9 frozen-backbone sources; (3) tab_dirtest.tex is orphaned -- not \\input anywhere; the \\label{tab:dirtest} table in main.tex inputs tab_oos instead; (4) the tab:dirtest caption's '9--11 pck' appearance cost matches no current artifact (closest: 9.67 kitti2012 main effect in decomp_2x2.csv; per-twin gaps span 3.7-11.8); (5) latent re-run hazard: asym_vs_sym_table.py defaults to the Middlebury-contaminated transfer_table.csv and run_v5.sh does not override it -- the stored CSV is provably clean (matches the nomid table to 6 decimals) only because it was generated with a non-default invocation; a naive 'bash run_v5.sh' would re-contaminate. tab_recovery/tab_recovery_full have no generator script (hand-written .tex), currently faithful. No Middlebury values survived in any of the four tables."
+ },
+ null,
+ null
+]

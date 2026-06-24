@@ -1,0 +1,11 @@
+\begin{tabular}{l rr c c}
+\toprule
+ & \multicolumn{2}{c}{coefficients} & ranking $\rho$ & policy $\rho$ \\
+\cmidrule(lr){2-3}
+Model & $w[d_{T\to B}]$ & $w[d_{B\to T}]$ & (src / bench / both held out) & (fit-free)$^{*}$ \\
+\midrule
+from scratch & \textbf{-7.57} & \textbf{-1.08} & +0.47 / +0.56 / +0.48 & \textbf{+0.50} \\
+pretrained & -0.82 & \textbf{-3.22} & +0.29 / +0.50 / +0.35 & \textbf{+0.61} \\
+pooled (regime-blind) & -4.57 & -2.03 & +0.40 / +0.46 / +0.41 & \textbf{+0.55} \\
+\bottomrule
+\end{tabular}

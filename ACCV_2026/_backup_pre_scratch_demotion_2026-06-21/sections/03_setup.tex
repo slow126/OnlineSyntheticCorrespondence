@@ -1,0 +1,139 @@
+% =====================================================================
+\section{Setup: Two Directed Distances and a Decomposition}
+\label{sec:setup}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/splats/composite_rgb_motion.png}
+\caption{\textbf{Motion fingerprints (BFV splats) and RGB samples.}
+\emph{Top block:} each panel aggregates a dataset's joint flow vectors
+$\mathbf{f}=[\hat x,\hat y,\Delta\hat x,\Delta\hat y]$, clusters them spatially
+(non-uniform, data-driven clusters), and renders each cluster as a directional
+splat: color encodes dominant flow direction (legend), splat extent encodes the
+cluster's spread; training sets (upper row) above benchmarks (lower row). The
+first three columns hold the same dataset in both rows (train/eval); their
+fingerprints match, confirming the signature is a property of the data rather
+than of a particular split. Training sets and benchmarks otherwise occupy
+visibly different regions of motion space. \emph{Bottom block:} one RGB sample
+per dataset, same column order, for qualitative reference. The two directed
+distances defined below quantify the two distinct ways motion supports can fail
+to align.}
+\label{fig:splats}
+\end{figure}
+
+We represent each dataset by the distribution of its motion and ask how well a
+training set's distribution covers a target's. This section defines that
+representation, the two directed distances that are our central measurement,
+and the decomposition we use to turn them into predictions.
+
+\noindent\textbf{Transfer study.}
+We study four architecture families: the semantic matcher CATs++
+\cite{cho2022cats++}, the optical-flow networks RAFT \cite{teed2020raft} and
+FlowFormer \cite{huang2022flowformer}, and the dense-matching network GLU-Net
+\cite{truong2020glunet}. For CATs++, GLU-Net, and FlowFormer the image-feature
+backbone (ImageNet ResNet-101, VGG, and a pretrained Twins-SVT transformer,
+respectively) is either initialized from those features or trained from
+scratch, and either frozen or trained jointly with the correspondence head,
+giving four configurations each; RAFT is trained from scratch by construction
+and is one. The resulting \textbf{13 backbone configurations} are each trained
+on 11 pure synthetic sources (\textbf{142 trained models}) and evaluated by peak \pck@0.05 on 9 benchmarks spanning
+optical flow, dense, and semantic matching (KITTI-2012/2015 \cite{kitti_flow},
+FlyingThings \cite{mayer2016FlyingThingsDataset}, PointOdyssey
+\cite{pointodyssey}, TSS, PF-Pascal/PF-Willow \cite{pfpascal}, SPair-71k
+\cite{spair71k}, and a held-out split of our procedural source), for
+\textbf{1{,}278 source--benchmark--configuration transfer measurements}. Six of
+the nine targets are real images (KITTI-2012/2015 and the four semantic sets);
+FlyingThings, PointOdyssey, and the procedural split are synthetic targets,
+included for their controlled motion and exact labels (so real-image \emph{motion}
+transfer is carried mainly by KITTI, a scope point we return to in
+Sec.~\ref{sec:limits}). The
+coverage score itself depends only on the (source, target-benchmark) pair, but a
+source's realized transfer also depends on the model, so we evaluate every ranking
+claim within a fixed (benchmark, architecture, configuration) \emph{context}; this
+same context indexes the level term of the absolute predictor (Sec.~\ref{sec:absolute}).
+We report \emph{peak} \pck{} (the best checkpoint per run) so that data quality is
+not confounded with convergence speed: a fixed-budget last-checkpoint number would
+penalize sources that need a different schedule. Because peak selection is applied
+identically to every source in a context, and the selection rule only ever ranks
+sources \emph{within} a context, it is a constant, monotone treatment that cannot
+change which source ranks higher---it leaves the ranking $\rho$ untouched and can
+inflate only the absolute level, which we predict separately and openly attribute
+in part to a realism effect (Sec.~\ref{sec:absolute}). Throughout we stratify the nine
+benchmarks into \emph{real-motion} targets (KITTI-2012/2015, FlyingThings,
+PointOdyssey, and the procedural split), whose ground truth is dense pixel
+motion, and \emph{semantic} targets (SPair-71k, PF-Pascal, PF-Willow, TSS),
+whose ground truth is sparse keypoint correspondence across object instances;
+we report coverage stratified by both, as it behaves differently on the two
+target types (Sec.~\ref{sec:law}).
+
+\noindent\textbf{Each architecture in its designed regime.} CATs++, GLU-Net, and
+FlowFormer are designed to run on a \emph{pretrained} image backbone; RAFT is the
+one architecture built to train end-to-end from scratch with no pretrained
+backbone. We accordingly analyze each in its intended regime: the three
+backbone-dependent matchers with their pretrained backbones (encoder trained or
+frozen), and RAFT from scratch. Training the backbone-dependent matchers from
+scratch is off-design: their randomly-initialized backbones mode-collapse to a
+near-static flow prior that ignores the image pair, so a \emph{data}-selection
+signal cannot exist there at all---a network that ignores its input cannot reveal
+which source trained it. We confirm this with two motion-free checks: a
+source-sensitivity probe (a collapsed model barely changes its prediction when the
+source image is swapped) and the test of whether a from-scratch encoder beats its
+own random initialization ($\Delta_{\text{enc}}{>}0$). The off-design
+configurations fail both, and we report them in full in the supplement. Because
+this partition follows from architecture design and is fixed before any motion
+distance is measured, it introduces no outcome-based selection.
+
+\noindent\textbf{Motion representation.}
+We summarize each dataset as a point cloud of flow vectors in a normalized
+four-dimensional space of image position and displacement,
+\begin{equation}
+\mathbf{f}_{\text{flow}} = [\hat{x},\, \hat{y},\, \Delta\hat{x},\,
+\Delta\hat{y}] \in [-1,1]^4,
+\label{eq:bfv}
+\end{equation}
+following the bag-of-flow-vectors representation (Fig.~\ref{fig:splats}). This
+retains \emph{where} motion occurs and \emph{how} content moves while remaining
+invariant to image resolution and free of any spatial binning. For the
+appearance control, we build the analogous representation from DINOv3 patch
+features, reduced by PCA and $\ell_2$-normalized \cite{simeoni2025dinov3}.
+
+\noindent\textbf{Two directed distances.}
+The match between a training cloud $A$ and a target cloud $B$ is directional,
+and we measure each direction by the mean nearest-neighbor distance
+\begin{equation}
+d_{A \to B} \;=\; \frac{1}{|A|}\sum_{a \in A}\; \min_{b \in B}\,
+\lVert a - b \rVert_2^2 .
+\label{eq:dirdist}
+\end{equation}
+Writing $\dtb$ for the train-to-target direction and $\dbt$ for the reverse,
+$\dtb$ is large when much of the training distribution lies far from anything
+the target uses (\textbf{off-target mass}), and $\dbt$ is large when target
+motions have no nearby training example (\textbf{missing support}).
+
+Each direction can be estimated in several ways. Our default,
+Eq.~(\ref{eq:dirdist}), is a \emph{support-geometry} estimator: it depends only
+on how close the two point sets lie, not on their local densities. We compare it
+(supp.) against two alternatives: $\epsilon$-coverage, the fraction of one cloud
+within a radius of the other (also support-based), and a $k$-nearest-neighbor
+estimate of the KL divergence (density-based). We prefer the support-based
+estimators for procedurally generated data on empirical grounds: the
+nearest-neighbor and $\epsilon$-coverage estimates converge as the sample grows,
+whereas the KL estimate fails to stabilize at any budget we tried (supp.). We
+suspect this is because rendering more frames of the same motion changes a
+density estimate while leaving the support unchanged, but we do not test that
+mechanism directly; the instability alone makes the density estimator unreliable
+here. Of the three, nearest-neighbor is the most informative predictor and is our
+default, $\epsilon$-coverage is close behind, and KL is the least stable and the
+weakest; that all three nonetheless agree on the central finding
+(Sec.~\ref{sec:law}) shows it reflects the \emph{direction} of the comparison
+rather than the estimator. As direction-blind baselines we also use the symmetric
+average of the two directions and two distribution distances, FID
+\cite{heusel2018ganstrainedtimescaleupdate} and sliced Wasserstein-2.
+
+\noindent\textbf{Correlation convention.} We report Spearman $\rho$ for every
+\emph{ranking} claim (which source is better---the quantity the selection rule
+acts on) and Pearson $r$ (with MAE) only for \emph{absolute-\pck} prediction
+(Sec.~\ref{sec:absolute}). The pooled scatter (Fig.~\ref{fig:coverage_law_a}) shows
+Pearson $r$ on within-context-standardized values for visualization; the
+load-bearing ranking statistic is the Spearman $\rho$ of Table~\ref{tab:law}.
+

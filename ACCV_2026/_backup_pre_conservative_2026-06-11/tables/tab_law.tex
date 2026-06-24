@@ -1,0 +1,18 @@
+\begin{tabular}{l cc rr rr}
+\toprule
+ & & & \multicolumn{2}{c}{directed} & \multicolumn{2}{c}{symmetric (contrast)} \\
+\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+Architecture & Backbone & Frozen & $\rho[\dtb]$ & $\rho[\dbt]$ & $\rho[\mathrm{sym}]$ & $\rho[\mathrm{W2}]$ \\
+\midrule
+CATs++ & -- & -- & \textbf{\textcolor{bestgreen}{+0.53}} & +0.03 & +0.46 & +0.39 \\
+CATs++ & -- & \cmark & \textbf{\textcolor{bestgreen}{+0.51}} & +0.08 & +0.46 & +0.46 \\
+GLU-Net & -- & -- & \textbf{+0.31} & +0.41 & \textcolor{bestgreen}{+0.46} & +0.39 \\
+GLU-Net & -- & \cmark & \textbf{+0.37} & +0.34 & \textcolor{bestgreen}{+0.58} & +0.46 \\
+RAFT & \cmark & -- & \textbf{+0.40} & +0.30 & \textcolor{bestgreen}{+0.54} & +0.48 \\
+\midrule
+CATs++ & \cmark & -- & +0.01 & \textbf{\textcolor{bestgreen}{+0.51}} & +0.42 & +0.40 \\
+CATs++ & \cmark & \cmark & +0.14 & \textbf{+0.50} & +0.56 & \textcolor{bestgreen}{+0.57} \\
+GLU-Net & \cmark & -- & -0.23 & \textbf{\textcolor{bestgreen}{+0.67}} & +0.26 & +0.13 \\
+GLU-Net & \cmark & \cmark & -0.22 & \textbf{\textcolor{bestgreen}{+0.76}} & +0.33 & +0.28 \\
+\bottomrule
+\end{tabular}

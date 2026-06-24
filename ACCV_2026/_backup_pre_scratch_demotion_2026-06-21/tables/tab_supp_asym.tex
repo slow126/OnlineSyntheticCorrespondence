@@ -1,0 +1,18 @@
+\begin{tabular}{l c rrrrrr}
+\toprule
+Arch. & Enc. & $\rho$[rule] & $\rho[\dtb]$ & $\rho[\dbt]$ & sym & FID & SW2 \\
+\midrule
+\multicolumn{8}{@{}l}{\textit{Scratch backbone}}\\
+CATs++  & \enctrained & +0.53 & +0.53 & +0.03 & +0.46 & +0.38 & +0.39 \\
+CATs++  & \encfrozen  & +0.51 & +0.51 & +0.08 & +0.46 & +0.45 & +0.46 \\
+GLU-Net & \enctrained & +0.31 & +0.31 & +0.41 & +0.46 & +0.37 & +0.39 \\
+GLU-Net & \encfrozen  & +0.37 & +0.37 & +0.34 & +0.58 & +0.48 & +0.46 \\
+RAFT    & \enctrained & +0.40 & +0.40 & +0.30 & +0.54 & +0.45 & +0.48 \\
+\midrule
+\multicolumn{8}{@{}l}{\textit{Pretrained backbone}}\\
+CATs++  & \enctrained & +0.51 & +0.01 & +0.51 & +0.42 & +0.41 & +0.40 \\
+CATs++  & \encfrozen  & +0.50 & +0.14 & +0.50 & +0.56 & +0.62 & +0.57 \\
+GLU-Net & \enctrained & +0.67 & -0.23 & +0.67 & +0.26 & +0.20 & +0.13 \\
+GLU-Net & \encfrozen  & +0.76 & -0.22 & +0.76 & +0.33 & +0.33 & +0.28 \\
+\bottomrule
+\end{tabular}

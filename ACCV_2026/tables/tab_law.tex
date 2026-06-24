@@ -1,0 +1,20 @@
+\begin{tabular}{lc rrrr rrrr}
+\toprule
+\multicolumn{2}{c}{} & \multicolumn{8}{c}{\footnotesize Spearman $\rho$ (transfer vs.\ $-$distance)} \\
+\cmidrule(lr){3-10}
+ & & \multicolumn{4}{c}{Real-motion Targets} & \multicolumn{4}{c}{Semantic Targets} \\
+\cmidrule(lr){3-6}\cmidrule(lr){7-10}
+Arch. & Encoder & $\dtb$ & $\dbt$ & Cham. & W2 & $\dtb$ & $\dbt$ & Cham. & W2 \\
+\midrule
+\multicolumn{10}{@{}l}{\emph{Pretrained backbone}}\\
+CATs++ & \enctrained & +0.10 & \textbf{\bst{+0.52}} & +0.32 & +0.29 & -0.12 & \textbf{+0.50} & \bst{+0.54} & +0.53 \\
+CATs++ & \encfrozen & +0.26 & \textbf{\bst{+0.51}} & +0.50 & +0.51 & -0.00 & \textbf{+0.50} & +0.64 & \bst{+0.66} \\
+GLU-Net & \enctrained & -0.18 & \textbf{\bst{+0.65}} & +0.25 & +0.26 & -0.30 & \textbf{\bst{+0.70}} & +0.28 & -0.02 \\
+GLU-Net & \encfrozen & -0.17 & \textbf{\bst{+0.73}} & +0.24 & +0.19 & -0.28 & \textbf{\bst{+0.80}} & +0.45 & +0.40 \\
+FlowFormer & \enctrained & +0.11 & \textbf{\bst{+0.70}} & +0.43 & +0.41 & +0.25 & \textbf{+0.31} & +0.41 & \bst{+0.65} \\
+FlowFormer & \encfrozen & +0.18 & \textbf{\bst{+0.67}} & +0.39 & +0.37 & +0.05 & \textbf{+0.35} & +0.27 & \bst{+0.39} \\
+\midrule
+\multicolumn{10}{@{}l}{\emph{From scratch} (RAFT, the architecture designed for it)}\\
+RAFT & \enctrained & +0.32 & \textbf{+0.44} & \bst{+0.47} & +0.45 & -- & -- & -- & -- \\
+\bottomrule
+\end{tabular}

@@ -1,0 +1,217 @@
+{
+ "summary": "The project's evidence base rests on four layers. (1) CORRELATIONAL HEADLINE: motion-space (optical-flow) source\u2192benchmark distances predict transfer rankings of synthetic training sources far better than matched DINO appearance distances, across three CV regimes (LOTO held-source, LOBO held-benchmark, JOINT both held). The headline estimand is the paired motion-minus-appearance gap under generator-family cluster bootstrap (gap +0.364 to +0.754, P(gap>0) >= 0.993 in all regimes), defended by shuffle nulls, 6-way L-mechanism invariance, density controls, leave-one-generator-family-out (motion rho stays +0.219 to +0.518 under every drop), and dense/sparse stratification. (2) CEILING FRAMING: the modest motion rho ~= 0.45 is reframed as ~78% of an inter-variant reproducibility ceiling (0.454/0.584 pooled) and 77%/79%/57% of a held-architecture consensus (LOTO/LOBO/JOINT); the win-rate-vs-gap analysis shows motion ranks source pairs about as well as re-training the model does at every gap size. The consistency analysis decomposes everything into level + source_quality + motion_match + noise: a seed-free camera-vs-object crossover (camera-dominant source wins K2012 by +6.99 FF / +2.67 TT; object-dominant wins FlyingThings by -5.46 FF / -3.65 TT, replicating across both training regimes) proves a genuine source-by-benchmark interaction, and double-demeaning shows the notorious appearance \"anti-correlation\" (+0.249 wrong-signed) is a source-quality confound that collapses to -0.175 once source identity is removed. (3) REGIME-DIRECTION LAW (newest, paper-restructuring): which DIRECTION of directed motion coverage predicts transfer flips with training regime \u2014 from-scratch models are precision-bound (train->target distance, a->b: catspp F/F +0.600) while pretrained models are recall-bound (target->train, b->a: glunet T/T +0.719); a fit-free one-bit regime rule scores +0.498 mean within-context Spearman, ~= the inter-variant ceiling 0.528 (fraction 0.99), beats every fitted ridge/pooling structure, was adversarially verified (exact permutation p=0.0286, the design's floor), and PASSED its pre-registered out-of-sample test on the from-scratch kubric intervention grid (precision +0.621 > sym +0.096 > recall -0.125 with 5-seed-averaged distances); a DINO control shows no flip in appearance space. (4) INTERVENTIONAL STUDY (kubric/SDF renders): the practical loop \"search synthetic-motion parameters theta with TPE against the predictor, materialize the winner, train, compare to prediction\" is supposed to show the predictor can DESIGN data, not just analyze it. It is closed for KITTI (predicted margin +0.93 vs observed +0.87; trial76 97.78 vs anchor 96.91) and confirmed as an honest null on FlyingThings (predicted ~0; trained trial80 80.68 vs baseline 82.26 = -1.58); the kubric arm produced a 13-cell master table where trial19 (single frozen forward-dolly) beats movi_f on K2015 (96.12 vs 94.82 TT; 87.15 #1 from-scratch) and the TPE-designed synthetic_fractal is the strongest from-scratch source (94.43 K2015). FAILURES/INCONSISTENCIES are significant and well-documented: a Middlebury eval bug was CONFIRMED 2026-06-10 and Middlebury is now EXCLUDED from all canonical results \u2014 most Obsidian-note tables quoting Middlebury numbers predate this; the trial19 training set was discovered to be DEGENERATE (one frozen motion field x 5000 textures), which converted the \"appearance is nearly free\" -0.37 HQ->matte result into a frozen-set artifact (with real motion diversity the matte cost is -2.57 to -2.74 at TT and -3.7 to -10.8 from scratch); the predictor's known object-blindness made it wrongly predict the FT-recovered config would be a strong KITTI source; absolute-level calibration misses by ~4-19 PCK out of distribution and two leakage-clean calibration analyses returned NULL (ranking, not magnitude, is the deliverable); almost all intervention cells are single-seed with variant gaps at or below the +-0.4-1.9 seed-noise floor; and the from-scratch arm's fine K2015 ordering flips against motion distance and is attributed to seed noise plus a clean-supervision confound. Current state of the interventional arm: FF grid 10/10 complete, jitter (randomness-ladder) dataset and KITTI-fitted HQ/matte pairs still materializing, sdf Middlebury/FlyingThings TPE winners searched but never trained, and >=3-seed runs on the load-bearing crossover cells remain the decisive missing validation.",
+ "claims": [
+  {
+   "claim": "Primary claim: motion distance outperforms matched DINO appearance distance for predicting source rankings, under generator-family cluster bootstrap (paired gap is the headline estimand)",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Experiments/Claims & Evidence.md (Claim 1 table, lines 36-40)",
+   "numbers": "LOTO motion +0.507 / appearance -0.247 / gap +0.754 [+0.236, +0.987] P 0.993; LOBO +0.448 / +0.085 / +0.364 [+0.269, +0.464] P 1.000; JOINT +0.304 / -0.197 / +0.501 [+0.188, +0.710] P 0.999"
+  },
+  {
+   "claim": "Signal generalizes across regimes and dense/sparse benchmark groups; SPair is the lone weak benchmark",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Experiments/Claims & Evidence.md (Claim 2 table, lines 75-85); artifact scripts/transfer_analysis_v4/STRATIFICATION_peak_pck.txt",
+   "numbers": "broad motion rho_g: LOTO dense +0.559 / sparse +0.430; LOBO dense +0.443 / sparse +0.422; JOINT dense +0.230 / sparse +0.408; SPair LOTO motion rho_g +0.246, LOBO +0.183"
+  },
+  {
+   "claim": "Ranking rho is invariant to the L mechanism (6 L-modes give identical rho_g), the core leakage defense",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Experiments/Model Reference.md line 117",
+   "numbers": "motion LOTO/LOBO/JOINT = +0.508/+0.448/+0.321, identical to 3 decimal places across all 6 L modes"
+  },
+  {
+   "claim": "No single generator family is load-bearing: leave-one-family-out keeps motion rho and the gap positive under every drop; realflow drop is most influential",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Experiments/Source Robustness.md (Tier 2 table, lines 57-65)",
+   "numbers": "drop sdf3d motion +0.219 [-0.319, +0.566] gap +0.603 P 0.919; drop warp2d +0.489 gap +0.439 P 0.947; drop kubric +0.482 gap +0.855 P 1.000; drop realflow +0.518 gap +0.197 P 0.927 (appearance jumps to +0.321); drop semantic +0.265 gap +0.586 P 1.000"
+  },
+  {
+   "claim": "Mechanism of the appearance null: DINO distance is near-constant among synthetic sources while flow distance spreads",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Experiments/Source Robustness.md lines 96-99",
+   "numbers": "among 5 synthetic sources -> kitti2015: dino_fid CV = 0.028 vs flow_fid CV = 0.612"
+  },
+  {
+   "claim": "Predictability ceiling: motion captures ~78% of the inter-variant reproducibility ceiling; per-benchmark fractions vary; SPair has an intrinsically low ceiling",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Experiments/Predictability Ceiling.md (table, lines 19-30)",
+   "numbers": "POOLED ceiling +0.584, motion +0.454, 78%; kitti2012 ceiling +0.844 motion +0.827 (98%); spair ceiling +0.174 motion -0.036; source main-effect share 32.8%"
+  },
+  {
+   "claim": "Cross-architecture consensus (CATs++, RAFT, GLUNet): motion recovers a substantial fraction of the held-architecture consensus",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Experiments/Cross Architecture Consensus - All Splits.md (lines 12-16) and .csv",
+   "numbers": "LOTO motion +0.477 vs consensus +0.619 = 77% [62%-100%]; LOBO +0.491 = 79% [66%-96%]; JOINT +0.351 = 57% [21%-83%]; variant-level motion +0.439 vs held-variant consensus +0.644 = 68% [58%-80%]"
+  },
+  {
+   "claim": "GLU-Net does not break the claim: provisional observed-peak motion rho stays positive, appearance negative; GLU-Net agrees with CATs++ at the reproducibility level",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Experiments/GLU-Net Grid.md (lines 46-54) and Camera Ready Ceiling and GLUNet Quick Run.md (lines 77-88)",
+   "numbers": "GLU-Net vs CATs++ pooled Spearman +0.82, mean per-benchmark rho +0.42; quick-run @10,000-step horizon: motion LOTO +0.451, appearance LOTO -0.249, motion = 68% of held-variant consensus (+0.666)"
+  },
+  {
+   "claim": "Crossover double-dissociation (seed-free interaction evidence): camera-dominant source wins K2012, object-dominant wins FlyingThings, sign replicates across FF and TT training regimes; K2015/Middlebury are predicted ties",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Experiments/Consistency Analysis - One Model, Three Tests.md (section 1 table, lines 40-45)",
+   "numbers": "K2012: camera +6.99 FF / +2.67 TT; FlyingThings: object -5.46 FF / -3.65 TT; K2015: object -1.04 FF / camera +2.32 TT; Middlebury: object -0.20 FF / camera +0.82 TT"
+  },
+  {
+   "claim": "Double demeaning: motion survives removal of source main effect (genuine match interaction); the appearance anti-correlation is a source-quality confound that flips sign",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Experiments/Consistency Analysis - One Model, Three Tests.md (section 2.3 table, lines 92-95)",
+   "numbers": "motion: single demean -0.379, double demean -0.255 [-0.429, -0.024], P(rho<0) 0.987; appearance: single +0.249 (wrong sign), double -0.175 [-0.389, +0.010], P 0.966; 882 matched rows, 11 sources x 9 benchmarks x 9 variants"
+  },
+  {
+   "claim": "Win-rate vs true PCK gap: motion tracks the retraining-noise ceiling at every gap; appearance is below chance everywhere",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Experiments/Consistency Analysis - One Model, Three Tests.md (section 3 table, lines 115-122)",
+   "numbers": "gap 0-1: motion 0.582 vs ceiling 0.570, appearance 0.428; gap 4-8: 0.650 vs 0.680, appearance 0.388; gap 32+: 0.836 vs 0.856, appearance 0.257"
+  },
+  {
+   "claim": "Regime-Direction Law: scratch models are precision-bound (a->b), pretrained recall-bound (b->a); a fit-free one-bit regime rule matches the inter-variant ceiling and beats all fitted pooling structures",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/REGIME_DIRECTION_FINDING.md (per-variant master table lines 44-54; pooling shoot-out lines 67-75)",
+   "numbers": "catspp F/F precision +0.600 / recall +0.015; glunet T/T precision -0.176 / recall +0.719; regime-rule mean +0.498 vs inter-variant ceiling 0.528, fraction 0.99; symmetric fallback +0.465; best fitted structure (hierarchical, arch) LOBO +0.460; shared 3-arch ridge LOTO +0.308"
+  },
+  {
+   "claim": "Regime-direction law adversarially verified: direction-flip CIs exclude 0 on both sides, exact permutation at design floor, three feature constructions agree, leave-one-benchmark-out holds, motion-specific (no flip in DINO space)",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/REGIME_DIRECTION_FINDING.md (VERIFICATION section, lines 102-139; DINO control lines 171-181)",
+   "numbers": "scratch CATs++ d = +0.53 [+0.29,+0.77] / +0.46 [+0.22,+0.69]; pretrained GLU-Net d = -0.74 [-1.08,-0.33] / -0.90 [-1.11,-0.65]; flip statistic +0.818, p = 0.0286 (minimum achievable, C(8,4)=70); DINO flip +0.013 (p=0.54)"
+  },
+  {
+   "claim": "Regime-direction law passed its pre-registered out-of-sample test on the from-scratch kubric intervention grid",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/REGIME_DIRECTION_FINDING.md (OUT-OF-SAMPLE TEST section, lines 141-169)",
+   "numbers": "FF arm, 9 sources x 4 benchmarks, 5-seed-averaged distances: precision +0.621 > sym +0.096 > recall -0.125 (single-seed: +0.317/+0.150/+0.000); trial19 profile: worst recall of KITTI family (b_to_a 0.0105 vs ~0.0065) yet FF rank 1/9"
+  },
+  {
+   "claim": "motion_rule as the single g feature under full fold machinery gives the project's best JOINT and restores the consensus fraction with GLU-Net included",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/REGIME_DIRECTION_FINDING.md (lines 183-193)",
+   "numbers": "ctx rho_g +0.488/+0.497/+0.519 (LOTO/LOBO/JOINT), MAE(L+g) 8.99 PCK, abs Pearson 0.874; consensus 0.79/0.80/0.81 of the 0.731 3-arch ceiling; selection regret median 2.3-3.4 PCK vs 13.3 random"
+  },
+  {
+   "claim": "Interventional loop closed (SDF arm): the predictor predicts margins well even where absolute level misses; KITTI is the marginal win, Middlebury the calibration check, FlyingThings the confirmed negative control",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Experiments/Interventional Study.md (Tables 1-2, lines 17-33; reads lines 39-44)",
+   "numbers": "kitti2015: predicted margin +0.93 raw / +2.42 cal, actual +0.87 (trial76 97.78 vs large_zoom anchor 96.91, seed-spread +-0.4-0.9); middlebury: predicted +1.03, actual +0.52 vs Jan anchor / -0.5 vs Dec (noise floor +-1.0-1.9); flyingthings: predicted +0.05, trial80 trained 80.68 vs baseline 82.26 = -1.58 (cross-protocol, approximate); level misses: KITTI ~4-10 under-predicted, flyingthings ~19"
+  },
+  {
+   "claim": "Calibration ceiling: recalibration does not beat raw L+g and no static dataset feature (80+ descriptors) explains the within-cell magnitude residual out-of-fold \u2014 ranking is the principled deliverable",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Experiments/Interventional Study.md (calibration section, lines 73-98)",
+   "numbers": "raw L+g RMSE 13.96 / slope 0.955 / ctx_rho 0.396; per-cell affine RMSE 15.93 ctx_rho -0.12; residual search out-of-fold R^2: appearance -1.08, density -1.12, motion control -0.03; within-cell sigma ~= 7-17 PCK vs +-1-2 seed noise"
+  },
+  {
+   "claim": "Kubric master table (TT arm): trial19 and the recovered camera-dominant sources beat the movi_f floor on KITTI; structure beats diversity",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Experiments/Kubric Interventions - Master Table.md (master table, lines 15-29)",
+   "numbers": "K2015 @TT: movi_f 94.82 (floor); trial19 96.12; lowtex_matte 95.75; kitti_recovered_hq 96.57; kitti_recovered_gso_hq 96.58 (K2012 98.46); flyingthings_recovered_hq 94.30 (< floor); fieldDiff: trial19 0.011 (frozen) vs ft_recovered 0.789"
+  },
+  {
+   "claim": "From-scratch (FF) arm complete; dynamic range opens (~12 pt TT band vs ~82 pt FF) and the TPE-designed source leads; trial19 tops K2015 from scratch",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Experiments/Kubric Interventions - Master Table.md (FF table, lines 77-91; config compression line 69)",
+   "numbers": "FF K2015: synthetic_fractal (TPE) 94.43 (4-avg 75.34, best per-bench all at epoch 26, rescore sanity 94.45 ~= 94.43); trial19 87.15; kitti_recovered_gso_hq 83.16 (K2012 96.48); ft_recovered_matte 72.47; spair negative control 9.14; ranges: True_True 86->98 (~12 pts) vs False_False 9.14->91.48 (~82 pts)"
+  },
+  {
+   "claim": "Headline reproduced on the controlled interventions from-scratch: motion distance predicts intervention transfer, appearance does not",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Experiments/Kubric Interventions - Master Table.md (appearance similarity section, line 196)",
+   "numbers": "8 KITTI cells, FF: MOTION flow-mean_nn -> PCK Spearman -0.76; APPEARANCE dino-mean_nn -> PCK Spearman -0.03"
+  },
+  {
+   "claim": "Appearance ablation re-resolution: the near-free HQ->matte cost was a frozen-set artifact; with genuine per-scene motion diversity the matte cost is ~2.5-2.7 PCK at TT and much larger from scratch \u2014 drop the 'appearance is nearly free' framing",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Experiments/Kubric Interventions - Master Table.md (lines 40-43, Surprise 4 line 124); Kubric Appearance Ablation.md (lines 118-125)",
+   "numbers": "trial19 frozen: -0.37 (96.12->95.75); diverse GSO TT: -2.74 (96.58->93.84); KuBasic TT: -2.57 (96.57->94.00); from-scratch HQ->matte: GSO -9.4 (83.16->73.78), FT-recovered -10.8 (83.22->72.47), KuBasic -3.7 (80.23->76.55)"
+  },
+  {
+   "claim": "Aggregate-descriptor structural limitation (Claim 10): self-recovery oracle identifies camera regime but object motion is flat/unidentified; benchmark fits recover the correct camera regime within generator expressivity, but Middlebury hits a generator wall and the FT config's predicted KITTI strength was wrong (object blindness)",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Experiments/Kubric Motion Generator Search.md (oracle result lines 135-155; benchmark fits lines 195-237); kubric_se3.md (fits table lines 56-61, findings lines 82-97)",
+   "numbers": "near-floor cluster: end_distance range [6.82, 7.09] spread 0.26 (identified) vs motion_translation range [0.02, 0.72] spread 0.70 (flat); fits: FT 5x floor, KITTI 140x floor, Middlebury 38x floor; predictor said FT config strong for KITTI (g +4.6) \u2014 actual HQ 94.31 vs movi-f 94.82"
+  },
+  {
+   "claim": "Camera-motion QC: the dolly parameterization works as intended but camera-motion magnitude does not predict the FF KITTI win \u2014 third independent line for the clean-supervision confound on trial19",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Experiments/Kubric Interventions - Master Table.md (QC section, lines 166-177)",
+   "numbers": "kitti_recovered \u0394dist 2.180 (24.2%) transfers 83.16 vs trial19 \u03940.767 (7.1%) transfers 87.15; trial19 farthest from K2015 in motion distance (0.0337) yet best FF transfer"
+  },
+  {
+   "claim": "Per-pretraining-trained model degenerate runs and excluded candidates in the grids",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Experiments/GLU-Net Grid.md (line 63); Interventional Study.md (line 35)",
+   "numbers": "glunet sdf_kitti2015_trial0002 stuck ~12%; synthetic_random_flipping robustness copy collapsed to ~37%; pre-fix real_cold trial0002 trained to 86.77 (buggy-search candidate, excluded)"
+  },
+  {
+   "claim": "Middlebury eval bug confirmed and Middlebury excluded from all canonical results; headline numbers got stronger after exclusion",
+   "source": "/home/spencer/.claude/projects/-home-spencer-Projects-OnlineSyntheticCorrespondence/memory/middlebury_invariance.md (lines 10-41)",
+   "numbers": "pretrained-Middlebury ~52.6 +/- 4.7 within-context std (vs 10-17 elsewhere; scratch std 15.3); after exclusion (9 benchmarks, 1,458 cells): flip +0.818->+0.899, rule 0.508->0.516, pretrained rule 0.554->0.612 (frac of fair oracle 1.08), OOS FF matched +0.62->+0.66 / mismatched -0.26"
+  }
+ ],
+ "red_flags": [
+  {
+   "issue": "Middlebury eval bug CONFIRMED (2026-06-10) and Middlebury EXCLUDED from all canonical results \u2014 but nearly every Obsidian note quoted here predates the exclusion and reports Middlebury cells as live evidence (Interventional Study Tables 1-2 'middlebury... calibration result', Master Table 'Mid' column, Consistency crossover Middlebury row, Predictability Ceiling 'middlebury +0.597/+0.645 ~100%'). The closed-loop Middlebury row is explicitly marked VOID in memory.",
+   "evidence": "/home/spencer/.claude/projects/-home-spencer-Projects-OnlineSyntheticCorrespondence/memory/middlebury_invariance.md: 'eval bug CONFIRMED -> Middlebury is now EXCLUDED from ALL canonical results (9 benchmarks, 1,458 cells)... Closed-loop \u00a77.1 Middlebury row marked VOID'; vs Interventional Study.md line 41 'Middlebury is a calibration result, not a ranking win'",
+   "severity": "high"
+  },
+  {
+   "issue": "The trained-on dataset for the appearance-ablation headline (trial19 / lowtex_matte) is DEGENERATE: all 5,000 scenes share ONE frozen motion field. This silently converted the flagship 'appearance is nearly free (-0.37)' claim into a frozen-set artifact; the project caught it and re-scoped, but trial19 numbers still anchor several claims (e.g. 'structure >> diversity' relies on trial19 87.15 FF, which the project itself attributes partly to a clean-supervision confound that motion distance contradicts).",
+   "evidence": "/home/spencer/Documents/Obsidian/Correspondence/Experiments/Model A Diagnostics & Kubric Dataset Bug.md: 'kitti2015_hq_trial19... 1 distinct range, magStd 0.007, fieldDiff/mag 0.006 \u2014 DEGENERATE'; Kubric Interventions - Master Table.md line 42: 'kitti_recovered_gso_hq 96.58 -> gso_matte 93.84 = -2.74... the near-free -0.37 was specific to the single-frozen-field trial19'; line 157: 'trial19 is the farthest camera source from K2015 (0.0337) yet the best K2015 transfer from-scratch (87.15)'",
+   "severity": "high"
+  },
+  {
+   "issue": "Single-seed throughout the interventional grids: variant gaps (~0.5-2 PCK at TT, 1-4 PCK FF on K2015) are at or below the documented seed-noise floor (+-0.4-0.9 KITTI, +-1.0-1.9 Middlebury). The project itself states a real 'beats baseline' claim would need 3+ seeds, and the K2015 fine ordering flips between FF and TT.",
+   "evidence": "/home/spencer/Documents/Obsidian/Correspondence/Experiments/Interventional Study.md line 44: 'variant gaps \u2272 seed noise... A real beats-baseline claim would need 3+ seeds per config'; Kubric Interventions - Master Table.md line 112: 'most likely single-seed noise (gaps are 1-4 pt)'",
+   "severity": "high"
+  },
+  {
+   "issue": "Predictor's largest documented miss: object blindness. It predicted the FT-recovered config would be a strong KITTI source (g +4.6); the trained model was ~= baseline (94.31 vs 94.82). The aggregate flow marginal cannot separate camera-flow from object-flow (pixel-minority). Framed as a 'measured failure'/limitation, but it is a genuine failed prediction of the screening tool.",
+   "evidence": "/home/spencer/Documents/Obsidian/Correspondence/Experiments/kubric_se3.md lines 89-94: 'The predictor said the FT config would be a strong KITTI source (g +4.6) \u2014 wrong; actual ~= baseline... mixture collapse / pixel-minority'",
+   "severity": "medium"
+  },
+  {
+   "issue": "Absolute-level calibration is broken out of distribution and feature-unreachable: KITTI under-predicted by ~4-10 PCK, flyingthings by ~19; both leakage-clean calibration analyses returned NULL (per-cell affine breaks ranking, ctx_rho -0.12; no descriptor family explains the residual, all out-of-fold R^2 <= 0). The paper can claim ranking only.",
+   "evidence": "/home/spencer/Documents/Obsidian/Correspondence/Experiments/Interventional Study.md lines 40-42 ('under-predicted by ~4 (cal) / ~10 (raw)... ~19 PCK here') and lines 77-96 (calibrate.py table: percell_affine ctx_rho -0.12; residual_feature_search: appearance -1.08, density -1.12)",
+   "severity": "medium"
+  },
+  {
+   "issue": "Flow-vector cache corruption (one representative vector written N times by an agent): middlebury_val_flow.npy plus trial19/lowtex caches were garbage; also an earlier 16-bit PNG flow decode bug (imageio silently downcasting to 8-bit, collapsing flow std 1.01->0.01). Both caught \u2014 decode bug was in an untracked new file and 'almost certainly did not produce the validated KITTI numbers' \u2014 but two independent silent-data-corruption classes in the same pipeline is a pattern worth auditing.",
+   "evidence": "memory/middlebury_invariance.md: 'coverage_vectors/middlebury_val_flow.npy was one-vector-repeated garbage (872 uniq, angstd 0)... ONLY these 3 flow files corrupt'; Kubric Motion Generator Search.md lines 75-83: 'imageio decode mag std 0.01 (garbage) vs cv2 decode std 1.01 (true)'",
+   "severity": "medium"
+  },
+  {
+   "issue": "Number drift across artifacts for the same quantity: the regime rule is +0.498 in REGIME_DIRECTION_FINDING.md (with-Middlebury), +0.488/+0.497/+0.519 under the fold machinery, and 0.508->0.516 in the post-Middlebury memory; the canonical motion LOTO appears as +0.507, +0.508, +0.506, and +0.454 (the ceiling-table L+g variant) in different notes; transfer table row counts appear as ~540, 1180, 1620, and 1458 in different places. Any paper number needs to be pinned to one regenerated artifact.",
+   "source_note": "drift",
+   "evidence": "REGIME_DIRECTION_FINDING.md line 38 '+0.498' vs memory/MEMORY.md 'rule 0.508->0.516'; Predictability Ceiling.md 'motion +0.454' (the L+g estimand the Camera Ready note flags as a bug: 'mean per-benchmark rho using g alone ~= 0.615, using L + g ~= 0.454'); Ceiling Options.md lines 250-268",
+   "severity": "medium"
+  },
+  {
+   "issue": "The original ceiling analysis had an estimand bug (evaluated L+g while claiming g; in LOTO L has built-in anti-correlation) plus 5 other scoring bugs (GLU-Net rows misclassified as CATs++ via 'steps100' match, singleton contexts entering ridge, etc.). Fixed 2026-06-06, but the widely-quoted '78% of ceiling' was computed before the fix and re-derived after \u2014 both happen to land near 76-78%, which invites accidental mixing of pre/post-fix numbers.",
+   "evidence": "/home/spencer/Documents/Obsidian/Correspondence/Experiments/Ceiling Options.md 'Important Existing Bug': 'p = g.groupby(...)[[\"L\",\"g\"]].mean().sum(axis=1)'; Camera Ready Ceiling and GLUNet Quick Run.md 'Bugs Fixed' items 1-6 and corrected table (motion LOTO +0.506, held-variant consensus +0.665, 76%)",
+   "severity": "medium"
+  },
+  {
+   "issue": "Double-demeaned appearance does NOT go to zero (-0.175, P(rho<0)=0.966) and its CI overlaps motion's (-0.255): the double-demean analysis alone cannot establish motion >> appearance by magnitude. The note flags this honestly, but the magnitude claim then leans on the win-rate analysis, which itself uses a conservative cross-architecture ceiling that 'makes motion look ~=100% of ceiling' \u2014 the note instructs quoting 78% instead.",
+   "evidence": "Consistency Analysis - One Model, Three Tests.md line 104: 'the double-demean by itself does not prove motion >> appearance by magnitude'; line 165: 'Do not claim 100% of ceiling \u2014 a reviewer will push back'",
+   "severity": "medium"
+  },
+  {
+   "issue": "Garden-of-forking-paths admission: many features/subsets/L-mechanisms were tried and mean_nn_sym was chosen as headline partly post-hoc; N~=540 with a borderline feature:sample ratio. Defenses (sampling-stability selection, random/shuffle controls, family-out) are in place but the regime-direction law was likewise discovered on the same table it is scored on, with the exact-permutation p=0.0286 being the design's floor (8 units).",
+   "evidence": "Consistency Analysis - One Model, Three Tests.md section 4(d): 'mean_nn_sym was chosen as headline partly post-hoc (garden of forking paths)... N~=540, feature:sample ratio is borderline'; REGIME_DIRECTION_FINDING.md caveat (2): 'p=0.0286 is the floor of an 8-unit exact test \u2014 small-sample by construction'",
+   "severity": "medium"
+  },
+  {
+   "issue": "Descriptor naming contradiction across pipelines: 'motion_sym' = FID+SW2+MMD in the headline transfer-analysis tables, but the live search/extractor (compute_pair_metrics) has NO FID/MMD/SW2 \u2014 its features are mean_nn + coverage + kNN-KL, and 'mean_nn_sym' is a third distinct quantity (search objective + calibration kernel). A naming rule was adopted 2026-06-08 but any number labelled 'symmetric motion' from before then is ambiguous as to which feature family produced it.",
+   "evidence": "Kubric Motion Generator Search.md lines 93-98: 'There is no FID / MMD / SW2 in the live extractor \u2014 the motion_sym = FID+SW2+MMD naming... refers to a different/older pipeline'; Claims & Evidence.md Claim 5 naming rule (lines 150-169)",
+   "severity": "medium"
+  },
+  {
+   "issue": "Inconsistent FlyingThings baseline across documents (known gotcha): the catspp True/True FlyingThings anchor is 82.26, but 83.75 (freeze=False) has been cited in handoffs; the -1.58 trial80 margin is additionally cross-protocol (v3-table Jan eval-all anchor, not protocol-matched).",
+   "evidence": "memory/MEMORY.md: 'catspp|True|True FlyingThings baseline is 82.26, NOT the 83.75 (freeze=False) cited in handoffs'; Interventional Study.md line 42: 'the baseline anchor is the v3-table (Jan, eval-all) frozen cell, not a protocol-matched run \u2014 so -1.58 is cross-protocol'",
+   "severity": "low"
+  },
+  {
+   "issue": "SPair-floor negative control status conflict: the Master Table adds 'spair -> K2015 = 86.09 (True_True) / 9.14 (from-scratch)' as a reference row and uses it for the dynamic-range argument, but the memory index records 'SPair floor DROPPED (confounded)' for the paper narrative.",
+   "evidence": "Kubric Interventions - Master Table.md line 71 vs memory/MEMORY.md motion_vs_appearance_narrative: 'SPair floor DROPPED (confounded)'",
+   "severity": "low"
+  },
+  {
+   "issue": "Learned-embedder arm (Models A/B/C) partially failed and was descoped: the original SPair cost-volume approach collapsed (PCK 0.255 -> 0.153 while loss fell), frame-based B/C carry an appearance/domain confound (KITTI's nearest neighbours are real-photo datasets regardless of motion), Model A is not magnitude-invariant (13% flow rescale embeds near-orthogonally), and B/C were stopped \u2014 embedder reframed as a BFV-validation check only.",
+   "evidence": "Learned Embedder ABC - Handoff.md \u00a77: 'monotonically dropped to 0.153 over 78 epochs while pred_loss fell 0.187->0.008'; Kubric Interventions - Master Table.md embedder cross-check: 'KITTI clusters with the real-photo datasets... appearance/domain leakage'; Embedder Investigation briefing: 'B/C STOPPED; embedder reframed'",
+   "severity": "low"
+  }
+ ],
+ "open_threads": [
+  "Matched-budget GLU-Net grid: the provisional observed-peak GLU-Net analysis (motion LOTO +0.439) must be replaced with the matched 8,000-step grid, then ceiling_analysis.py + regenerate_consensus_csv.py re-run (Claims & Evidence 'Still open' #1; GLU-Net Grid next steps).",
+  "Seed runs are the declared decisive next step: >=3 seeds on the FF intervention cells, or at minimum 2-3 seeds on the K2012 camera-vs-object crossover pair (the two load-bearing cells), plus a 'clean-but-wrong-motion' control to separate the clean-supervision confound from structure matching (Master Table to-do #2; Consistency Analysis \u00a75).",
+  "Interventional arm incomplete: sdf Middlebury/FlyingThings TPE winners were searched (100 trials) but never materialized/trained \u2014 'highest-value remaining run for the design tables'; the sdf-K2012 search is missing; kubric searches are only partial (32 trials, K2015).",
+  "kitti_recovered_gso_hq_jitter (fitted rung of the frozen->fitted->broad randomness ladder) was materializing as of 2026-06-09 with a stub row in the Master Table; the ladder prediction (fitted ~= frozen, both > broad-but-wrong) is untested.",
+  "Matched KITTI-fitted Kubric HQ/matte joint-config pair: still materializing, 'not yet a result'; the decision whether the intervention is a main figure or a secondary case study hangs on it (Claims & Evidence Claim 8 and pending item #2/#4).",
+  "Middlebury re-evaluation: when weights are re-pulled and the eval bug is fixed, re-evaluate all models on Middlebury, restore it to the table, and rerun the pipeline; several artifacts still contain Middlebury (eps_rule_table L5, benchsim P6, joint_anchor_v2 P4 rows, P5, sampling_stability R2b per memory).",
+  "Corrupted flow caches (middlebury_val + trial19/lowtex coverage vectors) deleted and pending re-extraction during the heavy grid rerun.",
+  "Regime-direction law: TT arm of the out-of-sample test is non-discriminative (n=3, precision/recall orderings coincide) \u2014 pretrained-side OOS validation is still missing; bootstrap CIs for the per-variant fit-free rho (glunet T/T +0.719, fraction~=1) were listed as must-do; FlowFormer 2x2 grid (64 jobs, 3 pre-registrations per memory) is the next architecture test.",
+  "synthetic_fractal caveats: single TPE trial, single seed, originally K2015-only eval (rescored on all 4 benchmarks 2026-06-09, K2015 sanity 94.45 ~= 94.43); only mid-pack on K2012 (92.33 vs camera-dominant 96.2-96.5) \u2014 K2015-specificity unquantified.",
+  "Residual-feature search loose end: higher-order flow self-moments (mean magnitude, kurtosis) are the only untested feature avenue for the magnitude-residual null; compute from coverage vectors and re-run residual_feature_search.py to make the negative exhaustive.",
+  "Canonical table manifest: freeze and regenerate every reported number via per-table regen wrappers (Claims & Evidence pending item #3); given the documented number drift (rule +0.498 vs 0.516; motion LOTO +0.507/+0.508/+0.506/+0.454), this is load-bearing for the camera-ready.",
+  "Directional TPE search (precision/recall-tilted objective) is built and verified but not launched (memory index); the regime-direction law's 'design-with-direction' implication is untested as a search objective."
+ ]
+}

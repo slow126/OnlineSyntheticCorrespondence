@@ -47,9 +47,14 @@ def resize_sample(sample: CommonSample, size: Optional[Tuple[int, int]]) -> Comm
 
     if sample.flow_full is not None:
         flow = sample.flow_full.unsqueeze(0) if sample.flow_full.dim() == 3 else sample.flow_full
-        flow = F.interpolate(flow, size=size, mode="bilinear", align_corners=False)
-        flow[..., 0, :, :] *= scale_w
-        flow[..., 1, :, :] *= scale_h
+        # Skip the interpolation when the flow is already at the target size. For
+        # finite flow this is a no-op (same-size bilinear is byte-identical), but
+        # for flow that carries inf (occlusion-masked) a same-size bilinear would
+        # spread NaN into neighbouring cells via 0*inf, so the skip is required.
+        if flow.shape[-2:] != (target_h, target_w):
+            flow = F.interpolate(flow, size=size, mode="bilinear", align_corners=False)
+            flow[..., 0, :, :] *= scale_w
+            flow[..., 1, :, :] *= scale_h
         sample.flow_full = flow.squeeze(0)
 
     if sample.src_kps is not None and sample.trg_kps is not None:
@@ -68,6 +73,7 @@ def ensure_flow_and_kps(
     max_kps: Optional[int],
     downsample_feat_size: Optional[int],
     prefer_all_dense: bool,
+    occlusion_mask: bool = False,
 ) -> CommonSample:
     # If we only have feature flow and native keypoints, build full flow from kps
     if sample.flow_full is None and sample.src_kps is not None and sample.trg_kps is not None:
@@ -96,11 +102,17 @@ def ensure_flow_and_kps(
     # Downsample flow once (only if downsample_feat_size is provided)
     if sample.flow_feat is None and sample.flow_full is not None:
         if downsample_feat_size is not None:
-            sample.flow_feat = downsample_flow(sample.flow_full, feat_size=downsample_feat_size)
+            # Occlusion-aware: require >=50% valid pixels per cell, else mark inf.
+            min_valid_frac = 0.5 if occlusion_mask else None
+            sample.flow_feat = downsample_flow(
+                sample.flow_full, feat_size=downsample_feat_size, min_valid_frac=min_valid_frac
+            )
         else:
             # If no downsampling requested, use full-resolution flow
             sample.flow_feat = sample.flow_full
-    if sample.flow_feat is not None:
+    # When occlusion masking is on, KEEP the inf cells so the sparse endpoint-error
+    # loss skips occluded regions; otherwise zero out invalids as before.
+    if sample.flow_feat is not None and not occlusion_mask:
         sample.flow_feat = _flow_make_finite(sample.flow_feat)
 
     # pckthres
@@ -138,6 +150,7 @@ def collate_common_samples(
     samples: List[CommonSample],
     max_kps: Optional[int],
     target_device: torch.device,
+    occlusion_mask: bool = False,
 ) -> dict:
     def squeeze_leading_one(t: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
         if t is None:
@@ -165,7 +178,7 @@ def collate_common_samples(
         for key in ["src_img", "trg_img", "flow", "flow_full", "flow_downsampled"]:
             if key in d:
                 d[key] = squeeze_leading_one(d[key])
-                if key == "flow_downsampled":
+                if key == "flow_downsampled" and not occlusion_mask:
                     d[key] = _flow_make_finite(d[key])  # only zero-out invalids on feature-grid flow
         dicts.append(d)
     # Drop keys that are None for any sample to keep default_collate happy

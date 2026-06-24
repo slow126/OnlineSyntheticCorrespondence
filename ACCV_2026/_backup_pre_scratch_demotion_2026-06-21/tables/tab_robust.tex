@@ -1,0 +1,15 @@
+\begin{tabular}{@{}l r@{}}
+\toprule
+Control & $\rho$ \\
+\midrule
+\multicolumn{2}{@{}l}{\emph{Does coverage still predict transfer?} (vs.\ baseline $\rho=0.51$)}\\
+\quad Drop any one generator family (each of 5) & $0.43$--$0.54$ \\
+\quad Rank by \#samples instead (``more data'') & $0.04$ \\
+\quad Rank by \#flow vectors instead (``more data'') & $0.27$ \\
+\quad Shuffle null (200 permutations) & $0.00$ \\
+\midrule
+\multicolumn{2}{@{}l}{\emph{Is the coverage estimate sampling-stable?} (vs.\ full budget)}\\
+\quad Mean-NN, from $5{\times}10^4$ flow vectors & $\ge0.96$ \\
+\quad Density (kNN-KL), same budget---never stabilizes & $0.2$--$0.5$ \\
+\bottomrule
+\end{tabular}

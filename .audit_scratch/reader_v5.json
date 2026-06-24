@@ -1,0 +1,176 @@
+{
+ "summary": "The v5 pipeline (scripts/transfer_analysis_v5/) is the \"one clean run\" that produces every table for the ACCV 2026 Regime-Direction paper. run_v5.sh has 7 stages: (1) v4/verify_regime_direction.py -> regime_direction_verification/{REPORT.md, REPORT_dino.md, master_table_mean_nn{,_dino}.csv} (the law, Table 1); (2) rule_holdout_checks.py -> results/rule_holdout_checks.csv; (3) asym_vs_sym_table.py -> results/asym_vs_sym.csv; (4) v4/experiments.py + bootstrap.py -> v4/results_rule_v5core/{summary.csv, bootstrap_gap.csv, summary_points_peak_pck.csv, predictions/peak_pck/rows_*} (Table 2/4); (5) v4/regenerate_consensus_csv.py -> CONSENSUS_RULE.csv (Table 3); (6) make_policy_rows.py (builds rows_*_motion_policy.csv) + v4/pairwise_gap_analysis.py -> results/pairwise_gap_rule.csv + v4/selection_regret.py -> results/selection_regret_rule.csv (Table 5); (7) intervention_oos_test.py -> results/intervention_oos.csv (Sec 7.3 OOS test). Outside run_v5.sh: ceiling_oracles.py -> ceiling_oracles.csv; controls_fresh.py -> controls_fresh.csv; per_regime_linear.py -> per_regime_linear_summary*.csv + per_regime_featureset_comparison*.csv; conditional_combination.py, loao_weight_transfer.py, policy_vs_fit_regret.py, joint_anchor.py -> their namesake CSVs; appearance_motion_decomposition.py -> decomp_*.csv + ACCV_2026/tables/tab_decomp.tex; v4/context_scale_calibration.py -> benchsim_rule/ and benchsim_sym/ (make_policy_rows.py -> benchsim_policy/); blocks.py (invoked via update_tables.py for the Obsidian vault) side-effect-writes results/intervention_breakdown.csv; l_directional_check.py prints only; make_figures{,_v2,_v3}.py, make_intervention_summary.py, make_recovery_figure.py, make_splat_composite.py -> results/figures/ + ACCV figures; compile_master_reference.py is RETIRED. make_paper_tables.py renders the .tex tables: tab_law (master_table_mean_nn.csv + asym_vs_sym.csv sym/w2 cols), tab_law_dino (master_table_mean_nn_dino.csv + transfer_table_nomid.csv + pairwise_self_distances.csv), tab_predictors (v5core summary.csv ctx_rho_g, fallback computed from rows files for motion_policy/meannn families), tab_perregime_ablation + tab_regime_linear (asym_vs_sym.csv + per_regime_linear_summary.csv), tab_oos + tab_dirtest (intervention_oos.csv + asym_vs_sym.csv), tab_utility + tab_supp_gap (selection_regret_rule.csv + pairwise_gap_rule.csv), tab_supp_asym (asym_vs_sym.csv), tab_supp_eps (eps_rule_table.csv), tab_supp_oracles (ceiling_oracles.csv), tab_supp_controls (controls_fresh.csv), tab_supp_featuresets (per_regime_featureset_comparison.csv), tab_supp_dino (master_table_mean_nn_dino.csv). Current results/ is the post-Middlebury-exclusion regeneration (9 benchmarks, 891 rows); results_with_middlebury_backup/ preserves the contaminated 2026-06-10 02:27 state (10 benchmarks, 990 rows, TT arm n=3, drop_benchmark_middlebury control row, plus joint_anchor_v2_session_original.csv). Most .tex tables (mtime 22:04, tab_decomp 00:02) are consistent with the current CSVs \u2014 I verified tab_utility, tab_oos, tab_dirtest, tab_regime_linear, tab_perregime_ablation, tab_law cell-by-cell. However: tab_supp_gap.tex is wrong (its pivot averages accuracy over all four predictor families instead of the rule); eps_rule_table.csv feeding tab_supp_eps.tex is byte-identical to the contaminated backup and has no generating script; the README \"Key numbers\" block and several script docstrings still describe the pre-exclusion run; and the run_v5.sh defaults read transfer_table.csv, which currently still CONTAINS middlebury, so a verbatim re-run would re-contaminate the artifacts.",
+ "claims": [
+  {
+   "claim": "The regime-direction law table (Table 1 / tab_law.tex): scratch variants correlate with d(T->B) precision, pretrained with d(B->T) recall. Per-variant directed rhos from the verification master table.",
+   "source": "scripts/transfer_analysis_v4/regime_direction_verification/master_table_mean_nn.csv (feeds ACCV_2026/tables/tab_law.tex via make_paper_tables.py)",
+   "numbers": "catspp|False|False rho_ab=0.5272727272727273 rho_ba=0.02626262626262628 d=0.5010101010101011; glunet|True|True rho_ab=-0.2191919191919192 rho_ba=0.7626262626262627 d=-0.9818181818181818; glunet|True|False rho_ba=0.6737373737373737 d=-0.9040404040404041; raft|True|False rho_ab=0.40101010101010104 rho_ba=0.30303030303030304 d=0.097979797979798"
+  },
+  {
+   "claim": "Flip statistic and permutation p from the verification report (middlebury-free, rows=891).",
+   "source": "scripts/transfer_analysis_v4/regime_direction_verification/REPORT.md",
+   "numbers": "flip statistic (scratch \u2212 pretrained mean d): +0.899, exact permutation p = 0.0286 (70 assignments; RAFT excluded); leave-one-benchmark-out flip range [+0.807, +0.987]"
+  },
+  {
+   "claim": "Fit-free rule baseline and controls (current, middlebury-excluded): shuffle null ~0, no generator family load-bearing, size controls predict ~nothing, drop-any-benchmark range tight.",
+   "source": "scripts/transfer_analysis_v5/results/controls_fresh.csv",
+   "numbers": "observed_rule=0.5067340067340068; shuffle_null_mean=-0.00016778900112233473 (sd=0.0345; p_emp(obs)=0.0000, 200 perms); drop_family_semantic=0.4246165357276468 (min), drop_family_kubric=0.5444818555929667 (max); control_size_n_samples=0.04275245011538045; control_size_n_vectors=0.26661057572765373; control_supervision_density=0.19926351490580266; drop_benchmark range 0.4948232323232323 (pfpascal) to 0.5319444444444446 (synthetic)"
+  },
+  {
+   "claim": "Per-variant asym-vs-sym table (feeds tab_law sym columns, tab_supp_asym, tab_perregime_ablation, policy rho in tab_regime_linear). Pretrained GLU-Net cells are flip-extreme: rule beats best symmetric by ~+0.41-0.43.",
+   "source": "scripts/transfer_analysis_v5/results/asym_vs_sym.csv",
+   "numbers": "glunet|True|True: rule=0.7626262626262627, precision=-0.2191919191919192, sym=0.3323232323232323, rule_minus_best_sym=0.4303030303030303; glunet|True|False: rule=0.6737373737373737, rule_minus_best_sym=0.41313131313131307; catspp|False|False: rule=precision=0.5272727272727273, recall=0.02626262626262628"
+  },
+  {
+   "claim": "Predictor-family comparison (Table 2 / tab_predictors.tex): regime-aware policy is best in all three splits; matched-direction rule second; appearance ridge fails.",
+   "source": "scripts/transfer_analysis_v4/results_rule_v5core/summary.csv + ACCV_2026/tables/tab_predictors.tex",
+   "numbers": "motion_rule ctx_rho_g: LOTO 0.4817 / LOBO 0.4953 / JOINT 0.4875; motion_sym 0.3425/0.4392/0.3732; motion 0.2165/0.3576/0.2258; appearance -0.1101/0.1908/-0.0734; rendered policy row: +0.52 / +0.52 / +0.50 (best all columns); rendered rule row: +0.48 / +0.50 / +0.49"
+  },
+  {
+   "claim": "Absolute prediction with L+rule (Table 4 feed).",
+   "source": "scripts/transfer_analysis_v4/results_rule_v5core/summary_points_peak_pck.csv (motion_rule main rows)",
+   "numbers": "LOTO MAE_Lg=9.199999840068307, abs_r_Lg=0.8825871788247076; LOBO MAE_Lg=18.415799, abs_r_Lg=0.713337; JOINT MAE_Lg=31.013203, abs_r_Lg=-0.020141"
+  },
+  {
+   "claim": "Cross-architecture consensus ceiling (Table 3 feed), current middlebury-free run.",
+   "source": "scripts/transfer_analysis_v4/results_rule_v5core/CONSENSUS_RULE.csv",
+   "numbers": "consensus rho 0.732319 all splits; fraction: LOTO 0.732611 [ratio CI 0.63,0.90], LOBO 0.751366 [0.63,0.93], JOINT 0.713158 [0.58,0.89]"
+  },
+  {
+   "claim": "Selection regret (Table 5 / tab_utility.tex), current run: policy beats rule on median regret; random baseline 13.93.",
+   "source": "scripts/transfer_analysis_v5/results/selection_regret_rule.csv",
+   "numbers": "motion_policy median_regret LOTO 1.1889000000000003 / LOBO 2.0878000000000014 / JOINT 2.775099999999995; motion_rule 3.9444000000000017 / 4.653700000000001 / 3.9444000000000017; appearance LOTO 14.683399999999992; random_mean_regret=13.933933487654322; motion_policy p_oracle_top3 LOTO/LOBO 0.5555555555555556"
+  },
+  {
+   "claim": "Gap-stratified pairwise accuracy (Table 5 right half + tab_supp_gap source): for true gap >10 PCK the policy/rule approach cross-arch retraining agreement.",
+   "source": "scripts/transfer_analysis_v5/results/pairwise_gap_rule.csv",
+   "numbers": "gap_bin '>10' (n=1577): motion_policy LOTO 0.7710843373493976, LOBO 0.7761572606214331, JOINT 0.781864299302473; motion_rule LOTO 0.7660114140773621, LOBO 0.7723525681674065, JOINT 0.7907419150285352; appearance LOTO 0.41915028535193405; empirical_reproducibility '>10': same_arch 0.8439955106621774 (n=4455), cross_arch 0.7771273712737128 (n=9225)"
+  },
+  {
+   "claim": "Pre-registered OOS test on the kubric grid (Sec 7.3 / tab_oos.tex / tab_dirtest.tex), current middlebury-free, TT arm now n=9 per benchmark: FF flyingthings is the discriminative cell (precision spread 3.12x) and precision wins; KITTI cells precision-matched by design (spread 1.02-1.04x).",
+   "source": "scripts/transfer_analysis_v5/results/intervention_oos.csv",
+   "numbers": "FF flyingthings: n=9, precision=0.6666666666666667, recall=-0.38333333333333336, sym=-0.2833333333333333, scratch_fit=0.18333333333333335, prec_spread=3.1185582055186303; FF kitti2012: precision=0.9166666666666666, recall=0.3; FF kitti2015: precision=0.38333333333333336, recall=-0.7; TT flyingthings: precision=0.7333333333333334, recall=0.08333333333333334; TT kitti2012: precision=0.7999999999999999, recall=0.65, sym=0.9333333333333332; TT kitti2015: precision=0.38333333333333336, recall=-0.09999999999999999"
+  },
+  {
+   "claim": "Comprehensive direction test (tab_dirtest.tex): canonical-11 columns match the law (scratch precision +0.42, pretrained recall +0.61) but on the controlled grid the pretrained arm's matched direction does NOT win (precision +0.64 > recall +0.21), shown openly with a dagger.",
+   "source": "ACCV_2026/tables/tab_dirtest.tex (derived from intervention_oos.csv + asym_vs_sym.csv)",
+   "numbers": "off-target: canonical-scratch +0.42, grid-FF \\best{+0.66}, canonical-pretrained -0.08, grid-TT \\best{+0.64}; missing support: +0.23 / -0.26 / \\best{+0.61} / +0.21; symmetric: \\best{+0.50} / -0.01 / +0.39 / +0.37"
+  },
+  {
+   "claim": "Per-regime two-coefficient linear models (tab_regime_linear.tex): coefficient pattern matches the law (scratch loads on d(T->B), pretrained on d(B->T)); JOINT anchor is degenerate (negative r).",
+   "source": "scripts/transfer_analysis_v5/results/per_regime_linear_summary.csv",
+   "numbers": "scratch LOTO: w[d(T->B)]=-7.570310458370338, w[d(B->T)]=-1.0814157222836125, ctx_rho_linear=0.4705050505050505, MAE(anchor+model)=10.41010411680663, r=0.8254096139055785; pretrained LOTO: w_ab=-0.8222898537682704, w_ba=-3.220446455778328, ctx_rho_linear=0.2944444444444445, MAE=8.228815347954221, r=0.8996535647174417; pooled LOTO: -4.568827755219764 / -2.0306927252588696; scratch JOINT r=-0.229763874645613, pretrained JOINT r=-0.3395447729298468"
+  },
+  {
+   "claim": "Rule hold-out checks: LOVO direction selection is unanimous (agree=True for all 9 variants), rho_lovo == rho_rule everywhere.",
+   "source": "scripts/transfer_analysis_v5/results/rule_holdout_checks.csv",
+   "numbers": "all 9 rows agree=True; e.g. glunet|True|True rho_rule=0.7626262626262627, d=-0.9818181818181818, mean_level=54.27804444444444; catspp|True|False mean_level=61.38045808080808"
+  },
+  {
+   "claim": "Ceiling oracles: rule mean ~0.507 vs O1 all-variant ceiling mean ~0.529 (fraction ~0.96); pretrained GLU-Net exceeds its oracles (frac_O2 > 1).",
+   "source": "scripts/transfer_analysis_v5/results/ceiling_oracles.csv",
+   "numbers": "glunet|True|False: rule_rho=0.6737373737373737, O2_same_regime=0.49023569023569025, frac_O2=1.3743131868131868, frac_O3=1.2610092378952622; glunet|False|False: rule_rho=0.30505050505050507, frac_O2=0.4416819012797074; catspp|True|True O3=0.6388759310066903, frac_O3=0.7857866882371953"
+  },
+  {
+   "claim": "Conditional combination search: no conditional scheme decisively beats the simple regime arms; dispersion-weighted average is the best fit-free pooled variant.",
+   "source": "scripts/transfer_analysis_v5/results/conditional_combination.csv",
+   "numbers": "rule (matched direction) pooled=0.4997979797979799; average (symmetric) scratch=0.6032727272727274, pooled=0.5547474747474749; tilted 2:1 pooled=0.5798989898989899; dispersion-weighted pooled=0.560808080808081; linear2 (zP,zR) LOTO pooled=0.5709315375982044; gbm depth-2 LOTO pooled=0.5066217732884399"
+  },
+  {
+   "claim": "LOAO weight transfer: scratch weights are ~equal across held-out architectures (ratio 0.80-1.27); pretrained catspp fold even flips w_P positive.",
+   "source": "scripts/transfer_analysis_v5/results/loao_weight_transfer.csv",
+   "numbers": "catspp scratch: w_P=-7.253778944200596, w_R=-9.037857420147033, ratio=0.8025994001665262, heldout_rho_fit=0.5122727272727273; catspp pretrained: w_P=+1.4692259341525766 (positive), ratio=-0.1989300551950103; glunet scratch ratio=1.2681692844910812; raft scratch ratio=1.0676546055389495"
+  },
+  {
+   "claim": "Policy vs fit as selection strategy: fitted per-regime model is comparable, not decisively better (kept fit-free policy).",
+   "source": "scripts/transfer_analysis_v5/results/policy_vs_fit_regret.csv",
+   "numbers": "fit median_regret pooled: LOTO 3.021324999999994, LOBO 1.618700000000004, JOINT 1.594075000000002; pairwise_acc_gap10 pooled: 0.7507314218841428 / 0.8004681100058514 / 0.7636044470450556"
+  },
+  {
+   "claim": "Benchsim calibration summaries (P6 vault block): rule and sym dispersion-head runs; rule run has 90 contexts/10 variants, sym run 81 contexts/9 variants.",
+   "source": "scripts/transfer_analysis_v5/results/benchsim_rule/summary_all_variants.csv and results/benchsim_sym/summary_all_variants.csv",
+   "numbers": "benchsim_rule LOTO g: ctx_spearman=0.49992517770295547, abs_r_L_plus_head=0.8776117202442919, n_rows=891, n_contexts=90; benchsim_sym LOTO g: ctx_spearman=0.4364758698092031, n_contexts=81; benchsim_rule JOINT g_global_gain ctx_spearman=0.5554433221099889"
+  },
+  {
+   "claim": "Appearance-motion decomposition on the grid (tab_decomp.tex uses GSO cells; decomp_2x2.csv is the balanced KuBasic ANOVA).",
+   "source": "scripts/transfer_analysis_v5/results/decomp_2x2.csv, decomp_motion.csv, decomp_appearance.csv; ACCV_2026/tables/tab_decomp.tex",
+   "numbers": "decomp_2x2 FF kitti2012: main_motion_cam_minus_obj=9.873599999999982, main_appearance_hq_minus_matte=9.671300000000002, interaction=-2.115300000000005; FF flyingthings motion effect=-2.5711333333333335 (object benchmark, camera hurts), appearance_effect=6.071675000000001; tab_decomp KITTI-2012 cells 96.5/91.1/89.5/83.2, FlyingThings 48.9/43.4/54.4/42.1"
+  },
+  {
+   "claim": "Sampling stability (session artifact): single-seed precision ranking unstable, recall stable; motivates 5-seed averaging.",
+   "source": "scripts/transfer_analysis_v5/results/sampling_stability.csv",
+   "numbers": "dP single_seed_mean=0.4083333333333333, single_seed_min=-0.6833333333333333; dR single_seed_mean=0.9108333333333333, splithalf_mean=0.9208333333333333"
+  },
+  {
+   "claim": "BFV recovery (tab_recovery.tex + F8): recovered theta matches each target's physical regime.",
+   "source": "scripts/transfer_analysis_v5/recovered_theta.csv",
+   "numbers": "KITTI-2015: dolly_delta=2.18, vertical_frac=0.0006, regime=camera-centric (forward dolly); FlyingThings: dolly_delta=0.32, vertical_frac=0.92, regime=object-centric"
+  },
+  {
+   "claim": "The backup directory preserves the pre-exclusion state: 10 benchmarks incl. middlebury, TT arm n=3, drop_benchmark_middlebury control, 990-row benchsim rows, and the session-original joint anchor.",
+   "source": "scripts/transfer_analysis_v5/results_with_middlebury_backup/ (intervention_oos.csv, controls_fresh.csv, selection_regret_rule.csv, benchsim_rule/rows_LOTO_all_variants.csv)",
+   "numbers": "backup intervention_oos: FF middlebury precision=0.5166666666666667, TT rows n=3 (TT kitti2012 precision=1.0, TT middlebury=-1.0); backup controls observed_rule=0.5080471380471382, drop_benchmark_middlebury=0.5159745604190049; backup selection_regret motion_rule medians 2.3045999999999935/3.3583000000000016/2.7811999999999983, random 13.268530877525253; backup benchsim_rule rows: 990 rows, 100 contexts, 10 variants"
+  }
+ ],
+ "red_flags": [
+  {
+   "issue": "tab_supp_gap.tex 'rule accuracy' columns are NOT the rule: make_paper_tables.py pivots predictor_accuracy without filtering family, so pivot_table's default mean averages over four families (motion_policy, motion_rule, motion_meannn_sym, appearance). blocks.py p8a has the identical bug for the vault P8a block.",
+   "evidence": "make_paper_tables.py lines 460-462: pa = gap[gap.measure == \"predictor_accuracy\"].pivot_table(index=\"gap_bin\", columns=\"split\", values=\"acc\"); rendered ACCV_2026/tables/tab_supp_gap.tex '>10' row reads '0.675 & 0.725 & 0.689' under header 'rule accuracy', but results/pairwise_gap_rule.csv motion_rule '>10' is LOTO 0.7660114140773621 / LOBO 0.7723525681674065 / JOINT 0.7907419150285352. The averaged numbers understate the rule by ~0.05-0.10 because appearance (LOTO >10 = 0.41915028535193405) is mixed in. The backup CSV had only motion_rule rows (the pivot was harmless then); Stage 6 of run_v5.sh now passes 4 families.",
+   "severity": "high"
+  },
+  {
+   "issue": "results/eps_rule_table.csv is still Middlebury-contaminated and has no generating script anywhere in the repo, yet it feeds the paper's supplementary table tab_supp_eps.tex (rendered 2026-06-10 22:04) and the vault L5 block.",
+   "evidence": "diff shows results/eps_rule_table.csv is byte-identical to results_with_middlebury_backup/eps_rule_table.csv (mtime 2026-06-10 00:10, before the 12:47 exclusion rerun); grep for 'eps_rule_table' across the repo finds only consumers (make_paper_tables.py, blocks.py), no producer.",
+   "severity": "high"
+  },
+  {
+   "issue": "run_v5.sh as written would re-contaminate: every stage uses the scripts' default --table scripts/transfer_analysis_v3/transfer_table.csv, which currently CONTAINS middlebury, while all current v5 artifacts are middlebury-free. The current artifacts must have been produced by a manual invocation against transfer_table_nomid.csv (or a temporarily-swapped table); the committed pipeline does not reproduce them.",
+   "evidence": "scripts/transfer_analysis_v3/transfer_table.csv: 1620 rows, benchmarks include 'middlebury' (mtime 2026-06-10 12:47); transfer_table_nomid.csv: 1458 rows, 9 benchmarks (same mtime). Defaults: asym_vs_sym_table.py:39, rule_holdout_checks.py:61, controls_fresh.py:65, ceiling_oracles.py:51, v4/verify_regime_direction.py:138, v4/experiments.py:1165 all point at transfer_table.csv; run_v5.sh passes no --table/--drop. Yet REPORT.md says rows=891 and results CSVs are middlebury-free. Also per_regime_linear_summary.csv == per_regime_linear_summary_drop_middlebury.csv (byte-identical) and per_regime_featureset_comparison.csv == its _drop_middlebury twin, confirming the 'main' artifacts were generated middlebury-dropped despite the contaminated default input.",
+   "severity": "high"
+  },
+  {
+   "issue": "README.md 'Key numbers (2026-06-10 run)' block is stale \u2014 it quotes the pre-Middlebury-exclusion (backup) values, not the current results CSVs.",
+   "evidence": "README says 'Regret (rule): median 2.3-3.4 PCK vs 13.3 random; P(best in top3) 0.56-0.59' which matches results_with_middlebury_backup/selection_regret_rule.csv (2.3045999999999935/3.3583000000000016/2.7811999999999983, random 13.268530877525253) but not results/selection_regret_rule.csv (motion_rule medians 3.9444000000000017/4.653700000000001/3.9444000000000017, random 13.933933487654322). README OOS 'precision +0.62 > sym +0.10 > recall -0.13' equals the backup FF mean including the bugged middlebury row; current FF means are +0.6556/-0.0111/-0.2611. README 'ceiling fraction 0.79/0.80/0.81 of 0.731' vs current CONSENSUS_RULE.csv fractions 0.732611/0.751366/0.713158. README 'MAE 8.99 / r 0.874 (LOTO)' vs current summary_points_peak_pck.csv motion_rule LOTO MAE_Lg=9.199999840068307, abs_r_Lg=0.8825871788247076. README 'Gap-stratified (rule): >10 pairs 0.79-0.82, above cross-arch retraining (0.77)' vs current rule >10 = 0.766/0.772/0.791 where LOTO (0.766) is now BELOW cross-arch 0.7771273712737128. README 'TT arm n=3' vs current intervention_oos.csv TT n=9.",
+   "severity": "medium"
+  },
+  {
+   "issue": "benchsim_rule/ artifacts are from an older (2026-06-10 03:19) run with a different variant universe than benchsim_sym/ and benchsim_policy/ (20:14): the rule run includes a 10th variant raft|False|False (1 source per benchmark) giving n_contexts=90 vs 81, and make_figures_v3.py itself flags that its L/gains were fit with Middlebury present. benchsim_policy/ also lacks a summary_all_variants.csv.",
+   "evidence": "results/benchsim_rule/rows_LOTO_all_variants.csv: 891 rows, 90 contexts, 10 variants incl. 'raft|False|False'; results/benchsim_sym/rows_LOTO_all_variants.csv: 891 rows, 81 contexts, 9 variants. make_figures_v3.py:303: 'rows come from the benchsim_rule run, which predates the Middlebury exclusion \u2014 L/gains were fit with Middlebury present; flagged in the doc until context_scale_calibration is rerun.' Note also blocks.py regime_of() would silently classify the unknown raft|False|False as 'pretrained' (it is only absent from SCRATCH).",
+   "severity": "medium"
+  },
+  {
+   "issue": "results/intervention_breakdown.csv (side-effect-written by blocks.py during update_tables runs) is stale relative to the grid: it has only 3-4 TT sources per benchmark while intervention_oos.csv (regenerated 21:11) shows TT n=9. The decomp_* CSVs (2026-06-11 00:02) are built FROM the stale breakdown plus one freshly-harvested cell, so the TT decomposition rows still have count=1.",
+   "evidence": "results/intervention_breakdown.csv mtime 2026-06-10 03:20, TT blocks list 3 (flyingthings, kitti2012) and 4 (kitti2015) sources; results/intervention_oos.csv (mtime 21:11) TT rows all n=9. decomp_motion.csv/decomp_appearance.csv TT rows have count=1 with empty std. appearance_motion_decomposition.py:172 admits 'the new GSO matte cell is not yet in intervention_breakdown.csv'.",
+   "severity": "medium"
+  },
+  {
+   "issue": "The TT (pretrained) arm of the grid now nominally contradicts the law: with n=9 sources, precision out-ranks the matched recall direction (mean +0.64 vs +0.21). The paper displays this openly with a dagger, but the intervention_oos_test.py docstring still says 'TT arm has n=3 sources -> sign checks only', and memory/README still call the OOS a decisive pass on FF with TT non-discriminative.",
+   "evidence": "results/intervention_oos.csv TT rows: flyingthings precision=0.7333333333333334 vs recall=0.08333333333333334; kitti2012 0.7999999999999999 vs 0.65; kitti2015 0.38333333333333336 vs -0.09999999999999999. ACCV_2026/tables/tab_dirtest.tex pretrained-controlled column: off-target \\best{+0.64} vs missing support +0.21. intervention_oos_test.py line 22: 'TT arm has n=3 sources -> sign checks only, no significance.'",
+   "severity": "medium"
+  },
+  {
+   "issue": "blocks.py P4 block hardcodes absolute-prediction numbers and /tmp paths inside an otherwise machine-rendered table, and they no longer match the regenerated artifacts.",
+   "evidence": "blocks.py lines 326-336: 'LOTO | cell-mean L + raw rule g | 8.94 | +0.874' and rows citing '/tmp/calrows2_LOTO.csv', '/tmp/calrows_JOINT.csv'; current summary_points_peak_pck.csv motion_rule LOTO is MAE_Lg=9.199999840068307, abs_r_Lg=0.8825871788247076.",
+   "severity": "low"
+  },
+  {
+   "issue": "Orphan session artifacts with no producer in the repo: threetier_tier1.csv (no producer AND no consumer found), sampling_stability.csv (consumed by blocks.py R2b, comment calls it a 'session artifact'), recovered_theta.csv (consumed by make_recovery_figure.py), and ACCV_2026/tables/tab_recovery.tex / tab_recovery_full.tex (no generator found in the repo).",
+   "evidence": "grep -rln across scripts/ finds no writer for any of these; results/threetier_tier1.csv and results/sampling_stability.csv are byte-identical to their results_with_middlebury_backup/ copies (mtimes 00:31 and 00:49, predating the 12:47 exclusion rerun).",
+   "severity": "low"
+  },
+  {
+   "issue": "raft|True|False is grouped with the SCRATCH regime despite pretrained=True in its variant string \u2014 deliberate ('RAFT: config-verified scratch' per per_regime_linear.py comment) but a standing trap for any reader of the CSVs, and regime_of() in blocks.py defaults every unknown variant to 'pretrained'.",
+   "evidence": "blocks.py lines 69-77: SCRATCH = [..., 'raft|True|False']; def regime_of(v): return 'scratch' if v in SCRATCH else 'pretrained'. per_regime_linear.py line 48: SCRATCH = {... 'raft|True|False'}  # RAFT: config-verified scratch.",
+   "severity": "low"
+  }
+ ],
+ "open_threads": [
+  "Middlebury re-evaluation: the eval bug means 9-benchmark exclusion everywhere; models still need re-evaluating with the fixed eval, after which every artifact (and eps_rule_table.csv, which never got regenerated) must be rebuilt.",
+  "context_scale_calibration.py rerun pending: benchsim_rule/ L/gains were fit with Middlebury present and with the extra raft|False|False variant; make_figures_v3.py flags this in-code. benchsim_policy/ has no summary file.",
+  "Reproducibility of the current results: determine exactly how the 2026-06-10 12:47-13:04 middlebury-free run was invoked (explicit --table transfer_table_nomid.csv vs a temporarily rebuilt transfer_table.csv) and fix run_v5.sh defaults so a verbatim re-run does not re-contaminate.",
+  "TT-arm interpretation: with n=9 finished TT runs the matched (recall) direction no longer wins on the grid (precision +0.64 vs recall +0.21); the paper's dagger/caption argument and the seed-instability claim (sampling_stability.csv is itself a stale session artifact) deserve a re-check, plus update the stale 'TT n=3' docstring and README.",
+  "tab_supp_gap.tex needs regenerating with a family filter (and blocks.py p8a fixed) \u2014 currently family-averaged numbers are labeled 'rule accuracy'.",
+  "Who generates eps_rule_table.csv, threetier_tier1.csv, sampling_stability.csv, recovered_theta.csv, tab_recovery*.tex \u2014 scripts are missing from the repo; recommit or regenerate.",
+  "README.md 'Key numbers' block should be rewritten from the current (middlebury-excluded) artifacts; nearly every quoted number currently matches the backup, not results/."
+ ]
+}

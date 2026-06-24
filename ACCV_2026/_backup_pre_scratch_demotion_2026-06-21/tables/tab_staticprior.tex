@@ -1,0 +1,23 @@
+\begin{tabular}{ll cc}
+\toprule
+ & & \multicolumn{2}{c}{Source-sensitivity by target} \\
+\cmidrule(lr){3-4}
+Architecture & Training source & Real-motion & Semantic \\
+\midrule
+\multirow{2}{*}{CATs++}
+ & real-motion (avg) & \cellcolor{green!16}$2.5^{\dagger}$ & \cellcolor{gray!15}$0.5$ \\
+ & semantic (SPair)  & \cellcolor{gray!15}$0.2$ & \cellcolor{gray!15}$0.2$ \\
+\midrule
+\multirow{2}{*}{GLU-Net}
+ & real-motion (avg) & \cellcolor{green!16}$\mathbf{5.3}$ & \cellcolor{gray!15}$0.5$ \\
+ & semantic (SPair)  & \cellcolor{gray!15}$0.0$ & \cellcolor{gray!15}$0.1$ \\
+\midrule
+\multirow{2}{*}{FlowFormer}
+ & real-motion (avg) & \cellcolor{green!16}$\mathbf{6.4}$ & \cellcolor{gray!15}$0.5$ \\
+ & semantic (SPair)  & \cellcolor{gray!15}$0.0$ & \cellcolor{gray!15}$0.0$ \\
+\midrule
+\multirow{2}{*}{RAFT}
+ & real-motion (avg) & \cellcolor{green!16}$2.5$ & \cellcolor{gray!15}$0.5$ \\
+ & semantic (SPair)  & \cellcolor{gray!15}$0.1$ & \cellcolor{gray!15}$0.1$ \\
+\bottomrule
+\end{tabular}

@@ -449,7 +449,18 @@ def create_validation_datasets(config, device=None):
             val_dataset_config['split'] = val_datasets_config.get('split', 'train')  # Sintel test split has no ground truth
             val_dataset_config['pass_name'] = val_datasets_config.get('pass_name', 'clean')
             val_dataset_config['reverse_flow'] = val_datasets_config.get('reverse_flow', True)
-        
+
+        elif benchmark == 'tapvid_davis':
+            # tap_vid_probe (quarantined): sparse real-motion benchmark, mirrors pointodyssey.
+            # `tapvid_davis_root` points at the preprocess_davis.py mmap cache dir.
+            val_dataset_config['cache_dir'] = eval_config['tapvid_davis_root']
+            val_dataset_config['tapvid_stride'] = val_datasets_config.get('tapvid_stride', val_datasets_config.get('stride', 5))
+            val_dataset_config['tapvid_frame_step'] = val_datasets_config.get('tapvid_frame_step', 5)
+            val_dataset_config['tapvid_min_pts'] = val_datasets_config.get('tapvid_min_pts', 1)
+            val_dataset_config['tapvid_max_pairs_per_video'] = val_datasets_config.get('tapvid_max_pairs_per_video', None)
+            val_dataset_config['reverse_flow'] = val_datasets_config.get('reverse_flow', True)
+            val_dataset_config['thres'] = eval_config['thres']
+
         else:  # spair, pfpascal, pfwillow
             val_dataset_config['datapath'] = eval_config['datapath']
             val_dataset_config['thres'] = eval_config['thres']

@@ -1,0 +1,7 @@
+arm,benchmark,bench_regime,motion_effect,std,count
+FF,flyingthings,object,-2.5711333333333335,4.120210711035702,3
+FF,kitti2012,ego (camera),8.9101,2.6943442319050472,3
+FF,kitti2015,mixed,0.016133333333333628,3.654203886393493,3
+TT,flyingthings,object,-3.6470000000000056,,1
+TT,kitti2012,ego (camera),2.6702000000000083,,1
+TT,kitti2015,mixed,2.3196000000000083,,1

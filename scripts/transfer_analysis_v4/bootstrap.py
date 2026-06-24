@@ -234,7 +234,10 @@ def main():
                 "motion_size", "motion_supdensity",
                 "motion_km", "motion_sym", "motion_mmd", "motion_fid", "motion_w2",
                 "appearance_mmd", "appearance_nullk",
-                "appearance_sym", "appearance_fid", "appearance_w2"]
+                "appearance_sym", "appearance_fid", "appearance_w2",
+                # Regime-Direction Law families (v5)
+                "motion_rule", "motion_precision", "motion_recall",
+                "motion_meannn_sym", "motion_meannn_both"]
     if args.families:
         keep = set(args.families)
         unknown = keep - set(families)

@@ -1,0 +1,26 @@
+% =====================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+
+What predicts synthetic-to-real correspondence transfer is motion
+\emph{coverage}: how well a source covers the target's motion. That a source
+should move like its target is not a new idea; what we add is that the useful
+form of it is directional, and cheap to check. Ranking candidate sources by one
+directed motion distance already sits near the reproducibility ceiling of transfer
+($92\%$ of it).
+As a single default it leads every symmetric and distribution distance, which
+dilute the signal with near-useless off-target mass (on semantic targets, where
+coverage is not the whole story, a symmetric distance can match it); and it has no
+appearance-space analogue: how the frames look does not tell you which target a
+source suits. None of this needs
+training a network or rendering a frame.
+
+Because off-target motion is nearly free, coverage does two jobs. To
+\emph{select} among existing sources, rank them by coverage. To \emph{design} new
+data, add coverage of the target instead of matching its distribution, the move
+our render-free search exploits on a real target. The same rule guided two very
+different generators, a 3D scene simulator and a procedural implicit-surface
+generator, so it is a property of the data, not of any one renderer. The recipe
+is short: before you improve how you render, measure how well your source covers
+the target's motion.
+

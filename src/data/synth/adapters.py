@@ -435,6 +435,8 @@ class KubricInterventionAdapter(BaseAdapter):
             reverse_flow=reverse_flow,
             max_pairs=kwargs.get("kubric_max_pairs", None),
             seed=kwargs.get("seed", None),
+            mirror_flip=kwargs.get("mirror_flip", 0.0),
+            occlusion_mask=kwargs.get("occlusion_mask", False),
         )
 
     def __len__(self):
@@ -557,6 +559,15 @@ ADAPTER_REGISTRY = {
     "pfwillow": BenchmarkAdapter,
     "spair": BenchmarkAdapter,
 }
+
+
+# --- tap_vid_probe (quarantined): register TAP-Vid-DAVIS eval benchmark if present ---
+# Self-contained: if tap_vid_probe/ is removed this no-ops and the pipeline is unaffected.
+try:
+    from tap_vid_probe.tapvid_davis_dataset import TapVidDavisAdapter as _TapVidDavisAdapter
+    ADAPTER_REGISTRY["tapvid_davis"] = _TapVidDavisAdapter
+except Exception as _tapvid_e:  # pragma: no cover
+    pass
 
 
 def build_adapter(dataset_name: str, **kwargs) -> BaseAdapter:

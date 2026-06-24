@@ -1,0 +1,20 @@
+\begin{tabular}{l c ccc}
+\toprule
+Arch. & Enc. & rule (with diag.) & rule (no diag.) & $\Delta$ \\
+\midrule
+\multicolumn{5}{@{}l}{\textit{Scratch backbone}}\\
+CATs++  & \enctrained & +0.53 & +0.52 & -0.003 \\
+CATs++  & \encfrozen  & +0.51 & +0.51 & -0.002 \\
+GLU-Net & \enctrained & +0.31 & +0.29 & -0.013 \\
+GLU-Net & \encfrozen  & +0.37 & +0.39 & +0.016 \\
+RAFT    & \enctrained & +0.40 & +0.41 & +0.011 \\
+\midrule
+\multicolumn{5}{@{}l}{\textit{Pretrained backbone}}\\
+CATs++  & \enctrained & +0.51 & +0.48 & -0.032 \\
+CATs++  & \encfrozen  & +0.50 & +0.48 & -0.027 \\
+GLU-Net & \enctrained & +0.67 & +0.65 & -0.023 \\
+GLU-Net & \encfrozen  & +0.76 & +0.76 & -0.005 \\
+\midrule
+\multicolumn{2}{@{}l}{mean} & +0.507 & +0.498 & -0.009 \\
+\bottomrule
+\end{tabular}

@@ -61,6 +61,9 @@ class CorrespondenceDataset(Dataset):
         self.max_kps: Optional[int] = kwargs.get("max_kps", None)
         self.downsample_feat_size: int = kwargs.get("downsample_flow", 32)
         self.prefer_all_dense: bool = kwargs.get("dense_kps_use_all", True)
+        # occlusion_mask: keep occluded feature cells as inf so the sparse
+        # endpoint-error loss skips them (Kubric flow only). Default off.
+        self.occlusion_mask: bool = bool(kwargs.get("occlusion_mask", False))
 
         # Device policy: synthetic prefers GPU, others default to CPU for worker safety
         target_device_str = kwargs.get("target_device", None)
@@ -314,6 +317,7 @@ class CorrespondenceDataset(Dataset):
                 max_kps=self.max_kps,
                 downsample_feat_size=self.downsample_feat_size,
                 prefer_all_dense=self.prefer_all_dense,
+                occlusion_mask=self.occlusion_mask,
             )
             sample = normalize_images(sample, self.normalize_images_flag)
             processed_samples.append(sample)
@@ -322,5 +326,6 @@ class CorrespondenceDataset(Dataset):
             processed_samples,
             max_kps=self.max_kps,
             target_device=self.target_device,
+            occlusion_mask=self.occlusion_mask,
         )
         return batch_out

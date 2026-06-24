@@ -1,0 +1,45 @@
+% =====================================================================
+\section{Limitations}
+\label{sec:limits}
+
+We state the coverage law's evidentiary status precisely. On the configurations we
+analyze (Sect.~\ref{sec:setup}), coverage is the
+consistent positive predictor and survives every robustness control we ran:
+estimator replication, leave-one-benchmark-out, self-pair exclusion, and a
+generator-family jackknife (supplement). We also trained the backbone matchers
+from scratch, with randomly-initialized feature extractors; these mode-collapse to
+a near-static prior that ignores the image pair, so we report them only in the
+supplement and do not read them as a coverage result---a model that ignores its
+input carries no data-selection signal, and even there appearance gains no
+predictive power. This out-of-distribution set was fixed before any motion
+distance was measured, not from the transfer outcomes.
+
+\noindent\emph{Semantic correspondence is the hardest case.} Even under a
+backbone, motion descriptors capture coverage but not full semantic
+compatibility, so a symmetric or sliced-$W_2$ distance is competitive there and,
+for FlowFormer, better (Sect.~\ref{sec:law}); the target-selective signal still
+lives in motion, but coverage is no longer the lone predictor.
+
+\noindent\emph{The causal evidence is concentrated on a camera-motion target.}
+Our interventional legs---render-free recovery of a target's motion regime, a
+tuned source beating a generic baseline, and the inverted-U magnitude grid---are
+strongest on KITTI, which is ego-motion-dominated; real-image \emph{motion}
+transfer is carried mainly by KITTI in our benchmark set (Sect.~\ref{sec:setup}).
+Object-centric targets are harder for an aggregate motion descriptor, which is by
+construction blind to the camera-versus-object factorization of a flow field, and
+extending the controlled interventions to them is the natural next step.
+
+\noindent\emph{Controlled isolation of the two directions remains open.} The
+magnitude grid shows transfer is inverted-U in motion magnitude (coverage lifts it
+up to the match, over-shoot lowers it), but magnitude moves coverage and off-target
+mass together. Cleanly isolating either direction---varying coverage breadth at
+\emph{fixed} off-target mass, or off-target mass at fixed coverage---remains future
+work our render-free infrastructure supports.
+
+\noindent\emph{Absolute accuracy beyond anchors is feature-unreachable} in our
+analysis: coverage supplies the ranking, but the absolute \pck{} level must be
+read off a few observed runs (Sect.~\ref{sec:absolute}).
+
+One benchmark (Middlebury) was excluded after we identified an evaluation-harness
+defect during analysis; all reported numbers use the remaining nine (the
+supplement documents the exclusion and a sensitivity analysis).

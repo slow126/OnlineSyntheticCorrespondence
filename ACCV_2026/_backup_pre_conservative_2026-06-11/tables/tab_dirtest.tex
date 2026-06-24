@@ -1,0 +1,15 @@
+\begin{tabular}{l cc cc}
+\toprule
+ & \multicolumn{2}{c}{\textbf{from scratch}} & \multicolumn{2}{c}{\textbf{pretrained backbone}} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+within-context $\rho$ & canonical & controlled & canonical & controlled$^{\dagger}$ \\
+ & (11 src) & (grid) & (11 src) & (grid) \\
+\midrule
+off-target mass $\dtb$ & +0.42 & \best{+0.66} & -0.08 & \best{+0.64} \\
+missing support $\dbt$ & +0.23 & -0.26 & \best{+0.61} & +0.21 \\
+symmetric (mean of the two) & \best{+0.50} & -0.01 & +0.39 & +0.37 \\
+\midrule
+\emph{matched direction (design objective)} & +0.42 & +0.66 & +0.61 & +0.21 \\
+\emph{regime-aware policy (selection score)} & +0.50 & -0.01 & +0.61 & +0.21 \\
+\bottomrule
+\end{tabular}

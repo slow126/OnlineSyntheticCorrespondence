@@ -1,0 +1,83 @@
+dataset:
+  dataset_name: synthetic
+  debug: false
+  dense_kps_use_all: true
+  downsample_flow: 32
+  geometry_config_overrides:
+    angle_sampler:
+      x_components:
+        loc: -0.014206189542174175
+        scale: 0.029513340695549034
+      y_components:
+        loc: -0.036683958715967344
+        scale: 0.049950871981682105
+    scale_sampler:
+      abs_components:
+        loc: 0.4882856892619327
+        scale: 0.18393251862446852
+      rel_components:
+        loc: -0.16308826903005477
+        scale: 0.27926430680097813
+  geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
+  max_kps: null
+  normalize_images: false
+  opengl_device_index: null
+  processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
+  size:
+  - 512
+  - 512
+  split: train
+  verbose: false
+evaluation:
+  datapath: ./models/Datasets_CATs
+  eval_alphas:
+  - 0.05
+  eval_benchmarks:
+  - kitti2015
+  flyingthings_root: /home/spencer/Data/FlyingThings3D_tiny
+  kitti_root: /home/spencer/Data/correspondence/kitti
+  kitti_val_use_full_training: true
+  min_motion_pixels: 5.0
+  pointodyssey_root: /home/spencer/Data/PointOdyssey
+  prefetch_factor: 4
+  split_to_use_for_validation: val
+  thres: img
+  tss_root: /home/spencer/Data/correspondence/TSS_CVPR2016
+  use_motion_aware: false
+  val_batch_size: 8
+  val_datasets:
+    kitti2015:
+      max_pts: 200
+      normalize_images: true
+      split: val
+  val_num_workers: 32
+  zero_threshold: 0.5
+model:
+  backbone: resnet101
+  freeze: true
+  pretrained_backbone: true
+paths:
+  pretrained: null
+  snapshots: /mnt/nvme_1tb_a/snapshots/act2_seeds
+  start_epoch: 0
+training:
+  augmentation: true
+  batch_size: 8
+  debug_visualization_benchmarks: null
+  debug_visualization_persist: false
+  enable_debug: false
+  epochs: 50
+  eval_initial: false
+  lr: 3e-4
+  lr_backbone: 3e-6
+  max_flow_length: null
+  min_flow_length: null
+  mmd_every_n_epochs: 0
+  momentum: 0.9
+  n_threads: 0
+  scheduler: step
+  seed: 2
+  step: '[70, 80, 90]'
+  step_gamma: 0.5
+  steps_per_epoch: 100
+  weight_decay: 0.05

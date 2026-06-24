@@ -203,3 +203,33 @@ slurm/*jobs*/
 # Required runtime asset: Julia-set curvature map loaded by the synthetic geometry
 # sampler (src/.../computed/curvature.py). Must stay tracked despite the *.npz rule.
 !src/data/synth/datasets/computed/julia_curvature_13.npz
+
+# --- tap_vid_probe: track code/configs only; logs + (off-repo) data cache excluded ---
+tap_vid_probe/logs/
+tap_vid_probe/**/__pycache__/
+# probe data lives off-repo on /mnt (frames.npy, *.pkl already ignored), never commit it
+
+# --- Extra large-file guards (datasets / archives / media / caches) ---
+*.tar
+*.tar.gz
+*.tgz
+*.tar.zst
+*.7z
+*.gz
+*.h5
+*.hdf5
+*.tfrecord
+*.tfrecord-*
+*.mp4
+*.avi
+*.mov
+*.parquet
+*.feather
+*.arrow
+
+# Compiled papers / template PDFs (regenerable from .tex; keep them out of git).
+# Force-track a needed figure with:  git add -f path/to/figure.pdf
+*.pdf
+# TensorBoard event logs (training artifacts)
+events.out.tfevents.*
+*.tfevents.*

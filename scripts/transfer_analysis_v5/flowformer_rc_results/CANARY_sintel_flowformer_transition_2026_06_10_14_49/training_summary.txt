@@ -1,0 +1,32 @@
+TRAINING SUMMARY
+==================================================
+Current epoch: 1
+Training time so far: 174.93 seconds
+Total epochs planned: 5000
+Best primary benchmark PCK: 44.3990%
+Best average PCK: 44.3990% (epoch 1)
+Primary benchmark: flyingthings
+
+BEST PERFORMANCE PER BENCHMARK:
+--------------------------------------------------
+flyingthings: 44.40% PCK (epoch 1, epoch_1.pth)
+
+MOTION-AWARE METRICS (from latest epoch):
+--------------------------------------------------
+Motion-aware PCK and static bias metrics are logged in validation_results.csv
+Metrics include: PCK (motion-aware), PCK by motion bins, zero-flow precision/recall/F1, static bias ratio
+
+TRAINING CONFIGURATION:
+------------------------------
+Train dataset: sintel
+Learning rate: 0.00025
+Batch size: 8
+Feature size: None
+Evaluation benchmarks: flyingthings
+Evaluation alphas: 0.05
+Backbone: resnet101
+Freeze backbone: False
+Pretrained backbone: True
+Augmentation: False
+
+STATUS: Training in progress (epoch 1/5000)

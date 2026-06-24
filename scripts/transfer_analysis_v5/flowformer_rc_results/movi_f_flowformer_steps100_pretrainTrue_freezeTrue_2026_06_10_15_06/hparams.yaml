@@ -1,0 +1,117 @@
+config:
+  dataset:
+    datapath: /home/slow1/Data/movi_f/512x512/1.0.0
+    dataset_name: movi_f
+    debug: false
+    dense_kps_use_all: true
+    downsample_flow: null
+    kubric_dir: /home/slow1/Projects/kubric
+    max_kps: null
+    movi_f_config: 512x512
+    movi_f_shuffle_buffer: 16
+    normalize_images: true
+    reverse_flow: false
+    size:
+    - 512
+    - 512
+    split: train
+    verbose: false
+  evaluation:
+    datapath: ./models/Datasets_CATs
+    eval_alphas:
+    - 0.05
+    - 0.05
+    - 0.05
+    - 0.05
+    - 0.05
+    - 0.05
+    - 0.05
+    - 0.05
+    - 0.05
+    - 0.05
+    eval_benchmarks:
+    - flyingthings
+    - tss
+    - middlebury
+    - synthetic
+    - pfpascal
+    - pfwillow
+    - spair
+    - kitti2012
+    - kitti2015
+    - pointodyssey
+    flyingthings_root: /home/slow1/Data/FlyingThings3D_Pytorch
+    kitti_root: /home/slow1/Data/correspondence/kitti
+    kitti_val_use_full_training: true
+    middlebury_root: /home/slow1/Data/middlebury/all
+    min_motion_pixels: 5.0
+    pointodyssey_root: /home/slow1/Data/PointOdyssey
+    prefetch_factor: 2
+    split_to_use_for_validation: test
+    thres: img
+    tss_root: /home/slow1/Data/correspondence/TSS_CVPR2016
+    use_motion_aware: false
+    val_batch_size: 32
+    val_datasets:
+      flyingthings:
+        normalize_images: true
+        split: test
+        val_dataset_fraction: 0.2
+      kitti2012:
+        normalize_images: true
+        split: val
+      kitti2015:
+        normalize_images: true
+        split: val
+      middlebury:
+        normalize_images: true
+        reverse_flow: false
+      pointodyssey:
+        normalize_images: true
+        pointodyssey_num_pts_to_track: 32
+        pointodyssey_sequence_length: 2
+        split: test
+        use_all_valid: true
+        val_sequence_fraction: 0.2
+      synthetic:
+        geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig_Val_fast.yaml
+        normalize_images: false
+        processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
+        synthetic_val_cache: /home/slow1/Data/synthetic_val_cache_v1
+    val_num_workers: 8
+    zero_threshold: 0.5
+  model:
+    freeze: true
+    iters: 12
+    pretrain: true
+    pretrained_path: null
+    type: flowformer
+  paths:
+    pretrained: null
+    snapshots: ./snapshots
+    start_epoch: 0
+  training:
+    accumulate_grad_batches: 1
+    augmentation: false
+    batch_size: 8
+    check_val_every_n_epoch: 50
+    debug_visualization_benchmarks: None
+    debug_visualization_persist: true
+    enable_debug: false
+    epochs: 5000
+    eval_initial: true
+    gradient_clip_algorithm: norm
+    gradient_clip_val: 1.0
+    lr: 0.00025
+    lr_backbone: 2.5e-06
+    max_flow_length: null
+    min_flow_length: null
+    mmd_every_n_epochs: 0
+    momentum: 0.9
+    n_threads: 4
+    scheduler: step
+    seed: 2021
+    step: '[70, 80, 90]'
+    step_gamma: 0.5
+    steps_per_epoch: 100
+    weight_decay: 0.0001

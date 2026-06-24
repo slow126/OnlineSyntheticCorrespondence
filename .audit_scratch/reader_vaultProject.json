@@ -1,0 +1,153 @@
+{
+ "summary": "The Obsidian vault records a narrative that pivoted four times in roughly ten days. (1) Pre-June baseline: the rejected ECCV submission led with directed coverage + SDF-Fractal3D as the main novelty. (2) The 2026-05-28/06-05 reframe (Overview.md, Paper 2 - Outline, codex_analysis 06-07): headline = \"motion-domain cross-distance predicts within-context transfer; appearance (DINO) does not,\" with perf = L + g, three CV regimes (LOTO/LOBO/JOINT), motion_sym (FID+SW2+MMD) recommended as the headline family, the closed interventional loop (KITTI predicted +0.93 vs actual +0.87, FlyingThings negative control) and robustness battery as the strength. The Advisor Audit (06-04) blessed exactly this version (\"Project 2 scientific core ~80-90% complete, manuscript ~35-45%\"), demanded the causal/SDF/directed-coverage claims be retired, and ordered a scope freeze for the June-22 dissertation draft. (3) The 06-08/09 intervention-grid phase (Session note, ACCV Camera-Ready Assessment 06-09): the 13-cell from-scratch grid opened dynamic range and tempted a \"structure \u226b diversity\" spine swap, but the assessment ruled the prediction-spine version \"the only one writable today\" and flagged single-seed Tier-2 claims, the dead \"appearance nearly free (\u22120.37)\" framing (corrected to \u22122.74), and stale-number inconsistencies. (4) The 06-09/10 Regime-Direction Law (Regime-Direction Law note, Briefing v2, Outline v2, Results Tables, Kitchen Sink): the latest written framing \u2014 WHICH direction of directed motion coverage predicts transfer flips with training regime (scratch = precision-bound by off-target mass d(T\u2192B); pretrained = recall-bound by missing support d(B\u2192T)), flip statistic +0.899, exact permutation p=0.0286 (RAFT excluded) / 0.0079 (RAFT as scratch), no flip in DINO space; a fit-free if-statement rule reaches \u03c1\u22480.50-0.51 on all three splits (~the reproducibility ceiling), and a pre-registered out-of-sample test on the 13-cell Kubric grid PASSED (FF arm matched direction +0.656 vs sym \u22120.011 vs mismatched \u22120.261). This explicitly inverts the 06-05 framing: symmetric metrics, formerly the recommended headline, become \"the direction-blind hedge \u2014 decent everywhere, best nowhere,\" the fitted ridge is demoted to an ablation, and the original ECCV directed-coverage idea is rehabilitated (\"washed out only because pooling cancels the two directions\"). (5) A still-later reframe lives only in auto-memory (two_cost_model.md, \"Round 6, 2026-06-10 late\"): scratch pays BOTH costs (utility = dtb+dbt, i.e. sym = total cost) while pretrained pays dbt only; the \u22120.35 anti-correlation of the two directions is load-bearing; coefficient-ratio claims are normalization-fragile; the old consensus fractions 0.79-0.81 are from a stale CONSENSUS_RULE generation (current CONSENSUS_POLICY 0.73-0.76). Cross-cutting: on 2026-06-10 Middlebury was EXCLUDED everywhere (confirmed eval bug, pretrained pinned ~52.6 PCK; 9 benchmarks, 1,458 cells; the \u00a77.1 closed-loop Middlebury row is void) \u2014 yet same-day documents are not fully reconciled (Results Tables T7 still counts Middlebury in the OOS \"ALL FOUR benchmarks\" PASS, and the law's per-variant table appears in two slightly different numeric generations). Next Steps (last updated 06-08, so partially stale) lists the learned A/B/C embedder build, L-anchor refits, anchor convergence runs, 5 missing feature subsets, architecture-grid ceiling refresh (GLU-Net in flight, FlowFormer untested with three pre-registered predictions), and fenced post-June-22 generator work.",
+ "claims": [
+  {
+   "claim": "Original (v1) headline: motion predicts transfer, appearance does not. motion_sym (FID+SW2+MMD, 3 features) is strongest on LOBO; appearance is weak/negative.",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Project/Overview.md (Headline numbers table, as of 2026-05-28)",
+   "numbers": "motion_sym LOBO rho_g \"+0.533 [+0.475, +0.592]\", LOTO \"+0.413 [+0.192, +0.554]\", JOINT \"+0.401 [+0.235, +0.559]\"; appearance (13 features) LOTO \"-0.220\", LOBO \"+0.074\", JOINT \"-0.182\"; paired gap LOBO motion\u2212appearance \"+0.373 [+0.277, +0.473], P=1.000\""
+  },
+  {
+   "claim": "Advisor Audit (June 4, 2026) verdict: the strongest result is the motion-vs-appearance prediction claim, not SDF/directed coverage/causality; manuscript must be rewritten from scratch; scope must freeze for the June 22 dissertation draft (defense Aug 24).",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Project/Advisor Audit - Projects 2 and 3.md (Executive Verdict, Overall Scorecard, Priority Work Plan)",
+   "numbers": "Project 2 scientific core \"Approximately 80\u201390% complete\"; manuscript \"Approximately 35\u201345% complete because the old framing is obsolete\"; Project 3 evidence \"Approximately 50\u201360% scientifically complete\"; intervention \"KITTI predicted margin: approximately +0.93 / KITTI observed margin: approximately +0.87\""
+  },
+  {
+   "claim": "Advisor Audit explicitly forbids the formulations later partially revived: \"Motion is the dominant causal driver\", \"Directed coverage is universally superior\", \"The predictor designs optimal training data\"; the supported claim is only \"Motion-domain dataset distance can help rank candidate sources or interventions.\"",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Project/Advisor Audit - Projects 2 and 3.md (Recommended Project 2 framing / What the intervention study supports)",
+   "numbers": "none"
+  },
+  {
+   "claim": "Latest written framing (Regime-Direction Law, 2026-06-10): from-scratch models are precision-bound (d(T\u2192B), off-target mass), pretrained models recall-bound (d(B\u2192T), missing support); symmetric metrics are \"the direction-blind hedge \u2014 decent everywhere (+0.43\u20130.47), best nowhere\"; this \"UNIFIES the original ECCV directed-coverage hypothesis\" and explains the GLU-Net dilution.",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Project/Regime-Direction Law (2026-06-10).md (The law / Table A)",
+   "numbers": "Table A: catspp F/F precision \"+0.558\" vs recall \"+0.034\"; glunet T/T precision \"\u22120.163\" vs recall \"+0.734\"; fit-free rule \"mean \u03c1 +0.498 \u2248 per-variant oracle (+0.502) \u2248 inter-variant reproducibility ceiling (+0.528) \u2192 recovers ~99% of the recoverable signal\"; permutation \"p = 0.0286 = the test's floor\""
+  },
+  {
+   "claim": "The post-Middlebury-exclusion canonical law table (Briefing v2 Table 1 / Kitchen Sink L1) gives slightly different per-variant numbers and flip statistic than the Regime-Direction note's Table A.",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Project/Comprehensive Briefing v2 - The Regime-Direction Law.md (tbl:L1 and \u00a73) and Paper 2 - Master Reference (Kitchen Sink).md (tbl:L1)",
+   "numbers": "L1: catspp F/F rho[d(T->B)] \"+0.527\" / rho[d(B->T)] \"+0.026\", flip d \"+0.501 [+0.253,+0.769]\"; glunet T/T \"-0.219\"/\"+0.763\", flip \"-0.982 [-1.148,-0.786]\"; flip statistic \"+0.899\"; permutation \"p = 0.0286\" RAFT-excluded, \"p = 0.0079\" RAFT-in-scratch; DINO control \"flip statistic +0.018, p = 0.43\" (Briefing v2 \u00a73)"
+  },
+  {
+   "claim": "The fit-free rule beats every fitted predictor on all three splits and JOINT matches in-sample splits.",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Project/Comprehensive Briefing v2 - The Regime-Direction Law.md (tbl:P1a, \u00a74)",
+   "numbers": "motion_rule \"+0.502 [+0.31, +0.58]\" LOTO, \"+0.507 [+0.46, +0.56]\" LOBO, \"+0.514 [+0.38, +0.58]\" JOINT; motion (13-feature ridge) \"+0.240/+0.341/+0.222\"; motion_sym \"+0.343/+0.439/+0.374\"; appearance \"-0.075/+0.178/-0.077\"; pretrained regime \"rule +0.612 vs oracle 0.564 \u2192 fraction 1.08\"; scratch \"+0.439 vs 0.689 \u2192 0.64\""
+  },
+  {
+   "claim": "Pre-registered out-of-sample test on the 13-cell Kubric intervention grid PASSED on the FF (from-scratch) arm: matched direction wins, mismatched is negative, symmetric hedges to ~zero \u2014 but the two 2026-06-10 documents quote different means over different benchmark sets.",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Project/Comprehensive Briefing v2 - The Regime-Direction Law.md (\u00a77.2, tbl:I3) vs Results Tables - Regime-Direction (2026-06-10).md (T7)",
+   "numbers": "Briefing v2 (Middlebury excluded, 3 benchmarks): matched mean \"+0.656\" > symmetric \"\u22120.011\" > mismatched \"\u22120.261\"; Results Tables T7 (4 benchmarks incl. middlebury \"+0.517\"): MEAN precision \"+0.621\", recall \"\u22120.125\", sym \"+0.096\", with \"Precision wins on ALL FOUR benchmarks\"; TT arm \"n=3, orderings coincide \u2192 non-discriminative\""
+  },
+  {
+   "claim": "Middlebury is excluded everywhere as of 2026-06-10 due to a confirmed eval bug; the closed-loop Middlebury row is void.",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Project/Paper 2 - Master Reference (Kitchen Sink).md (warning callout, lines 13-21) and Comprehensive Briefing v2 (\u00a77.1)",
+   "numbers": "\"pretrained variants pinned at ~52.6 PCK regardless of source\"; \"9 benchmarks, 1,458 cells\"; closed-loop \"Middlebury +1.03 \u2192 +0.52 (void \u2014 Middlebury eval bug)\""
+  },
+  {
+   "claim": "Closed-loop intervention (carried from v1, still the Act-2 teeth): KITTI margin predicted vs trained, plus a confirmed predicted-null negative control on FlyingThings.",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Project/Comprehensive Briefing v2 - The Regime-Direction Law.md (\u00a77.1); also v1 Briefing Table 10",
+   "numbers": "\"KITTI +0.93 predicted \u2192 +0.87 trained (anchor seed noise \u00b10.4\u20130.9)\"; \"FlyingThings null control +0.05 \u2192 \u22121.58 (no false positive)\""
+  },
+  {
+   "claim": "trial19 case study is the law's narrative anchor: frozen forward-dolly camera = max precision / worst-in-family recall, predicted (and observed) from-scratch star but pretrained-unremarkable; \"Good synthetic data is regime-relative\" is the paper's one-line takeaway.",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Project/Comprehensive Briefing v2 - The Regime-Direction Law.md (\u00a77.3); Results Tables T8",
+   "numbers": "Briefing v2: d(B\u2192T) \"0.0108 = worst in family (others 0.0065\u20130.0092)\"; \"FF rank 1/9 (87.15, +1.2 over next); TT rank 2/4 (96.12, \u22120.5 behind gso_hq)\"; Results Tables T8 instead quotes \"recall b\u2192a 0.0105 vs ~0.0065\""
+  },
+  {
+   "claim": "Latest-of-all framing (auto-memory, postdates the vault): the TWO-COST model \u2014 scratch pays dtb+dbt (sym = total cost, \"NOT a denoising hedge \u2014 the old ... story was wrong\"), pretrained pays dbt only; the anti-correlation of the two directions is the load-bearing fact; old consensus rule fractions are stale.",
+   "source": "/home/spencer/.claude/projects/-home-spencer-Projects-OnlineSyntheticCorrespondence/memory/two_cost_model.md (Round 6, 2026-06-10 late)",
+   "numbers": "anti-correlation \"mean spearman ~-0.35\"; pretrained sym collapse \"0.39 vs 0.61, GLU-Net 0.26/0.33 vs 0.67/0.76\"; OOS \"sym blind (-0.01) while dtb predicts (+0.66)\"; \"CONSENSUS_POLICY 0.73-0.76 (the old \\\"80-82%\\\"/0.79-0.81 rule numbers are from a stale CONSENSUS_RULE generation; current file says 0.71-0.75)\"; coefficient ratios \"(7:1/4:1) are normalization-sensitive (raw scales differ 50-100x)\""
+  },
+  {
+   "claim": "ACCV Camera-Ready Assessment (2026-06-09): science ~85-90% done, manuscript is the bottleneck; lists five NOT-settled items that must not enter the main paper unfixed (seeds on from-scratch cells; the dead \"\u22120.37 appearance nearly free\" framing; synthetic_fractal partial+self-tuned; GLU-Net grid in flight; Tier-2 structure\u226bdiversity confounded by clean supervision).",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/ACCV Camera-Ready Assessment.md (\u00a71)",
+   "numbers": "\"the diverse GSO pair costs \u22122.74, same as KuBasic's \u22122.57; the \u22120.37 was a frozen-single-motion artifact\"; correct claim \"appearance costs ~2.7 PCK vs a ~10-80 PCK motion-type effect\"; synthetic_fractal \"epoch ~13-19/50\""
+  },
+  {
+   "claim": "ACCV assessment itself flags internal numeric inconsistencies across notes that require a frozen-manifest regeneration before drafting.",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/ACCV Camera-Ready Assessment.md (\u00a74 Inconsistencies & stale numbers)",
+   "numbers": "\"LOTO motion \u03c1 varies across notes (+0.413 motion_sym / +0.476 motion-13 in Overview; +0.507 in robustness tables; +0.454 in ceiling)\"; \"Claim 1 table (LOBO gap +0.364) vs Overview (+0.373)\"; \"synthetic_fractal 92.4 appears in two notes with different epochs (13/50 vs 19/50)\""
+  },
+  {
+   "claim": "Novelty positioning: the regime-conditional direction flip is judged genuinely new; Mayer et al. IJCV 2018 is the single biggest scooping risk for the law framing, and Self-Supervised AutoFlow (CVPR 2023) the biggest threat to Act 2; the recall-bound half is theoretically anticipated (Hanneke & Kpotufe), the precision-bound half is the unanticipated claim.",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Project/Novelty Scan - Regime-Direction Law (2026-06-10).md and ACCV Camera-Ready Assessment.md (\u00a73)",
+   "numbers": "\"If the headline reads 'motion distribution matching predicts flow transfer,' the paper dies on this citation\" (Mayer); appearance wrong-sign exhibit \"r=+0.65 on KITTI\""
+  },
+  {
+   "claim": "Next Steps (as of 2026-06-08) pending items: learned A/B/C motion embedder active build; re-fit per-(variant,benchmark) L anchor for the freeze=True KITTI cell; train remaining anchors to convergence (large_zoom, trial0002 only have ep1); 5 missing feature subsets (eps_16px, kl, kl_k5, kl_k20, asym_only); architecture runs for the unbiased ceiling (GLU-Net in progress, FlowFormer++/PWCNet not started); spair_long raft re-training; optional PURE_ONLY=0 run; generator arm fenced post-June-22.",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Project/Next Steps.md",
+   "numbers": "GLU-Net hope-check \"per-benchmark \u03c1(GLU-Net, CATs++) \u2248 +0.42 ... pooled +0.82\"; trial80 negative control \"peaks 80.68 vs catspp T/T baseline 82.26 = \u22121.58\""
+  },
+  {
+   "claim": "The v2 briefing's own limitations section concedes the law's statistical thinness: observational on 9 variants with an 8-unit permutation floor, one out-of-sample confirmation, scratch GLU-Net direction-mild, and a falsifiable FlowFormer prediction on record.",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Project/Comprehensive Briefing v2 - The Regime-Direction Law.md (\u00a78 Limitations)",
+   "numbers": "\"8-unit permutation floor p=0.0286\"; \"ranking \u03c1\u22480.5 \u21d2 ~25% of within-context variance\"; glunet F/F flip CI \"-0.109 [-0.510, +0.335]\" (tbl:L1); FlowFormer++ \"pretrained Twins-SVT encoder \u21d2 d(B\u2192T)-bound\""
+  },
+  {
+   "claim": "Absolute prediction numbers drift across the three same-day (2026-06-10) documents.",
+   "source": "/home/spencer/Documents/Obsidian/Correspondence/Project/Comprehensive Briefing v2 (\u00a75 table) vs Results Tables T4 vs Paper 2 - Outline v2 \u00a75",
+   "numbers": "Briefing v2: LOTO \"MAE 9.19 / r +0.882\", per-regime \"pretr 7.65 / +0.901\"; Results Tables T4: LOTO \"8.94 / +0.874\", JOINT \"29.2 / +0.01\"; Outline v2: \"LOTO MAE 8.99, abs Pearson 0.874\"; Briefing v2 JOINT (new anchor) \"20.78 / +0.654\" vs T4 JOINT \"29.2\""
+  }
+ ],
+ "red_flags": [
+  {
+   "issue": "Same-day numeric drift among the 2026-06-10 regime-direction documents, with no reconciliation note. The law's per-variant table exists in two generations (Regime-Direction note Table A vs Briefing v2/Kitchen Sink L1), the flip statistic is quoted as both +0.818 and +0.899, the DINO-control p-value as both 0.43 and 0.54, LOTO MAE as 9.19/8.94/8.99, and trial19's worst-in-family recall as 0.0108 vs 0.0105. Likely pre-/post-Middlebury-exclusion regenerations, but a drafted paper could mix generations.",
+   "evidence": "Regime-Direction Law (2026-06-10).md: catspp F/F \"+0.558\", \"flip +0.818\", glunet T/T \"+0.734\"; Comprehensive Briefing v2 tbl:L1: catspp F/F \"+0.527\", flip statistic \"+0.899\", glunet T/T \"+0.763\"; Briefing v2 \u00a73 \"p = 0.43\" vs Results Tables T1 \"DINO control: NO flip (p=0.54)\"",
+   "severity": "high"
+  },
+  {
+   "issue": "The headline out-of-sample PASS is stated over inconsistent benchmark sets relative to the Middlebury exclusion: Results Tables T7 trumpets \"Precision wins on ALL FOUR benchmarks\" including a middlebury row (+0.517), while the same-day Kitchen Sink/Briefing v2 declare Middlebury excluded for a confirmed eval bug and quote a 3-benchmark mean (+0.656). One of the two headline OOS means leans on a benchmark elsewhere declared void.",
+   "evidence": "Results Tables - Regime-Direction (2026-06-10).md T7: \"middlebury | +0.517 | +0.283 | +0.417\" and \"MEAN +0.621\"; Paper 2 - Master Reference (Kitchen Sink).md: \"All machine tables and figures now exclude Middlebury (9 benchmarks, 1,458 cells)\"; Briefing v2 tbl:I3 has no middlebury row, mean \"+0.656\"",
+   "severity": "medium"
+  },
+  {
+   "issue": "The headline claim has flipped three times in six days, and each reframe retroactively reinterprets the previous one's evidence. 06-05: symmetric motion_sym is the recommended headline family. 06-10: symmetric metrics are \"the direction-blind hedge \u2014 decent everywhere, best nowhere\" and the rule is the headline. 06-10 late (two-cost): sym is rehabilitated for scratch as \"the sum of two real costs, NOT a denoising hedge \u2014 the old ... story was wrong.\" The ACCV Camera-Ready Assessment's \"settled and camera-ready\" list (06-09) is itself superseded by the regime-direction rewrite one day later.",
+   "evidence": "Overview.md: \"Recommended feature set: lead with motion_sym\"; Regime-Direction Law (2026-06-10).md: \"Symmetric metrics ... are the direction-blind hedge \u2014 decent everywhere (+0.43\u20130.47), best nowhere\"; two_cost_model.md: \"sym best on scratch rows of tab_law (sum of two real costs, NOT a denoising hedge \u2014 the old \\\"positively correlated estimates denoise\\\" story was wrong)\"",
+   "severity": "medium"
+  },
+  {
+   "issue": "trial19 is reinterpreted from confound to confirmation within ~24 hours. The v1 briefing (\u00a79.5.3, 06-09) says trial19's K2015 win is \"NOT motion-match\" (\"the distances REFUTE the obvious structural story\"; \"a clean-supervision confound\"), while v2 (06-10) makes trial19 the law's poster child (\"A year of trial19 flip-flopping ... was the law operating unrecognized\") via its worst-in-family recall. Both readings use the same single-seed grid cells; the clean-supervision confound is not addressed in v2's \u00a77.3.",
+   "evidence": "Comprehensive Briefing v1 \u00a79.5.3: \"it is the farthest camera source from K2015 in motion distance \u2014 its win is not motion-match\"; Briefing v2 \u00a77.3: \"FF rank 1/9 (87.15, +1.2 over next)\" presented as the law's prediction",
+   "severity": "medium"
+  },
+  {
+   "issue": "Statistical thinness vs \"law\" rhetoric: the regime split rests on 8 units (p=0.0286 is the design floor), scratch GLU-Net flip CIs straddle 0 in both directions, the TT arm of the only out-of-sample test is n=3 and non-discriminative, and the OOS FF arm's KITTI cells are conceded to be motion-near-tied by construction. The notes themselves lean \"principle\" over \"law\" but the documents headline \"law\" throughout.",
+   "evidence": "Briefing v2 \u00a78: \"Observational law on 9 variants (8-unit permutation floor p=0.0286); one out-of-sample confirmation (FF arm; TT arm non-discriminative)\"; tbl:L1 glunet F/F flip \"-0.109 [-0.510, +0.335]\"; \u00a77.2: \"KITTI-family sources are matched-motion appearance ablations by construction\"",
+   "severity": "medium"
+  },
+  {
+   "issue": "Stale numbers are known to persist in citable artifacts: the two-cost memory says the widely quoted consensus fractions 0.79-0.81 (used in Briefing v2 \u00a74 and Outline v2 C2 as \"0.79/0.80/0.81\") come from a stale CONSENSUS_RULE generation; Briefing v2 admits two P4 calibrator rows \"still cite /tmp/ paths\"; ceiling numbers exist in at least four generations (0.584/78%, 0.731 with 0.79-0.81, two-pool 0.63/0.71/0.39, CONSENSUS_POLICY 0.73-0.76).",
+   "evidence": "two_cost_model.md: \"the old \\\"80-82%\\\"/0.79-0.81 rule numbers are from a stale CONSENSUS_RULE generation; current file says 0.71-0.75\"; Briefing v2 \u00a75: \"regenerate the P4 rows from a real artifact CSV \u2014 two rows still cite /tmp/ paths\"",
+   "severity": "medium"
+  },
+  {
+   "issue": "Scope-freeze violation acknowledged but unresolved: the Advisor Audit (06-04) ordered claims frozen and \"Stop new learned-representation and generator experiments\" before the June-22 draft, yet the subsequent week added the 13-cell grid, GLU-Net + FlowFormer architecture grids, the learned embedder build, and a full headline reframe; the 06-08 session note explicitly logs \"This is more experiments at a moment the audit said to freeze scope.\"",
+   "evidence": "Advisor Audit: \"June 4\u20136: Freeze the claims ... Stop new learned-representation and generator experiments\"; Session 2026-06-08 note: \"This is more experiments at a moment the audit said to freeze scope \u2014 that trade-off is the decision to put to the advisor\"",
+   "severity": "low"
+  },
+  {
+   "issue": "Venue ambiguity: the vault targets \"CVPR 2026 resubmission\" (Overview) while the assessment and draft directory target ACCV (14-page LNCS); the main-vs-supp split was designed for ACCV's longer format.",
+   "evidence": "ACCV Camera-Ready Assessment.md: \"the vault targets 'CVPR 2026 resubmission'; you said ACCV ... roughly double CVPR's effective space\"",
+   "severity": "low"
+  },
+  {
+   "issue": "Earlier notes still present the Middlebury closed-loop result as a calibration win (\"near-exact\", trial45 53.57\u219253.38) \u2014 these numbers are now void under the eval bug but remain uncorrected in Overview.md, Next Steps context, Advisor Audit, codex_analysis, and Paper 2 - Outline v1.",
+   "evidence": "Overview.md: \"Middlebury near-exact (trial45 53.57\u219253.38; anchor 52.54\u219252.86)\" vs Kitchen Sink: \"the \u00a77.1 closed-loop Middlebury row ... should be considered void until re-evaluated\"",
+   "severity": "medium"
+  }
+ ],
+ "open_threads": [
+  "Middlebury re-evaluation with the fixed eval (9th excluded benchmark; closed-loop Middlebury row void until then; with-Middlebury artifacts archived in *_with_middlebury_backup/).",
+  "Three pre-registered FlowFormer predictions (scratch cells ranked by the sum dtb+dbt, pretrained by dbt alone, transferred fitted weights add nothing) \u2014 FlowFormer untested; Briefing v2 also records the falsifiable claim 'pretrained Twins-SVT encoder \u21d2 d(B\u2192T)-bound'. The 64-job FlowFormer 2x2 grid is staged in the repo (project_flowformer_grid memory).",
+  "GLU-Net matched-budget grid harvest \u2192 rerun ceiling_analysis.py / regenerate_consensus_csv.py for camera-ready ceiling/consensus numbers (flagged 'refresh after GLU-Net grid' in three places per ACCV assessment \u00a74.5).",
+  "Act-2 seed runs for the n=3-vs-n=3 KITTI winner-vs-anchor margin CI ('Seed runs ... are training now (act2_seeds/)', Briefing v2 \u00a77.1; also Advisor Audit requirement if practical design stays a primary claim).",
+  "Decision: design a d(B\u2192T)-varying pretrained (TT-arm) intervention grid pre-submission vs hold as rebuttal ammunition (Briefing v2 advisor question 3; current TT arm n=3 non-discriminative).",
+  "Regime-Direction MUST-DO #2: rule-vs-sym paired bootstrap test (Table A CIs done; paired test not recorded as done).",
+  "Reconcile the two numeric generations of the law table / flip statistic / DINO p-value / LOTO MAE across Regime-Direction note, Briefing v2, Results Tables, and Kitchen Sink; frozen-manifest regeneration of every main-paper table (ACCV assessment critical-path item 7).",
+  "Regenerate calibrator P4 rows from a real artifact CSV (two rows still cite /tmp/ paths) and decide whether per-regime constrained gain becomes the single headline calibrator (advisor question 2).",
+  "Cheap compute from Next Steps still pending as of 06-08: 5 missing feature subsets (eps_16px, kl, kl_k5, kl_k20, asym_only), re-fit freeze=True KITTI L anchor, converge large_zoom/trial0002 anchors, spair_long raft re-training, optional PURE_ONLY=0 sanity run.",
+  "Advisor framing decisions: 'law' vs 'principle/effect'; RAFT regime-coding footnote placement; how much BFV\u2192Kubric motion recovery stays in Paper 2 \u00a77 vs moves to Paper 3.",
+  "Whether the ACCV Camera-Ready Assessment (written 06-09, pre-law) needs a rewrite \u2014 its recommended main-paper structure (\u00a75 leads with motion_sym \u03c1_g tables) is superseded by Outline v2's regime-direction spine and again by the two-cost reframe.",
+  "Fresh arXiv sweep the week before submission (Novelty Scan: 'Do a fresh arXiv sweep ... e.g. arXiv 2602.19946 coverage-collapse wave'); Kitchen Sink says 2025-26 sweep 'CLEAR' as of 2026-06-10.",
+  "Dissertation timeline pressure: full draft due to advisor 2026-06-22, defense 2026-08-24 (Advisor Audit) \u2014 the regime-direction/two-cost rewrite happened inside the window the audit reserved for writing; ACCV_2026/ draft directory now exists (untracked in git status) with DRAFT_NOTES.md morning-review list per auto-memory.",
+  "Project 3 protocol repair (matched subsets, seeds, target-reference split, n_valid controls) \u2014 entirely open per the Advisor Audit; not touched by any later vault note."
+ ]
+}

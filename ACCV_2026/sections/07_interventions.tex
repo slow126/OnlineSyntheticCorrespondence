@@ -1,0 +1,165 @@
+% =====================================================================
+\section{Interventions: Steering Generation and Stress-Testing Coverage}
+\label{sec:interv}
+
+A correlational principle should be stressed interventionally. We probe three
+questions on a procedurally generated grid (Kubric-derived motion interventions
+\cite{greff2021kubric} plus our SDF-fractal generator), constructed after the
+analysis of Secs.~\ref{sec:law}--\ref{sec:absolute} was frozen: \emph{(i)}
+construct validity, \emph{(ii)} whether a tuned source beats a generic baseline,
+and \emph{(iii)} whether motion (not appearance) is the target-specific carrier
+and the coverage response has the predicted shape.
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Recovered generator parameters $\theta$} from BFV-only
+search. The camera/object decomposition is read directly off $\theta$ and
+matches each target's known physics; full parameter set in supplement.}
+\label{tab:recovery}
+\small
+\input{tables/tab_recovery}
+\end{table}
+
+\noindent\textbf{(i) The recovered motion is physically plausible
+(construct validity).} A descriptor as crude as a 4-D bag of flow vectors
+invites a natural worry: does it capture anything real? We test this directly.
+We run a render-free search over generator motion parameters, scored only by how
+well the generated motion covers the target's, and ask what motion matching the
+descriptor actually produces (\emph{render-free}: each candidate costs only a
+geometry-only flow pass---the scene's motion field, with no texture or lighting
+render---and no training; only the winning source is later materialized in full,
+with appearance, to train on and verify in (ii)).
+On a
+controllable Kubric-style generator whose parameters $\theta$ explicitly
+separate camera motion from object motion, optimizing BFV match alone recovers
+the expected motion regime for each target (Table~\ref{tab:recovery}): a strong
+forward dolly with grounded objects for
+KITTI (camera-centric), a near-static camera with vertically flying objects for
+FlyingThings (object-centric). The recovered camera axis cleanly separates the
+moving-camera target from the static-camera target, with no supervision beyond
+the motion histogram. The recovered KITTI source's flow fingerprint bears this
+out, a coherent radial-expansion field that captures the target's
+forward-ego-motion structure, unlike the isotropic generic anchor
+(Fig.~\ref{fig:intervsplats}). An independent generator, matched on BFV alone,
+lands on the right physical motion: construct validity earned, not asserted---and
+not circular, since the objective fixes only the aggregate motion histogram, yet
+the regime it selects is the physically correct one, with its real test in (ii). One
+caveat: BFV is by construction blind to the camera-vs-object \emph{decomposition}
+when the two produce identical aggregate flow, since an ego-motion dolly and
+flying objects can share an aggregate fingerprint. We therefore read the
+camera/object split off $\theta$, not off the splat, and treat the ambiguity in
+the supplement.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/results/F_pipeline_closedloop.png}
+\caption{\textbf{Closed-loop, render-free source design.} A generic source
+(MOVi-F) is tuned by a TPE search whose only objective is BFV coverage ($-\dbt$)
+against the target, scored from geometry-only flow passes with no texture render
+and no training. The recovered ``KITTI-recovered'' source has a coherent
+forward-dolly fingerprint ($|f|{\approx}13$) vs.\ the near-isotropic generic
+anchor ($|f|{\approx}4$); training on it beats MOVi-F across all configurations
+(Table~\ref{tab:interv}). Panels are directional flow splats; color $=$ flow
+direction (wheel in supp.).}
+\label{fig:intervsplats}
+\end{figure*}
+
+\begin{table*}[t]
+\centering
+\caption{\textbf{A target-tuned source beats the generic baseline.} Peak \pck{}
+on KITTI of the render-free \emph{tuned} source (the KITTI-recovered generator,
+GSO assets $+$ HDRI) vs.\ the generic MOVi-F baseline \cite{greff2021kubric},
+by architecture and backbone (the \emph{scratch} rows train the backbone from
+scratch; \emph{pretrained} is a frozen pretrained backbone). $\Delta =$ tuned $-$
+MOVi-F; bold marks a win. The tuned source wins
+all $14$ KITTI cells. On the semantic \textsc{tss} benchmark (right; pretrained
+backbone), the target-matched source is instead \emph{near-static}, and it too
+beats MOVi-F on all three architectures. For the configurations that learn, this is learned-feature
+transfer; even for the from-scratch CATs++ config (an out-of-distribution probe, supp.)
+the target-matched source wins, by prior-matching rather than learned features.}
+\label{tab:interv}
+\setlength{\tabcolsep}{5pt}
+\resizebox{\textwidth}{!}{\input{tables/tab_interv}}
+\end{table*}
+
+\noindent\textbf{(ii) A tuned source beats a generic baseline.}
+The recovered motion also trains well. Materializing the KITTI-recovered source
+(GSO assets, HDRI lighting) and training on it beats MOVi-F~\cite{greff2021kubric}
+in \emph{all fourteen} KITTI settings, with gains of $+1.8$ to $+22.5$ \pck{}
+across architectures and backbone configurations (Table~\ref{tab:interv}). The
+CATs++-scratch wins come from prior-matching rather than learned
+features---a source whose motion marginal sits closer to the target transfers
+better even without a trained encoder. A target-specific source built without a
+single real-target label beats a generic synthetic dataset.
+
+\noindent\textbf{(iii) Motion is the carrier, and the coverage response is
+inverted-U.} Scaling camera-dolly magnitude across five rungs ($0.25\times$ to
+$2\times$ KITTI's) and crossing with four texture variants
+(Fig.~\ref{fig:kubric_appearance}), we train GLU-Net from
+scratch on each of the $20$ sources and read peak \pck{} on KITTI
+(Fig.~\ref{fig:ladder}). Transfer is \emph{inverted-U} in magnitude, peaking at
+the matched rung for both KITTI splits and every texture variant; missing the
+match costs $5$--$11$ \pck. Off-target mass ($\dtb$) stays flat across the ladder
+while coverage ($\dbt$) tracks the PCK curve directly---coverage is the operative
+lever. Because magnitude moves both directions together, this maps the coverage
+\emph{response} rather than isolating it; the flat $\dtb$ nonetheless indicates
+the off-target direction is not what drives the curve, and a clean fixed-off-target
+isolation remains future work. Appearance leaves the curve's shape unchanged, with no
+consistent edge for higher visual fidelity (Fig.~\ref{fig:ladder}), confirming
+motion as the target-specific carrier. (The one exception is scratch robustness
+to a gross over-shoot: matte/$2\times$ falls to $82.9$ on KITTI-2012
+vs.\ photoreal's $91.6$, but a pretrained backbone restores the tolerance; supp.)
+
+\begin{figure}[t]
+\centering
+\begin{subfigure}[t]{0.37\linewidth}
+  \centering
+  \includegraphics[height=3.0cm]{figures/results/ladder_panel_a.png}
+  \caption{Directed motion distance ($\dbt$, $\dtb$) vs.\ source magnitude.}
+  \label{fig:ladder:coverage}
+\end{subfigure}%
+\hfill%
+\begin{subfigure}[t]{0.61\linewidth}
+  \centering
+  \includegraphics[height=3.0cm]{figures/results/ladder_panel_bc.png}
+  \caption{Transfer to KITTI-2012 and KITTI-2015 (peak \pck{}).}
+  \label{fig:ladder:heatmaps}
+\end{subfigure}
+
+\vspace{3pt}
+\begin{subfigure}[b]{\linewidth}
+  \centering
+  \includegraphics[width=\linewidth]{figures/results/ladder_panel_d.png}
+  \caption{Coverage gap ($\dbt$) resolved across the image frame, per source magnitude.}
+  \label{fig:ladder:spatial}
+\end{subfigure}
+\caption{\textbf{Controlled motion $\times$ appearance grid $\to$ KITTI transfer.}
+Columns scale source motion magnitude purely to sweep coverage; rows vary appearance.
+\emph{(a)} Coverage ($\dbt$, blue; lower${=}$better) dips at the match and grows on
+either side, while off-target mass ($\dtb$, red) stays flat.
+\emph{(b)} \pck{} varies mostly with coverage (columns) and little with appearance
+(rows): it peaks at the match and falls on either side, following coverage (cf.\ (a)),
+while higher visual fidelity gives no consistent edge (HDRI+GSO does not win cleanly;
+matte+KuBasic does well) despite the rows' DINO appearance-coverage gap (\textbf{bold})
+varying about $2\times$. Appearance is largely decoupled from transfer.
+\emph{(c)} The same $\dbt$ across the KITTI frame, each region relative to the best
+coverage it reaches across the sweep (green${=}$that best, red${=}$worse; splits
+pooled): the match is best frame-wide and degrades on either side, most in the
+high-motion lower field. Per-model and variant breakdown in the supplement.}
+\label{fig:ladder}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/results/gallery_kubric_appearance.png}
+\caption{\textbf{Kubric appearance variants} crossed in the motion grid
+(Fig.~\ref{fig:ladder}), at bit-identical motion. Two
+knobs: background/lighting---an HDRI environment with textured materials vs.\ a
+matte background with flat shading---and object assets---KuBasic procedural
+primitives vs.\ GSO (Google Scanned Objects). The DINO appearance distance to
+KITTI is driven by the background/lighting knob (HDRI ${\approx}0.6$ vs.\ matte
+${\approx}1.1$), not the asset knob (KuBasic ${\approx}$ GSO).}
+\label{fig:kubric_appearance}
+\end{figure}
+
+

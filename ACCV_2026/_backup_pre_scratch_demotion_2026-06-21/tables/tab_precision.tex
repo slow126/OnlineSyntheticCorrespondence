@@ -1,0 +1,11 @@
+\begin{tabular}{ll rrrr c}
+\toprule
+ & & \multicolumn{4}{c}{Off-target fraction $f$ (KITTI-2012 peak \pck)} & \\
+\cmidrule(lr){3-6}
+Arch. & backbone & $0.00$ & $0.10$ & $0.25$ & $0.50$ & $\Delta_{f}$ \\
+\midrule
+CATs++  & pretrained & $98.4$ & --     & $98.3$ & $97.1$ & $-1.3$ \\
+GLU-Net & pretrained & $97.1$ & --     & --     & $97.4$ & $+0.3$ \\
+GLU-Net & scratch    & $96.6$ & $95.7$ & $95.6$ & $94.1$ & $-2.4$ \\
+\bottomrule
+\end{tabular}

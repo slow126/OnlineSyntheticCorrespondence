@@ -1,0 +1,79 @@
+% =====================================================================
+\section{Introduction}
+\label{sec:intro}
+
+Dense visual correspondence (optical flow, geometric and semantic matching)
+relies heavily on synthetic training data, because dense ground truth is scarce
+on real images
+\cite{mayer2016FlyingThingsDataset,sintel,greff2021kubric,pointodyssey}. Most
+progress targets \emph{how} to render this data (fidelity, lighting, speed)
+\cite{greff2021kubric,pointodyssey}, on the assumption that closing the
+appearance gap drives transfer. Yet non-photorealistic data often transfers well
+\cite{Baradad2021LookingAtNoise,white2009mandelbulb}, and a logically prior
+question gets far less attention: given a controllable pipeline, \emph{what}
+should it render for a given target? As rendering becomes more efficient and the
+appearance gap narrows, what to generate becomes the binding constraint.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/concept_directional_vs_symmetric.png}
+\caption{\textbf{Why direction matters.} A conceptual two-mode example.
+\textbf{(A)}~\emph{Under-coverage}: the target places mass on a mode the source
+never renders; coverage ($\dbt$, recall-analogue) drops while off-target mass
+stays zero.
+\textbf{(B)}~\emph{Excess mass}: the mirror case; off-target ($\dtb$,
+precision-analogue) is large, coverage is perfect.
+\textbf{(C)}~The directed measures flip between cases and identify which failure
+occurred; a symmetric distance is nearly identical for both.}
+\label{fig:concept}
+\end{figure}
+
+We find that the match between source and target is inherently directional,
+and that the two directions are not equivalent.
+A source may fail to cover motions the target needs
+(\textbf{coverage}; recall-analogous) or render motion the target never uses
+(\textbf{off-target mass}; precision-analogous); we measure these as the two
+directed nearest-neighbor distances between each dataset's flow-vector
+distributions (Fig.~\ref{fig:concept}).
+Coverage is the signal: it is the consistent predictor of transfer across
+architectures, benchmarks, and distance estimators.
+Off-target mass is nearly free---a source can render motion the target never uses
+at negligible transfer cost---so symmetric distances such as
+FID~\cite{heusel2018ganstrainedtimescaleupdate} and sliced Wasserstein, which
+average both directions, dilute the signal rather than adding information.
+
+Our evidence comes from 76 trained correspondence models: four architecture
+families (CATs++ \cite{cho2022cats++}, RAFT \cite{teed2020raft},
+GLU-Net \cite{truong2020glunet}, and FlowFormer \cite{huang2022flowformer}) in
+seven backbone configurations, trained over 11 sources and evaluated on 9
+benchmarks ($684$ transfer measurements). We stress-test the coverage finding
+from several angles: replication across three distance estimators, a negative
+control in appearance-feature space, a render-free construct-validity check in
+which matching the motion descriptor alone recovers each target's expected motion
+regime, and a controllable grid crossing motion against appearance on which a
+target-tuned source beats a generic baseline.
+
+We make the following contributions:
+\begin{enumerate}
+\item \textbf{Coverage is the signal} (Sect.~\ref{sec:law}): motion coverage
+  ($\dbt$) is the most reliable predictor of correspondence transfer across all
+  four architecture families and nine benchmarks, consistently outperforming
+  symmetric distances and appearance-based alternatives.
+\item \textbf{A render-free selection rule} (Sects.~\ref{sec:predict}--\ref{sec:absolute}):
+  ranking candidate sources by $\dbt$ requires no target labels, no training, and
+  no differentiable renderer, yet picks a source close to the best at zero shot.
+  A few-shot extension given a handful of anchor runs also predicts absolute \pck{}.
+\item \textbf{Off-target mass is nearly free} (Sects.~\ref{sec:law}--\ref{sec:predict}):
+  a source can render motions the target never uses at little transfer cost.
+  Symmetric distances fold off-target mass back in and dilute the coverage signal;
+  the practical rule is to \emph{cover} the target's motion rather than match its
+  full distribution.
+\item \textbf{Interventional support} (Sect.~\ref{sec:interv}): a render-free
+  generator search scored only on motion coverage recovers each target's expected
+  motion regime---a forward camera dolly for KITTI, a near-static camera for the
+  semantic TSS benchmark---and the tuned source beats a generic Kubric baseline on
+  both (all fourteen KITTI settings and all three TSS). A controlled
+  motion-vs-appearance grid confirms that motion, not appearance, is the
+  target-specific carrier of transfer.
+\end{enumerate}
+

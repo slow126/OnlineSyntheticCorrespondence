@@ -1,0 +1,62 @@
+{
+  "flow_dir": "/mnt/nvme_1tb_b/coverage_vectors",
+  "out_dir": "ACCV_2026/figures/splats",
+  "datasets": [
+    {
+      "key": "kitti_recovered_train",
+      "label": "KITTI-recovered (motion-tuned)",
+      "group": "train",
+      "input_flow_file": "/mnt/nvme_1tb_b/coverage_vectors/kitti_recovered_gso_hq_train_flow.npy",
+      "output_png": "ACCV_2026/figures/splats/train__kitti-recovered__directional_splat.png",
+      "num_vectors_loaded": 10240000,
+      "output_shape_hw": [
+        607,
+        607
+      ]
+    },
+    {
+      "key": "flyingthings_recovered_train",
+      "label": "FlyingThings-recovered (motion-tuned)",
+      "group": "train",
+      "input_flow_file": "/mnt/nvme_1tb_b/coverage_vectors/flyingthings_recovered_hq_train_flow.npy",
+      "output_png": "ACCV_2026/figures/splats/train__flyingthings-recovered__directional_splat.png",
+      "num_vectors_loaded": 10240000,
+      "output_shape_hw": [
+        554,
+        554
+      ]
+    }
+  ],
+  "render_args": {
+    "height": null,
+    "width": null,
+    "canvas_pad_px": -1,
+    "K": 800,
+    "subsample": 2000000,
+    "seed": 42,
+    "max_radius_px": 64,
+    "grid": 32,
+    "k_dir": 3,
+    "min_bin": 20,
+    "dir_base_sigma": 3.0,
+    "dir_max_sigma": 48.0,
+    "dir_mode": "cluster",
+    "joint_xy_scale": 1.0,
+    "joint_flow_scale": 1.5,
+    "soft_edge": 0.15,
+    "support_sigma": 3.0,
+    "wheel_size": 1024,
+    "edge_fade_frac": 0.0,
+    "fan_min_count": 48,
+    "fan_mag_q_low": 0.15,
+    "fan_mag_q_high": 0.9,
+    "fan_angle_q": 0.8,
+    "fan_radius_scale": 1.0,
+    "fan_max_radius": 96.0,
+    "autocrop": true,
+    "autocrop_thresh": 12.0,
+    "autocrop_pad_frac": 0.02,
+    "square": true
+  },
+  "direction_colorwheel_png": "ACCV_2026/figures/splats/legend__direction_colorwheel.png"
+}

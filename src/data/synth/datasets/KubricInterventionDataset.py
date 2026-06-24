@@ -71,12 +71,28 @@ class KubricInterventionDataset(Dataset):
         reverse_flow: bool = False,
         max_pairs: Optional[int] = None,
         seed: Optional[int] = None,
+        mirror_flip: float = 0.0,
+        occlusion_mask: bool = False,
         **_,
     ):
         super().__init__()
         self.root = Path(datapath)
         self.split = split
         self.reverse_flow = reverse_flow
+        # occlusion_mask: when True, mark occluded target-frame pixels INVALID (inf)
+        # in the returned full-res flow, using a forward/backward round-trip check
+        # (see _occlusion_mask_from_flows). The downstream occlusion-aware downsample
+        # then turns mostly-occluded feature cells into inf so the sparse endpoint
+        # loss skips them. Default False keeps the flow byte-identical to before.
+        self.occlusion_mask = bool(occlusion_mask)
+        # mirror_flip: fraction of pairs replaced by (frame0, horizontal-mirror(frame0))
+        # with the corresponding mirror flow (W-1-2x, 0). This injects unnatural,
+        # strongly OFF-TARGET motion at FIXED appearance (a mirrored frame has the
+        # same texture distribution) and FIXED coverage (the unflipped pairs still
+        # span the target's motion). It is the controlled precision/off-target knob
+        # (mirror of the camera-dolly coverage ladder). Flipped pairs are the first
+        # f-fraction of the (seed-shuffled) scene order -> deterministic & reproducible.
+        self.mirror_flip = float(mirror_flip)
 
         split_root = self.root / split
         self.scene_root = split_root if split_root.exists() else self.root
@@ -85,6 +101,12 @@ class KubricInterventionDataset(Dataset):
             raise FileNotFoundError(
                 f"No Kubric intervention scenelets found under {self.scene_root}"
             )
+
+        # Drop scenes whose render is incomplete for the flow direction we read
+        # (rare generation artifacts: a missing data_ranges flow-range key or flow
+        # PNG). Filtering here means one bad scene can't KeyError mid-epoch.
+        self.scene_dirs = [d for d in self.scene_dirs
+                           if self._scene_has_flow(d, self.reverse_flow)]
 
         if seed is not None:
             rng = np.random.default_rng(seed)
@@ -107,6 +129,83 @@ class KubricInterventionDataset(Dataset):
                 or (p / "forward_flow_00000.png").exists()
             )
         )
+
+    @staticmethod
+    def _scene_has_flow(scene_dir: Path, reverse_flow: bool) -> bool:
+        """True iff the scene has the flow PNG + data_ranges range for the
+        direction this dataset reads (backward by default, forward if reversed)."""
+        flow_name = "forward_flow" if reverse_flow else "backward_flow"
+        png = ("forward_flow_00000.png" if reverse_flow
+               else "backward_flow_00001.png")
+        if not (scene_dir / png).exists():
+            return False
+        try:
+            ranges = json.load((scene_dir / "data_ranges.json").open())
+        except Exception:
+            return False
+        return flow_name in ranges
+
+    @staticmethod
+    def _occlusion_mask_from_flows(primary: np.ndarray, secondary: np.ndarray) -> np.ndarray:
+        """Forward/backward round-trip occlusion test.
+
+        Args:
+            primary:   [2, H, W] (dx, dy) flow this dataset returns (target->source),
+                       i.e. for each target-frame pixel q its displacement to the
+                       other frame.
+            secondary: [2, H, W] (dx, dy) flow for the OPPOSITE direction.
+
+        A target pixel q is occluded if, after warping q by primary to q' and
+        sampling secondary at q' (nearest), the round-trip is inconsistent. The
+        validated sign convention is |primary(q) - secondary(q')| ~ 0 for visible
+        pixels. A pixel is occluded if q' leaves the frame OR the squared residual
+        exceeds 0.01*(|primary|^2 + |secondary@q'|^2) + 0.5.
+
+        Returns boolean [H, W], True == occluded.
+        """
+        _, H, W = primary.shape
+        pdx, pdy = primary[0], primary[1]
+        ys, xs = np.meshgrid(np.arange(H), np.arange(W), indexing="ij")
+        qx = xs + pdx
+        qy = ys + pdy
+        ix = np.rint(qx).astype(np.int64)
+        iy = np.rint(qy).astype(np.int64)
+        out_of_frame = (ix < 0) | (ix >= W) | (iy < 0) | (iy >= H)
+        ixc = np.clip(ix, 0, W - 1)
+        iyc = np.clip(iy, 0, H - 1)
+        sdx = secondary[0][iyc, ixc]
+        sdy = secondary[1][iyc, ixc]
+        err2 = (pdx - sdx) ** 2 + (pdy - sdy) ** 2
+        mag_primary2 = pdx ** 2 + pdy ** 2
+        mag_secondary2 = sdx ** 2 + sdy ** 2
+        occ = out_of_frame | (err2 > 0.01 * (mag_primary2 + mag_secondary2) + 0.5)
+        return occ
+
+    def _compute_occlusion(self, scene_dir: Path, ranges: dict) -> Optional[np.ndarray]:
+        """Decode the opposite-direction flow and compute the occlusion mask.
+
+        Returns boolean [H, W] (True == occluded) or None if the secondary flow
+        for this scene is unavailable (occlusion left disabled for that scene)."""
+        if not self.reverse_flow:
+            # primary = backward (frame1->0); secondary = forward (frame0->1)
+            sec_name = "forward_flow"
+            sec_path = scene_dir / "forward_flow_00000.png"
+            prim_name = "backward_flow"
+            prim_path = scene_dir / "backward_flow_00001.png"
+        else:
+            sec_name = "backward_flow"
+            sec_path = scene_dir / "backward_flow_00001.png"
+            prim_name = "forward_flow"
+            prim_path = scene_dir / "forward_flow_00000.png"
+
+        if not sec_path.exists() or sec_name not in ranges or prim_name not in ranges:
+            return None
+
+        prim_range = np.array([ranges[prim_name]["min"], ranges[prim_name]["max"]], dtype=np.float32)
+        sec_range = np.array([ranges[sec_name]["min"], ranges[sec_name]["max"]], dtype=np.float32)
+        primary = _to_flow_tensor(_decode_flow_png(prim_path, prim_range)).numpy()
+        secondary = _to_flow_tensor(_decode_flow_png(sec_path, sec_range)).numpy()
+        return self._occlusion_mask_from_flows(primary, secondary)
 
     @classmethod
     def _find_scene_dirs(cls, root: Path) -> list[Path]:
@@ -146,5 +245,21 @@ class KubricInterventionDataset(Dataset):
         src_path, trg_path = scene_dir / src_name, scene_dir / trg_name
         src_img = _read_image(src_path) if src_path.exists() else torch.zeros(3, h, w)
         trg_img = _read_image(trg_path) if trg_path.exists() else torch.zeros(3, h, w)
+
+        flipped = bool(self.mirror_flip) and idx < int(self.mirror_flip * len(self.scene_dirs))
+        if flipped:
+            # off-target injection: frame1 := horizontal mirror of frame0, with the
+            # exact mirror flow dx=(w-1-2x), dy=0 (consistent in both directions,
+            # since a mirror is its own inverse). Appearance is preserved (mirrored
+            # texture == same distribution); motion becomes strongly off-target.
+            trg_img = src_img.flip(dims=(-1,)).contiguous()
+            xs = torch.arange(w, dtype=torch.float32).view(1, w).expand(h, w)
+            flow = torch.stack([(w - 1) - 2.0 * xs, torch.zeros(h, w)], dim=0).contiguous()
+        elif self.occlusion_mask:
+            # Mark occluded target-frame pixels invalid (inf) via fwd/bwd round-trip.
+            occ = self._compute_occlusion(scene_dir, ranges)
+            if occ is not None:
+                flow = flow.clone()
+                flow[:, torch.from_numpy(occ)] = float("inf")
 
         return {"src_img": src_img, "trg_img": trg_img, "flow": flow}

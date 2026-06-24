@@ -1,0 +1,101 @@
+% =====================================================================
+\section{Motion Coverage Predicts Transfer}
+\label{sec:law}
+
+\begin{figure*}[t]
+\centering
+\begin{subfigure}[b]{0.42\textwidth}
+\centering
+\includegraphics[width=\linewidth]{figures/results/F_covlaw_a.png}
+\caption{Coverage predicts transfer.}
+\label{fig:coverage_law_a}
+\end{subfigure}\hfill
+\begin{subfigure}[b]{0.56\textwidth}
+\centering
+\includegraphics[width=\linewidth]{figures/results/F_covlaw_b.png}
+\caption{Ranking vs.\ the retraining ceiling/floor.}
+\label{fig:coverage_law_b}
+\end{subfigure}
+\caption{\textbf{Motion coverage predicts transfer, near the reproducibility
+ceiling.}
+\subref{fig:coverage_law_a}~Within-context $z$-scored \pck{} vs.\ coverage
+($-\dbt$) across all analyzed configurations; Pearson $r{=}0.53$, Spearman
+$\rho{=}0.57$.
+\subref{fig:coverage_law_b}~Chance of picking the better source per true-\pck-gap
+bin, against same-family retraining agreement (gray ceiling). Above a
+$10$-\pck{} gap: coverage ($79\%$) matches cross-architecture retraining ($82\%$)
+and approaches the same-architecture ceiling ($91\%$); $W_2$ trails ($71\%$),
+off-target is a coin flip ($51\%$), appearance (DINO) is worse than chance
+($30\%$, wrong-signed). (Ceiling $=$ agreement between frozen and fine-tuned
+variants of the same family; conservative for a fixed-config setting but
+appropriate for a config-agnostic predictor.)}
+\label{fig:coverage_law}
+\end{figure*}
+
+\begin{table}[!tb]
+\centering
+\caption{\textbf{Motion (BFV) predicts transfer, and the predictive part is
+coverage.} Within-context Spearman $\rho$ between peak transfer and each negated
+motion distance (larger distance $=$ worse transfer), grouped by backbone
+(pretrained matchers; RAFT end-to-end) and encoder state (\enctrained{} trained,
+\encfrozen{} frozen).
+\textbf{Bold} $=$ coverage ($\dbt$); \bst{green} $=$ best coverage-family
+distance per cell; ``--'' $=$ RAFT not evaluated on semantic targets.
+$\dtb$ $=$ off-target mass; target strata as in Table~\ref{tab:study}.}
+\label{tab:law}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\input{tables/tab_law}
+\end{table}
+
+\begin{table}[!tb]
+\centering
+\caption{\textbf{Appearance (DINO) space: negative control for
+Table~\ref{tab:law}.} No DINO distance is a usable positive predictor: every
+cell is null-to-wrong-signed. Grouping, columns, and stratification as in
+Table~\ref{tab:law}.}
+\label{tab:lawdino}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\input{tables/tab_law_dino}
+\end{table}
+
+Table~\ref{tab:law} and Fig.~\ref{fig:coverage_law_a} present the core finding.
+\emph{Coverage} ($\dbt$) is the consistent positive predictor, up to $+0.73$ on
+real motion and on semantic targets too (CATs++ $+0.50$, GLU-Net $+0.80$). It is the best
+predictor in every backbone real-motion cell and stays positive on semantic targets
+($+0.31$ to $+0.80$); only end-to-end RAFT ties a symmetric distance, and there the
+parity is the recall that distance shares with coverage, not its off-target term. On semantic targets it no longer dominates: a symmetric or
+sliced-$W_2$ distance is competitive and, for FlowFormer, clearly better ($W_2$
+$+0.65$ vs.\ coverage $+0.31$). We read this as semantic matching asking for more
+than motion coverage---the full-distribution compatibility the symmetric distances
+partly carry---consistent with our scope that motion descriptors capture coverage,
+not full semantic compatibility. Across the whole table,
+though, coverage remains the reliable default: positive in every cell,
+best-or-tied in the large majority, and the one distance worth reaching for without
+knowing the configuration, whereas off-target mass ($\dtb$) is erratic and near-zero on
+its own. The source
+ranking this produces for every target, set against realized transfer, is laid
+out in Fig.~\ref{fig:consensus} below. In DINOv3 appearance space the identical
+analysis is null throughout (Table~\ref{tab:lawdino}): the target-selective signal
+lives in motion, not in how the frames look.
+
+
+\noindent\textbf{Robustness.} Coverage's lead replicates across distance
+estimators and generator families, and is not explained by dataset size (ranking
+by \#samples or \#vectors reaches only $\rho\le0.27$). Jackknifing coverage's
+correlation---leaving out each training source ($\times 11$) and each
+generator family ($\times 5$) in turn---holds it within
+$[{+}0.57,{+}0.65]$, with no single family load-bearing. The directed distances
+are also sampling-stable: mean-NN reaches $\rho\ge0.96$ by $5{\times}10^4$ flow
+vectors and $1.000$ at our reference budget, whereas density-based (KL) estimators
+never converge---motivating our restriction to support-geometry estimators.
+FlowFormer entered the
+study as a held-out fourth architecture after the analysis was frozen and
+reproduces the coverage signal on real-motion targets without adjustment
+(Table~\ref{tab:law}), a check that the analysis was not tuned to the data.
+The supplement gives the full per-configuration tables and all ablations: the two
+alternative estimators ($\epsilon$-radius coverage and a density kNN-KL),
+generator and sampling controls, the direction-blind pooling analysis, and the
+spurious off-target correlation confined to the from-scratch matcher cells.
+

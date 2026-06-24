@@ -1,0 +1,4 @@
+split,motion_rho_held_arch,cross_arch_consensus_rho,fraction,ratio_ci_low,ratio_ci_high,variant_motion_rho,held_variant_consensus_rho,variant_fraction,variant_ratio_ci_low,variant_ratio_ci_high,balanced_consensus_rho,balanced_fraction,balanced_ratio_ci_low,balanced_ratio_ci_high
+LOTO,0.536505,0.732319,0.732611,0.63,0.90,0.481706,0.648279,0.743053,0.62,0.92,0.664464,0.724954,0.62,0.89
+LOBO,0.550239,0.732319,0.751366,0.63,0.93,0.495273,0.648279,0.763980,0.62,0.94,0.664464,0.745371,0.62,0.90
+JOINT,0.522259,0.732319,0.713158,0.58,0.89,0.487542,0.648279,0.752055,0.60,0.97,0.664464,0.733737,0.59,0.91

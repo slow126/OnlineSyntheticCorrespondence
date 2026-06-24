@@ -46,6 +46,12 @@ DATASETS: List[DatasetSpec] = [
     DatasetSpec("pointodyssey_test", "pointodyssey_test_flow.npy", "benchmark__pointodyssey_test__directional_splat.png", "PointOdyssey-test", "benchmark"),
     DatasetSpec("spair_test", "spair_test_flow.npy", "benchmark__spair_test__directional_splat.png", "SPair-test", "benchmark"),
     DatasetSpec("tss_val", "tss_val_flow.npy", "benchmark__tss__directional_splat.png", "TSS", "benchmark"),
+    # ACCV 2026 additions: MOVi-F + the motion-tuned intervention sources
+    DatasetSpec("movi_f_train", "movi_f_train_flow.npy", "train__movi-f__directional_splat.png", "MOVi-F", "train"),
+    DatasetSpec("trial19_train", "kitti2015_hq_trial19_train_flow.npy", "train__trial19__directional_splat.png", "trial19 (motion-tuned)", "train"),
+    DatasetSpec("lowtex_matte_train", "kitti2015_lowtex_matte_train_flow.npy", "train__lowtex-matte__directional_splat.png", "lowtex-matte", "train"),
+    DatasetSpec("kitti_recovered_train", "kitti_recovered_gso_hq_train_flow.npy", "train__kitti-recovered__directional_splat.png", "KITTI-recovered (motion-tuned)", "train"),
+    DatasetSpec("flyingthings_recovered_train", "flyingthings_recovered_hq_train_flow.npy", "train__flyingthings-recovered__directional_splat.png", "FlyingThings-recovered (motion-tuned)", "train"),
 ]
 
 
@@ -53,6 +59,43 @@ def _save_rgb_image(rgb: np.ndarray, out_path: Path) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     arr = np.clip(rgb * 255.0, 0.0, 255.0).astype(np.uint8)
     Image.fromarray(arr).save(out_path)
+
+
+def _autocrop_to_content(rgb: np.ndarray, *, thresh: float, pad_frac: float) -> np.ndarray:
+    """Trim the uniform black border (canvas padding + flow-free edges).
+
+    Motion that leaves the frame, or short central motion sitting inside the
+    auto canvas padding, leaves a dead black margin. Cropping to the content
+    bounding box makes each panel fill its tile like the dense panels do,
+    rather than floating in a black box.
+    """
+    # rgb is float in [0, 1]; thresh is expressed on the 0-255 scale to match
+    # the composite builder's crop_content().
+    lum = rgb.max(axis=2) * 255.0
+    mask = lum > float(thresh)
+    ys, xs = np.nonzero(mask)
+    if ys.size == 0:
+        return rgb
+    H, W = rgb.shape[:2]
+    pad = int(round(min(H, W) * float(pad_frac)))
+    y0 = max(0, int(ys.min()) - pad)
+    y1 = min(H, int(ys.max()) + 1 + pad)
+    x0 = max(0, int(xs.min()) - pad)
+    x1 = min(W, int(xs.max()) + 1 + pad)
+    return rgb[y0:y1, x0:x1]
+
+
+def _pad_to_square(rgb: np.ndarray) -> np.ndarray:
+    """Center the panel in a square black canvas so grid tiles stay aligned."""
+    h, w = rgb.shape[:2]
+    if h == w:
+        return rgb
+    s = max(h, w)
+    out = np.zeros((s, s, rgb.shape[2]), dtype=rgb.dtype)
+    y0 = (s - h) // 2
+    x0 = (s - w) // 2
+    out[y0:y0 + h, x0:x0 + w] = rgb
+    return out
 
 
 def _apply_edge_fade(rgb: np.ndarray, fade_frac: float) -> np.ndarray:
@@ -216,6 +259,10 @@ def _build_direction_panel(
     fan_angle_q: float,
     fan_radius_scale: float,
     fan_max_radius: float,
+    autocrop: bool,
+    autocrop_thresh: float,
+    autocrop_pad_frac: float,
+    square: bool,
 ) -> np.ndarray:
     if flows.shape[0] == 0:
         raise ValueError("No flow vectors found")
@@ -294,6 +341,10 @@ def _build_direction_panel(
         )
 
     rgb = _apply_edge_fade(rgb, edge_fade_frac)
+    if autocrop:
+        rgb = _autocrop_to_content(rgb, thresh=autocrop_thresh, pad_frac=autocrop_pad_frac)
+        if square:
+            rgb = _pad_to_square(rgb)
     return rgb
 
 
@@ -301,7 +352,10 @@ def _make_colorwheel(size: int = 1024) -> np.ndarray:
     n = max(int(size), 128)
     ys, xs = np.mgrid[-1:1:complex(0, n), -1:1:complex(0, n)]
     r = np.sqrt(xs**2 + ys**2)
-    ang = np.arctan2(-ys, xs)
+    # match the splat encoding flow_direction_colors: angle = atan2(dy, dx) in
+    # IMAGE coordinates (y points down). ys already increases downward, so use
+    # it directly (no negation) — otherwise the wheel is vertically flipped.
+    ang = np.arctan2(ys, xs)
     hue = (ang + np.pi) / (2.0 * np.pi)
     sat = np.clip(r, 0.0, 1.0)
     val = np.ones_like(hue, dtype=np.float32)
@@ -353,6 +407,22 @@ def main() -> None:
         default=0.0,
         help="Fraction of min image dimension used to softly fade panel edges (e.g., 0.05)",
     )
+    ap.add_argument(
+        "--no-autocrop",
+        dest="autocrop",
+        action="store_false",
+        help="Disable trimming the uniform black border around panel content",
+    )
+    ap.set_defaults(autocrop=True)
+    ap.add_argument("--autocrop-thresh", type=float, default=12.0, help="0-255 luminance below which a pixel is treated as empty border")
+    ap.add_argument("--autocrop-pad-frac", type=float, default=0.02, help="Fraction of min dim kept as breathing room around cropped content")
+    ap.add_argument(
+        "--no-square",
+        dest="square",
+        action="store_false",
+        help="Do not pad cropped panels back to square (square keeps grid tiles aligned)",
+    )
+    ap.set_defaults(square=True)
     args = ap.parse_args()
 
     flow_dir = Path(args.flow_dir)
@@ -396,6 +466,10 @@ def main() -> None:
             "fan_angle_q": args.fan_angle_q,
             "fan_radius_scale": args.fan_radius_scale,
             "fan_max_radius": args.fan_max_radius,
+            "autocrop": args.autocrop,
+            "autocrop_thresh": args.autocrop_thresh,
+            "autocrop_pad_frac": args.autocrop_pad_frac,
+            "square": args.square,
         },
     }
 
@@ -433,6 +507,10 @@ def main() -> None:
             fan_angle_q=args.fan_angle_q,
             fan_radius_scale=args.fan_radius_scale,
             fan_max_radius=args.fan_max_radius,
+            autocrop=args.autocrop,
+            autocrop_thresh=args.autocrop_thresh,
+            autocrop_pad_frac=args.autocrop_pad_frac,
+            square=args.square,
         )
         out_path = out_dir / spec.out_file
         _save_rgb_image(rgb, out_path)

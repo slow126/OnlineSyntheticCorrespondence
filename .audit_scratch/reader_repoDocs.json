@@ -1,0 +1,174 @@
+{
+ "summary": "Five working documents plus one script describe the Regime-Direction Law project at three successive moments, and they have drifted apart. glunet_modeling.md (Jun 9, 21:26) establishes the precursor problem: adding GLU-Net to the shared 3-architecture ridge diluted the pooled motion headline from 0.51/0.45/0.32 to 0.31/0.36/0.18 (LOTO/LOBO/JOINT) and hurt CATs++/RAFT per-variant numbers; its Section 9 resolution is a two-pool fit (CATs+++RAFT pooled reproduces 0.52/0.46/0.31; GLU-Net fit separately) with consensus fraction 0.63/0.71/0.39 of the 0.731 ceiling, and it explicitly retracts an earlier \"0.619 to 0.731 ceiling\" comparison as confounded. REGIME_DIRECTION_FINDING.md (Jun 9, 23:15) supersedes the two-pool framing with the law itself: scratch models are precision-bound (train-to-target distance predicts transfer), pretrained models recall-bound (target-to-train); a fit-free one-bit regime rule scores +0.498 mean within-context Spearman, essentially at the inter-variant ceiling (+0.528, fraction ~0.99), beating every fitted pooling structure; it documents an adversarial verification (flip +0.818, exact permutation p=0.0286), a passed pre-registered out-of-sample FF-arm test on the kubric intervention grid (precision +0.621 vs recall -0.125 vs sym +0.096), a DINO negative control (no flip, p=0.54), and rule-based consensus 0.79/0.80/0.81 of 0.731. RESULTS_TABLES.md (Jun 9, 23:43) consolidates these into tables T1-T9, opening with \"Every number below is on disk now; nothing pending\" -- a claim that is no longer true. HANDOFF_tt_grid_parity.md (Jun 10, 13:18) diagnoses why the OOS pretrained (TT) arm had only 3 sources vs FF's 10 (un-harvested old snapshots) and prescribes 6 harvests + 1 verify + 1 retrain plus removal of a hardcoded trial19 96.1158 line in blocks.py. run_clean_pipeline.sh regenerates the now-superseded shared-ridge v4 results and still fits a middlebury predictor; score_synthetic_fractal.py rescores the trial76 FF cell on four benchmarks including middlebury. Cross-checking disk state reveals the handoff WAS executed on Jun 10 (4 symlinks at 13:21, lowtex_matte and trial76 TT trained 13:28, trial19 TT retrained 18:09, hardcode removed), and two downstream regenerations occurred that neither finding doc reflects: (1) the verification REPORT.md was re-run Jun 10 12:47 with Middlebury excluded (891 rows, 9 benchmarks), shifting every per-variant rho (flip statistic now +0.899, not +0.818; catspp F/F precision +0.527 not +0.558/+0.600; glunet T/T recall +0.763 not +0.734/+0.719; RAFT d +0.098 not +0.22) -- so THREE versions of the law's headline table coexist; (2) intervention_oos.csv was regenerated Jun 10 21:11 without middlebury and with the TT arm at n=9, and the new TT-arm correlations show precision GREATER than recall on all three benchmarks (flyingthings 0.733 vs 0.083; kitti2012 0.800 vs 0.650; kitti2015 0.383 vs -0.100) -- the face-value OPPOSITE of the law's pretrained-recall prediction, recorded nowhere in any document. The FF-arm PASS survives Middlebury removal (its three remaining per-benchmark values match T7 exactly). trial19's TT retrain peaks at 96.37 K2015, rank 4/10 in the TT arm -- consistent with the handoff's \"mid-pack\" prediction but making the documented \"rank 2/4\" and the hardcoded 96.1158 stale.",
+ "claims": [
+  {
+   "claim": "REGIME_DIRECTION_FINDING.md establishes the Regime-Direction Law: from-scratch models are precision-bound (train-to-target distance mean_nn_a_to_b predicts transfer) and pretrained models are recall-bound (target-to-train mean_nn_b_to_a)",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/REGIME_DIRECTION_FINDING.md, TL;DR item 2",
+   "numbers": "scratch catspp F/F, F/T precision +0.60; pretrained recall +0.38\u20130.72; glunet T/T +0.72; glunet T/F +0.53"
+  },
+  {
+   "claim": "The fit-free regime rule (one free bit, no fitting/CV/pooling) approximately recovers the inter-variant reproducibility ceiling",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/REGIME_DIRECTION_FINDING.md, TL;DR item 3 and per-variant master table mean row",
+   "numbers": "rule +0.498 vs oracle direction +0.502 vs ceiling +0.528; mean recovered fraction \u2248 0.99; symmetric fallback +0.465"
+  },
+  {
+   "claim": "The fit-free rule beats every learned pooling structure in the shoot-out (best fitted: hierarchical arch-interactions LOBO +0.460, JOINT +0.288; shared 3-arch ridge LOTO +0.308)",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/REGIME_DIRECTION_FINDING.md, 'Pooling-structure shoot-out' table",
+   "numbers": "fit-free regime rule +0.498 (all splits); shared ridge +0.308/+0.355/+0.181; hierarchical arch +0.302/+0.460/+0.288"
+  },
+  {
+   "claim": "Adversarial verification (as documented Jun 9-10 in both docs) reported flip statistic +0.818 with exact permutation p=0.0286 (RAFT excluded, C(8,4)=70), and CIs excluding 0 on both sides of the flip",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/REGIME_DIRECTION_FINDING.md VERIFICATION section; RESULTS_TABLES.md T1",
+   "numbers": "flip +0.818, p = 0.0286; scratch CATs++ d = +0.53 [+0.29,+0.77]; pretrained GLU-Net d = \u22120.74 [\u22121.08,\u22120.33] / \u22120.90 [\u22121.11,\u22120.65]"
+  },
+  {
+   "claim": "The pre-registered out-of-sample FF-arm test on the kubric intervention grid PASSED as documented: precision wins on all four benchmarks with 5-seed-averaged distances",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/REGIME_DIRECTION_FINDING.md OUT-OF-SAMPLE TEST section; RESULTS_TABLES.md T7",
+   "numbers": "MEAN precision +0.621 > sym +0.096 > recall \u22120.125; per-benchmark precision: flyingthings +0.667, kitti2012 +0.917, kitti2015 +0.383, middlebury +0.517; single-seed gave +0.317/+0.150/+0.000"
+  },
+  {
+   "claim": "DINO appearance-space control shows no flip, making the regime-direction structure motion-specific",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/REGIME_DIRECTION_FINDING.md, 'DINO specificity control' section",
+   "numbers": "flip statistic +0.013 (p=0.54) mean_nn, \u22120.08 (p=0.37) KL"
+  },
+  {
+   "claim": "Rule-based absolute prediction and consensus: REGIME doc states MAE(L+g) 8.99 PCK / abs Pearson 0.874 (LOTO) and consensus 0.79/0.80/0.81 of the 0.731 3-arch ceiling, 'restores and stabilizes the old ~77\u201379% claim'",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/REGIME_DIRECTION_FINDING.md, 'Absolute prediction + fold robustness' section",
+   "numbers": "ctx rho_g +0.488/+0.497/+0.519 (LOTO/LOBO/JOINT); MAE 8.99, Pearson 0.874; consensus 0.79/0.80/0.81 of 0.731; regret median 2.3\u20133.4 vs 13.3 random; spearman(d, mean transfer level) = \u22120.80 (n=9)"
+  },
+  {
+   "claim": "RESULTS_TABLES.md T4 reports the same LOTO absolute-prediction row with MAE 8.94 (not 8.99)",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/RESULTS_TABLES.md, T4 row 'LOTO (new source, known benchmark \u2014 the deployment case)'",
+   "numbers": "MAE 8.94, Pearson r +0.874; LOBO 18.3\u201318.7 / +0.69\u20130.70; JOINT 29.2 / +0.01 (rank-only +0.52 rho)"
+  },
+  {
+   "claim": "RESULTS_TABLES.md T9 corrects RAFT's coding: trained fully from scratch (pretrained_path: null), so the permutation p improves when RAFT joins the scratch group",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/RESULTS_TABLES.md, T9 and T1 footer",
+   "numbers": "p=0.0079 with config-verified RAFT included as scratch (C(9,5)=126); vs p=0.0286 RAFT-excluded"
+  },
+  {
+   "claim": "RESULTS_TABLES.md T5 decision metrics for the rule predictor: median selection regret far below random",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/RESULTS_TABLES.md, T5",
+   "numbers": "median regret LOTO 2.30 / LOBO 3.36 / JOINT 2.78 vs random 13.27; P(best in top-3) 0.56/0.59/0.59; gap >10 PCK pairwise accuracy 0.79\u20130.82 vs cross-arch retraining 0.77, same-arch 0.84"
+  },
+  {
+   "claim": "glunet_modeling.md establishes that pooling GLU-Net into the shared 3-arch ridge weakened the headline for every architecture, and the JOINT motion CI crossed 0",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/glunet_modeling.md, \u00a72a/\u00a78",
+   "numbers": "pooled motion rho_g pre 0.51/0.45/0.32 \u2192 post 0.31/0.36/0.18 (LOTO/LOBO/JOINT); JOINT CI [\u22120.009,+0.290]; per-variant LOTO drops catspp F/F 0.59\u21920.40, F/T 0.62\u21920.40, raft 0.61\u21920.47"
+  },
+  {
+   "claim": "glunet_modeling.md \u00a79 resolution: CATs+++RAFT pooled reproduces the pre-GLU-Net headline; GLU-Net gets its own fit; two-pool consensus fraction recomputed",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/glunet_modeling.md, \u00a79a/\u00a79b",
+   "numbers": "CATs+++RAFT pooled +0.519/+0.457/+0.306 vs pre 0.51/0.45/0.32; GLU-Net alone +0.130/+0.400/+0.139; consensus fraction 0.63/0.71/0.39 of unchanged 0.731 ceiling (was 0.52/0.56/0.30 shared)"
+  },
+  {
+   "claim": "glunet_modeling.md explicitly retracts the '0.619\u21920.731 ceiling raised by GLU-Net' comparison as confounded (preliminary 110-row vs full 440-row GLU-Net grid, both contain GLU-Net); no clean no-GLU-Net ceiling exists",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/glunet_modeling.md, \u00a74 warning paragraph",
+   "numbers": "ceiling 0.619 (fractions 0.77/0.79/0.57) vs ceiling 0.731 (fractions 0.52/0.56/0.30)"
+  },
+  {
+   "claim": "HANDOFF_tt_grid_parity.md: TT arm surfaced only 3 of 10 sources; root cause is grid driver only queued TT for 3 new GSO sources while 6 TT runs sat un-harvested in ./snapshots; prescription = 6 harvest, 1 verify-then-harvest (trial76), 1 train (lowtex_matte), plus removing the hardcoded trial19 line",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/HANDOFF_tt_grid_parity.md, TL;DR + inventory table + \u00a73",
+   "numbers": "hardcode: rows.append((\"trial19\",\"TT\",\"kitti2015\",96.1158)) at blocks.py ~line 213; FF arm 10 sources, TT arm 3"
+  },
+  {
+   "claim": "The handoff was executed on 2026-06-10: 4 harvest symlinks created 13:21 (ft_recovered_hq, ft_recovered_matte, kitti_recovered_hq, kitti_recovered_matte as *_pt1_fz1_harvested), lowtex_matte and synthetic_fractal_trial76 TT trained (dirs dated 2026_06_10_13_28), trial19 TT freshly retrained (trial19_pt1_fz1_2026_06_10_18_09), and the blocks.py hardcode removed (comment dated 2026-06-10 at lines 215-217)",
+   "source": "ls -la /mnt/nvme_1tb_a/snapshots/transfer_grid/ and /home/spencer/Projects/OnlineSyntheticCorrespondence/scripts/transfer_analysis_v5/blocks.py:215-217",
+   "numbers": "symlink timestamps Jun 10 13:21; blocks.py comment: 'Former hardcoded (\"trial19\",\"TT\",\"kitti2015\",96.1158) removed 2026-06-10'"
+  },
+  {
+   "claim": "The on-disk verification REPORT.md was regenerated 2026-06-10 12:47 with Middlebury excluded (891 rows = 9 benchmarks, 99/99 forward pairs vs the documented 110), producing a THIRD set of per-variant numbers that neither REGIME_DIRECTION_FINDING.md nor RESULTS_TABLES.md reflects",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/scripts/transfer_analysis_v4/regime_direction_verification/REPORT.md (mtime Jun 10 12:47)",
+   "numbers": "rows=891; mean_nn flip statistic +0.899 (docs say +0.818); catspp F/F precision +0.527 (T1 says +0.558, REGIME master table says +0.600); glunet T/T recall +0.763 (T1 +0.734, REGIME +0.719); glunet T/F recall +0.674 (T1 +0.605, REGIME +0.529); raft d +0.098 [\u22120.271,+0.478] (T1: +0.22 [\u22120.12,+0.57])"
+  },
+  {
+   "claim": "The current intervention_oos.csv (regenerated Jun 10 21:11) drops middlebury entirely and matches T7's FF rows exactly on the three remaining benchmarks, so the FF-arm PASS survives Middlebury exclusion but T7's 4-benchmark MEAN +0.621 is stale",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/scripts/transfer_analysis_v5/results/intervention_oos.csv",
+   "numbers": "FF rows (precision/recall/sym): flyingthings 0.6667/\u22120.3833/\u22120.2833; kitti2012 0.9167/0.3/0.8833; kitti2015 0.3833/\u22120.7/\u22120.6333; n=9 each; no middlebury row"
+  },
+  {
+   "claim": "The newly populated TT (pretrained) arm in intervention_oos.csv is now n=9 and shows precision > recall on ALL THREE benchmarks \u2014 the face-value opposite of the law's pretrained-recall prediction \u2014 and no document records this result (RESULTS_TABLES T7 still says 'TT arm: n=3, orderings coincide \u2192 non-discriminative')",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/scripts/transfer_analysis_v5/results/intervention_oos.csv, TT rows",
+   "numbers": "TT (precision/recall/sym): flyingthings 0.7333/0.0833/0.1333; kitti2012 0.8/0.65/0.9333; kitti2015 0.3833/\u22120.1/0.0333; all n=9"
+  },
+  {
+   "claim": "trial19's fresh TT retrain peaks at 96.37 on KITTI2015, ranking 4 of 10 in the TT arm (behind trial76 98.08, kitti_recovered_gso_hq 96.58, kitti_recovered_hq 96.57) \u2014 consistent with the handoff's 'mid-pack' prediction but superseding both the documented 'TT rank 2/4' and the hardcoded 96.1158",
+   "source": "validation_results.csv max kitti2015 pck per dir under /mnt/nvme_1tb_a/snapshots/transfer_grid/ (computed by audit); vs RESULTS_TABLES.md T8 and HANDOFF \u00a75",
+   "numbers": "trial19 TT 96.37 (docs: 96.1/96.12/96.1158); trial76 TT 98.08; gso_hq 96.58 (T8 says gso_hq 96.6)"
+  },
+  {
+   "claim": "RESULTS_TABLES.md T8 documents the FF intervention-grid PCKs, with trial19 best on K2015 and score_synthetic_fractal.py's sanity anchor matching",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/RESULTS_TABLES.md T8; /home/spencer/Projects/OnlineSyntheticCorrespondence/score_synthetic_fractal.py docstring/line 84",
+   "numbers": "trial19 FF: FT 56.2, K2012 90.9, K2015 87.2, MB 52.0; synthetic_fractal_trial76 K2015 94.4; script: 'logged training best = 94.43'"
+  },
+  {
+   "claim": "run_clean_pipeline.sh regenerates the superseded shared-ridge v4 results (results_glunet_clean) and its Stage 3 still fits a middlebury predictor, conflicting with the Middlebury-excluded-everywhere policy and with RESULTS_TABLES' instruction to regenerate via run_v5.sh",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/run_clean_pipeline.sh lines 9, 30 ('for b in kitti2015 kitti2012 middlebury flyingthings'); RESULTS_TABLES.md line 4",
+   "numbers": "none"
+  },
+  {
+   "claim": "score_synthetic_fractal.py rescores the trial76 FF cell on 4 benchmarks INCLUDING middlebury (BENCH list, middlebury_root injection), despite the handoff's 'Do NOT re-introduce middlebury: its eval is bugged AND its flow cache was corrupt'; rescored_results.csv exists on disk",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/score_synthetic_fractal.py lines 24, 32; HANDOFF_tt_grid_parity.md watch-outs; /mnt/nvme_1tb_a/snapshots/transfer_grid/synthetic_fractal_trial76_pt0_fz0_2026_06_09_08_37/rescored_results.csv",
+   "numbers": "BENCH = ['kitti2015', 'kitti2012', 'middlebury', 'flyingthings']"
+  },
+  {
+   "claim": "REGIME_DIRECTION_FINDING.md carries honest caveats: scratch GLU-Net is direction-mild (the flip is driven by scratch CATs++/RAFT vs pretrained CATs++/GLU-Net), p=0.0286 is the floor of an 8-unit exact test, the rule was discovered on the same table it scores, and catspp T/T is direction-mild on auc",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/REGIME_DIRECTION_FINDING.md, 'Honest caveats' + MUST-DO section",
+   "numbers": "scratch GLU-Net d \u2248 \u22120.09/+0.11 (CIs straddle 0); catspp T/T auc d +0.08"
+  }
+ ],
+ "red_flags": [
+  {
+   "issue": "The newly populated out-of-sample TT (pretrained) arm appears to CONTRADICT the law's pretrained-recall prediction \u2014 precision beats recall on all three benchmarks \u2014 and this result is recorded in no document. The handoff was executed precisely to make this test discriminative; now that it is, the outcome points the wrong way at face value (caveat: these sources are matched-motion appearance ablations with near-tied motion distances per REGIME doc, so the TT correlations may be noise-dominated \u2014 but that adjudication has not been written down anywhere).",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/scripts/transfer_analysis_v5/results/intervention_oos.csv (mtime Jun 10 21:11): 'TT,flyingthings,9,0.7333...,0.0833...,0.1333...'; 'TT,kitti2012,9,0.7999...,0.65,0.9333...'; 'TT,kitti2015,9,0.3833...,-0.0999...,0.0333...' \u2014 vs RESULTS_TABLES.md T7: 'TT arm: n=3, orderings coincide \u2192 non-discriminative' and the law's prediction (REGIME doc TL;DR 2) that pretrained models are recall-bound",
+   "severity": "high"
+  },
+  {
+   "issue": "Three coexisting versions of the law's headline per-variant table, none reconciled: the REGIME doc's fit-free master table, RESULTS_TABLES T1 (quoting the pre-Middlebury verification), and the regenerated post-Middlebury-exclusion REPORT.md. Any paper table built from the .md docs quotes stale numbers; the flip statistic itself differs (+0.818 documented vs +0.899 on disk).",
+   "evidence": "catspp F/F precision: +0.600 (REGIME_DIRECTION_FINDING.md master table) vs +0.558 (RESULTS_TABLES.md T1) vs +0.527 (scripts/transfer_analysis_v4/regime_direction_verification/REPORT.md, mtime Jun 10 12:47); glunet T/T recall +0.719 vs +0.734 vs +0.763; glunet T/F recall +0.529 vs +0.605 vs +0.674; flip +0.818 (both docs) vs +0.899 (REPORT.md, rows=891/9 benchmarks vs documented 110 pairs/10 benchmarks)",
+   "severity": "high"
+  },
+  {
+   "issue": "RESULTS_TABLES T7's headline OOS MEAN (+0.621) was computed over 4 benchmarks INCLUDING middlebury, which has since been excluded project-wide as eval-bugged; the current CSV has no middlebury row, so the documented mean and the 'wins on ALL FOUR benchmarks' phrasing no longer correspond to any on-disk artifact (the FF verdict itself survives \u2014 the three remaining rows match T7 exactly).",
+   "evidence": "RESULTS_TABLES.md T7: 'middlebury | +0.517 | +0.283 | +0.417' and 'MEAN +0.621'; current scripts/transfer_analysis_v5/results/intervention_oos.csv contains only flyingthings/kitti2012/kitti2015 rows",
+   "severity": "medium"
+  },
+  {
+   "issue": "RAFT's evidentiary weight weakened in the post-exclusion re-run without documentation: its mean_nn d dropped from +0.22 to +0.098 (CI still straddles 0), and the p=0.0079 RAFT-included permutation cited in T1/T9 does not appear in the regenerated REPORT.md (which only reports p=0.0286 RAFT-excluded for all four families).",
+   "evidence": "RESULTS_TABLES.md T1: 'raft ... +0.22 [\u22120.12,+0.57]' and 'p=0.0079 with config-verified RAFT included'; current REPORT.md: '| raft|True|False | +0.401 | +0.303 | +0.535 | +0.098 [-0.271, +0.478] |' and four 'p = 0.0286 (70 assignments; RAFT excluded)' lines, no 0.0079 anywhere",
+   "severity": "medium"
+  },
+  {
+   "issue": "Consensus-fraction narrative risk: the rule-based 0.79/0.80/0.81 is described as restoring 'the old ~77\u201379% claim', but the old 0.77/0.79 figures came from the consensus run glunet_modeling.md \u00a74 explicitly retracts as confounded (0.619-ceiling, preliminary GLU-Net grid). The numerical coincidence invites conflating a retracted artifact with the new, differently-computed result; four distinct fraction sets now exist across the docs (0.77/0.79/0.57; 0.52/0.56/0.30; 0.63/0.71/0.39; 0.79/0.80/0.81).",
+   "evidence": "REGIME_DIRECTION_FINDING.md: 'restores and stabilizes the old \u201c~77\u201379%\u201d claim'; glunet_modeling.md \u00a74: 'An earlier version of this doc made that claim; it is retracted... ceiling 0.619, fraction 0.77/0.79/0.57 \u2014 but this already contains GLU-Net'",
+   "severity": "medium"
+  },
+  {
+   "issue": "Middlebury still flows through active code paths despite the exclusion-everywhere policy: run_clean_pipeline.sh Stage 3 fits a middlebury predictor and score_synthetic_fractal.py evaluates middlebury (its rescored_results.csv exists in the grid dir, where harvest scripts read validation CSVs by directory iteration).",
+   "evidence": "run_clean_pipeline.sh line 30: 'for b in kitti2015 kitti2012 middlebury flyingthings'; score_synthetic_fractal.py line 24: BENCH = ['kitti2015', 'kitti2012', 'middlebury', 'flyingthings']; HANDOFF_tt_grid_parity.md: 'Do NOT re-introduce middlebury: its eval is bugged AND its flow cache was corrupt (deleted)'",
+   "severity": "medium"
+  },
+  {
+   "issue": "blocks.py's replacement comment misstates what happened to trial19 TT: it claims the run was 'harvested ... symlinked into the grid as trial19_pt1_fz1_harvested' and that 'harvest reproduces it exactly', but no such symlink exists \u2014 there is a fresh retrain dir (trial19_pt1_fz1_2026_06_10_18_09) whose peak K2015 is 96.37, not the removed hardcode's 96.1158.",
+   "evidence": "scripts/transfer_analysis_v5/blocks.py:215-217 comment vs ls of /mnt/nvme_1tb_a/snapshots/transfer_grid/ showing 'trial19_pt1_fz1_2026_06_10_18_09' (real dir, Jun 10 18:13) and no trial19 symlink; computed peak kitti2015 pck = 96.37",
+   "severity": "low"
+  },
+  {
+   "issue": "RESULTS_TABLES.md opens with 'Every number below is on disk now; nothing pending. Source artifact cited per table' \u2014 falsified within ~24 hours: T1's cited source (REPORT.md) and T7's cited source (intervention_oos.csv) were both regenerated with materially different contents, and T8's TT text (gso_hq 96.6 top, trial19 'rank 2/4') is superseded by the 10-run TT arm where trial76 leads at 98.08.",
+   "evidence": "RESULTS_TABLES.md lines 3-4 vs REPORT.md mtime Jun 10 12:47 (flip +0.899) and intervention_oos.csv mtime Jun 10 21:11 (TT n=9); computed TT K2015 ranking: trial76 98.08 > gso_hq 96.58 > kitti_recovered_hq 96.57 > trial19 96.37",
+   "severity": "medium"
+  }
+ ],
+ "open_threads": [
+  "Adjudicate the new TT-arm OOS result (precision > recall on all 3 benchmarks, n=9) against the law's pretrained-recall prediction \u2014 quantify whether the matched-motion/near-tied-distance caveat (REGIME doc: KITTI-family motion distances range 0.053\u20130.064) explains it, and write the verdict into REGIME_DIRECTION_FINDING.md / RESULTS_TABLES.md / the paper's tab_oos caption before submission.",
+  "Update REGIME_DIRECTION_FINDING.md and RESULTS_TABLES.md (T1, T7, T8) to the post-Middlebury-exclusion numbers now on disk (flip +0.899; per-variant table in REPORT.md mtime Jun 10 12:47; 3-benchmark OOS CSV) \u2014 currently every headline number in the .md docs is one or two regenerations stale.",
+  "Recompute the RAFT-included permutation (the p=0.0079 cited in T1/T9) under the 9-benchmark exclusion \u2014 it is absent from the regenerated REPORT.md, and RAFT's mean_nn d weakened to +0.098 [\u22120.271,+0.478].",
+  "Verify handoff step 5 completion: make_paper_tables.py / make_intervention_summary.py (F7) / make_figures_v3.py / ACCV_2026 recompile after the Jun 10 21:11 intervention_oos.csv regeneration, and update the paper's 'TT arm n=3, non-discriminative' caveat text (Sec. 7 / tab_oos caption / supp Sec. 3.4).",
+  "Resolve the MAE discrepancy for the LOTO L+rule row: 8.99 (REGIME_DIRECTION_FINDING.md) vs 8.94 (RESULTS_TABLES.md T4) \u2014 identify which artifact (results_rule_v5core/summary.csv vs summary_points_peak_pck.csv) is canonical.",
+  "Confirm whether the rule/ceiling headline numbers (+0.498 rule, +0.528 ceiling, fraction 0.99) were recomputed post-Middlebury-exclusion (the per-variant master table in the REGIME doc was computed on 10 benchmarks including Middlebury).",
+  "Unexplained new FF cell kitti_badmotion_ft_gso_matte_pt0_fz0_2026_06_10_21_08 in the grid dir \u2014 appears in no document or table; clarify whether it joins the OOS analysis (and whether the FF arm n changes from 9).",
+  "Reconcile or retire run_clean_pipeline.sh: it regenerates the superseded shared-ridge results_glunet_clean and fits a middlebury predictor, while RESULTS_TABLES designates scripts/transfer_analysis_v5/run_v5.sh as the canonical regenerator.",
+  "score_synthetic_fractal.py's rescored_results.csv (includes middlebury) sits inside the trial76 FF grid dir \u2014 confirm harvest code only reads validation_results.csv so the bugged middlebury numbers cannot leak into tables.",
+  "REGIME doc MUST-DO item 1 mentions checking the OOS law on the synthetic_fractal TPE source \u2014 trial76 now has both FF (rescored) and TT (trained Jun 10) runs, but no document records whether it was folded into the OOS correlations (current CSV n=9 suggests one of the 10 sources is still dropped)."
+ ]
+}

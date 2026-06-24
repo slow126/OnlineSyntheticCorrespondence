@@ -1,0 +1,89 @@
+% =====================================================================
+\subsection{Selecting Training Data at the Reproducibility Ceiling}
+\label{sec:predict}
+
+The coverage trend supports a \emph{zero-shot} selection rule with zero fitted
+parameters:
+\begin{equation}
+\text{rank candidate training sets by motion coverage,}\qquad -\dbt .
+\label{eq:rule}
+\end{equation}
+It requires no run on the target, no labels, and no learned weights (unlike the
+few-shot absolute predictor of Sect.~\ref{sec:absolute}), and it ranks candidates
+at the reproducibility ceiling of transfer itself (below). It is also
+the right generator-\emph{design} objective: because off-target motion is nearly
+free (precision $\rho{=}0.03$), one should \emph{add} coverage of the target's
+motion rather than \emph{match} its distribution---the move our render-free
+search exploits (Sect.~\ref{sec:interv}).
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Five distances in motion and appearance space, with selection
+regret.} Within-context Spearman $\rho$ between peak transfer and each negated
+distance, split by target stratum and pooled. Five distances (coverage $\dbt$,
+off-target $\dtb$, symmetric mean-NN, sliced $W_2$, FID) computed in both motion
+(BFV) and appearance (DINO) space. \textbf{Bold} $=$ coverage;
+\emph{selection regret} (final column) $=$ median \pck{} surrendered vs.\ an
+oracle best-source pick (lower is better).}
+\label{tab:predictors}
+\small
+\setlength{\tabcolsep}{3pt}
+\input{tables/tab_predictors}
+\end{table}
+
+Table~\ref{tab:predictors} runs the same five distances in motion and in
+appearance space, so appearance is stress-tested as thoroughly as motion, not
+given a single shot. Motion coverage ($\dbt$) ranks at $\rho{=}0.57$---the best
+predictor in every column. The symmetric and distribution distances follow at
+$+0.39$--$0.40$ (symmetric mean-NN, sliced Wasserstein-2, FID): they trail
+coverage because each folds in off-target mass ($\dtb$), which on its own carries
+little signal ($+0.03$), so averaging it in is dead weight rather than denoising.
+Appearance is the negative control---and a serious one: DINO's strong zero-shot
+matching made it our leading hypothesis at the outset. Every DINO distance is
+null-to-wrong-signed, the appearance \emph{analogue} of coverage included
+($-0.26$). This is not a saturated metric---a wrong-signed correlation requires
+real variation in the distances, where a degenerate descriptor would give
+$\rho{\approx}0$---so appearance similarity is, if anything, mildly
+\emph{counter}-productive for ranking, an empirical finding rather than a dead
+instrument. The axis that selects \emph{which} target a source suits lives in
+motion; appearance sets only the source's overall quality.
+On the configurations we analyze, coverage is $+0.57$; pooling in the from-scratch
+matcher probe would dilute it to $+0.35$ (a randomly-initialized backbone
+mode-collapses to a near-static, input-independent prediction, so no source-side
+score can rank it; supp.), while the symmetric
+metrics barely move---the precision term they carry is unhelpful throughout.
+
+\noindent\textbf{Coverage recovers most of the data-controllable signal.} The
+empirical oracle---how well same-family retrainings under different backbone
+configurations agree on source ordering---reaches only $\rho{\approx}0.62$:
+transfer is itself imperfectly reproducible. That disagreement is structured
+rather than random---models mostly concur, with the gap concentrated in occasional
+cases where one source collapses on a single model---so it is model-specific
+variance that lives in the model, not the data, and is out of scope for any
+data-only rule. Coverage at $\rho{=}0.57$ is \textbf{$92\%$ of this ceiling}
+(pairwise-decision view: Fig.~\ref{fig:coverage_law_b}).
+
+Learned combiners (coverage$\times$off-target interactions, gradient-boosted
+ensembles, fit in-fold) add nothing over fit-free coverage
+(Table~\ref{tab:predictors}, supp.).
+
+\noindent\textbf{What a practitioner gains.} Ranking by coverage gives up a median
+$0.6$ \pck{} versus $15.1$ for random (Table~\ref{tab:predictors}); below a
+$2$-\pck{} gap every strategy, retraining included, decays toward chance.
+Figure~\ref{fig:consensus} lays out the full source$\times$target landscape.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=\linewidth]{figures/results/F_consensus_matrix.png}
+\caption{\textbf{Coverage's source ranking sits within the spread of the retrained
+models.} Each cell shows coverage's predicted rank ($-\dbt$, large), the band of
+ranks assigned by independently-trained models (small; one outlier trimmed), and
+the consensus peak \pck{} (tiny).
+\textcolor[rgb]{0.30,0.62,0.33}{Green} ($58\%$ of cells) $=$ coverage's rank
+inside the model band; gray $=$ outside, shaded by distance.
+Per-target rank agreement (\emph{rank $\rho$}, footer) ranges $+0.23$ to $+0.95$.
+Semantic columns use pretrained-backbone models; RAFT is not evaluated on semantic
+targets.}
+\label{fig:consensus}
+\end{figure*}
+

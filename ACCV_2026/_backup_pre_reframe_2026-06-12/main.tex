@@ -1,0 +1,1062 @@
+\documentclass[runningheads]{llncs}
+% ---------------------------------------------------------------
+\usepackage[review,year=2026,ID=*****]{accv}
+%\usepackage{accv} % camera-ready
+\usepackage{accvabbrv}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb}
+\usepackage{multirow}
+\usepackage{pifont}
+\usepackage{makecell}
+\usepackage{colortbl}
+\definecolor{bestgreen}{rgb}{0.0,0.50,0.0}
+\newcommand{\best}[1]{\textbf{\textcolor{bestgreen}{#1}}}
+\newcommand{\cmark}{\ding{51}}
+\usepackage[accsupp]{axessibility}
+\usepackage[pagebackref,breaklinks,colorlinks,citecolor=accvblue]{hyperref}
+\usepackage{orcidlink}
+
+% notation macros
+\newcommand{\dtb}{d_{T\to B}}
+\newcommand{\dbt}{d_{B\to T}}
+\newcommand{\pck}{PCK}
+
+\begin{document}
+
+\title{Off-Target Mass or Missing Support? Training Regime Determines Which
+Direction of Motion Coverage Governs Synthetic-to-Real Correspondence Transfer}
+\titlerunning{Off-Target Mass or Missing Support?}
+
+\author{Anonymous ACCV 2026 Submission}
+\authorrunning{ACCV-26 submission ID *****}
+\institute{Paper ID *****}
+
+\maketitle
+
+\begin{abstract}
+Synthetic data is the default for training visual correspondence models, but
+choosing which synthetic dataset will transfer best to a given target is still
+largely guesswork. We show the choice can be made by measurement. A training
+set can mismatch a target's motion in two ways---by placing mass on motions
+the target never uses (\emph{off-target mass}), or by failing to cover
+motions the target needs (\emph{missing support})---and across 891 transfer
+evaluations (3 architectures in 9 training configurations $\times$ 11
+synthetic training sets $\times$ 9 benchmarks; 99 trained models) we find
+that the training regime sets which of these two costs a model pays. \emph{Training from scratch pays for both}: candidate
+quality tracks the sum of the two directed distances. \emph{A pretrained
+image-feature backbone (\eg, an ImageNet ResNet) forgives off-target mass},
+leaving missing support as the sole cost---and because the two directions
+trade off across real generators (tight sources waste little but cover
+little), averaging the forgiven term back in corrupts pretrained rankings
+(symmetric $\rho\,{=}\,{+}0.33$ vs.\ ${+}0.76$ for missing support alone on
+the worst-served architecture). The observable signature---which single
+direction predicts better flips with regime---holds in 8 of 9 training
+variants (exact permutation $p{=}0.029$), replicates across distance
+estimators, and vanishes in appearance space ($p{=}0.43$); per-regime
+regressions independently recover the same sign structure---both costs
+load from scratch, missing support dominates under a backbone---and the
+fit-free policy they imply transfers across architectures where fancier
+combiners do not.
+
+The resulting fit-free, regime-aware selection policy---rank candidates by
+the summed distance from scratch, by missing support under a backbone---ranks
+held-out sources, benchmarks, and both at $\rho{\approx}0.5$: parity with
+retraining a same-regime sibling variant, $73$--$76\%$ of a
+three-architecture retraining consensus, and a median 1.2--2.8 PCK of top-1
+selection regret versus 13.9 at random; the identical machinery on
+appearance features carries no signal. On a controlled generated grid the
+analysis never saw, the off-target cost ranks never-seen sources
+out-of-sample where it varies substantially ($\rho{=}{+}0.67$) while the
+symmetric average does not. A render-free
+generator search realizes its predicted gain on a real target; the
+pretrained half remains a stated, falsifiable prediction. The takeaway:
+measure both directions of motion mismatch before rendering---from scratch
+you pay for both, but bring a backbone and only missing support matters.
+\keywords{Dense correspondence \and Synthetic training data \and Dataset
+selection \and Transferability}
+\end{abstract}
+
+% =====================================================================
+\section{Introduction}
+\label{sec:intro}
+
+Dense visual correspondence---optical flow, geometric and semantic
+matching---relies on synthetic training data more than almost any other vision
+task, because dense ground truth is scarce and expensive to obtain on real
+images \cite{mayer2016FlyingThingsDataset,sintel,greff2021kubric,pointodyssey}.
+Most recent progress targets \emph{how} to render this data---higher fidelity,
+better lighting, faster and lighter pipelines
+\cite{greff2021kubric,pointodyssey}---on the assumption that narrowing the
+appearance gap to real images is what drives transfer, an assumption already
+complicated by abstract, non-photorealistic data that transfers surprisingly
+well \cite{Baradad2021LookingAtNoise,white2009mandelbulb}. A logically prior
+question has received far less attention: given a controllable pipeline,
+\emph{what} should it render for a particular target? Rendering is now cheap;
+the binding constraint is deciding what to generate, and for whom.
+
+A structural difficulty underlies this question: the value of a synthetic
+dataset is not a property of the dataset alone. The same source can rank first
+among candidates under one training setup and middle-of-the-pack under another,
+with nothing changed but whether the model's image-feature backbone is
+pretrained. We trace this to a simple fact: comparing a training distribution
+to a target distribution is inherently \emph{directional}. In a shared motion
+descriptor space, a training set can mismatch a target in two distinct ways---it
+can place mass on motions the target never uses (\textbf{off-target mass};
+precision-analogous), or fail to cover motions the target requires
+(\textbf{missing support}; recall-analogous)---which we measure as the two
+directed nearest-neighbor distances between the datasets' flow-vector
+distributions. Symmetric discrepancies---FID
+\cite{heusel2018ganstrainedtimescaleupdate}, MMD
+\cite{gretton2008kernelmethodtwosampleproblem}, sliced Wasserstein---average
+these two failure modes together. Generative-model evaluation separates them to
+assess sample quality \cite{sajjadi2018assessing_precision_recall,kynkaanniemi2019improved_pr};
+we show that for predicting \emph{transfer} the separation is not merely
+diagnostic: which direction matters is determined by the training regime:
+
+\begin{quote}
+\textbf{The regime--direction principle.} \emph{Training from scratch pays
+for both kinds of mismatch---capacity is spent on motions the target never
+uses ($\dtb$), and motions the target needs go unsupervised ($\dbt$)---so a
+candidate's cost is their \textbf{sum}. A pretrained image-feature backbone
+forgives off-target mass, leaving missing support as the \textbf{sole}
+cost.} The observable signature, which we test throughout, is a flip: which
+single direction is the more informative predictor switches with the
+regime---and because the two directions trade off across natural sources
+(tight sources waste little but cover little), including the forgiven term
+under a backbone actively corrupts the ranking. Throughout, ``pretrained''
+refers to the \emph{image-feature backbone} (\eg, ImageNet ResNet-101), not
+to correspondence-task pre-training; the correspondence head is always
+trained on the synthetic source.
+\end{quote}
+
+We establish this on a transfer study of 99 trained correspondence
+models---3 architectures (CATs++ \cite{cho2022cats++}, RAFT
+\cite{teed2020raft}, GLU-Net \cite{truong2020glunet}) in 9 backbone
+configurations $\times$ 11 training sources, evaluated on 9 benchmarks
+(891 transfer measurements)---and test
+it four independent ways: replication across three distance estimators, a
+negative control in appearance-feature space, a pre-registered out-of-sample
+test on a controlled generated grid (which the from-scratch half passes; the
+pretrained half is not yet testable there and we say so), and a closed-loop
+intervention in which the signal steers a generator and training confirms the
+predicted gain.
+
+We make the following contributions:
+\begin{enumerate}
+\item \textbf{The regime--direction principle} (Sec.~\ref{sec:law}): the
+  training regime sets which mismatch costs a model pays---both directions
+  from scratch, missing support alone under a pretrained backbone. Its
+  observable signature, which single directed distance is the \emph{more
+  informative} predictor, flips with regime in 8 of 9 variants, the ninth
+  direction-neutral (exact permutation $p{=}0.029$; benchmark-bootstrap CIs
+  exclude zero on both sides of the flip), and is motion-specific: the
+  identical analysis in DINO appearance space shows none ($p{=}0.43$).
+\item \textbf{A fit-free selection policy at the reproducibility ceiling}
+  (Sec.~\ref{sec:predict}): \emph{rank candidates by $\dtb{+}\dbt$ when
+  training from scratch; by $\dbt$ alone under a pretrained backbone.} It
+  ranks held-out sources, benchmarks, and both at $\rho \approx 0.5$---best
+  of every predictor we evaluate, at parity with same-regime retraining
+  agreement in the pretrained regime, $73$--$76\%$ of a three-architecture
+  retraining consensus---and picks training sets at a median top-1 regret of
+  $1.2$--$2.8$ \pck{} vs.\ $13.9$ random, while the identical analysis on
+  DINO appearance features carries no within-context signal.
+\item \textbf{Why direction-blindness fails asymmetrically}
+  (Secs.~\ref{sec:law}--\ref{sec:predict}): the two directed distances
+  trade off across natural sources (within-context $\rho \approx -0.37$),
+  so symmetric distances---which charge both costs in every regime---are
+  competitive exactly where both costs are real (from scratch) and discard
+  up to half the signal where one is forgiven (pretrained,
+  ${+}0.76$ vs.\ ${+}0.33$). Per-regime regressions independently recover
+  the cost structure (both costs load from scratch, recall-dominant
+  pretrained), and a leave-one-architecture-out test shows these are the \emph{only}
+  combiners that transfer across architectures---interactions, hierarchies,
+  and boosted models do not improve on them.
+\item \textbf{Ranking zero-shot, calibration only with anchors}
+  (Sec.~\ref{sec:absolute}): the policy ranks candidates without any target-side
+  training, but absolute \pck{} is not recoverable from motion statistics
+  alone---it is set largely by a source-level appearance/realism effect the
+  motion distances do not see. Given a few observed runs as anchors, the policy
+  score interpolates absolute \pck{} (MAE ${\approx}9{-}10$ held-out;
+  $r{=}0.90$ in the pretrained regime); absent anchors we claim ranking only.
+\item \textbf{Interventional support} (Sec.~\ref{sec:interv}): on a
+  generated grid the analysis never saw, the off-target cost ranks
+  never-seen from-scratch sources where it varies substantially
+  (FlyingThings, $\rho{=}{+}0.67$, against the symmetric average's $-0.28$);
+  a render-free generator search improves a real-data target as predicted,
+  with a null control; and appearance-stripped twins with bit-identical
+  motion isolate motion as the carrier of transfer.
+\end{enumerate}
+
+We are explicit about scope: the principle is established observationally on
+nine training variants and validated out-of-sample for the from-scratch
+regime only; the from-scratch GLU-Net variant is direction-neutral; the
+pretrained evidence spans two backbone architectures; and ranking at
+$\rho{\approx}0.5$ caps within-context explainable variance at
+${\sim}25\%$---absolute accuracy beyond that comes from anchors, not
+features (Sec.~\ref{sec:limits}). The policy's two arms also have distinct
+jobs: the summed distance \emph{selects} among natural candidates, whose two
+costs covary, while generator \emph{design} must move the regime's binding
+direction specifically (Sec.~\ref{sec:interv}).
+
+% =====================================================================
+\section{Related Work}
+\label{sec:related}
+
+\noindent\textbf{Synthetic data for correspondence.}
+FlyingChairs/FlyingThings \cite{mayer2016FlyingThingsDataset}, Sintel
+\cite{sintel}, Kubric/MOVi \cite{greff2021kubric}, and PointOdyssey
+\cite{pointodyssey} established synthetic pre-training as the default for
+dense matching; AutoFlow \cite{sun2021autoflow} and DFlow \cite{im2022dflow}
+\emph{learn} data parameters with training in the loop. Closest to our
+premise, Mayer~\etal~\cite{mayer2018what} showed that matching target
+displacement statistics improves flow training. That result is undirected and
+regime-blind; our central finding is precisely the part it could not see: the
+\emph{direction} of the match is what matters, and the regime selects it.
+A large, active line of work improves the \emph{rendering} side of these
+pipelines---photorealism, lighting, scale, and speed
+\cite{greff2021kubric,pointodyssey}; this is complementary to, but distinct
+from, our question. We take the renderer as given and instead supply a
+target-conditioned signal for \emph{what} to generate, which is why the same
+rule guides two structurally different generators (Sec.~\ref{sec:interv}).
+Procedural abstraction \cite{Baradad2021LookingAtNoise,white2009mandelbulb}
+supports our use of non-photorealistic, motion-controllable generators.
+
+\noindent\textbf{Transferability estimation.}
+LEEP \cite{nguyen2020leep}, LogME \cite{you2021logme}, NCE
+\cite{tran2019transferability}, H-score \cite{bao2019information}, and OTCE
+\cite{tan2021otce} predict transfer from model outputs or target labels,
+almost exclusively for classification. OTDD \cite{alvarez2020geometric} is,
+like ours, a fit-free dataset distance, but symmetric and label-dependent.
+None address dense correspondence, none are regime-conditional, and none are
+directional; our experiments show the symmetric choice is not a detail but
+the reason such signals wash out across regimes.
+
+\noindent\textbf{Precision/recall divergences.}
+Directional two-sample diagnostics are established in generative-model
+evaluation \cite{sajjadi2018assessing_precision_recall,
+kynkaanniemi2019improved_pr,naeem2020reliable,alaa2022faithful}. We adopt the
+same decomposition in motion space and make it \emph{predictive and
+regime-indexed} for transfer, which to our knowledge is new.
+
+\noindent\textbf{Regime-conditional data value.}
+Sorscher~\etal~\cite{sorscher2022beyond} showed the value of easy vs.\ hard
+examples flips with data abundance; pretraining-data selection methods such
+as DSIR \cite{xie2023data} and DoReMi \cite{xie2023doremi} match
+distributions symmetrically. Our result is a new instance of
+regime-conditional data value on a new axis (scratch vs.\ pretrained backbone;
+directed motion coverage). On the theory side, asymmetric transfer exponents
+\cite{hanneke2019value} and covariate-shift support conditions anticipate the
+\emph{recall} half of our principle for backbone-equipped training; the \emph{precision}
+half---that off-target mass is actively harmful from scratch, not merely
+wasted---is, to our knowledge, theoretically unanticipated, and our
+dataset-size controls (Sec.~\ref{sec:law}) rule out the trivial explanation.
+
+\noindent\textbf{Architectures and backbones.}
+We span semantic matching (CATs++ \cite{cho2022cats++}), recurrent flow (RAFT
+\cite{teed2020raft}), and pyramid dense matching (GLU-Net
+\cite{truong2020glunet}); appearance descriptors use DINOv3
+\cite{simeoni2025dinov3}, whose strong zero-shot matching
+\cite{sd_dino_tale_of_two_features} motivates appearance as a serious
+competing hypothesis---which our controls reject for within-context dataset
+ranking.
+
+% =====================================================================
+\section{Setup: Two Directed Distances and a Decomposition}
+\label{sec:setup}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/splats/composite_overview.png}
+\caption{\textbf{Motion fingerprints (BFV splats).} Each panel aggregates a
+dataset's joint flow vectors $\mathbf{f}=[\hat x,\hat y,\Delta\hat
+x,\Delta\hat y]$, clusters them spatially (non-uniform, data-driven
+clusters), and renders each cluster as a directional splat: color encodes
+dominant flow direction (legend), splat extent encodes the cluster's spread.
+The first three columns hold the same dataset in both splits (train above
+eval); their fingerprints match, confirming the signature is a property of the
+data rather than of a particular split. Training sets and benchmarks otherwise
+occupy visibly different regions of motion space; the two directed distances
+defined below quantify the two distinct ways their supports can fail to align.}
+\label{fig:splats}
+\end{figure}
+
+We represent each dataset by the distribution of its motion and ask how well a
+training set's distribution covers a target's. This section defines that
+representation, the two directed distances that are our central measurement,
+and the decomposition we use to turn them into predictions.
+
+\noindent\textbf{Transfer study.}
+We study three architectures: the semantic matcher CATs++
+\cite{cho2022cats++}, the optical-flow network RAFT \cite{teed2020raft}, and
+the dense-matching network GLU-Net \cite{truong2020glunet}. For CATs++ and
+GLU-Net, the image-feature backbone is either initialized from foundation
+features (ImageNet ResNet-101 and VGG, respectively) or trained from scratch,
+and either frozen or trained jointly with the correspondence head, giving four
+variants each; RAFT is trained from scratch by construction and is one
+variant. The resulting \textbf{9 variants} are each trained on 11 pure
+synthetic sources (99 trained models) and evaluated by peak \pck@0.05 on 9
+benchmarks spanning
+optical flow, dense, and semantic matching (KITTI-2012/2015 \cite{kitti_flow},
+FlyingThings \cite{mayer2016FlyingThingsDataset}, PointOdyssey
+\cite{pointodyssey}, TSS, PF-Pascal/PF-Willow \cite{pfpascal}, SPair-71k
+\cite{spair71k}, and a held-out split of our procedural source), for
+\textbf{891 source--benchmark--variant transfer measurements}. We treat each (benchmark, architecture,
+variant) triple as a \emph{context} and make all ranking claims within
+contexts.
+
+\noindent\textbf{Motion representation.}
+We summarize each dataset as a point cloud of flow vectors in a normalized
+four-dimensional space of image position and displacement,
+\begin{equation}
+\mathbf{f}_{\text{flow}} = [\hat{x},\, \hat{y},\, \Delta\hat{x},\,
+\Delta\hat{y}] \in [-1,1]^4,
+\label{eq:bfv}
+\end{equation}
+following the bag-of-flow-vectors representation (Fig.~\ref{fig:splats}). This
+retains \emph{where} motion occurs and \emph{how} content moves while remaining
+invariant to image resolution and free of any spatial binning. For the
+appearance control, we build the analogous representation from DINOv3 patch
+features, reduced by PCA and $\ell_2$-normalized \cite{simeoni2025dinov3}.
+
+\noindent\textbf{Two directed distances.}
+The match between a training cloud $A$ and a target cloud $B$ is directional,
+and we measure each direction by the mean nearest-neighbor distance
+\begin{equation}
+d_{A \to B} \;=\; \frac{1}{|A|}\sum_{a \in A}\; \min_{b \in B}\,
+\lVert a - b \rVert_2^2 .
+\label{eq:dirdist}
+\end{equation}
+Writing $\dtb$ for the train-to-target direction and $\dbt$ for the reverse,
+$\dtb$ is large when much of the training distribution lies far from anything
+the target uses (\textbf{off-target mass}), and $\dbt$ is large when target
+motions have no nearby training example (\textbf{missing support}).
+
+Each direction can be estimated in several ways, and the choice is not
+incidental. Our default, Eq.~(\ref{eq:dirdist}), is a \emph{support-geometry}
+estimator: it depends only on how close the two point sets lie, not on their
+local densities. We contrast it with two alternatives---$\epsilon$-coverage,
+the fraction of one cloud lying within a radius of the other (also
+support-based), and a $k$-nearest-neighbor estimate of the KL divergence
+(density-based). For procedurally generated data, the support-based estimators
+are the principled choice. What governs transfer is \emph{which} motions a
+dataset covers, not how often each one is rendered; yet rendering more frames
+of the same motion inflates a density estimate while leaving the support
+unchanged, so a density divergence such as KL entangles an intrinsic property
+of the data with an artifact of the sampling budget. This is not hypothetical:
+the nearest-neighbor and $\epsilon$-coverage estimates converge as the sample
+grows, whereas the KL estimate fails to stabilize at any budget we tried
+(supp.). Among the three, nearest-neighbor is the most informative predictor
+and is our default, $\epsilon$-coverage is close behind, and KL is both the
+least stable and the weakest; that all three nonetheless agree on the central
+finding (Sec.~\ref{sec:law}) shows it reflects the \emph{direction} of the
+comparison rather than the estimator. As direction-blind baselines we also use
+the symmetric average of the two directions and three distribution
+distances---FID \cite{heusel2018ganstrainedtimescaleupdate}, sliced
+Wasserstein-2, and MMD \cite{gretton2008kernelmethodtwosampleproblem}.
+
+\noindent\textbf{Prediction decomposition.}
+Absolute transfer accuracy varies far more across benchmarks and architectures
+than across training sources, so we separate a context-level term from a
+within-context ranking term,
+\begin{equation}
+\widehat{\text{\pck}}(i,k,v) \;=\; \underbrace{L(k,v)}_{\text{level anchor}}
+\;+\; \underbrace{g(i \to k)}_{\text{within-context ranking}},
+\label{eq:decomp}
+\end{equation}
+where $L$ is interpolated from observed runs and $g$ ranks sources within a
+context. Directionality enters only through $g$, where learning happens; the
+anchor $L$ is best interpolated with a direction-blind similarity (supp.). We
+report three leakage-safe protocols of increasing difficulty---holding out the
+source, holding out the benchmark, and holding out both---so that for the
+hardest protocol nothing about a predicted (source, benchmark) pair has been
+seen during fitting.
+
+% =====================================================================
+\section{The Regime--Direction Principle}
+\label{sec:law}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/results/F2_direction_preference.png}
+\caption{\textbf{Which direction carries the signal flips with regime.}
+(a)~Group-mean within-context Spearman $\rho$ between transfer and each
+(negated) directed distance; faint points are the nine individual variants.
+For from-scratch variants $\dtb$ (off-target mass, blue, $+0.42$) is the more
+informative direction; for variants with a pretrained feature backbone it is
+$\dbt$ (missing support, red, $+0.61$), and their $\dtb$ signal is
+zero-to-negative. (b)~The same nine variants in the \emph{direction plane}:
+each point is one variant located by its two directional signals. All four
+backbone-pretrained variants (red) lie well above the $y{=}x$ diagonal; four
+of five from-scratch variants (blue) lie on or below it, with from-scratch
+GLU-Net marginally above---the one direction-neutral variant
+(Sec.~\ref{sec:limits}). No derived statistic is involved: a variant's regime
+determines which side of the plane it inhabits.}
+\label{fig:law}
+\end{figure}
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Per-variant directional correlations in motion space}
+(within-context Spearman; mean-NN estimator; 9 benchmarks $\times$ 11 sources
+per variant; bold marks the regime-matched direction, green the best column
+per row). Two facts coexist in this table and the paper claims both.
+\emph{The directed ordering flips with regime}: $\dtb$ (off-target mass)
+beats $\dbt$ in the scratch block and turns \emph{negative} under a
+pretrained backbone, where $\dbt$ (missing support) dominates---8 of 9 rows
+in the predicted direction, scratch GLU-Net the one neutral row.
+\emph{The symmetric columns sum the two costs}: the average is the best
+single number in 4 of 9 rows---all from-scratch or near-neutral rows, where
+both costs are real and their sum is the right charge---and it collapses
+where one cost is forgiven (pretrained GLU-Net: $+0.26$/$+0.33$ vs.\
+$+0.67$/$+0.76$ for missing support alone). The flip statistic concerns
+which single direction carries more signal; the cost structure says when to
+sum them. Sec.~\ref{sec:predict} turns both into the selection policy.}
+\label{tab:law}
+\footnotesize
+\input{tables/tab_law}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{\textbf{The identical analysis in appearance (DINO) space} (the
+negative control for Table~\ref{tab:law}): no direction and no symmetric
+distance carries usable signal for any variant, and no regime structure
+exists. Whatever drives Table~\ref{tab:law} lives in motion, not in what the
+frames look like.}
+\label{tab:lawdino}
+\footnotesize
+\input{tables/tab_law_dino}
+\end{table}
+
+Table~\ref{tab:law} and Fig.~\ref{fig:law} present the core finding. For
+every training variant we correlate transfer with each directed distance
+within contexts and ask \emph{which direction carries the signal}. The
+pattern is an interaction, easiest to see in the direction plane of
+Fig.~\ref{fig:law}b: all four backbone-pretrained variants sit well above
+the diagonal (missing support more informative), four of five from-scratch
+variants on or below it (off-target mass more informative), with from-scratch
+GLU-Net the single, marginal exception. Group means: scratch
+$\rho[\dtb]{=}{+}0.42$ vs.\ $\rho[\dbt]{=}{+}0.23$; pretrained-backbone
+$\rho[\dbt]{=}{+}0.61$ vs.\ $\rho[\dtb]{=}{-}0.08$. The regime difference in
+direction preference is the most extreme value attainable under its exact
+permutation test ($p{=}0.0286$ excluding RAFT from the labeling; $p{=}0.0079$
+with RAFT in the scratch group); leave-one-benchmark-out never weakens it
+below ${\sim}90\%$ of its value, and excluding self-pairs (a training set evaluated
+on its own held-out split) leaves it intact.
+
+\noindent\textbf{The two directions trade off across sources---which is why
+summing them is right from scratch and wrong under a backbone.}
+Across the canonical sources the two directed distances are
+\emph{anti-correlated} within contexts (mean Spearman $\approx{-}0.37$): a
+tight, concentrated source wastes little motion but covers little, a broad
+one the reverse. This single fact organizes the right-hand columns of
+Table~\ref{tab:law}. From scratch, both failure modes cost, so the natural
+candidate score is the \emph{total} cost $\dtb{+}\dbt$---which is exactly the
+symmetric average---and indeed it is the best single number for most
+from-scratch variants (group mean $+0.50$ vs.\ $+0.42$ for $\dtb$ alone):
+the two terms carry complementary halves of the cost, not redundant copies
+of one signal. Under a pretrained backbone the off-target cost is forgiven,
+and summing it back in is now actively destructive, \emph{because} of the
+trade-off: the forgiven term is anti-correlated with the real one, so the
+symmetric mean is dragged from the matched direction's $+0.61$ down to
+$+0.39$, and in the strongest cells (pretrained GLU-Net) it discards half
+the signal ($+0.26$/$+0.33$ vs.\ $+0.67$/$+0.76$). The same reading makes a
+falsifiable prediction for designed data: hold the coverage cost flat and
+vary only off-target mass, and the from-scratch total cost reduces to the
+off-target term---the directed distance should keep predicting while the
+symmetric average, half of whose input is now near-constant noise, should
+not. The generated grid of Sec.~\ref{sec:interv} confirms this on the one
+benchmark where that contrast is clean (FlyingThings: directed $+0.67$,
+symmetric $-0.28$).
+
+\noindent\textbf{The principle is about the direction, not the estimator.}
+Replacing mean-NN with $\epsilon$-radius coverage at 4\,px or 16\,px
+reproduces the flip at comparable strength ($+0.65$, $+0.91$), and even the
+noisiest estimator we tried---a directional kNN-KL, which never stabilizes
+under sampling (supplement)---shows the same flip, attenuated ($+0.30$); all
+at the permutation floor $p{=}0.0286$. \textbf{And it is motion-specific:} running the
+identical machinery in DINOv3 appearance space yields a flip statistic of
+$+0.018$ ($p{=}0.43$), appearance correlations that are weak-to-negative in
+both directions for every variant, and leave-one-benchmark-out ranges that
+cross zero (Table~\ref{tab:lawdino}, Fig.~\ref{fig:dino}). Whatever drives
+the flip lives in motion structure, not in what the frames look like.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.78\linewidth]{figures/results/F3_motion_vs_dino_flip.png}
+\caption{\textbf{Specificity control.} The regime flip statistic per distance
+estimator, computed in motion space (green) and appearance space (gray). The
+flip replicates across all motion estimators and is absent in appearance
+space under the identical analysis.}
+\label{fig:dino}
+\end{figure}
+
+\noindent\textbf{Mechanism (interpretation).}
+The two-cost reading is the simplest account we know that fits every
+observation at once. From-scratch learners allocate capacity across whatever
+they are fed \emph{and} can only learn motions they are shown---so both
+off-target mass and missing support cost, and the total $\dtb{+}\dbt$ ranks
+candidates. Pretrained representations absorb distributional excess---the
+off-target cost is forgiven---but cannot supply target motion never seen
+during adaptation, leaving $\dbt$ as the sole cost; with the two distances
+anti-correlated across sources, this also explains why $\dtb$'s correlation
+turns \emph{negative} under a backbone rather than merely fading.
+Covariate-shift theory anticipates the missing-support cost
+\cite{hanneke2019value}; that off-target mass is actively harmful from
+scratch is the surprising half---standard arguments say irrelevant data is
+wasted, not harmful. Three observations support reading it causally: dataset
+size and supervision density predict nothing (fit-free rank $\rho \le 0.27$
+vs.\ $0.52$ for the rule; supplement), so ``more data'' is not the confound;
+the flip survives dropping any generator family or any benchmark; and the
+interventional grid of Sec.~\ref{sec:interv} reproduces the off-target cost
+out-of-sample on data constructed after the analysis was frozen.
+
+\noindent\textbf{Why this was invisible.}
+Pooled across regimes the two directions cancel ($+0.6$ and $-0.2$ average to
+mush), while symmetric metrics hedge---never best, never worst
+(Table~\ref{tab:predictors}). This single sentence retroactively explains the
+muddiness of direction-blind distribution matching in this space, including
+our own earlier shared-ridge results and, we suspect, the mixed history of
+``dataset distance'' signals more broadly.
+
+% =====================================================================
+\section{Selecting Training Data at the Reproducibility Ceiling}
+\label{sec:predict}
+
+The principle licenses a selection policy with zero fitted parameters:
+charge each candidate the costs its regime actually pays,
+\begin{equation}
+\text{rank candidate training sets by } -D, \qquad
+D =
+\begin{cases}
+\dtb + \dbt & \text{training from scratch,}\\[2pt]
+\dbt & \text{pretrained feature backbone.}
+\end{cases}
+\label{eq:rule}
+\end{equation}
+No training runs on the target, no target labels, no learned weights; the
+regime is known before training begins. Each arm is validated out-of-fold:
+leave-one-variant-out selection of the pretrained direction is unanimous,
+and leave-one-architecture-out refitting recovers the equal-weight scratch
+arm on every fold (below). We also report the single-direction rule
+($D{=}\dtb$ from scratch) as an ablation throughout; it is the right
+\emph{design} objective (Sec.~\ref{sec:interv}) but the weaker
+\emph{selection} score, because natural candidates vary in both costs.
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Within-context ranking, all predictor families, pooled over
+the nine variants} (within-context Spearman $\rho$; 95\% bootstrap CIs in
+supp.). The regime-aware policy of Eq.~(\ref{eq:rule}) is best on every
+protocol, and its margins decompose exactly as the two-cost reading says
+they should: it beats summed-distance-everywhere because under a backbone it drops
+the forgiven cost ($+0.61$ vs.\ $+0.39$ in the pretrained regime), and it
+beats matched-direction-everywhere because from scratch both costs are real
+($+0.50$ vs.\ $+0.42$ in the scratch regime). Each fixed single direction
+collapses on the regime whose cost structure it mismatches; the learned
+ridge, fit across regimes, is diluted by the sign flip; appearance carries
+no within-context signal.}
+\label{tab:predictors}
+\small
+\setlength{\tabcolsep}{4.5pt}
+\input{tables/tab_predictors}
+\end{table}
+
+Table~\ref{tab:predictors} compares the policy against seven alternatives,
+all evaluated with identical within-context machinery. \emph{Matched
+direction everywhere} is the single-direction rule. The two
+\emph{fixed-direction} baselines apply one direction to every variant
+regardless of regime. The \emph{symmetric} rows are regime-blind: the
+mean-NN average (the scratch arm of the policy, applied indiscriminately)
+and the distributional distances (FID, sliced Wasserstein-2, MMD in the same
+BFV motion space). The \emph{13-feature motion ridge} is a learned baseline:
+a ridge regression over the full motion descriptor set (both mean-NN
+directions, multi-radius coverage in both directions, and directional
+kNN-KL), fit on in-fold data and applied to held-out data---the natural
+``just learn it'' alternative. The \emph{appearance ridge} is the identical
+learned model over DINO appearance descriptors, the appearance control. The
+policy ranks at $\rho = 0.52/0.52/0.50$ across held-out source / held-out
+benchmark / both---best on every protocol, and uniform across them, which is
+what one expects from a predictor with nothing to overfit. The orderings
+beneath it are diagnostic: each fixed direction collapses on the regime
+whose cost it mismatches; the regime-blind symmetric scores survive
+everywhere but pay the forgiven-cost penalty in the pretrained cells; the
+learned ridge, fit \emph{across} regimes, is diluted by exactly the
+sign-flip this paper documents; and appearance carries no within-context
+signal at all.
+
+\noindent\textbf{Is $\rho\approx0.5$ good? It is approximately the ceiling.}
+The correct reference is not $\rho{=}1$ but the reproducibility of the ground
+truth itself. Transfer outcomes are noisy measurements: train a
+\emph{different} variant of the same regime on the same sources and its
+source ranking agrees with the first one's only at $\rho \approx
+0.56$--$0.69$ (mean pairwise rank-agreement between same-regime variants; we
+call this the \emph{empirical oracle}). No predictor can be validated beyond
+this agreement, because the target itself does not agree with itself more
+than this. Against it, the policy reaches a fraction of $1.08$ in the
+backbone-pretrained regime ($0.612$ vs.\ oracle $0.564$) and $0.72$ from
+scratch ($0.499$ vs.\ $0.698$; headroom concentrated in scratch GLU-Net). A
+fraction slightly above $1$ does not mean the policy extracts information
+retraining lacks---that would be impossible; it means the empirical oracle is
+itself a noisy estimate built from single training runs, while the policy is
+a deterministic function of the data and carries no run-to-run variance. The
+honest statement is \emph{parity}: in the pretrained-backbone regime,
+ranking by one distance is statistically indistinguishable from ranking by
+actually retraining a sibling variant. Against a cross-architecture consensus
+oracle (three architectures averaged, ceiling $0.732$), the policy recovers
+$73$--$76\%$ across protocols: a static two-number descriptor retains most
+of the information in training two other architectures and averaging
+them.
+
+\begin{table}[t]
+\centering
+\caption{\textbf{One linear model per regime} (two coefficients each;
+ordinary least squares on within-context-demeaned, z-scored distances;
+held-out evaluation). This table is a \emph{recovery} test, and the
+coefficients are its result: told nothing about the principle, least squares
+recovers its sign structure---the scratch model puts weight on both
+directions, the pretrained model loads dominantly on missing support. (We do
+not lean on exact ratios: the two raw distances differ in scale by two
+orders of magnitude, so coefficient ratios move with the normalization
+convention; the sign pattern, and the single-direction flip of
+Table~\ref{tab:law}, do not.)
+The ranking columns then show that fitting buys nothing over charging the
+right costs fit-free ($^{*}$the policy column evaluates each regime's
+fit-free arm: the summed distance from scratch, $\dbt$ pretrained; the
+pooled row is the full policy): from scratch the fitted weights only match
+the fit-free sum ($+0.47/+0.56/+0.48$ vs.\ $+0.50$), and in the pretrained
+regime---where one cost already carries everything---they merely add
+held-out fitting noise ($+0.29$--$0.50$ vs.\ $+0.61$). The pooled
+regime-blind model is forced to compromise its coefficients across a sign
+flip---the dilution mechanism that hid this structure from every
+direction-blind analysis, including our own earlier ones.}
+\label{tab:linear}
+\small
+\input{tables/tab_regime_linear}
+\end{table}
+
+\noindent\textbf{Two regimes, two tiny models.}
+Fitting one 2-coefficient linear model per regime
+(Table~\ref{tab:linear}) provides an independent, assumption-light test: the
+scratch model puts weight on both directions; the pretrained model loads
+dominantly on $\dbt$. A leave-one-architecture-out check separates what
+transfers from what does not: refit on any two architectures, the scratch
+weights stay two-sided---both costs retained---and rank the held-out
+architecture's sources about as well as the symmetric average does
+($\rho$ $+0.51$--$0.65$), while the
+pretrained weights do \emph{not} transfer between the two backbone
+architectures (held-out $+0.25$/$+0.46$, vs.\ the fit-free recall rule's
+$+0.44$/$+0.67$ on the same contexts). The architecture-stable combiners are
+therefore exactly the two the paper recommends: equal weights from scratch,
+recall alone under a backbone. The two tiny models also unify everything
+above into one
+two-dimensional picture: the fit-free rule is this model with one weight set
+to zero, and the symmetric average is this model with the weights forced
+equal and regime-blind. Each special case wins exactly where its constraint
+happens to be true---equal weights from scratch, a single dominant weight
+under a backbone---and the per-regime model subsumes both. We also probed
+for structure \emph{beyond} two linear weights per regime: a
+precision$\times$recall interaction, anchor-level--conditioned weights,
+lexicographic ``precision first, then recall'' hierarchies, a
+worse-constraint-binds combiner, and a depth-2 gradient-boosted model.
+None outperforms the two-coefficient fit held out (the boosted combiner is
+strictly worse), so the combination frontier here is linear---and its
+architecture-transferable points are exactly the policy's two components. Our practical
+recommendation follows directly: \emph{rank by the summed distance if the
+regime is unknown or training is from scratch (or, with reference runs, the
+two-coefficient scratch model); rank by missing support $\dbt$ the moment a
+pretrained backbone is in play.} That last clause is where directionality
+earns its keep, and it is not a small correction: it is the difference
+between $+0.39$ and $+0.61$ pooled, and between $+0.26$ and $+0.76$ on the
+worst-served architecture. Table~\ref{tab:utility} scores this policy
+directly, as decisions.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.8\linewidth]{figures/results/F4_gap_stratified.png}
+\caption{\textbf{Decision utility tracks the reproducibility of ground
+truth.} Probability that the policy picks the truly better of two candidate
+sources, stratified by their true \pck{} gap, against the agreement of
+independent retrainings (gray). Errors concentrate on pairs that retraining
+cannot rank either; above a 10-\pck{} gap the policy is right ${\approx}78\%$
+of the time, bracketing cross-architecture retraining agreement.}
+\label{fig:gap}
+\end{figure}
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Practical decision utility.} Each row is a strategy for
+choosing \emph{one} training set in a held-out context. \emph{Top-1 regret}:
+the \pck{} lost relative to the best available source (0 $=$ picked the
+best), median over the 81 contexts. \emph{Pairwise accuracy}: shown two
+candidate sources whose true \pck{} difference exceeds 10---the decisions
+that actually matter---how often does the strategy order them correctly?
+The \textbf{regime-aware policy} (bold) is the paper's recommendation in one
+row: charge the summed distance from scratch, missing support $\dbt$ alone
+under a pretrained backbone. It beats both of its ingredients used
+everywhere, and the per-regime decomposition says why: summed-distance-everywhere
+loses in pretrained contexts (median regret ${\approx}3.0$ vs.\ the matched
+direction's $0.7$--$2.1$, the forgiven-cost penalty), matched-direction-everywhere
+loses from scratch ($5.2$--$7.9$ vs.\ the sum's $3.9$--$4.1$). The bottom rows are the
+empirical ceiling, not a strategy: if you \emph{actually retrained} a
+sibling variant (same architecture, different backbone configuration) or a
+different architecture on both candidate sources, its ordering would agree
+with the target variant's only $84\%$/$78\%$ of the time. No data-side
+predictor can be validated above that agreement; the policy sits on the
+cross-architecture line.}
+\label{tab:utility}
+\footnotesize
+\setlength{\tabcolsep}{3.5pt}
+\input{tables/tab_utility}
+\end{table}
+
+\noindent\textbf{What a practitioner gains.}
+Table~\ref{tab:utility} and Fig.~\ref{fig:gap} translate ranking into
+decisions, and they adjudicate the regime question at the level that
+matters: picks. Used \emph{everywhere}, each ingredient splits the regimes
+exactly as Sec.~\ref{sec:law} predicts---the summed distance picks better
+from scratch, the matched direction picks far better under a backbone
+(median pretrained regret $0.7$--$2.1$ vs.\ $3.0$; caption)---so the
+regime-aware policy that combines them picks a source within a median
+$1.2$--$2.8$ \pck{} of the oracle, versus $13.9$ for random selection;
+appearance similarity is no better than random in two of three protocols.
+Pairwise, the policy orders large-gap pairs correctly $77$--$78\%$ of the
+time, matching the agreement of retraining a different architecture
+($78\%$). Below a 2-\pck{} gap every strategy decays toward chance,
+\emph{and so does retraining}: the residual errors are irreducible
+measurement noise, not predictor deficiency.
+
+% =====================================================================
+\section{From Ranking to Absolute Prediction}
+\label{sec:absolute}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/results/F5_absolute_scatter.png}
+\caption{\textbf{Absolute \pck{} prediction} under the three protocols
+(predictions $=$ anchor $+$ dispersion-calibrated policy score; colored by
+regime; lines are decile-binned calibration curves). With anchors available
+(left), predictions track the diagonal at MAE ${\approx}10$; with both
+endpoints unseen (right), the anchor interpolates observed cells through
+benchmark-similarity $\times$ source-similarity jointly and the policy
+contributes ranking.}
+\label{fig:abs}
+\end{figure}
+
+A rank correlation bounds how much \emph{variance} a predictor can explain:
+if the policy's score were used as a linear predictor of within-context
+transfer, its $R^2$ could not exceed roughly $\rho^2 \approx 0.25$---so even
+a predictor at the reproducibility ceiling leaves ${\sim}75\%$ of
+within-context variance unexplained, not because the predictor is weak but
+because that variance is dominated by run-to-run training noise that no
+dataset descriptor can see (Sec.~\ref{sec:predict}). Absolute accuracy
+therefore comes from \emph{anchors}---observed runs that pin the scale---and
+that division of labor is itself a finding: \textbf{anchors buy units; the
+policy buys order}. Concretely
+(Fig.~\ref{fig:abs}): with the target benchmark seen (held-out source),
+cell-mean anchors plus the policy predict at MAE $9.3$, $r{=}0.88$; per-regime
+gain calibration (one scale per regime, fit with the predicted source held
+out) yields honestly-dispersed predictions with pretrained-regime MAE
+$8.2$ and $r{=}0.90$---accurate enough to budget experiments against. With
+\emph{both} endpoints unseen, a two-way kernel anchor (in-fold cells weighted
+by benchmark-similarity $\times$ source-similarity) plus the
+dispersion-calibrated policy reaches $r{\approx}0.5$ in absolute units while
+preserving the policy's ranking---the residual magnitude beyond anchors is, per
+our calibration-ceiling analysis, feature-unreachable. The supplement
+details all anchor and calibration variants, including the failure modes.
+
+% =====================================================================
+\section{Interventions: Steering Generation and Testing the Principle}
+\label{sec:interv}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/results/F7_interventions_summary.png}
+\caption{\textbf{Two interventional consequences of the principle.}
+(a)~The same sources trained both ways on KITTI-2015: trial19---high
+precision, low coverage (pr~\#2, re~\#9)---wins from scratch but surrenders
+its edge once pretrained (rank~3 of~9, inside a ${\le}6$~\pck{} near-ceiling
+band), overtaken by higher-coverage sources, so ``best dataset'' is
+regime-relative. (b)~Appearance-stripped twins with bit-identical motion:
+transfer moves $2.7$--$9.4$ \pck{} while appearance distance moves
+${\sim}70\%$---the look barely matters, the motion does.}
+\label{fig:interv}
+\end{figure}
+
+Correlational principles should be stressed interventionally. Every result
+so far shares one observational table; this section asks three questions of
+data that table never touched---a procedurally generated grid
+(Kubric-derived motion interventions \cite{greff2021kubric} plus our
+SDF-fractal generator), constructed after the analysis of
+Secs.~\ref{sec:law}--\ref{sec:absolute} was frozen. \emph{(i)~Is the
+off-target cost causal}---on sources where it varies but coverage is
+comparatively flat, does it still predict transfer? \emph{(ii)~Is the signal
+actionable}---can it steer a generator toward a target before any training?
+\emph{(iii)~Is the descriptor meaningful}---does matching it recover
+physically correct motion, and is motion rather than appearance what carries
+the effect?
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Pre-registered out-of-sample test of the off-target
+cost---each correlation shown with the variation that licenses it.} Nine
+generated sources the analysis never saw, trained from scratch. A
+correlation carries causal weight only where its factor actually varies,
+so each $\rho$ sits next to its distance's spread across the sources.
+FlyingThings is the discriminative cell: off-target mass varies
+$3.1\times$ and ranks transfer ($+0.67$, bold); coverage is comparatively
+flat ($1.3\times$) and does not ($-0.38$, the tight-vs-broad trade-off's
+shadow). The KITTI rows cannot test either motion cost: by design those
+sources are precision-matched (off-target spread $\le 1.04\times$) and vary
+\emph{appearance} (HQ/matte twins, Table~\ref{tab:decomp}), whose
+from-scratch cost of $9$--$11$~\pck{} dominates transfer there---both
+motion columns in those rows are reported for completeness, not leaned on.
+The off-target cost passes its pre-registered test on the one benchmark
+that can run it; no pooled mean is reported, since averaging the
+discriminative cell with the confounded ones would read as a clean result
+it is not. The coverage cost's own causal test needs the mirror grid
+(Sec.~\ref{sec:limits}).}
+\label{tab:dirtest}
+\small
+\input{tables/tab_oos}
+\end{table}
+
+\noindent\textbf{(i) A pre-registered direction test: the off-target cost
+is causal.}
+Before training, we stated the prediction: off-target mass should rank
+these never-seen sources from scratch. Table~\ref{tab:dirtest} reports the
+result next to the variation that licenses it: the signal sits where
+off-target mass has real dynamic range---FlyingThings ($3.1\times$ spread:
+$+0.67$, against the coverage cost's $-0.38$); the KITTI cells are the
+appearance-ablation twins of Table~\ref{tab:decomp} and cannot test a
+motion cost (caption). This single-cell pass is the leakage-safe, causal
+upgrade of Sec.~\ref{sec:law}'s strongest claim; re-evaluating the excluded
+Middlebury benchmark with the repaired harness, and replicating with
+GLU-Net/RAFT consumers, are the stated extensions
+(Sec.~\ref{sec:limits}). This is a \emph{design} result, not a selection
+one: on natural pools, where both costs vary, the
+summed score is the right from-scratch selector
+(Tables~\ref{tab:predictors} and~\ref{tab:utility}); on designed data,
+whose costs are decoupled, the generator must be moved along the binding
+direction---the objective (ii) uses. Select with the policy; design with
+the direction. Two scope notes: this test validates the off-target cost
+only (a cost with little variation is causally invisible; its test is the
+mirror grid, Sec.~\ref{sec:limits}), and its consumer is CATs++---the scratch
+variant that leans hardest on off-target mass canonically
+(Table~\ref{tab:law})---so replication with GLU-Net/RAFT consumers is the
+stated generality check. The \emph{pretrained} arm cannot score its half of
+the prediction: its transfer compresses into a band a few seed-widths wide
+(3--8~\pck{} vs.\ 15--22 from scratch), so no ranking computed on it is
+stable; its unstable point estimates nominally favor the unmatched
+direction ($\dtb$ $+0.64$, $\dbt$ $+0.21$, sym $+0.37$), which we report
+rather than discount---under either reading, the pretrained half rests on
+the canonical data until a test with pretrained-regime dynamic range exists
+(Sec.~\ref{sec:limits}).
+
+\noindent\textbf{(ii) Closed-loop generation (predicted gains realize).}
+A render-free search over generator motion parameters---scored only by
+motion match to the target, no training in the loop---produced a tuned source
+whose trained margin over the anchor matched prediction on KITTI-2015
+($+0.93$ predicted, $+0.87$ realized), while a FlyingThings null control
+(predicted ${\approx}0$) realized $-1.6$: no false positive. Selection costs
+geometry decoding only; the photorealistic render pass is skipped during
+search.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.72\linewidth]{figures/results/F8_bfv_recovery.png}
+\caption{\textbf{The recovered motion is physically meaningful.} Optimizing a
+controllable generator to match \emph{only} the 4-D BFV motion histogram of a
+target---no images, no labels---recovers the target's true motion regime: a
+strong forward camera dolly with grounded objects for KITTI-2015
+(camera-centric), and a near-static camera with high-vertical-fraction object
+motion for FlyingThings (object-centric). The crude descriptor is crude but
+\emph{valid}.}
+\label{fig:recovery}
+\end{figure}
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Recovered generator parameters $\theta$} from BFV-only
+search. The camera/object decomposition is read directly off $\theta$ and
+matches each target's known physics; full parameter set in supplement.}
+\label{tab:recovery}
+\small
+\input{tables/tab_recovery}
+\end{table}
+
+\noindent\textbf{(iii) The recovered motion is physically meaningful
+(construct validity).} A natural worry about a descriptor as crude as a 4-D bag of flow
+vectors is whether it captures anything real. We test this directly: we run the
+same render-free search, but instead of asking ``does this improve transfer?''
+we ask ``what motion does matching the descriptor actually produce?'' On a
+controllable Kubric-style generator whose parameters $\theta$ explicitly
+separate camera motion from object motion, optimizing BFV match alone recovers
+the physically correct regime for each target (Fig.~\ref{fig:recovery},
+Table~\ref{tab:recovery}): a strong forward dolly with grounded objects for
+KITTI (camera-centric), a near-static camera with vertically flying objects for
+FlyingThings (object-centric). The recovered camera axis cleanly separates the
+moving-camera from the static-camera target, with no supervision beyond the
+motion histogram. An independent generator, matched on BFV alone, lands on the
+right physical motion---construct validity earned, not asserted. (BFV is, by
+construction, blind to the camera-vs-object \emph{decomposition} when the two
+produce identical aggregate flow; we treat that ambiguity in the supplement.)
+
+\begin{figure}[t]
+\centering
+\setlength{\tabcolsep}{3pt}
+% Fixed-height tiles: the three sources are square, the KITTI target is a wide
+% scene, so equal height keeps every panel border-free and undistorted (KITTI
+% simply reads as a wider tile) instead of letterboxing it into a square.
+\newcommand{\splh}{2.5cm}
+\begin{tabular}{@{}cccc@{}}
+\includegraphics[height=\splh]{figures/splats/train__trial19__directional_splat.png} &
+\includegraphics[height=\splh]{figures/splats/train__lowtex-matte__directional_splat.png} &
+\includegraphics[height=\splh]{figures/splats/train__movi-f__directional_splat.png} &
+\includegraphics[height=\splh]{figures/splats/benchmark__kitti2015__directional_splat.png}\\[-0.3mm]
+{\scriptsize trial19 (tuned)} &
+{\scriptsize lowtex-matte (twin)} &
+{\scriptsize MOVi-F (anchor)} &
+{\scriptsize KITTI-2015 (target)}\\
+\end{tabular}
+\caption{\textbf{Motion fingerprints of the intervention sources.} trial19 is
+a single inward camera dolly: its flow is a tight radial-expansion field
+(concentrated motion, high precision / low coverage). Its appearance-stripped
+twin lowtex-matte is \emph{motion-identical} by construction---the two splats
+are visually indistinguishable---whereas the MOVi-F anchor spreads mass across
+many directions (broad coverage). The twins differ only in appearance, yet
+their transfer differs by ${\le}10$ \pck{} from scratch and ${\approx}3$ with
+a pretrained backbone, while motion-type effects span $10$--$80$ \pck{}: the
+look barely matters, the motion does.}
+\label{fig:intervsplats}
+\end{figure}
+
+\noindent\textbf{The case study that names the phenomenon.}
+trial19 is one frozen inward camera dolly: concentrated radial motion,
+minimal coverage---by construction high precision, low recall
+(Fig.~\ref{fig:intervsplats}). The principle therefore predicts: from-scratch
+star, pretrained-unremarkable. Observed (Fig.~\ref{fig:interv}a): rank 1/9
+from scratch on KITTI-2015 ($+1.2$ \pck{} over the next source); rank 3/9
+pretrained---its from-scratch edge evaporates in the near-ceiling pretrained
+band, overtaken by higher-coverage sources. Generator design is
+regime-relative: freezing nuisance axes serves from-scratch consumers;
+coverage serves backbone-equipped consumers.
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Motion and appearance, crossed} on the controllable grid: a
+complete $2{\times}2$ (motion structure $\times$ texture) of from-scratch \pck,
+bold $=$ best of the four cells, on realistic GSO assets (so HQ\,$\to$\,matte is a
+genuine appearance degradation). The best cell is always good-motion\,$\times$\,HQ
+---but \emph{which} motion is ``good'' is set by the target: camera motion for
+ego-motion KITTI-2012 (top), object motion for object-motion FlyingThings
+(bottom), so the bold cell moves to a different physical row. Texture is a fixed
+tax (HQ\,$>$\,matte in every cell, bit-identical flow, md5-verified), the same
+direction for both targets. The two effects are \emph{comparable in size}---on
+KITTI the off-diagonal nearly ties ($91.1$ good-motion/bad-texture vs.\ $89.5$
+bad-motion/good-texture)---so the distinction is not magnitude but
+\emph{specificity}: only motion's advantage is target-dependent. The same
+$2{\times}2$ replicates on basic KuBasic assets and, compressed, with a
+pretrained backbone (supp.). Single seed; the load-bearing signal is the
+cross-target flip of the best cell, not within-panel sub-seed-band gaps.}
+\label{tab:decomp}
+\small
+\input{tables/tab_decomp}
+\end{table}
+
+\noindent\textbf{Appearance vs.\ motion, decomposed.}
+The grid's controllability lets us cross the two axes a natural dataset
+confounds and read transfer straight off re-rendered models
+(Table~\ref{tab:decomp}). Both axes move transfer, and---against our own earlier
+framing---by \emph{comparable} amounts: on KITTI the off-diagonal nearly ties
+($91.1$ for good-motion/bad-texture vs.\ $89.5$ for bad-motion/good-texture), so
+neither dominates by magnitude. The asymmetry is in \emph{specificity}.
+Texture is a target-agnostic tax---HQ beats matte in every cell, the same
+direction for every target. Motion structure is target-\emph{specific}: the best
+source is whichever motion matches the target, so the winning cell moves from the
+camera row for ego-motion KITTI to the object row for object-motion
+FlyingThings. This is the controlled twin of the correlational interaction of
+Sec.~\ref{sec:law}: appearance tells you a source's general quality, only motion
+tells you \emph{which} target it suits. (The magnitude gap does widen as motion
+grows badly mismatched---wrong motion \emph{type} costs far more than the
+$6$--$10$~\pck{} seen here for wrong \emph{structure}---but within physically
+plausible motion the two axes are the same size; we therefore rest the claim on
+specificity, not dominance.) Realism is not the targeting axis; matched motion
+is.
+
+% =====================================================================
+\section{Limitations}
+\label{sec:limits}
+
+We state the principle's evidentiary status precisely. \emph{It is a regime
+tendency, not a per-variant law}: 8 of 9 variants flip as predicted, but
+scratch GLU-Net is direction-neutral (its flip CI straddles zero), and the
+exact permutation $p{=}0.0286$ is the floor of an eight-unit test---small-$n$
+by construction. \emph{Its two halves are unevenly validated}: the
+from-scratch half passed a pre-registered out-of-sample test on a controlled
+grid; the pretrained half rests entirely on the observational table, because
+the grid's pretrained arm compresses into a seed-noise band---its unstable
+point estimates nominally favor the unmatched direction, and we report them
+undiscounted in Sec.~\ref{sec:interv} rather than omit them. A
+decisive pretrained test needs a grid with pretrained-regime dynamic range,
+or a new architecture; the two-cost reading makes three falsifiable
+predictions we consider most informative, stated here in advance for a
+FlowFormer-class model (pretrained Twins-SVT encoder): its from-scratch
+cells should be ranked by the summed distance, its pretrained cells by
+missing support alone, and per-regime weights fitted on our three
+architectures should transfer to it without improving on those two fit-free
+scores. \emph{The scratch missing-support cost has no interventional test
+yet}: on the existing grid the off-target cost carries the dynamic range
+(and the KITTI cells are precision-matched by design), so it validates only
+that cost; the mirror grid---sources searched to vary coverage at fixed
+off-target mass---is the experiment that would test it directly, and our
+render-free search infrastructure supports constructing one. \emph{The
+pretrained evidence is thin in a second way}: only two backbone
+architectures exist in our study, and fitted pretrained weights already
+fail to transfer between them (which is why the policy's pretrained arm is
+fit-free); when the regime is unknown, the summed distance is the safe
+default. Ranking at
+$\rho{\approx}0.5$ caps within-context explainable variance at
+${\sim}25\%$; absolute accuracy beyond anchors is feature-unreachable in our
+analysis. Semantic correspondence (SPair) is weakly predicted---motion
+descriptors do not capture semantic compatibility. One benchmark
+(Middlebury) was excluded after we identified an evaluation-harness defect
+during analysis; all reported numbers use the remaining nine (the supplement
+documents the exclusion and a sensitivity analysis).
+
+% =====================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+
+Which synthetic dataset is best is not a property of the dataset: it is a
+property of the dataset \emph{and the regime that will consume it}, because
+the regime sets which mismatch costs the model pays. Training from scratch
+pays for both off-target mass and missing support---so candidates are ranked
+by their summed directed distance---while a pretrained backbone forgives the
+first cost and leaves the second, and because the two costs trade off across
+real generators, charging the forgiven one silently corrupts the ranking.
+This two-cost structure ranks training data at the reproducibility ceiling
+of transfer itself, where the identical appearance-space measurement carries
+nothing; it predicts absolute performance where anchors exist; and it splits
+cleanly into two uses---\emph{select} natural candidates with the
+regime-priced total cost, \emph{design} generated data by moving the
+regime's binding direction, the move our controlled grid validates
+out-of-sample. Because the signal is a property of the data rather than the
+renderer, the same policy guides two structurally different generators---a
+3D scene simulator and a procedural implicit-surface generator---which
+suggests it is a generator-agnostic layer for deciding \emph{what} to
+synthesize, not a property of any one pipeline. While the field invests
+heavily in rendering data more realistically and more cheaply, we offer a
+complementary and largely orthogonal tool: a target-conditioned answer to
+what that data should contain, for correspondence and plausibly for other
+dense tasks where training and target distributions can be compared. The
+recipe is correspondingly simple: before improving how you render, measure
+$\dtb$ and $\dbt$ against your target, and charge your candidates the costs
+your training regime will actually pay.
+
+% ---------------------------------------------------------------
+\bibliographystyle{splncs04}
+\bibliography{main}
+
+\end{document}

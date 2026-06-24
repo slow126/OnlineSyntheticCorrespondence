@@ -1,0 +1,66 @@
+% =====================================================================
+\section{Related Work}
+\label{sec:related}
+
+\noindent\textbf{Synthetic data for correspondence.}
+FlyingChairs/FlyingThings \cite{mayer2016FlyingThingsDataset}, Sintel
+\cite{sintel}, Kubric/MOVi \cite{greff2021kubric}, and PointOdyssey
+\cite{pointodyssey} established synthetic pre-training as the default for
+dense matching; AutoFlow \cite{sun2021autoflow} and DFlow \cite{im2022dflow}
+\emph{learn} data parameters with training in the loop. Closest to our
+premise, Mayer~\etal~\cite{mayer2018what} showed that matching target
+displacement statistics improves flow training. That result is undirected and
+regime-blind; our finding is the part it could not see. The match is
+\emph{directional}: coverage of the target's motion is the half that predicts
+transfer, and a pretrained backbone is what lets a model use it. A large, active
+line of work improves the \emph{rendering} side of these pipelines (photorealism,
+lighting, scale, speed) \cite{greff2021kubric,pointodyssey}; this is complementary:
+we take the renderer as given and instead supply a target-conditioned signal for
+\emph{what} to generate, which is why the same rule guides two structurally
+different generators (Sec.~\ref{sec:interv}).
+Procedural abstraction \cite{Baradad2021LookingAtNoise,white2009mandelbulb}
+supports our use of non-photorealistic, motion-controllable generators.
+
+\noindent\textbf{Transferability estimation.}
+LEEP \cite{nguyen2020leep}, LogME \cite{you2021logme}, NCE
+\cite{tran2019transferability}, H-score \cite{bao2019information}, and OTCE
+\cite{tan2021otce} predict transfer from model outputs or target labels,
+almost exclusively for classification. OTDD \cite{alvarez2020geometric} is,
+like ours, a fit-free dataset distance, but symmetric and label-dependent---its
+label-to-label optimal transport assumes a discrete class space, which dense
+correspondence lacks, so it does not directly apply here. Our sliced-$W_2$ baseline
+is itself a (label-free) optimal-transport distance, so the OT family \emph{is}
+represented among our symmetric comparisons. None of these methods address dense
+correspondence, and none are directional; our experiments show the symmetric,
+direction-averaging choice---not the discrepancy itself---is why such signals wash
+out across regimes.
+
+\noindent\textbf{Precision/recall divergences.}
+Directional two-sample diagnostics are established in generative-model
+evaluation \cite{sajjadi2018assessing_precision_recall,
+kynkaanniemi2019improved_pr,naeem2020reliable,alaa2022faithful}. We adopt the
+same decomposition in motion space and make it \emph{predictive and
+regime-indexed} for transfer, which to our knowledge is new.
+
+\noindent\textbf{Regime-conditional data value.}
+Sorscher~\etal~\cite{sorscher2022beyond} showed the value of easy vs.\ hard
+examples flips with data abundance; pretraining-data selection methods such
+as DSIR \cite{xie2023data} and DoReMi \cite{xie2023doremi} match
+distributions symmetrically. Our result is a new instance of
+regime-conditional data value on a new axis (scratch vs.\ pretrained backbone;
+directed motion coverage). On the theory side, asymmetric transfer exponents
+\cite{hanneke2019value} and covariate-shift support conditions anticipate the
+headline---coverage of the target's support predicts transfer---but not how cheaply
+it can be measured (a crude motion histogram, no training) or that off-target mass
+is nearly free. Our dataset-size controls (Sec.~\ref{sec:law}) rule out a trivial
+``more data'' explanation.
+
+\noindent\textbf{Architectures and backbones.}
+We span semantic matching (CATs++ \cite{cho2022cats++}), recurrent flow (RAFT
+\cite{teed2020raft}), and pyramid dense matching (GLU-Net
+\cite{truong2020glunet}); appearance descriptors use DINOv3
+\cite{simeoni2025dinov3}, whose strong zero-shot matching
+\cite{sd_dino_tale_of_two_features} motivates appearance as a serious
+competing hypothesis---which our controls reject for within-context dataset
+ranking.
+

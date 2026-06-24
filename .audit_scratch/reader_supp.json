@@ -1,0 +1,171 @@
+{
+ "summary": "The ACCV 2026 supplement (/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/supp_main.tex, titled \"Supplementary Material: Off-Target Mass or Missing Support?\") provides six things. (1) Sec. supp:law gives the full per-variant evidence for the regime-direction principle: tab_supp_asym repeats main-paper Table 1 (identical numbers to tables/tab_law.tex) and adds FID/SW2/MMD symmetric baselines, claiming the rule's margin is largest where the directions disagree most (pretrained GLU-Net: rule +0.67/+0.76 vs sym +0.26/+0.33); tab_supp_eps replicates the rule with an epsilon-radius coverage estimator at 1/4/16 px, claiming the rule-over-symmetric margin at 4-16 px exceeds the mean-NN margin while 1 px \"saturates\"; tab_supp_dino is the appearance-space negative control (all directed correlations -0.15 to -0.35, flip statistic +0.018, p=0.43). (2) Sec. supp:robust (tab_supp_controls, baseline rule rho = +0.507) reports a shuffle null of -0.000 (200 perms, claimed p<0.005), generator-family drops (+0.425 to +0.544), benchmark drops ([+0.495, +0.532]), and size controls (n samples +0.043, n vectors +0.267). (3) Sec. supp:predict gives per-variant reproducibility oracles (pretrained GLU-Net fractions of oracle O2 reach +1.37/+1.31, claimed \"fractions >1.3\" though the O3 fractions are +1.26/+1.14); gap-stratified pairwise accuracy (rule 0.624/0.652/0.629 overall vs retraining agreement 0.736/0.696 \u2014 rule below retraining in every bin, near chance at 0.551-0.569 for sub-1-PCK gaps); a feature-set ablation (mean-NN best for scratch ranking, coverage edges pretrained, appearance max +0.13 though the text says \"rho <= 0.16\"; the claim that the combined set \"gives the best absolute error\" is contradicted by epsilon-4px pretrained MAE 7.9 < combined 8.0); a no-table claim that directional anchor interpolation loses to symmetric IDW (16.9 vs 18.9-24.1 held-out-benchmark MAE; 8.6 vs 8.7-10.1 held-out-source); an exclusion note for the pretrained arm of the intervention grid (3 sources whose d_TB and d_BT \"orderings coincide\", agreeing with transfer on \"2 of 3 benchmarks\") that CONTRADICTS the main paper's account of the same arm (main.tex ~line 849 reports distinct unstable estimates d_TB +0.64, d_BT +0.31, sym +0.43 \"nominally favor[ing] the unmatched direction\" \u2014 impossible if the orderings coincide); and the full BFV recovery table (KITTI-2015: dolly 2.18, vert. frac 0.001, \"camera-centric\"; FlyingThings: dolly 0.32, vert. frac 0.920, \"object-centric\") together with an explicit admission that BFV is blind to the camera/object factorization it is being used to recover. (4) Sec. supp:sampling justifies mean-NN/coverage estimators (rho >= 0.96 at 5e4 vectors, 1.000 at reference; kNN-KL plateaus at 0.5/0.2 and never stabilizes) over \"all 110 train->benchmark pairs\" \u2014 a count that implies 10 benchmarks (11 sources x 10), i.e. includes Middlebury, while the paper's stance is 9 benchmarks; it also concedes the intervention-grid d_TB ranking is \"estimator-noise-limited even after 5-seed averaging\", which directly qualifies the main paper's pre-registered out-of-sample test. (5) Sec. supp:mid documents the Middlebury exclusion (pretrained eval stuck at 52.6 +/- 4.7 PCK regardless of source; 9 benchmarks, 1,458 models retained) with a sensitivity analysis (flip +0.82 with Middlebury vs +0.90 without; rule rho 0.49/0.50/0.52 vs 0.50/0.51/0.51 \u2014 note the no-Middlebury reference triple matches NEITHER the main paper's policy row +0.52/+0.52/+0.50 nor its matched-direction row +0.48/+0.50/+0.49 in tab_predictors.tex). (6) Four figures decompose the absolute predictor into ranking (median per-benchmark slope 0.43-0.51) and level (per-trainset slope 0.93-0.96) and show the closed-loop intervention. Overall the supplement is broadly consistent with the main story but contains one genuine cross-document contradiction (the pretrained grid arm), several text-vs-own-table overstatements (oracle fractions, combined-MAE, \"no flip exists\" vs RAFT's DINO flip CI [+0.02,+0.16], missing supervision-density row), and several honest admissions that soften the main story (rule below retraining agreement in all gap bins, partial epsilon-replication exactly where the law is strongest, BFV camera/object blind spot, noise-limited d_TB on the intervention family).",
+ "claims": [
+  {
+   "claim": "Supplement scope: full estimator-replication and appearance-control tables, robustness controls, predictor ablations, sampling stability, the Middlebury exclusion, and additional figures.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/supp_main.tex lines 26-33",
+   "numbers": "none"
+  },
+  {
+   "claim": "Per-variant rule vs directions vs symmetric baselines (mean-NN). Scratch rows: rule equals rho[d_TB], pretrained rows: rule equals rho[d_BT]. Key rows: 'CATs++ -- -- & scratch & +0.53 & +0.53 & +0.03 & +0.46 & +0.38 & +0.39 & +0.30'; 'GLU-Net -- -- & scratch & +0.31 & +0.31 & +0.41 & +0.46'; 'GLU-Net \\cmark \\cmark & pretrained & +0.76 & -0.22 & +0.76 & +0.33 & +0.33 & +0.28 & +0.05'. Values are identical to main-paper tables/tab_law.tex.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/tables/tab_supp_asym.tex (columns: rule, rho[d_TB], rho[d_BT], sym, FID, SW2, MMD)",
+   "numbers": "+0.53/+0.03/+0.46; +0.31/+0.41/+0.46; +0.67 vs -0.23/+0.26 (GLU-Net pretrained unfrozen); +0.76 vs -0.22/+0.33"
+  },
+  {
+   "claim": "Text claim: 'The rule's margin is largest exactly where the two directions disagree most (pretrained GLU-Net), and the symmetric metrics hedge everywhere.' Supported for pretrained GLU-Net (rule +0.67/+0.76 vs sym +0.26/+0.33) but the same table shows symmetric beating the rule in 4 of 9 rows (e.g., GLU-Net -- cmark scratch: sym +0.58 vs rule +0.37; CATs++ cmark cmark pretrained: sym +0.56, FID +0.62 vs rule +0.50).",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/supp_main.tex lines 40-46 + tables/tab_supp_asym.tex",
+   "numbers": "+0.67, +0.76, +0.26, +0.33, +0.58 vs +0.37, +0.56, +0.62 vs +0.50"
+  },
+  {
+   "claim": "Epsilon-radius coverage replication: 'At 4--16 px the rule-over-symmetric margin exceeds the mean-NN margin; 1 px saturates (too strict).' Verified arithmetically from the table on average (mean margin ~+0.13 at 4px, ~+0.11 at 16px vs ~+0.05 for mean-NN; negative at 1px), but replication is uneven: GLU-Net cmark -- pretrained rule is +0.22/+0.27/+0.49 at 1/4/16px vs +0.67 mean-NN.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/supp_main.tex lines 58-64 + tables/tab_supp_eps.tex",
+   "numbers": "GLU-Net cmark cmark pretrained rule: +0.23 / +0.65 / +0.71 vs symmetric +0.19 / +0.47 / +0.50; GLU-Net cmark -- pretrained rule: +0.22 / +0.27 / +0.49"
+  },
+  {
+   "claim": "DINO appearance negative control: 'Correlations are weak-to-negative in both directions for every variant; the flip statistic is +0.018 (exact permutation p=0.43) and its leave-one-benchmark-out range crosses zero.' Table directed correlations range -0.15 to -0.35; per-variant flip deltas with 95% CIs.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/supp_main.tex lines 76-82 + tables/tab_supp_dino.tex",
+   "numbers": "+0.018, p=0.43; RAFT row: -0.26 / -0.35 / flip +0.09 [+0.02, +0.16]; CATs++ -- -- row: -0.19 / -0.20 / +0.01 [-0.05, +0.06]"
+  },
+  {
+   "claim": "Robustness controls, baseline fit-free rule rho = +0.507: shuffle null -0.000 (200 perms; text claims empirical p<0.005); drop family kubric +0.544, realflow +0.532, sdf3d +0.515, semantic +0.425, warp2d +0.472; size controls n samples +0.043, n vectors +0.267; drop any single benchmark range [+0.495, +0.532]. Text: family/benchmark drops move the rule 'by at most 0.09'; size-style fit-free rankings reach 'at most rho=0.27'.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/tables/tab_supp_controls.tex + supp_main.tex lines 96-102",
+   "numbers": "+0.507; -0.000; +0.544; +0.532; +0.515; +0.425; +0.472; +0.043; +0.267; [+0.495, +0.532]; p<0.005; 0.09; rho=0.27"
+  },
+  {
+   "claim": "Reproducibility oracles per variant: 'Both pretrained GLU-Net variants exceed their oracles (fractions >1.3)'. Table rows: GLU-Net cmark -- pretrained: rule +0.67, O2 +0.49, O3 +0.53, frac O2 +1.37, frac O3 +1.26; GLU-Net cmark cmark pretrained: rule +0.76, O2 +0.58, O3 +0.67, frac O2 +1.31, frac O3 +1.14. Scratch fractions are 0.41-0.77.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/supp_main.tex lines 117-124 + tables/tab_supp_oracles.tex",
+   "numbers": "+1.37 / +1.26; +1.31 / +1.14; O2 +0.49, O3 +0.53; O2 +0.58, O3 +0.67"
+  },
+  {
+   "claim": "Gap-stratified pairwise ordering accuracy (rule, by protocol: src held / bench held / both) vs retraining agreement (same arch / cross arch): bin 0-1: 0.569 / 0.568 / 0.551 vs 0.582 / 0.572; bin >10: 0.675 / 0.725 / 0.689 vs 0.844 / 0.777; ALL: 0.624 / 0.652 / 0.629 vs 0.736 / 0.696. The rule is below retraining agreement in every bin and protocol.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/tables/tab_supp_gap.tex (rows '0-1', '>10', 'ALL')",
+   "numbers": "0.569/0.568/0.551 vs 0.582/0.572; 0.675/0.725/0.689 vs 0.844/0.777; 0.624/0.652/0.629 vs 0.736/0.696"
+  },
+  {
+   "claim": "Feature-set ablation for the per-regime linear model (ranking rho src/bench/both held, then MAE): motion mean-NN scratch +0.47/+0.56/+0.48, MAE 10.4; mean-NN pretrained +0.29/+0.50/+0.35, MAE 8.2; epsilon 4px pretrained +0.40/+0.45/+0.39, MAE 7.9; epsilon 1/4/16px scratch +0.26/+0.27/+0.21, MAE 9.4; combined (8) scratch +0.47/+0.39/+0.34, MAE 9.4; combined pretrained +0.43/+0.51/+0.42, MAE 8.0; appearance (DINO) scratch +0.02/+0.13/-0.07, MAE 11.1; appearance pretrained +0.12/+0.10/+0.06, MAE 8.8. Text claims appearance 'rho <= 0.16' and 'the combined set gives the best absolute error'.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/tables/tab_supp_featuresets.tex + supp_main.tex lines 148-157",
+   "numbers": "10.4; 8.2; 7.9; 9.4; 9.4; 8.0; 11.1; 8.8; rho <= 0.16 (text); table max appearance rho is +0.13"
+  },
+  {
+   "claim": "Anchor directionality (no table): directional anchor borrowing 'loses to plain symmetric inverse-distance weighting on both anchor-interpolation problems (held-out-benchmark MAE 16.9 symmetric vs 18.9--24.1 directional; held-out-source 8.6 vs 8.7--10.1)'.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/supp_main.tex lines 168-175",
+   "numbers": "16.9 vs 18.9-24.1; 8.6 vs 8.7-10.1"
+  },
+  {
+   "claim": "Pretrained arm of the intervention grid: 'contains only three sources, whose d_TB and d_BT orderings coincide; it therefore cannot discriminate between directions and is excluded from the pre-registered test (reported for completeness: all three orderings agree with transfer on 2 of 3 benchmarks). A coverage-varying pretrained grid is the natural follow-up experiment.'",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/supp_main.tex lines 177-183",
+   "numbers": "three sources; 2 of 3 benchmarks"
+  },
+  {
+   "claim": "Full BFV recovery: KITTI-2015: dolly Delta 2.18, # movers 4, transl. 0.92, rot. 0.39, vert. frac 0.001, 'camera-centric (forward dolly)'; FlyingThings: dolly 0.32, # movers 2, transl. 1.41, rot. 1.36, vert. frac 0.920, 'object-centric (flying objects)'. Text admits the 'known blind spot': BFV is invariant to whether an aggregate field comes from camera motion or correspondingly moving objects.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/tables/tab_recovery_full.tex + supp_main.tex lines 185-201",
+   "numbers": "2.18, 4, 0.92, 0.39, 0.001; 0.32, 2, 1.41, 1.36, 0.920"
+  },
+  {
+   "claim": "Sampling stability: features recomputed at budgets 5x10^4 to 8x10^6 vectors across 'all 110 train->benchmark pairs'; mean-NN reaches rho >= 0.96 by 5x10^4 and 1.000 at the reference budget; epsilon-coverage at 4px similar; kNN-KL plateaus near rho=0.5 (T->B) and rho=0.2 (B->T) and never stabilizes. Also: 'Within the near-tied intervention family, the d_TB ranking remains estimator-noise-limited even after 5-seed averaging; out-of-sample correlations there are attenuated (conservative).'",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/supp_main.tex lines 213-229 (Sec. supp:sampling)",
+   "numbers": "5x10^4 to 8x10^6; 110 pairs; rho >= 0.96; 1.000; rho=0.5; rho=0.2; 5-seed"
+  },
+  {
+   "claim": "Middlebury exclusion: pretrained variants returned '52.6 +/- 4.7 PCK regardless of training source (within-context spread 4.7 vs 10--17 on other benchmarks), while from-scratch variants spread normally (15.3)'; all reported numbers exclude Middlebury '(9 benchmarks, 1,458 models)'. Sensitivity: 'flip statistic +0.82 instead of +0.90; rule rho 0.49/0.50/0.52 instead of 0.50/0.51/0.51'; 'the largest single effect of the exclusion is on the pretrained-regime oracle fraction (0.554 -> 0.612 rule rho)'.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/supp_main.tex lines 231-244 (Sec. supp:mid)",
+   "numbers": "52.6 +/- 4.7; 4.7 vs 10-17; 15.3; 9 benchmarks, 1,458 models; +0.82 vs +0.90; 0.49/0.50/0.52 vs 0.50/0.51/0.51; 0.554 -> 0.612"
+  },
+  {
+   "claim": "Figure captions: F5supp_decomposition: per-benchmark median slope '0.43--0.51 ~ rho, the reproducibility ceiling' (ranking) vs per-trainset median slope '0.93--0.96' (level anchor); F5grid_color_views: no single benchmark forms its own stripe post-exclusion, the pre-exclusion Middlebury defect was visible as such a stripe; F6_closed_loop: 'the null control realizes no gain, as predicted', Middlebury cell void.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/supp_main.tex lines 250-299; figure files confirmed present in ACCV_2026/figures/results/",
+   "numbers": "0.43-0.51; 0.93-0.96"
+  },
+  {
+   "claim": "Cross-reference baseline for the contradiction check: the main paper's account of the same pretrained grid arm reads 'its transfer compresses into a band a few seed-widths wide (3--8 PCK vs. 15--22 from scratch), so no ranking computed on it is stable; its unstable point estimates nominally favor the unmatched direction (d_TB +0.64, d_BT +0.31, sym +0.43)'.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex lines 845-852",
+   "numbers": "3-8 PCK vs 15-22; +0.64, +0.31, +0.43"
+  },
+  {
+   "claim": "Cross-reference baseline for the Middlebury-sensitivity check: main paper headline policy ranks at 'rho = 0.52/0.52/0.50 across held-out source / held-out benchmark / both', and tab_predictors row 'Regime-aware policy (ours, fit-free) & +0.52 & +0.52 & +0.50'; 'Matched direction everywhere & +0.48 & +0.50 & +0.49'.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex line 576 + tables/tab_predictors.tex lines 5-7",
+   "numbers": "0.52/0.52/0.50; +0.48/+0.50/+0.49"
+  }
+ ],
+ "red_flags": [
+  {
+   "issue": "The supplement's and the main paper's accounts of the pretrained intervention-grid arm contradict each other. Supp: the three sources' d_TB and d_BT orderings COINCIDE, so the arm 'cannot discriminate between directions' and 'all three orderings agree with transfer on 2 of 3 benchmarks'. Main: 'no ranking computed on it is stable; its unstable point estimates nominally favor the unmatched direction (d_TB +0.64, d_BT +0.31, sym +0.43)'. If the orderings truly coincided, Spearman vs transfer would be identical for both directions on every benchmark, so +0.64 vs +0.31 is impossible; the two documents also give different exclusion rationales (structural collinearity vs noise) and different summaries of the same excluded result.",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/supp_main.tex lines 178-182 ('whose $\\dtb$ and $\\dbt$ orderings coincide; it therefore cannot discriminate between directions... all three orderings agree with transfer on 2 of 3 benchmarks') vs /home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex lines 846-849 ('so no ranking computed on it is stable; its unstable point estimates nominally favor the unmatched direction ($\\dtb$ $+0.64$, $\\dbt$ $+0.31$, sym $+0.43$)')",
+   "severity": "high"
+  },
+  {
+   "issue": "The Middlebury sensitivity analysis quotes no-Middlebury reference values 'rule rho ... instead of 0.50/0.51/0.51' that match neither headline triple in the main paper: the policy row is +0.52/+0.52/+0.50 and the matched-direction row is +0.48/+0.50/+0.49 (tab_predictors). Either a different, unexplained aggregation is being quoted or the numbers are stale; a reviewer comparing supp Sec. supp:mid to main Table tab:predictors will see a mismatch.",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/supp_main.tex lines 241-242 ('rule $\\rho$ $0.49/0.50/0.52$ instead of $0.50/0.51/0.51$') vs /home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/tables/tab_predictors.tex line 5 ('Regime-aware policy (ours, fit-free) & +0.52 & +0.52 & +0.50') and line 7 ('Matched direction everywhere & +0.48 & +0.50 & +0.49')",
+   "severity": "medium"
+  },
+  {
+   "issue": "Oracle-fraction overstatement: text claims 'Both pretrained GLU-Net variants exceed their oracles (fractions >1.3)', but the table's O3 fractions are +1.26 and +1.14; only the O2 fractions (+1.37, +1.31) exceed 1.3. The supp also asserts 'the two distances rank training sets better than retraining does there', a flat claim the main paper itself explicitly disclaims ('A fraction slightly above 1 does not mean the policy extracts information retraining lacks---that would be impossible', main.tex lines 596-598).",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/supp_main.tex lines 121-124 vs tables/tab_supp_oracles.tex lines 12-13 ('GLU-Net \\cmark -- ... +1.37 & +1.26'; 'GLU-Net \\cmark \\cmark ... +1.31 & +1.14') and main.tex lines 596-600",
+   "severity": "medium"
+  },
+  {
+   "issue": "Text claims 'the combined set gives the best absolute error', but in the table the pretrained epsilon-4px MAE (7.9) beats the combined set's (8.0), and the scratch combined MAE (9.4) only ties the epsilon-3-radii set (9.4). Same paragraph cites an appearance bound 'rho <= 0.16' that appears nowhere in the table (the table's max appearance rho is +0.13).",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/supp_main.tex lines 152-156 vs tables/tab_supp_featuresets.tex lines 9 ('motion $\\epsilon$ 4px both dirs (2) & pretrained & ... & 7.9'), 11/14 (MAE 9.4 both), 15 ('motion mean-NN + $\\epsilon$ (8) & pretrained & ... & 8.0'), 17-18 (appearance rows max +0.13)",
+   "severity": "medium"
+  },
+  {
+   "issue": "The DINO negative-control caption overstates: 'No direction carries signal and no flip exists', but the table's RAFT row has a flip delta whose 95% CI excludes zero (+0.09 [+0.02, +0.16]), and its rho[d_BT] = -0.35 is not weak (comparable in magnitude to several motion-space scratch correlations). The aggregate flip (+0.018, p=0.43) is null, but the per-variant statement is contradicted by one row of the control's own table.",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/supp_main.tex lines 85-86 (caption) vs tables/tab_supp_dino.tex line 9 ('RAFT & \\cmark & -- & -0.26 & -0.35 & +0.09\\,[+0.02,\\,+0.16]')",
+   "severity": "medium"
+  },
+  {
+   "issue": "Missing control row: the text claims fit-free ranking by 'dataset size, vector count, or supervision density reaches at most rho=0.27', but tab_supp_controls contains only two size rows ('n samples +0.043', 'n vectors +0.267'); there is no supervision-density row, so that third claim is unverifiable from the supplement.",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/supp_main.tex lines 99-100 vs tables/tab_supp_controls.tex lines 11-12 (only 'size control: n samples & $+0.043$' and 'size control: n vectors & $+0.267$')",
+   "severity": "low"
+  },
+  {
+   "issue": "Scope inconsistency on Middlebury: the sampling-stability analysis is run 'across all 110 train->benchmark pairs', which equals 11 sources x 10 benchmarks (i.e., includes Middlebury), while supp Sec. supp:mid says 'all reported numbers exclude Middlebury' and the main paper states '9 benchmarks x 11 sources' (= 99 pairs). Defensible (feature sampling does not use the broken eval harness) but unflagged.",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/supp_main.tex line 216 ('across all 110 train$\\to$benchmark pairs') vs lines 238-239 and main.tex line 398 ('9 benchmarks $\\times$ 11 sources per variant')",
+   "severity": "low"
+  },
+  {
+   "issue": "Figure caption conflates the rule's correlation with the ceiling: 'median slope $0.43$--$0.51 \\approx \\rho$, the reproducibility ceiling', while the main paper puts the same-regime empirical oracle at 'rho ~ 0.56-0.69' and the cross-architecture consensus ceiling at 0.732. 0.43-0.51 is the rule's performance, not the ceiling.",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/supp_main.tex lines 257-259 vs main.tex lines 590-591 ('agrees ... only at $\\rho \\approx 0.56$--$0.69$') and line 604 ('ceiling $0.732$')",
+   "severity": "low"
+  },
+  {
+   "issue": "Stale orphan table in the repo: tables/tab_dirtest.tex is input by neither main.tex nor supp_main.tex (the main label tab:dirtest inputs tables/tab_oos.tex instead) and its pretrained-grid column (d_TB +0.64, d_BT +0.21, sym +0.37) disagrees with the main text's quoted values (+0.64, +0.31, +0.43). Risk of confusion or accidental future inclusion; also a hint the pretrained-grid numbers shifted between drafts.",
+   "evidence": "grep of \\input{tables in both .tex files shows tab_dirtest.tex unused; /home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/tables/tab_dirtest.tex line 8-10 ('off-target mass $\\dtb$ & ... & -0.08 & \\best{+0.64}'; 'missing support $\\dbt$ & ... & +0.21'; 'symmetric ... & +0.37') vs main.tex line 849 ('$\\dtb$ $+0.64$, $\\dbt$ $+0.31$, sym $+0.43$')",
+   "severity": "low"
+  },
+  {
+   "issue": "Estimator replication is weakest exactly where the regime-direction law is strongest: the pretrained GLU-Net (unfrozen) rule drops from +0.67 (mean-NN) to +0.22/+0.27 at epsilon 1/4 px, recovering only at 16 px (+0.49); the supp's averaged-margin framing ('At 4--16 px the rule-over-symmetric margin exceeds the mean-NN margin') is true on average but conceals this. Similarly, the rule loses to symmetric at 16 px for both pretrained CATs++ rows (+0.31 vs +0.39; +0.30 vs +0.42).",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/tables/tab_supp_eps.tex lines 12-13 ('GLU-Net \\cmark -- & pretrained & +0.22 & +0.27 & +0.49 & +0.18 & +0.20 & +0.40') and lines 10-11 vs supp_main.tex lines 61-63",
+   "severity": "low"
+  },
+  {
+   "issue": "Tension with the headline 'predicts transfer' story: the gap-stratified table shows the rule's pairwise ordering accuracy is below independent-retraining agreement in every gap bin and protocol (ALL: 0.624/0.652/0.629 vs 0.736 same-arch / 0.696 cross-arch) and near chance for sub-1-PCK gaps (0.551-0.569 vs coin-flip 0.5). Honest, but it bounds the practical selection power for close calls and sits awkwardly next to the 'parity with retraining' framing (which holds only in the pretrained regime, per-variant).",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/tables/tab_supp_gap.tex rows '0-1' ('0.569 & 0.568 & 0.551 & 0.582 & 0.572') and 'ALL' ('0.624 & 0.652 & 0.629 & 0.736 & 0.696') vs main.tex lines 159-160 ('at parity with same-regime retraining agreement in the pretrained regime')",
+   "severity": "low"
+  },
+  {
+   "issue": "Construct-validity tension acknowledged in the supp itself: the BFV recovery table labels targets 'camera-centric (forward dolly)' / 'object-centric', yet the same section admits BFV 'is invariant to whether a given aggregate field was produced by a moving camera or by correspondingly moving objects'. The camera/object column of tab_recovery_full is therefore not identified by the descriptor in general; the main paper's Fig. 8 caption ('recovers the target's true motion regime') leans harder on this than the descriptor licenses.",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/supp_main.tex lines 191-201 ('The known blind spot: BFV aggregates flow vectors and is therefore invariant...') vs tables/tab_recovery_full.tex column 'recovered regime' and main.tex lines 866-872",
+   "severity": "low"
+  },
+  {
+   "issue": "The supp's own sampling section undercuts the pre-registered out-of-sample test: it concedes the intervention-family d_TB ranking is 'estimator-noise-limited even after 5-seed averaging', and the OOS table shows the KITTI rows have essentially no d_TB dynamic range (varies 1.04x / 1.02x) while still printing rho +0.92 / +0.38 there; the causal validation rests on the single FlyingThings cell (+0.67, 3.12x spread). The main paper does flag this, but the OOS evidence base is one benchmark.",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/supp_main.tex lines 225-229 vs tables/tab_oos.tex lines 7-9 ('flyingthings & 9 & 3.12$\\times$ & +0.67 ...'; 'kitti2012 & 9 & 1.04$\\times$ & +0.92 ...'; 'kitti2015 & 9 & 1.02$\\times$ & +0.38 & 1.67$\\times$ & -0.70')",
+   "severity": "low"
+  },
+  {
+   "issue": "Minor statistical-reporting issues: (a) 'empirical p<0.005' from a 200-permutation null sits exactly at the achievable floor (1/201 ~ 0.00498), so the claim is the minimum quotable value; (b) the sensitivity sentence labels '0.554 -> 0.612' as the 'pretrained-regime oracle fraction' but the parenthetical calls them 'rule rho' values (the fraction itself is 1.08 per main.tex line 594); (c) the supp quotes an internal pipeline verdict verbatim ('control confirmed: no appearance-space flip'), which is process language, not evidence.",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/tables/tab_supp_controls.tex line 5 ('shuffle null (200 perms)') + supp_main.tex line 97 ('empirical $p{<}0.005$'), lines 242-244 ('pretrained-regime oracle fraction ($0.554\\!\\to\\!0.612$ rule $\\rho$)'), lines 80-81 ('control confirmed: no appearance-space flip')",
+   "severity": "low"
+  }
+ ],
+ "open_threads": [
+  "Middlebury re-evaluation with the repaired harness is pending; until then the closed-loop figure's Middlebury cell is void (supp_main.tex lines 296-297) and the exclusion's sensitivity numbers (flip +0.82 vs +0.90) cannot be replaced by clean re-evaluated values.",
+  "The coverage-varying ('mirror') pretrained intervention grid has not been run; the pretrained half of the causal direction claim rests entirely on observational canonical data (supp_main.tex lines 182-183, main.tex lines 845-852).",
+  "The exact definition and source of the headline flip statistic '+0.90' is in neither document; recomputing a group-mean difference of (rho[d_BT]-rho[d_TB]) from the rounded tab_supp_asym values gives ~+0.88 \u2014 rounding-compatible but unverifiable from the published tables (the per-direction epsilon-coverage columns needed to check the main's epsilon flips +0.65/+0.91 are also absent from tab_supp_eps).",
+  "Terminology drift between documents: the supp tables' 'rule' column is matched-direction-everywhere (scratch rule = rho[d_TB] exactly), while the main's headline 'regime-aware policy' uses the symmetric sum from scratch; the controls baseline '+0.507' is a single pooled number whose protocol/pooling is unstated \u2014 this is the likely (but unconfirmed) source of the 0.50/0.51/0.51 vs 0.52/0.52/0.50 mismatch and should be resolved or footnoted.",
+  "Whether the 110-pair sampling-stability analysis includes Middlebury features (110 = 11 sources x 10 benchmarks) should be confirmed and stated, since the paper elsewhere commits to 9 benchmarks.",
+  "The supp text's appearance bound 'rho <= 0.16' needs a source \u2014 the largest appearance value in tab_supp_featuresets is +0.13; either the table or the text reflects an older artifact.",
+  "tables/tab_dirtest.tex is an orphan (input by neither tex file) whose pretrained-grid numbers (+0.21/+0.37) differ from the main text's (+0.31/+0.43); it should be deleted or reconciled before camera-ready."
+ ]
+}

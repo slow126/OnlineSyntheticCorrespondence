@@ -1,0 +1,69 @@
+dataset:
+  datapath: /home/spencer/Data/kubric_tfds/movi_f/512x512/1.0.0
+  dataset_name: movi_f
+  kubric_dir: /home/spencer/Projects/kubric
+  movi_f_config: 512x512
+  movi_f_shuffle_buffer: 16
+  downsample_flow: null
+  dense_kps_use_all: true
+  max_kps: null
+  normalize_images: true
+  reverse_flow: false
+  size:
+  - 512
+  - 512
+  split: train
+  debug: false
+  verbose: false
+evaluation:
+  eval_benchmarks:
+  - tss
+  - pfpascal
+  - pfwillow
+  eval_alphas:
+  - 0.05
+  - 0.05
+  - 0.05
+  thres: img
+  split_to_use_for_validation: test
+  val_batch_size: 8
+  val_num_workers: 8
+  prefetch_factor: 2
+  use_motion_aware: false
+  min_motion_pixels: 5.0
+  zero_threshold: 0.5
+  datapath: ./models/Datasets_CATs
+  tss_root: /home/spencer/Data/correspondence/TSS_CVPR2016
+model:
+  type: flowformer
+  pretrain: true
+  freeze: true
+  iters: 12
+  pretrained_path: null
+training:
+  epochs: 15
+  steps_per_epoch: 400
+  check_val_every_n_epoch: 2
+  momentum: 0.9
+  scheduler: step
+  step: '[70, 80, 90]'
+  step_gamma: 0.5
+  augmentation: false
+  eval_initial: false
+  mmd_every_n_epochs: 0
+  min_flow_length: null
+  max_flow_length: null
+  n_threads: 8
+  seed: 2021
+  batch_size: 1
+  accumulate_grad_batches: 8
+  lr: 0.00025
+  lr_backbone: 2.5e-06
+  weight_decay: 0.0001
+  gradient_clip_val: 1.0
+  gradient_clip_algorithm: norm
+paths:
+  pretrained: null
+  save_epoch_checkpoints: false
+  snapshots: /mnt/nvme_1tb_a/snapshots/tssgrid_movif_flowformer_tt
+  start_epoch: 0

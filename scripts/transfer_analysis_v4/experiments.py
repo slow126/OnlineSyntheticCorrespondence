@@ -66,6 +66,7 @@ warnings.filterwarnings("ignore")
 # Configuration
 # ---------------------------------------------------------------------------
 FAMILIES = ["motion", "appearance", "both", "random",
+            "motion_meannn_sym", "motion_meannn_both",
             "density", "motion_density",
             "size", "supervision_density",
             "motion_size", "motion_supdensity",
@@ -81,6 +82,15 @@ FAMILIES = ["motion", "appearance", "both", "random",
             "appearance_sym",     # DINO symmetric distances combined (FID + SW2 + MMD, 3)
             "appearance_fid",     # DINO FID only (1) — requires dino_fid column
             "appearance_w2",      # DINO sliced W2 only (1) — requires dino_sliced_w2 column
+            # Regime-Direction Law families (see REGIME_DIRECTION_FINDING.md).
+            # se_flow_rule_dist is synthesized at load: the regime-matched
+            # directed mean_nn distance (scratch/raft -> a_to_b precision,
+            # pretrained -> b_to_a recall). 1 feature; the in-fold 1-feature
+            # ridge is just sign+scale (unit conversion), so L+g with this
+            # family = the fit-free rule lifted to absolute PCK predictions.
+            "motion_rule",        # regime-matched directed distance (1)
+            "motion_precision",   # a->b only (1) — train->target off-target mass
+            "motion_recall",      # b->a only (1) — target->train missing support
             ]
 
 # The 11 "pure" training sources from the original v4 analysis. Mixed
@@ -148,6 +158,12 @@ FAMILY_SPACE = {
     "appearance_w2":        "dino",
     "appearance_sym":       "dino",
     "appearance_nullk":     "dino",
+    # Regime-direction families — flow space
+    "motion_rule":          "flow",
+    "motion_precision":     "flow",
+    "motion_recall":        "flow",
+    "motion_meannn_sym":    "flow",
+    "motion_meannn_both":   "flow",
 }
 
 # Three L modes for ablating "feature-informed level":
@@ -395,9 +411,54 @@ def feature_cols(table: pd.DataFrame, family: str,
         cols = [c for c in APPEARANCE_SYM_COLS if c in table.columns]
     elif family == "appearance_nullk":
         cols = [c for c in APPEARANCE_NULLK_COLS if c in table.columns]
+    elif family == "motion_rule":
+        cols = [c for c in ["se_flow_rule_dist"] if c in table.columns]
+    elif family == "motion_precision":
+        cols = [c for c in ["se_flow_mean_nn_a_to_b"] if c in table.columns]
+    elif family == "motion_recall":
+        cols = [c for c in ["se_flow_mean_nn_b_to_a"] if c in table.columns]
+    elif family == "motion_meannn_sym":
+        cols = [c for c in ["se_flow_mean_nn_sym"] if c in table.columns]
+    elif family == "motion_meannn_both":
+        cols = [c for c in ["se_flow_mean_nn_a_to_b", "se_flow_mean_nn_b_to_a"]
+                if c in table.columns]
     else:
         raise ValueError(f"unknown family: {family}")
     return _apply_subset(cols, feature_subset)
+
+
+def add_group_interactions(table: pd.DataFrame, f_cols: list[str],
+                           mode: str) -> tuple[pd.DataFrame, list[str]]:
+    """Hierarchical (partial-pooling) feature augmentation: keep the shared
+    feature block and append per-group interaction copies (feature × group
+    indicator). One ridge over [shared | deviations] then *learns* how much
+    each group's response deviates from the shared function — the shrinkage
+    chooses the pooling instead of a discrete pre/post-hoc pool decision.
+
+    mode='arch'   — groups = model_family (catspp / raft / glunet)
+    mode='regime' — groups = pretrained_freeze (False_False ... True_True)
+
+    Within-context demeaning composes cleanly: every context belongs to one
+    group, so an interaction column is either equal to the base feature or
+    identically 0 across the whole context.
+    """
+    if mode == "arch":
+        groups = table["model_family"].astype(str)
+    elif mode == "regime":
+        groups = (table["pretrained"].astype(str) + "_"
+                  + table["freeze"].astype(str))
+    else:
+        raise ValueError(f"unknown group-interactions mode: {mode}")
+    table = table.copy()
+    new_cols = []
+    for gname in sorted(groups.unique()):
+        mask = (groups == gname)
+        for c in f_cols:
+            nc = f"{c}__x_{gname}"
+            vals = np.where(mask.values, table[c].values, 0.0)
+            table[nc] = vals
+            new_cols.append(nc)
+    return table, f_cols + new_cols
 
 
 def add_random_features(table: pd.DataFrame, seed: int = 42) -> pd.DataFrame:
@@ -957,10 +1018,13 @@ def run_one(table: pd.DataFrame, family: str, split: str,
             targeted_subset: str = "all",
             feature_subset: str = "all",
             do_ranknet: bool = True, do_zridge: bool = True,
-            do_gbm: bool = True) -> tuple[pd.DataFrame, dict]:
+            do_gbm: bool = True,
+            group_interactions: str | None = None) -> tuple[pd.DataFrame, dict]:
     f_cols = feature_cols(table, family, feature_subset=feature_subset)
     if not f_cols:
         return pd.DataFrame(), {}
+    if group_interactions and group_interactions != "none":
+        table, f_cols = add_group_interactions(table, f_cols, group_interactions)
     if split == "JOINT":
         df = cv_joint(table, f_cols, do_ranknet=do_ranknet,
                       do_zridge=do_zridge, do_gbm=do_gbm)
@@ -1040,7 +1104,8 @@ def run_one_target(root: Path, table_in: pd.DataFrame, dist_df: pd.DataFrame,
                             feature_subset=args.feature_subset,
                             do_ranknet=args.use_ranknet,
                             do_zridge=not args.no_zridge,
-                            do_gbm=not args.no_gbm)
+                            do_gbm=not args.no_gbm,
+                            group_interactions=args.group_interactions)
             if df.empty:
                 continue
             df.to_csv(pred_dir / f"rows_{split}_{fam}.csv", index=False)
@@ -1062,7 +1127,8 @@ def run_one_target(root: Path, table_in: pd.DataFrame, dist_df: pd.DataFrame,
                             feature_subset=args.feature_subset,
                             do_ranknet=args.use_ranknet,
                             do_zridge=not args.no_zridge,
-                            do_gbm=not args.no_gbm)
+                            do_gbm=not args.no_gbm,
+                            group_interactions=args.group_interactions)
             if df.empty:
                 continue
             df.to_csv(pred_dir / f"rows_{split}_{fam}_shuffle.csv", index=False)
@@ -1158,6 +1224,25 @@ def main():
     ap.add_argument("--drop-source", nargs="+", default=None, metavar="SOURCE",
                     help="Drop specific train_dataset(s) before fitting "
                          "(drop-one-source robustness, Tier 1).")
+    ap.add_argument("--keep-model", nargs="+", default=None, metavar="MODEL",
+                    help="Restrict to rows whose model_family is in this list "
+                         "(e.g. --keep-model catspp). Used for per-architecture "
+                         "g fits: the shared-ridge pool then contains only that "
+                         "architecture's contexts.")
+    ap.add_argument("--keep-regime", nargs="+", default=None,
+                    metavar="PRETRAINED_FREEZE",
+                    help="Restrict to rows with these training regimes, e.g. "
+                         "--keep-regime False_False True_True. Pools ACROSS "
+                         "architectures within a regime (mechanism-aligned "
+                         "alternative to --keep-model).")
+    ap.add_argument("--group-interactions", default="none",
+                    choices=["none", "arch", "regime"],
+                    help="Hierarchical partial pooling: keep shared feature "
+                         "block, append per-group interaction columns "
+                         "(feature x group indicator); ridge shrinkage decides "
+                         "how much each group deviates from the shared fit. "
+                         "'arch' groups by model_family, 'regime' by "
+                         "pretrained_freeze.")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument(
         "--min-context-sources",
@@ -1199,11 +1284,46 @@ def main():
         table = table[~table["train_dataset"].isin(srcs)].copy()
         print(f"--drop-source {sorted(srcs)}: "
               f"{before} -> {table['train_dataset'].nunique()} sources")
+    if args.keep_model:
+        keep = set(args.keep_model)
+        known = set(table["model_family"].unique())
+        unknown = keep - known
+        if unknown:
+            raise SystemExit(f"--keep-model: unknown model_family {sorted(unknown)}; "
+                             f"valid: {sorted(known)}")
+        before = len(table)
+        table = table[table["model_family"].isin(keep)].copy()
+        print(f"--keep-model {sorted(keep)}: {before} -> {len(table)} rows")
+    if args.keep_regime:
+        regime = table["pretrained"].astype(str) + "_" + table["freeze"].astype(str)
+        keep = set(args.keep_regime)
+        known = set(regime.unique())
+        unknown = keep - known
+        if unknown:
+            raise SystemExit(f"--keep-regime: unknown regimes {sorted(unknown)}; "
+                             f"valid: {sorted(known)}")
+        before = len(table)
+        table = table[regime.isin(keep)].copy()
+        print(f"--keep-regime {sorted(keep)}: {before} -> {len(table)} rows")
     table["variant"] = table.apply(variant_key, axis=1)
     table["cv"] = table["benchmark"] + "|" + table["variant"]
     dist_df = pd.read_csv(root / args.dist)
     table = add_selfdist_features(table, dist_df)
     table = add_random_features(table, seed=42)
+    # Regime-matched directed distance (Regime-Direction Law): scratch models
+    # (and RAFT, scratch-by-construction) read the precision direction
+    # (train->target, off-target mass); pretrained models read the recall
+    # direction (target->train, missing support).
+    if {"se_flow_mean_nn_a_to_b", "se_flow_mean_nn_b_to_a"} <= set(table.columns):
+        is_scratch = ((table["pretrained"].astype(str) == "False")
+                      | (table["model_family"] == "raft"))
+        table["se_flow_rule_dist"] = np.where(
+            is_scratch,
+            table["se_flow_mean_nn_a_to_b"],
+            table["se_flow_mean_nn_b_to_a"])
+        # symmetric mean-NN = average of the two directed distances (a baseline)
+        table["se_flow_mean_nn_sym"] = 0.5 * (
+            table["se_flow_mean_nn_a_to_b"] + table["se_flow_mean_nn_b_to_a"])
 
     ee_flow = build_lookup(dist_df, "flow", "eval_eval", args.prior_metric)
     ee_flow_is_sim = args.prior_metric in SIMILARITY_METRICS

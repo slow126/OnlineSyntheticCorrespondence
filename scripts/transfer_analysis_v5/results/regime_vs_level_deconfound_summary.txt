@@ -1,0 +1,95 @@
+table: /home/spencer/Projects/OnlineSyntheticCorrespondence/scripts/transfer_analysis_v3/transfer_table_nomid.csv
+dist : /home/spencer/Projects/OnlineSyntheticCorrespondence/analysis_v3/pairwise_self_distances.csv
+rows after PURE-11 filter + raft|False|False drop + dropna: 891
+variants: ['catspp|False|False', 'catspp|False|True', 'catspp|True|False', 'catspp|True|True', 'glunet|False|False', 'glunet|False|True', 'glunet|True|False', 'glunet|True|True', 'raft|True|False']
+benchmarks: ['flyingthings', 'kitti2012', 'kitti2015', 'pfpascal', 'pfwillow', 'pointodyssey', 'spair', 'synthetic', 'tss']
+
+contexts: 81 total, 81 with finite direction_gap (45 scratch, 36 pretrained)
+wrote per-context table -> /home/spencer/Projects/OnlineSyntheticCorrespondence/scripts/transfer_analysis_v5/results/regime_vs_level_deconfound_contexts.csv
+
+=== SANITY CHECK: per-variant means must reproduce results/asym_vs_sym.csv ===
+           variant  my_precision  ref_precision  my_recall  ref_recall  my_mean_gap  ref_recall_minus_precision  abs_diff_precision  abs_diff_recall  abs_diff_gap
+catspp|False|False     +0.527273      +0.527273  +0.026263   +0.026263    -0.501010                   -0.501010           +0.000000        +0.000000     +0.000000
+ catspp|False|True     +0.507071      +0.507071  +0.076768   +0.076768    -0.430303                   -0.430303           +0.000000        +0.000000     +0.000000
+ catspp|True|False     +0.005051      +0.005051  +0.511111   +0.511111    +0.506061                   +0.506061           +0.000000        +0.000000     +0.000000
+  catspp|True|True     +0.144444      +0.144444  +0.502020   +0.502020    +0.357576                   +0.357576           +0.000000        +0.000000     +0.000000
+glunet|False|False     +0.305051      +0.305051  +0.414141   +0.414141    +0.109091                   +0.109091           +0.000000        +0.000000     +0.000000
+ glunet|False|True     +0.370707      +0.370707  +0.344444   +0.344444    -0.026263                   -0.026263           +0.000000        +0.000000     +0.000000
+ glunet|True|False     -0.230303      -0.230303  +0.673737   +0.673737    +0.904040                   +0.904040           +0.000000        +0.000000     +0.000000
+  glunet|True|True     -0.219192      -0.219192  +0.762626   +0.762626    +0.981818                   +0.981818           +0.000000        +0.000000     +0.000000
+   raft|True|False     +0.401010      +0.401010  +0.303030   +0.303030    -0.097980                   -0.097980           +0.000000        +0.000000     +0.000000
+max |precision diff| = 5.551e-17   max |recall diff| = 7.980e-17   max |gap diff| = 1.110e-16
+SANITY PASS
+
+=== (b) POOLED OLS: direction_gap ~ regime_pretrained + level (n=81 contexts) ===
+R^2 = 0.4316   coef(regime_pretrained) = +0.8118   coef(level, per PCK pt) = +0.00342
+standardized: coef(regime) = +0.8118   coef(level, per SD=29.59 PCK) = +0.1013
+  [         nonrobust] regime_pretrained coef=+0.81177  se=0.12309  t=+6.595  p=4.603e-09
+  [         nonrobust] level             coef=+0.00342  se=0.00208  t=+1.646  p=0.1038
+  [               HC1] regime_pretrained coef=+0.81177  se=0.11939  t=+6.799  p=1.052e-11
+  [               HC1] level             coef=+0.00342  se=0.00202  t=+1.691  p=0.09084
+  [cluster(benchmark)] regime_pretrained coef=+0.81177  se=0.18335  t=+4.427  p=9.541e-06
+  [cluster(benchmark)] level             coef=+0.00342  se=0.00313  t=+1.093  p=0.2744
+  [  cluster(variant)] regime_pretrained coef=+0.81177  se=0.21047  t=+3.857  p=0.0001148
+  [  cluster(variant)] level             coef=+0.00342  se=0.00297  t=+1.153  p=0.249
+single-predictor R^2: regime-only = 0.4119   level-only = 0.1147   both = 0.4316
+
+--- raw + partial Spearman (context grain) ---
+spearman(gap, regime)            = +0.6530
+spearman(gap, level)             = +0.3124
+spearman(regime, level)          = +0.3507   (collinearity at context grain)
+partial spearman(gap, regime | level) = +0.6109  p=1.773e-09
+partial spearman(gap, level | regime) = +0.1176  p=0.2988
+
+--- per-benchmark OLS (9 contexts each) ---
+   benchmark  n  coef_regime  coef_level  sp_gap_regime  sp_gap_level
+flyingthings  9      +1.2082     -0.0146        +0.8660       +0.7167
+   kitti2012  9      +0.1872     +0.0014        +0.8660       +0.8000
+   kitti2015  9      +0.4058     -0.0216        +0.0866       +0.0000
+    pfpascal  9      +2.6978     -0.0418        +0.8660       +0.6167
+    pfwillow  9      +2.4750     -0.0387        +0.8660       +0.7833
+pointodyssey  9      -0.1765     +0.0442        +0.4330       +0.9333
+       spair  9      +1.0318     -0.0237        +0.7794       +0.3833
+   synthetic  9      +1.6234     -0.0493        +0.6062       +0.2000
+         tss  9      +2.0474     -0.0137        +0.8660       +0.7167
+per-benchmark coef(regime): 8/9 positive, median +1.2082
+per-benchmark coef(level) : 2/9 positive, median -0.02164
+
+=== (c) WITHIN-REGIME level test ===
+pretrained (n=36 contexts): spearman(direction_gap, level) = -0.4094   level range [7.52, 95.79], mean gap +0.6874
+scratch    (n=45 contexts): spearman(direction_gap, level) = +0.4201   level range [2.58, 86.36], mean gap -0.1893
+
+--- within-variant (regime exactly fixed; 9 benchmarks each) ---
+           variant     regime  n  sp_gap_level
+catspp|False|False    scratch  9       +0.5167
+ catspp|False|True    scratch  9       +0.5500
+ catspp|True|False pretrained  9       -0.1000
+  catspp|True|True pretrained  9       -0.0833
+glunet|False|False    scratch  9       +0.5333
+ glunet|False|True    scratch  9       +0.0251
+ glunet|True|False pretrained  9       -0.8167
+  glunet|True|True pretrained  9       -0.5000
+   raft|True|False    scratch  9       +0.4500
+mean within-variant spearman(gap, level), pretrained: -0.3750 (n=4 variants)
+mean within-variant spearman(gap, level), scratch: +0.4150 (n=5 variants)
+
+=== (d) LEAVE-ONE-VARIANT-OUT: level-threshold rule vs regime rule ===
+   heldout_variant     regime  n_ctx  fitted_threshold  orientation  train_score  level_rule_heldout  regime_rule_heldout  oracle_heldout
+catspp|False|False    scratch      9          +15.9559            1      +0.4995             +0.2929              +0.5273         +0.5364
+ catspp|False|True    scratch      9          +25.4979            1      +0.4967             +0.3192              +0.5071         +0.5313
+ catspp|True|False pretrained      9          +25.7488            1      +0.4956             +0.4172              +0.5111         +0.5374
+  catspp|True|True pretrained      9          +25.7488            1      +0.4920             +0.4455              +0.5020         +0.5556
+glunet|False|False    scratch      9          +25.7488            1      +0.4812             +0.5323              +0.3051         +0.6434
+ glunet|False|True    scratch      9          +25.7488            1      +0.4879             +0.4788              +0.3707         +0.6061
+ glunet|True|False pretrained      9          +26.4821            1      +0.4823             +0.4242              +0.6737         +0.6737
+  glunet|True|True pretrained      9          +25.7488            1      +0.4628             +0.6798              +0.7626         +0.7626
+   raft|True|False    scratch      9          +25.7488            1      +0.4915             +0.4495              +0.4010         +0.6162
+
+LOVO mean within-context spearman (context-weighted over 81 held-out contexts):
+  level-threshold rule : +0.4488
+  regime rule          : +0.5067
+  per-context oracle   : +0.6070
+  regime - level       : +0.0579
+  held-out variants won: regime 6, level 3, tie 0
+
+NOTE: the level rule is handed the held-out variant's own mean peak_pck per context (an outcome of training); the regime rule uses only the config string. The comparison is generous to the level rule.

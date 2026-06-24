@@ -1,0 +1,84 @@
+# TAP-Vid probe — FlowFormer, MOVi-F source, TF (pretrained Twins-SVT, fine-tuned).
+# Effective batch 8 = batch_size 1 x accumulate_grad_batches 8. downsample_flow=null.
+# Launch: CUDA_VISIBLE_DEVICES=1 python train_lightning.py --config tap_vid_probe/configs/movif_flowformer_tf.yaml
+dataset:
+  dataset_name: movi_f
+  datapath: /home/spencer/Data/kubric_tfds/movi_f/512x512/1.0.0
+  kubric_dir: /home/spencer/Projects/kubric
+  movi_f_config: 512x512
+  movi_f_shuffle_buffer: 16
+  size: [512, 512]
+  downsample_flow: null
+  dense_kps_use_all: true
+  max_kps: null
+  normalize_images: true
+  reverse_flow: false
+  split: train
+  debug: false
+  verbose: false
+
+model:
+  type: flowformer
+  pretrain: true       # TF: pretrained Twins-SVT backbones
+  freeze: false        # TF: fine-tune
+  iters: 12
+  pretrained_path: null
+
+training:
+  batch_size: 1
+  accumulate_grad_batches: 8   # effective batch 8
+  epochs: 18
+  steps_per_epoch: 400
+  check_val_every_n_epoch: 1
+  eval_initial: true
+  lr: 2.5e-4
+  lr_backbone: 2.5e-6
+  weight_decay: 1.0e-4
+  momentum: 0.9
+  scheduler: step
+  step: '[70, 80, 90]'
+  step_gamma: 0.5
+  gradient_clip_val: 1.0
+  gradient_clip_algorithm: norm
+  augmentation: false
+  mmd_every_n_epochs: 0
+  min_flow_length: null
+  max_flow_length: null
+  n_threads: 8
+  seed: 2021
+
+paths:
+  snapshots: /mnt/nvme_1tb_a/tapvid_probe_snapshots/flowformer_movif_tf
+  pretrained: null
+  start_epoch: 0
+  save_epoch_checkpoints: false
+
+evaluation:
+  eval_benchmarks: [tapvid_davis, kitti2015, kitti2012, tss, pfpascal, pfwillow]
+  eval_alphas:     [0.03,         0.05,      0.05,      0.05, 0.05,     0.05]
+  thres: img
+  split_to_use_for_validation: test
+  val_batch_size: 2
+  val_num_workers: 8
+  prefetch_factor: 2
+  use_motion_aware: false
+  min_motion_pixels: 5.0
+  zero_threshold: 0.5
+  datapath: ./models/Datasets_CATs
+  tss_root: /home/spencer/Data/correspondence/TSS_CVPR2016
+  kitti_root: /home/spencer/Data/correspondence/kitti
+  kitti_val_use_full_training: true
+  tapvid_davis_root: /mnt/nvme_1tb_a/tapvid/probe_cache
+  val_datasets:
+    tapvid_davis:
+      tapvid_stride: 20
+      tapvid_frame_step: 5
+      tapvid_min_pts: 1
+      reverse_flow: true
+      normalize_images: true
+    kitti2012:
+      split: val
+      normalize_images: true
+    kitti2015:
+      split: val
+      normalize_images: true

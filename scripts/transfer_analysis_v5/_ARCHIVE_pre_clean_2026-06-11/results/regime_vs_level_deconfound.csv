@@ -1,0 +1,44 @@
+metric,value,n,detail
+sanity_max_abs_diff_precision,5.551115123125783e-17,9,vs asym_vs_sym.csv
+sanity_max_abs_diff_recall,7.979727989493313e-17,9,vs asym_vs_sym.csv
+sanity_max_abs_diff_gap,1.1102230246251565e-16,9,my per-context mean gap vs CSV recall-precision
+sanity_pass,1.0,9,
+ols_regime_pretrained_coef,0.8117652372686,81,nonrobust
+ols_regime_pretrained_p,4.6031094143966965e-09,81,nonrobust
+ols_level_coef,0.0034228239103057047,81,nonrobust
+ols_level_p,0.10383656027652163,81,nonrobust
+ols_regime_pretrained_coef,0.8117652372686,81,HC1
+ols_regime_pretrained_p,1.0520351958400023e-11,81,HC1
+ols_level_coef,0.0034228239103057047,81,HC1
+ols_level_p,0.09084119834569501,81,HC1
+ols_regime_pretrained_coef,0.8117652372686,81,cluster(benchmark)
+ols_regime_pretrained_p,9.540595228417726e-06,81,cluster(benchmark)
+ols_level_coef,0.0034228239103057047,81,cluster(benchmark)
+ols_level_p,0.27444494088823557,81,cluster(benchmark)
+ols_regime_pretrained_coef,0.8117652372686,81,cluster(variant)
+ols_regime_pretrained_p,0.00011483881734938586,81,cluster(variant)
+ols_level_coef,0.0034228239103057047,81,cluster(variant)
+ols_level_p,0.24896141805493976,81,cluster(variant)
+ols_r2,0.43161454854832804,81,pooled
+ols_regime_coef_std,0.8117652372686022,81,level z-scored
+ols_level_coef_std,0.10129249931682936,81,per 1 SD = 29.593 PCK pts
+r2_regime_only,0.41187746798266167,81,
+r2_level_only,0.11470943507696152,81,
+r2_both,0.43161454854832804,81,
+spearman_gap_regime,0.6530032511445159,81,raw
+spearman_gap_level,0.31240719319113763,81,raw
+spearman_regime_level,0.35066719218483605,81,collinearity check
+partial_spearman_gap_regime_given_level,0.6108767798660328,81,p=1.773e-09
+partial_spearman_gap_level_given_regime,0.1176155492108023,81,p=0.2988
+per_bench_regime_coef_median,1.20821902718728,9,8/9 positive
+per_bench_level_coef_median,-0.021643446902744227,9,2/9 positive
+within_pretrained_spearman_gap_level,-0.409447808772221,36,"level range [7.52, 95.79]"
+within_pretrained_mean_gap,0.6873737373737374,36,
+within_scratch_spearman_gap_level,0.420054022915652,45,"level range [2.58, 86.36]"
+within_scratch_mean_gap,-0.18929292929292932,45,
+within_variant_mean_sp_gap_level_pretrained,-0.375,4,mean over variants
+within_variant_mean_sp_gap_level_scratch,0.41502096445253434,5,mean over variants
+lovo_level_rule_mean,0.4488215488215489,81,threshold+orientation fit LOVO
+lovo_regime_rule_mean,0.5067340067340067,81,fit-free
+lovo_oracle_mean,0.6069584736251403,81,per-context best dir
+lovo_regime_minus_level,0.057912457912457804,81,variants won: regime 6 / level 3

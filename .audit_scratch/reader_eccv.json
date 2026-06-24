@@ -1,0 +1,137 @@
+{
+ "claims": [
+  {
+   "claim": "The ECCV-submitted paper (\"Beyond Realism: Directed Coverage for Correspondence Transfer\", per Reviewer B's review title) claimed: (a) SDF-Fractal3D, an asset-free non-photorealistic procedural pipeline, transfers strongly zero-shot, so appearance realism is not the sole driver of transfer; (b) motion support is a primary driver; (c) 'directed coverage' (asymmetric overlap separating missing target support E->T from off-target mass T->E) feeds a compact ridge transferability estimator that ranks training sets without target training; (d) motion-only interventions (zoom/flip) on SDF-Fractal3D move transfer in the predicted direction.",
+   "source": "/home/spencer/Projects/ECCV_Reviews/eccv2026/sections/0_abstract.tex (line 1); /home/spencer/Projects/ECCV_Reviews/eccv2026/sections/1-intro.tex (contributions, lines 29-41); /home/spencer/Projects/ECCV_Reviews/eccv2026/reviews/raw_reviews.md line 79",
+   "numbers": "none"
+  },
+  {
+   "claim": "ECCV headline estimator number: 'achieving up to 0.70 pairwise ranking accuracy under held-out evaluation targets, held-out training datasets, and joint held-out protocols'. Table tab:param_matched_results, row 'Flow (bidir.) + Appearance (bidir.), F\u00d72 + A\u00d72, k=4': Held-out T = 70.1%, Held-out B = 69.8%, Held-out (T,B) = 69.4%. Other rows: Flow bidirectional F\u00d72 = 65.4%/65.6%/65.5%; Appearance MMD (symmetric) = 46.2%/44.3%/41.3% (below chance); Flow MMD (symmetric) = 58.7% in all three columns; Density-only (log n samples) = 52.4% in all three.",
+   "source": "/home/spencer/Projects/ECCV_Reviews/eccv2026/sections/0_abstract.tex line 1; /home/spencer/Projects/ECCV_Reviews/eccv2026/sections/7-results.tex lines 34-60 (Table rows quoted with their Configuration labels)",
+   "numbers": "0.70; 70.1% / 69.8% / 69.4%; 65.4% / 65.6% / 65.5%; 46.2% / 44.3% / 41.3%; 58.7%; 52.4%"
+  },
+  {
+   "claim": "ECCV headline intervention numbers (Table tab:utility_guided_design_4pred_multieval, CATs++, PCK@5%): E=KITTI-2015 row 'SDF-Fractal3D (base)' 90.43; '+ large-zoom' 94.94 (Delta +4.51); '+ random-flip' 84.72 (Delta -5.71). E=TSS: base 46.58, large-zoom 53.42 (+6.84), flip 39.89 (-6.69). E=pfpascal: base 30.72, large-zoom 34.57 (+3.85), flip 22.27 (-8.44).",
+   "source": "/home/spencer/Projects/ECCV_Reviews/eccv2026/sections/7-results.tex lines 92-108",
+   "numbers": "90.43; 94.94 (+4.51); 84.72 (-5.71); 46.58; 53.42 (+6.84); 39.89 (-6.69); 30.72; 34.57 (+3.85); 22.27 (-8.44)"
+  },
+  {
+   "claim": "ECCV transfer grid (Table tab:tier0_representative_pair_grid_combined, mean PCK@5% averaged across CATs++ and RAFT): row 'SDF-Fractal3D' scored 68.9 (FlyingThings col), 89.0 (KITTI-2012), 90.5 (KITTI-2015), 46.6 (PointOdyssey); row 'FlyingThings' scored 80.6 / 96.2 / 93.4 / 55.0 on the same columns; row 'SDF-Fractal3D (Zoom)' is bold-best on KITTI-2015 (94.6), PF-WILLOW (32.0), TSS (46.3). So SDF-Fractal3D trailed real/established datasets on several benchmarks \u2014 the basis of Reviewer A's S-004 and Reviewer B's ceiling question.",
+   "source": "/home/spencer/Projects/ECCV_Reviews/eccv2026/sections/6-experiment_protocol.tex lines 13-20 (row labels 'FlyingThings', 'SDF-Fractal3D', 'SDF-Fractal3D (Zoom)'; columns FlyingThings/KITTI-2012/KITTI-2015/PointOdyssey)",
+   "numbers": "68.9, 89.0, 90.5, 46.6; 80.6, 96.2, 93.4, 55.0; 94.6, 32.0, 46.3"
+  },
+  {
+   "claim": "Reviewer A (aL7M, alias S1/C4) recommended '1: Reject' at Confidence 4. Main objections verbatim: 'SDF-Fractal3D is introduced suddenly in the introduction, but how the authors design it is not written'; 'the dataset is built first, then its performance is observed, and finally, the metric is introduced to explain it'; 'The paper does not report the number of training samples used for SDF-Fractal3D'; 'the method remains an analysis tool rather than a practical method for dataset construction. Also, for the analysis tool, it's weak'; '0.70 pairwise ranking accuracy is not very useful'; 'Table 4 only shows small changes'; 'the results are averaged across model architectures, which obscures model-specific behaviors'.",
+   "source": "/home/spencer/Projects/ECCV_Reviews/eccv2026/reviews/raw_reviews.md lines 6-74",
+   "numbers": "Preliminary Recommendation: 1: Reject; Confidence Level: 4"
+  },
+  {
+   "claim": "Reviewer B (X9xv, alias S3/C2) recommended '3: Borderline Reject' at Confidence 2 and wrote 'I am open to improving my score if my concerns are properly addressed.' Main objections: 'How are extreme flow magnitudes (outliers) handled during the BFV normalization step?'; 'Is there a performance ceiling to the dataset? In Tab. 2, SDF-Fractal3D is quite behind some datasets on mean PCK'; long-tail flow magnitudes may 'heavily skew distance calculations in Euclidean space'; 'Would linear Ridge regression weights for pairwise flow generalize to architectures where temporal priors are the reason for transfer success (video foundation models, 4D tracking, etc)?'; 'Is treating dataset size as a nuisance parameter ... the correct approach?'; 'Does this mean that the estimator never to predict absolute performance?'; '2D warp variants achieve decent transfer because they're still seeing real paired images with valid displacement labels. How can we be sure of the claim that motion is primary?'; minor: HOF reduction, photorealism delta for SOTA, replace Supp Tab. 5-9 with heatmaps.",
+   "source": "/home/spencer/Projects/ECCV_Reviews/eccv2026/reviews/raw_reviews.md lines 77-123",
+   "numbers": "Preliminary Recommendation: 3: Borderline Reject; Confidence Level: 2"
+  },
+  {
+   "claim": "Reviewer C (mqfN, alias S2/C5) recommended '2: Weak Reject' at Confidence 5 (Expert). Main objections: (1) 'the paper's central claim is stronger than what the evidence convincingly supports ... SDF-Fractal3D differs from other training sources in many ways besides photorealism'; motion interventions 'vary only a limited subset of motion factors and are conducted on a single synthetic family'; (2) 'the proposed directed coverage formulation feels somewhat heuristic and under-justified' (fixed-radius BFV vs cosine top-k HOF/DINO), estimator 'feels more like a careful feature-engineering pipeline than a principled new framework'; (3) 'A pairwise ranking accuracy of around 0.70 is above chance, but still far from reliable enough'; (4) averaging RAFT/CATs++ and mixing 'quite different training regimes' makes interpretation hard; wants 'controlled comparisons against synthetic pipelines that differ primarily in rendering realism while holding motion structure fixed'; (5) 'the baseline space is too narrow ... limited engagement with stronger modern transferability estimation ideas'; novelty 'somewhat incremental'.",
+   "source": "/home/spencer/Projects/ECCV_Reviews/eccv2026/reviews/raw_reviews.md lines 125-173",
+   "numbers": "Preliminary Recommendation: 2: Weak Reject; Confidence Level: 5"
+  },
+  {
+   "claim": "ACCV draft explicitly tracks the ECCV review IDs: 'SDF-Fractal3D demoted from headline to instrument (addresses ECCV reviews P-001/P-002/S-004)'; 'P-007/P-013 (\"0.70 not useful\") answered by the ceiling section + Table 5; P-012/S-015/S-016 (causal overreach) by the pre-registered test + explicit Limitations; P-009 (absolute vs ranking) by Sec. 6 \"anchors buy units, the rule buys order\"; S-022 (baselines) by Table 2's symmetric/learned/appearance rows.'",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/DRAFT_NOTES.md lines 30-39",
+   "numbers": "none"
+  },
+  {
+   "claim": "ACCV draft scale answers the 'too limited' objections (S-019, S-006, S-020): '891 transfer evaluations (3 architectures in 9 training configurations \u00d7 11 synthetic training sets \u00d7 9 benchmarks; 99 trained models)'; architectures are CATs++, RAFT, and GLU-Net with pretrained/frozen 2\u00d72 variants; all ranking is within (benchmark, architecture, variant) contexts (no architecture averaging); training sources are pure synthetic only (no mixed flow/semantic regimes in the grid).",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex abstract lines 43-45 and Setup lines 287-305",
+   "numbers": "891; 3 architectures; 9 training configurations; 11 synthetic training sets; 9 benchmarks; 99 trained models"
+  },
+  {
+   "claim": "ACCV reframes the '0.70 not useful' objection with decision metrics and a ceiling: the fit-free regime-aware policy 'ranks held-out sources, benchmarks, and both at rho\u22480.5: parity with retraining a same-regime sibling variant, 73\u201376% of a three-architecture retraining consensus, and a median 1.2\u20132.8 PCK of top-1 selection regret versus 13.9 at random'; large-gap pairs ordered correctly '77\u201378%'. The internal finding doc gives the fit-free rule mean +0.498 vs inter-variant ceiling +0.528 (recovered fraction \u22480.99) and notes the fit-free metric 'beats every learned structure', converting Reviewer C's 'feature engineering' criticism into a supporting ablation ('the signal is in the measurement, not the model').",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex abstract lines 62-68 and line 721; /home/spencer/Projects/OnlineSyntheticCorrespondence/REGIME_DIRECTION_FINDING.md (TL;DR item 3 and pooling shoot-out table)",
+   "numbers": "rho\u22480.5; 73-76%; 1.2-2.8 PCK vs 13.9; 77-78%; +0.498 vs +0.528, fraction \u22480.99"
+  },
+  {
+   "claim": "ACCV addresses causal-overreach (P-012/S-015/S-016) with a pre-registered out-of-sample interventional test on a generated grid the analysis never saw: 'the off-target cost ranks never-seen sources out-of-sample where it varies substantially (rho=+0.67) while the symmetric average does not', and the regime-direction signature 'holds in 8 of 9 training variants (exact permutation p=0.029) ... and vanishes in appearance space (p=0.43)'. Limitations states the principle 'is a regime tendency, not a per-variant law' and that 'the pretrained half rests entirely on the observational table', with three pre-registered FlowFormer predictions stated in advance.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex abstract lines 53-56, 69-71, and Limitations section (lines 986-1025)",
+   "numbers": "rho=+0.67; 8 of 9; p=0.029; p=0.43; p=0.0286"
+  },
+  {
+   "claim": "ACCV addresses Reviewer C's missing realism-only control (S-021) and Reviewer B's photorealism-delta question (P-010) with a 2\u00d72 motion-structure \u00d7 texture decomposition using HQ/matte appearance twins (Table tab:decomp): 'against our own earlier' claim, 'the off-diagonal nearly ties (91.1 good-motion/bad-texture vs. 89.5 bad-motion/good-texture), so the distinction is not magnitude but' specificity; 'Texture is a target-agnostic tax---HQ beats matte in every cell'. The contested ECCV 2D-warp control (S-012) does not appear in the ACCV main text \u2014 it was replaced by this decomposition.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex lines 946-972; grep for '2D warp' in ACCV main.tex returns no hits",
+   "numbers": "91.1 vs 89.5"
+  },
+  {
+   "claim": "ACCV addresses S-009/S-013 (beyond RAFT/CATs++) partially: GLU-Net is added as a third architecture (and is where the pretrained-recall signal is strongest: 'symmetric rho=+0.33 vs. +0.76 for missing support alone on the worst-served architecture'); FlowFormer (pretrained Twins-SVT encoder) is only pre-registered, not yet reported ('three falsifiable predictions ... stated here in advance for a FlowFormer-class model'). Point-tracking / video-foundation / 4D models remain untested.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex abstract lines 52-53 and Limitations lines ~1000-1007; memory project_flowformer_grid (64-job grid 'ready for RC')",
+   "numbers": "+0.33 vs +0.76"
+  },
+  {
+   "claim": "ACCV addresses Reviewer B's dataset-size/density questions (S-010/S-011) and Reviewer C's operator-heuristic objection (S-017) by unifying on one support-geometry estimator (mean nearest-neighbor distance, Eq. 2) with epsilon-coverage and kNN-KL as contrasts, arguing density estimators entangle 'an intrinsic property of the data with an artifact of the sampling budget'; supplement recomputes 'every feature at flow-vector budgets from 5\u00d710^4 to 8\u00d710^6' showing mean-NN stability while 'the KL estimate fails to stabilize at any budget we tried'. HOF is dropped entirely (S-014 moot).",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex Setup lines 336-355; /home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/supp_main.tex lines 212-226; grep for 'HOF' in ACCV main/supp returns no hits",
+   "numbers": "5\u00d710^4 to 8\u00d710^6"
+  },
+  {
+   "claim": "ACCV addresses P-009 (absolute vs ranking) head-on with Sec. 6 'From Ranking to Absolute Prediction' and the decomposition PCK-hat = L(k,v) + g(i->k) (Eq. 3, 'anchors buy units, the rule buys order' per DRAFT_NOTES); Limitations concedes 'Ranking at rho\u22480.5 caps within-context explainable variance at ~25%; absolute accuracy beyond anchors is feature-unreachable in our analysis.'",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex line 728 (section heading), Setup lines 355-372, Limitations; DRAFT_NOTES.md line 37-38",
+   "numbers": "rho\u22480.5; ~25%"
+  },
+  {
+   "claim": "The ECCV submission's Table 2 contained a Middlebury column (values 53.8, 53.9, 23.3, 54.1, 41.1, 48.1, 49.2, 51.6 for the eight training-set rows) that was later found to come from a defective evaluation harness; the ACCV draft excludes Middlebury everywhere: 'One benchmark (Middlebury) was excluded after we identified an evaluation-harness defect during analysis; all reported numbers use the remaining nine.' Reviewers did not catch this.",
+   "source": "/home/spencer/Projects/ECCV_Reviews/eccv2026/sections/6-experiment_protocol.tex lines 13-20 (Middle-bury column); /home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex Limitations; DRAFT_NOTES.md line 27-28; memory middlebury_invariance",
+   "numbers": "53.8, 53.9, 23.3, 54.1, 41.1, 48.1, 49.2, 51.6"
+  }
+ ],
+ "red_flags": [
+  {
+   "issue": "Reviewer B's BFV outlier/long-tail-magnitude robustness questions (S-007/S-008) have no explicit answer in the ACCV draft: no discussion of clipping, winsorization, or extreme-flow handling in BFV normalization. The supplement's sampling-budget stability analysis addresses density, not magnitude outliers. review_points.md planned 'Explain finite-flow masking, any clipping/winsorization if used' \u2014 status still 'open'.",
+   "evidence": "grep -i 'winsor|outlier|long-tail' over /home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex and supp_main.tex returns nothing; /home/spencer/Projects/ECCV_Reviews/eccv2026/reviews/review_points.md rows S-007/S-008 marked 'open'",
+   "severity": "medium"
+  },
+  {
+   "issue": "Reviewer A's S-003 (number of SDF-Fractal3D training samples / comparable sample budgets, needed for fairness) appears still unreported in the ACCV main text \u2014 greps for training pair counts found nothing; only flow-vector descriptor budgets are reported in the supplement. Marked ambiguous (I grepped rather than reading every line), but the tracker row is still 'open'.",
+   "evidence": "/home/spencer/Projects/ECCV_Reviews/eccv2026/reviews/review_points.md S-003 status 'open'; grep for sample/pair counts in /home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex yields only unrelated hits (lines 442, 678, 721)",
+   "severity": "medium"
+  },
+  {
+   "issue": "The ECCV submission's Middlebury numbers were produced under a confirmed-buggy evaluation harness (flip-invariance test +0.899 per memory), i.e. a published-to-reviewers table contained contaminated values. ACCV excludes the benchmark, but the middlebury_val flow cache 'still needs re-extraction during the heavy grid rerun' and re-eval is pending.",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/DRAFT_NOTES.md Round 3: 'middlebury_val_flow still needs re-extraction'; memory middlebury_invariance: 'eval bug CONFIRMED \u2192 Middlebury EXCLUDED everywhere (9 benchmarks, 1458 cells)'; ECCV Table at /home/spencer/Projects/ECCV_Reviews/eccv2026/sections/6-experiment_protocol.tex",
+   "severity": "medium"
+  },
+  {
+   "issue": "The pretrained half of the regime-direction law \u2014 the half that would answer Reviewer C's demand for causal evidence \u2014 has no interventional validation: the controlled grid's pretrained arm 'compresses into a seed-noise band---its unstable point estimates nominally favor the unmatched direction'. The draft discloses this honestly, but until the FlowFormer/GLU-Net pre-registered runs land, half the headline law is observational-only, exactly the evidentiary pattern Reviewer C objected to at ECCV.",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex Limitations: 'the pretrained half rests entirely on the observational table'; DRAFT_NOTES Round 6: 'the pretrained half remains a stated, falsifiable prediction'",
+   "severity": "high"
+  },
+  {
+   "issue": "Live-artifact / stale-prose hazards in the ACCV draft: intervention_oos.csv 'moves while the local grid trains' (TT n went 9->8 between morning and evening regenerations); prose numbers are hand-quoted from current artifacts and must be re-grepped after reruns; README still quotes consensus fractions 0.79/0.80/0.81 from an older generation while the regenerated CONSENSUS_RULE.csv gives 0.71-0.75 and CONSENSUS_POLICY.csv gives 0.73/0.75/0.76.",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/DRAFT_NOTES.md 'LIVE ARTIFACT' section and Round 6: 'STALE PROSE FIXED: paper said \"80--82%\" but CONSENSUS_RULE.csv was regenerated today to 0.71-0.75 (README still quotes 0.79/0.80/0.81)'",
+   "severity": "medium"
+  },
+  {
+   "issue": "The review tracker was never updated: every one of the 40 review points (P-001..P-014, S-001..S-022, M-001..M-003) still has Status 'open' in review_points.md, even though DRAFT_NOTES claims many are addressed \u2014 there is no authoritative checked-off mapping from reviewer point to ACCV fix.",
+   "evidence": "/home/spencer/Projects/ECCV_Reviews/eccv2026/reviews/review_points.md \u2014 all Status cells read 'open'",
+   "severity": "low"
+  },
+  {
+   "issue": "Reviewer C's S-022 is only partially addressed: the ACCV baseline space now includes FID, sliced Wasserstein-2, MMD, kNN-KL, epsilon-coverage, learned ridge/GBM/hierarchical variants and an appearance negative control, but still no engagement with 'stronger modern transferability estimation ideas' (e.g. LEEP/LogME-class estimators) that the expert reviewer named.",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex Setup lines 351-355 (baselines listed: 'FID, sliced Wasserstein-2, and MMD'); raw_reviews.md Reviewer C point (5)",
+   "severity": "low"
+  },
+  {
+   "issue": "SPair (semantic correspondence) remains the weak spot Reviewer A's 'weak analysis tool' charge could re-attach to: the ACCV Limitations concedes 'Semantic correspondence (SPair) is weakly predicted---motion descriptors do not capture semantic compatibility', and the earlier 'SPair floor' analysis was dropped as confounded.",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex Limitations; memory motion_vs_appearance_narrative: 'SPair floor DROPPED (confounded)'",
+   "severity": "low"
+  }
+ ],
+ "open_threads": [
+  "FlowFormer 64-job grid and GLU-Net 72-job grid: pre-registered predictions are in the ACCV Limitations but results are not in the draft; the pretrained half of the law and the fitted-weight-transfer prediction hinge on them.",
+  "Reviewer D slot in raw_reviews.md is an empty placeholder ('Paste review here') \u2014 confirm whether a fourth ECCV review/meta-review exists and was never transcribed.",
+  "I did not find an ECCV rebuttal or decision letter under /home/spencer/Projects/ECCV_Reviews/ \u2014 final outcome (presumably reject/withdraw given the ACCV resubmission) is inferred, not documented there.",
+  "middlebury_val flow cache re-extraction and Middlebury re-evaluation with fixed harness are still TODO (supp currently documents exclusion + sensitivity analysis only).",
+  "Verify whether the ACCV draft anywhere reports SDF-Fractal3D / per-source training sample budgets (S-003) \u2014 my grep-based check found none, but a full line-by-line read of the 1000+-line main.tex was not done.",
+  "intervention_oos.csv numbers must be re-frozen and prose re-grepped once the local transfer grid finishes (DRAFT_NOTES 'LIVE ARTIFACT' warning); act2_seeds n=3 seed-CI runs to fold into the closed-loop section.",
+  "README consensus numbers (0.79/0.80/0.81) inconsistent with regenerated CSVs (0.71-0.76) \u2014 update or rerun.",
+  "P-011 (replace large supp grid tables with heatmaps): ACCV supp restructured around per-variant evidence tables and figures; whether full per-model transfer grids survive anywhere in reviewer-hostile table form was not verified."
+ ],
+ "summary": "The ECCV 2026 submission (paper 'Beyond Realism: Directed Coverage for Correspondence Transfer', sources in /home/spencer/Projects/ECCV_Reviews/eccv2026/) claimed that photorealism is not the sole driver of sim-to-real transfer for dense correspondence: SDF-Fractal3D, an asset-free non-photorealistic procedural pipeline, transfers strongly zero-shot across ~10 benchmarks; 'directed coverage' (asymmetric overlap separating missing target support E->T from off-target mass T->E in motion/appearance descriptor spaces) feeds a compact ridge estimator reaching 'up to 0.70 pairwise ranking accuracy' under three held-out protocols (best row F\u00d72+A\u00d72: 70.1/69.8/69.4%), and motion-only zoom/flip interventions move transfer as predicted (KITTI-2015 90.43 -> 94.94 with large-zoom, 84.72 with flip). Three reviewers, all negative: A (aL7M, Reject, conf 4) \u2014 unclear motivation, observation-driven narrative written as method-driven, missing SDF-Fractal3D sample counts, '0.70 pairwise ranking accuracy is not very useful', Table 4 changes small, architecture averaging obscures behavior; B (X9xv, Borderline Reject, conf 2, open to raising) \u2014 BFV outlier/long-tail normalization robustness, performance ceiling vs other datasets, ridge generalization to temporal/4D architectures, dataset-size-as-nuisance, absolute-vs-ranking, 2D-warp confound on the motion-primary claim; C (mqfN, Weak Reject, conf 5, expert) \u2014 causal claims exceed evidence (many confounds beyond realism; interventions limited to one synthetic family), directed coverage heuristic/under-justified, 0.70 only moderate, mixed regimes + averaging muddy interpretation, missing realism-only control, narrow baselines, incremental novelty. The current ACCV draft direction directly targets most of this: SDF-Fractal3D is demoted from headline to instrument (P-001/P-002/S-004); the headline becomes the regime-direction / two-cost law validated per-variant across 3 architectures \u00d7 9 variants \u00d7 11 pure synthetic sources \u00d7 9 benchmarks (891 evaluations, no averaging, no mixed regimes \u2014 S-006/S-019/S-020); '0.70 not useful' is answered by ceiling parity (rho\u22480.5 \u2248 inter-variant reproducibility ceiling, 73-76% of retraining consensus), selection regret (median 1.2-2.8 PCK vs 13.9 random), and gap-stratified accuracy (0.77-0.78 = cross-arch retraining at gaps >10 PCK) (P-007/P-013); causal overreach is met with a pre-registered out-of-sample grid test (off-target cost rho=+0.67, 8/9 flip p=0.029, appearance null p=0.43) plus an honest Limitations (P-012/S-015/S-016); absolute-vs-ranking gets its own section (P-009); the ridge-is-feature-engineering critique is inverted (fit-free policy beats every learned model \u2014 S-018); the HQ/matte texture-twin 2\u00d72 supplies the missing realism-only control and recalibrates motion-primacy to specificity-not-magnitude (S-021/P-010, off-diagonal ties 91.1 vs 89.5); estimator unification (mean-NN + epsilon-coverage + KL contrast, HOF dropped) answers S-017/S-010/S-014. Still NOT addressed: BFV extreme-flow/outlier handling (S-007/S-008, no winsorization/clipping discussion found), SDF-Fractal3D training sample counts (S-003, not found), temporal/point-tracking architectures (S-013 \u2014 FlowFormer only pre-registered, results pending), modern transferability-estimator baselines (S-022 partial), and the pretrained half of the new law itself is observational-only \u2014 structurally the same gap Reviewer C punished. Notable internal red flag: the ECCV submission's Middlebury column came from a later-confirmed-buggy eval harness; ACCV excludes Middlebury entirely."
+}

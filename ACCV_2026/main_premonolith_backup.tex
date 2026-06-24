@@ -1,0 +1,1005 @@
+\documentclass[runningheads]{llncs}
+% ---------------------------------------------------------------
+\usepackage[review,year=2026,ID=*****]{accv}
+%\usepackage{accv} % camera-ready
+\usepackage{accvabbrv}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb}
+\usepackage{multirow}
+\usepackage{pifont}
+\usepackage{makecell}
+\usepackage{colortbl}
+\definecolor{bestgreen}{rgb}{0.0,0.50,0.0}
+\newcommand{\best}[1]{\textbf{\textcolor{bestgreen}{#1}}}
+\newcommand{\cmark}{\ding{51}}
+\usepackage[accsupp]{axessibility}
+\usepackage[pagebackref,breaklinks,colorlinks,citecolor=accvblue]{hyperref}
+\usepackage{orcidlink}
+\usepackage{fontawesome5}
+
+% notation macros
+\newcommand{\dtb}{d_{T\to B}}
+\newcommand{\dbt}{d_{B\to T}}
+\newcommand{\pck}{PCK}
+% encoder-state glyphs: fire = trained, snowflake = frozen
+\newcommand{\enctrained}{\textcolor{orange!90!red}{\faFire}}
+\newcommand{\encfrozen}{\textcolor{cyan!55!blue}{\faSnowflake[regular]}}
+% best coverage-family predictor in a cell (green); bold marks recall (dBT), our claim
+\newcommand{\bst}[1]{\textcolor{green!60!black}{#1}}
+
+\begin{document}
+
+\title{Cover the Motion, Not the Look: Motion Coverage Predicts
+Synthetic-to-Real Correspondence Transfer}
+\titlerunning{Cover the Motion, Not the Look}
+
+\author{Anonymous ACCV 2026 Submission}
+\authorrunning{ACCV-26 submission ID *****}
+\institute{Paper ID *****}
+
+\maketitle
+
+\begin{abstract}
+Synthetic data trains most correspondence models, so the binding question is no
+longer how to render it but which dataset to render for a given target. That
+choice is still made by intuition, or by training on several candidates and
+keeping what works. We show it can instead be read from a cheap measurement,
+with no target labels and no training.
+
+Matching distributions is directional, and only one direction matters: what
+predicts transfer is whether a source's motion \emph{covers} the motions the
+target uses. Mass on motions the target never needs is nearly free. Symmetric yardsticks like
+FID and Wasserstein blur this by averaging both directions, and appearance-based
+distances miss it entirely, while a single directed distance over a crude
+histogram of flow vectors captures it. Across 142 trained models spanning four
+architecture families, ranking candidate sources by this distance is about as
+reliable as training a second model to find out: it picks a source within $0.6$
+\pck{} of the best, against $17$ for a random pick. Given a few example runs the
+same score predicts absolute accuracy, and with no renderer in the loop it tunes
+a generator's motion toward a target and beats a generic synthetic dataset.
+Cover the motion, not the look.
+\keywords{Dense correspondence \and Synthetic training data \and Dataset
+selection \and Transferability}
+\end{abstract}
+
+% =====================================================================
+\section{Introduction}
+\label{sec:intro}
+
+Dense visual correspondence---optical flow, geometric and semantic
+matching---relies on synthetic training data more than almost any other vision
+task, because dense ground truth is scarce on real images
+\cite{mayer2016FlyingThingsDataset,sintel,greff2021kubric,pointodyssey}. Most
+progress targets \emph{how} to render this data---fidelity, lighting, speed
+\cite{greff2021kubric,pointodyssey}---on the assumption that closing the
+appearance gap drives transfer; yet non-photorealistic data often transfers well
+\cite{Baradad2021LookingAtNoise,white2009mandelbulb}, and a logically prior
+question gets far less attention: given a controllable pipeline, \emph{what}
+should it render for a given target? Rendering is cheap; the binding constraint
+is deciding what to generate.
+
+The value of a synthetic dataset is not intrinsic; it depends on the
+target---the best source for one target is middling for another, so ``best
+dataset'' is meaningful only relative to deployment. And matching a source's
+distribution to a target's is inherently \emph{directional}: in a shared
+motion-descriptor space a source can place mass on motions the target never uses
+(\textbf{off-target mass}; precision-analogous) or fail to cover the motions it
+needs (\textbf{coverage}/missing support; recall-analogous), which we measure as
+the two directed nearest-neighbor distances between the datasets' flow-vector
+distributions. Symmetric discrepancies (FID
+\cite{heusel2018ganstrainedtimescaleupdate}, sliced Wasserstein) average the two;
+generative-model evaluation separates them for sample quality
+\cite{sajjadi2018assessing_precision_recall,kynkaanniemi2019improved_pr}. We show
+that for \emph{transfer} the separation is decisive---one direction carries
+almost all the signal:
+
+\begin{quote}
+\textbf{The coverage principle.} \emph{Matching a source's motion to a target's
+helps---but the part that matters is directional. What predicts transfer is
+\emph{coverage}: how well the source's motion covers the target's, measured by
+the directed distance $\dbt$. Off-target mass---motion the source renders but
+the target never uses---barely matters, so one should \emph{cover} the target's
+motion rather than \emph{match} its distribution. The exception is models that do
+not learn the task at all.}
+Two consequences recur: the symmetric and distribution distances (FID,
+Wasserstein) trail coverage because they fold the useless direction back in; and
+the appearance analogue of coverage carries no target-selective signal:
+appearance sets a source's overall quality, not which target it suits.
+Throughout, ``pretrained'' refers to the \emph{image-feature backbone} (\eg,
+ImageNet ResNet-101), not correspondence-task pre-training; the correspondence
+head is always trained on the synthetic source.
+\end{quote}
+
+We establish this on a transfer study of 142 trained correspondence models:
+four architecture families (CATs++ \cite{cho2022cats++}, RAFT \cite{teed2020raft},
+GLU-Net \cite{truong2020glunet}, and FlowFormer \cite{huang2022flowformer}) in 13
+backbone configurations over 11 training sources, evaluated on 9 benchmarks
+($1{,}278$ transfer measurements). We test it four ways: replication across three
+distance estimators; a negative control in appearance-feature space; a
+construct-validity check, where matching the descriptor alone recovers each
+target's physically correct motion; and a controllable grid that crosses motion
+against appearance and shows a target-tuned source beating a generic baseline.
+A controlled motion-magnitude grid under a matched protocol maps the coverage
+response (inverted-U: under-coverage and over-shoot both cost transfer); a cleaner
+test isolating coverage at fixed off-target mass is the one we flag as residual.
+
+We make the following contributions:
+\begin{enumerate}
+\item \textbf{The coverage law, on every regime that learns the task}
+  (Sec.~\ref{sec:law}): of the distances we test, motion coverage ($\dbt$)
+  is the best predictor of correspondence transfer (within-context
+  $\rho{=}0.51$, $86\%$ of the reproducibility ceiling) on every architecture
+  and training configuration in which the model actually learns. The one
+  exception is training from scratch on semantic targets, where the encoder
+  never learns the task; we identify this as an out-of-distribution
+  \emph{model} regime and set it aside as scope, not as a counterexample
+  (Sec.~\ref{sec:setup}).
+\item \textbf{A render-free selection rule, zero- and few-shot}
+  (Secs.~\ref{sec:predict}--\ref{sec:absolute}): \emph{rank candidate sources by
+  motion coverage $\dbt$}: no target-side run, no labels, no learned weights, no
+  differentiable renderer. Zero-shot it picks a source within a median $0.6$
+  \pck{} of the best (vs.\ $17$ at random) and orders large-gap candidates
+  correctly $77\%$ of the time, on par with an independent cross-architecture
+  retraining. Absolute \pck{} is set largely by a source-level realism effect the
+  motion distances cannot see; given a handful of observed runs as anchors, the
+  same score recovers it few-shot (MAE ${\approx}8$--$10$) under leakage-safe
+  splits that hold out the source, the benchmark, or both. Anchors buy units;
+  coverage buys order.
+\item \textbf{Cover, don't match: off-target mass is nearly free}
+  (Secs.~\ref{sec:law}--\ref{sec:predict}): off-target mass barely predicts
+  transfer ($\dtb$, $\rho{=}0.14$), so the symmetric and distribution
+  distances (FID, sliced Wasserstein-2) trail coverage by folding it back
+  in, and the appearance analogue of coverage carries no target-selective
+  signal (appearance sets a source's overall quality, not which target it
+  suits). The prescription is to \emph{add} coverage of the target's motion
+  rather than \emph{match} its distribution, which is why broad generic sets
+  such as FlyingThings transfer well, and how one can beat them.
+\item \textbf{Interventional support} (Sec.~\ref{sec:interv}): a render-free
+  generator search scored only by motion coverage recovers each target's
+  physically correct motion regime (a forward camera dolly for KITTI, object
+  motion for FlyingThings; construct validity). A source tuned this way matches
+  or beats a generic synthetic baseline in all $8$ settings across two
+  architectures, and on a controllable grid crossing motion against appearance,
+  motion rather than appearance is the target-specific carrier of transfer.
+\end{enumerate}
+
+We are explicit about scope. The coverage law holds wherever the model learns
+the task; the one excluded regime, from scratch on semantic targets, fails to
+learn the task at all, and we treat it as an out-of-distribution \emph{model}
+regime rather than a counterexample (Sec.~\ref{sec:limits}). The stratification
+and exclusion criteria were fixed before FlowFormer entered the study: its four
+configurations were added as a held-out fourth architecture family and fell in
+line with the coverage law without adjustment (pretrained $\dbt$
+$+0.67$/$+0.70$, Table~\ref{tab:law}), a pre-registered check that the analysis
+choices are not fit to the data they explain.
+
+% =====================================================================
+\section{Related Work}
+\label{sec:related}
+
+\noindent\textbf{Synthetic data for correspondence.}
+FlyingChairs/FlyingThings \cite{mayer2016FlyingThingsDataset}, Sintel
+\cite{sintel}, Kubric/MOVi \cite{greff2021kubric}, and PointOdyssey
+\cite{pointodyssey} established synthetic pre-training as the default for
+dense matching; AutoFlow \cite{sun2021autoflow} and DFlow \cite{im2022dflow}
+\emph{learn} data parameters with training in the loop. Closest to our
+premise, Mayer~\etal~\cite{mayer2018what} showed that matching target
+displacement statistics improves flow training. That result is undirected and
+regime-blind; our finding is the part it could not see. The match is
+\emph{directional}: coverage of the target's motion is the half that predicts
+transfer, and a pretrained backbone is what lets a model use it. A large, active
+line of work improves the \emph{rendering} side of these pipelines (photorealism,
+lighting, scale, speed) \cite{greff2021kubric,pointodyssey}; this is
+complementary to, but distinct from, our question. We take the renderer as given and instead supply a
+target-conditioned signal for \emph{what} to generate, which is why the same
+rule guides two structurally different generators (Sec.~\ref{sec:interv}).
+Procedural abstraction \cite{Baradad2021LookingAtNoise,white2009mandelbulb}
+supports our use of non-photorealistic, motion-controllable generators.
+
+\noindent\textbf{Transferability estimation.}
+LEEP \cite{nguyen2020leep}, LogME \cite{you2021logme}, NCE
+\cite{tran2019transferability}, H-score \cite{bao2019information}, and OTCE
+\cite{tan2021otce} predict transfer from model outputs or target labels,
+almost exclusively for classification. OTDD \cite{alvarez2020geometric} is,
+like ours, a fit-free dataset distance, but symmetric and label-dependent.
+None address dense correspondence, none are regime-conditional, and none are
+directional; our experiments show the symmetric choice is not a detail but
+the reason such signals wash out across regimes.
+
+\noindent\textbf{Precision/recall divergences.}
+Directional two-sample diagnostics are established in generative-model
+evaluation \cite{sajjadi2018assessing_precision_recall,
+kynkaanniemi2019improved_pr,naeem2020reliable,alaa2022faithful}. We adopt the
+same decomposition in motion space and make it \emph{predictive and
+regime-indexed} for transfer, which to our knowledge is new.
+
+\noindent\textbf{Regime-conditional data value.}
+Sorscher~\etal~\cite{sorscher2022beyond} showed the value of easy vs.\ hard
+examples flips with data abundance; pretraining-data selection methods such
+as DSIR \cite{xie2023data} and DoReMi \cite{xie2023doremi} match
+distributions symmetrically. Our result is a new instance of
+regime-conditional data value on a new axis (scratch vs.\ pretrained backbone;
+directed motion coverage). On the theory side, asymmetric transfer exponents
+\cite{hanneke2019value} and covariate-shift support conditions anticipate
+our headline---coverage of the target's support is what predicts
+transfer. What those arguments do not anticipate is how cheaply it can be
+measured (a crude motion histogram, no training, no differentiable renderer) or
+that off-target mass is nearly free, so coverage---not symmetric distribution
+matching---is the objective. Our dataset-size controls (Sec.~\ref{sec:law}) rule
+out the trivial ``more data'' explanation of the source ordering.
+
+\noindent\textbf{Architectures and backbones.}
+We span semantic matching (CATs++ \cite{cho2022cats++}), recurrent flow (RAFT
+\cite{teed2020raft}), and pyramid dense matching (GLU-Net
+\cite{truong2020glunet}); appearance descriptors use DINOv3
+\cite{simeoni2025dinov3}, whose strong zero-shot matching
+\cite{sd_dino_tale_of_two_features} motivates appearance as a serious
+competing hypothesis---which our controls reject for within-context dataset
+ranking.
+
+% =====================================================================
+\section{Setup: Two Directed Distances and a Decomposition}
+\label{sec:setup}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/splats/composite_rgb_motion.png}
+\caption{\textbf{Motion fingerprints (BFV splats) and RGB samples.}
+\emph{Top block:} each panel aggregates a dataset's joint flow vectors
+$\mathbf{f}=[\hat x,\hat y,\Delta\hat x,\Delta\hat y]$, clusters them spatially
+(non-uniform, data-driven clusters), and renders each cluster as a directional
+splat: color encodes dominant flow direction (legend), splat extent encodes the
+cluster's spread; training sets (upper row) above benchmarks (lower row). The
+first three columns hold the same dataset in both rows (train/eval); their
+fingerprints match, confirming the signature is a property of the data rather
+than of a particular split. Training sets and benchmarks otherwise occupy
+visibly different regions of motion space. \emph{Bottom block:} one RGB sample
+per dataset, same column order, for qualitative reference. The two directed
+distances defined below quantify the two distinct ways motion supports can fail
+to align.}
+\label{fig:splats}
+\end{figure}
+
+We represent each dataset by the distribution of its motion and ask how well a
+training set's distribution covers a target's. This section defines that
+representation, the two directed distances that are our central measurement,
+and the decomposition we use to turn them into predictions.
+
+\noindent\textbf{Transfer study.}
+We study four architecture families: the semantic matcher CATs++
+\cite{cho2022cats++}, the optical-flow networks RAFT \cite{teed2020raft} and
+FlowFormer \cite{huang2022flowformer}, and the dense-matching network GLU-Net
+\cite{truong2020glunet}. For CATs++, GLU-Net, and FlowFormer the image-feature
+backbone (ImageNet ResNet-101, VGG, and a pretrained Twins-SVT transformer,
+respectively) is either initialized from those features or trained from
+scratch, and either frozen or trained jointly with the correspondence head,
+giving four configurations each; RAFT is trained from scratch by construction
+and is one. The resulting \textbf{13 backbone configurations} are each trained
+on 11 pure synthetic sources (\textbf{142 trained models}; one FlowFormer cell
+did not complete) and evaluated by peak \pck@0.05 on 9 benchmarks spanning
+optical flow, dense, and semantic matching (KITTI-2012/2015 \cite{kitti_flow},
+FlyingThings \cite{mayer2016FlyingThingsDataset}, PointOdyssey
+\cite{pointodyssey}, TSS, PF-Pascal/PF-Willow \cite{pfpascal}, SPair-71k
+\cite{spair71k}, and a held-out split of our procedural source), for
+\textbf{1{,}278 source--benchmark--configuration transfer measurements}. We
+treat each (benchmark, architecture, configuration) triple as a \emph{context}
+and make all ranking claims within contexts. Throughout we stratify the nine
+benchmarks into \emph{real-motion} targets (KITTI-2012/2015, FlyingThings,
+PointOdyssey, and the procedural split), whose ground truth is dense pixel
+motion, and \emph{semantic} targets (SPair-71k, PF-Pascal, PF-Willow, TSS),
+whose ground truth is sparse keypoint correspondence across object instances;
+this distinction is load-bearing for the from-scratch regime.
+
+\noindent\textbf{A degeneracy: training the backbone from scratch.} Three of
+these architectures---CATs++, GLU-Net, and FlowFormer---are designed to run on a
+\emph{pretrained} image backbone; initializing that backbone randomly and
+training it end-to-end with the correspondence head is outside their intended
+regime. We include those from-scratch configurations for completeness, and they
+expose two failure modes that must be handled before any coverage analysis, both
+of which collapse the network to a \emph{static mean prior}---a nearly fixed flow
+field that all but ignores which image pair it is given.
+First, \textbf{semantic targets collapse without a semantic prior.} A matcher
+supervised only on optical-flow-style motion has no route to cross-instance
+\emph{semantic} correspondence, so \emph{every} from-scratch architecture
+collapses on semantic targets. Training on a \emph{semantic} source instead
+(SPair, which one might expect to supply the missing prior) does not rescue it---%
+it collapses \emph{worst of all}, never learning to match anything.
+Second, \textbf{CATs++ fails to train from scratch outright:} even on real motion
+its randomly-initialized backbone mode-collapses, whereas GLU-Net and FlowFormer
+learn---and RAFT, the one architecture built to train from scratch with no
+pretrained backbone, learns on real motion as expected.
+
+\noindent\textbf{Detecting collapse with source-sensitivity.} We measure this
+directly. Holding the target image fixed, we swap the source image and record how
+far the predicted flow field moves, relative to its own magnitude---its
+\emph{source-sensitivity}. A genuine matcher must move a great deal, since a
+different source implies a different correspondence; a model collapsed to a fixed
+field barely moves, and its sensitivity falls toward zero.
+Table~\ref{tab:staticprior} reports it per architecture, averaged over real-motion
+training sources and for the semantic source. The working matchers on real motion
+(GLU-Net/FlowFormer, \textbf{bold}) set the healthy scale at $5$--$9$; on semantic
+targets every model falls to $\le0.5$, and under the semantic source to
+${\approx}0.1$---an order of magnitude lower. The failed models stop tracking
+their input.
+
+\noindent\textbf{Excluding the mode-collapsed configurations.} We drop these
+configurations from the transfer analysis, treating them as a model--data
+incompatibility rather than a result, and on a criterion independent of
+coverage---\emph{a trained-from-scratch encoder must beat random features}. Every
+excluded cell fails it: the semantic from-scratch cells transfer no better than a
+random backbone (they never learn to match), and CATs++ from scratch transfers
+\emph{below} random even on real motion ($\Delta_{\text{enc}}<0$;
+Table~\ref{tab:degenerate})---the signature of an architecture trained
+outside its design regime. This is not undertraining: a higher-learning-rate
+schedule only collapses it further. CATs++ on real motion does retain some
+source-sensitivity ($2.5^{\dagger}$, hence unshaded), yet still fails the
+beat-random test, so we exclude it too. Everything we analyze in
+Secs.~\ref{sec:law}--\ref{sec:interv} is a configuration in which the encoder
+demonstrably learns to match.
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Source-sensitivity exposes the static-prior collapse.} How far
+a from-scratch model's predicted flow moves when the source image is swapped
+(target fixed), relative to its magnitude: large $=$ a working matcher that tracks
+its input, $\to0$ $=$ a static prior that ignores it. Probed on every benchmark
+and averaged by target type (real-motion: KITTI/FlyingThings/Sintel/PointOdyssey;
+semantic: SPair) and by training-source type (real-motion sources vs.\ the
+semantic source). \colorbox{green!16}{Green}: retains source-sensitivity, a
+working matcher ($5$--$9$ for GLU-Net/FlowFormer, \textbf{bold}).
+\colorbox{gray!15}{Gray}: collapsed to a static prior ($\le0.5$); excluded. Every
+architecture collapses on semantic targets, and the semantic source collapses
+worst of all (${\approx}0.1$). $^{\dagger}$CATs++ from scratch still responds on
+real motion but transfers below random features ($\Delta_{\text{enc}}<0$, supp.),
+so it is excluded too. $^{\ddagger}$RAFT trains from scratch by construction.}
+\label{tab:staticprior}
+\footnotesize
+\renewcommand{\arraystretch}{0.95}
+\setlength{\tabcolsep}{5pt}
+\input{tables/tab_staticprior}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Does training the backbone from scratch beat \emph{not} training
+it? ($\Delta_{\text{enc}}$).} The independent, motion-free check behind every
+exclusion. Each pair of columns is the same from-scratch model's peak \pck{} when
+its image encoder is \emph{trained} end-to-end with the matching head
+(\enctrained\,trained) versus left \emph{frozen at its random initialization}
+(\encfrozen\,random); $\Delta_{\text{enc}}$ is the difference---what training the
+encoder actually buys. $\Delta_{\text{enc}}{\le}0$ (\textbf{bold}) means the
+trained encoder is \emph{no better than random features}, i.e.\ the network never
+learned to match. It holds for every architecture on semantic targets and,
+uniquely, for CATs++ even on real motion, where training the encoder \emph{costs}
+$8$ \pck{} (it transfers below random). Because this criterion never looks at a
+motion distance, it corroborates the exclusions of Table~\ref{tab:staticprior}
+without circularity. $^{\ddagger}$FlowFormer real-motion over FlyingThings/Sintel
+(its from-scratch movi\_f and PointOdyssey runs predicted ${\approx}0$ flow).}
+\label{tab:degenerate}
+\small
+\setlength{\tabcolsep}{6pt}
+\input{tables/tab_degenerate}
+\end{table}
+
+\noindent\textbf{Motion representation.}
+We summarize each dataset as a point cloud of flow vectors in a normalized
+four-dimensional space of image position and displacement,
+\begin{equation}
+\mathbf{f}_{\text{flow}} = [\hat{x},\, \hat{y},\, \Delta\hat{x},\,
+\Delta\hat{y}] \in [-1,1]^4,
+\label{eq:bfv}
+\end{equation}
+following the bag-of-flow-vectors representation (Fig.~\ref{fig:splats}). This
+retains \emph{where} motion occurs and \emph{how} content moves while remaining
+invariant to image resolution and free of any spatial binning. For the
+appearance control, we build the analogous representation from DINOv3 patch
+features, reduced by PCA and $\ell_2$-normalized \cite{simeoni2025dinov3}.
+
+\noindent\textbf{Two directed distances.}
+The match between a training cloud $A$ and a target cloud $B$ is directional,
+and we measure each direction by the mean nearest-neighbor distance
+\begin{equation}
+d_{A \to B} \;=\; \frac{1}{|A|}\sum_{a \in A}\; \min_{b \in B}\,
+\lVert a - b \rVert_2^2 .
+\label{eq:dirdist}
+\end{equation}
+Writing $\dtb$ for the train-to-target direction and $\dbt$ for the reverse,
+$\dtb$ is large when much of the training distribution lies far from anything
+the target uses (\textbf{off-target mass}), and $\dbt$ is large when target
+motions have no nearby training example (\textbf{missing support}).
+
+Each direction can be estimated in several ways, and the choice is not
+incidental. Our default, Eq.~(\ref{eq:dirdist}), is a \emph{support-geometry}
+estimator: it depends only on how close the two point sets lie, not on their
+local densities. We contrast it with two alternatives---$\epsilon$-coverage,
+the fraction of one cloud lying within a radius of the other (also
+support-based), and a $k$-nearest-neighbor estimate of the KL divergence
+(density-based). For procedurally generated data, the support-based estimators
+are the principled choice. What matters for transfer is \emph{which} motions a
+dataset covers, not how often each one is rendered; yet rendering more frames
+of the same motion inflates a density estimate while leaving the support
+unchanged, so a density divergence such as KL entangles an intrinsic property
+of the data with an artifact of the sampling budget. This is not hypothetical:
+the nearest-neighbor and $\epsilon$-coverage estimates converge as the sample
+grows, whereas the KL estimate fails to stabilize at any budget we tried
+(supp.). Among the three, nearest-neighbor is the most informative predictor
+and is our default, $\epsilon$-coverage is close behind, and KL is both the
+least stable and the weakest; that all three nonetheless agree on the central
+finding (Sec.~\ref{sec:law}) shows it reflects the \emph{direction} of the
+comparison rather than the estimator. As direction-blind baselines we also use
+the symmetric average of the two directions and two distribution
+distances---FID \cite{heusel2018ganstrainedtimescaleupdate} and sliced
+Wasserstein-2.
+
+\noindent\textbf{Prediction decomposition.}
+Absolute transfer accuracy varies far more across benchmarks and architectures
+than across training sources, so we separate a context-level term from a
+within-context ranking term,
+\begin{equation}
+\widehat{\text{\pck}}(i,k,v) \;=\; \underbrace{L(k,v)}_{\text{level anchor}}
+\;+\; \underbrace{g(i \to k)}_{\text{within-context ranking}},
+\label{eq:decomp}
+\end{equation}
+where $L$ is interpolated from observed runs and $g$ ranks sources within a
+context. Directionality enters only through $g$, where learning happens; the
+anchor $L$ is best interpolated with a direction-blind similarity (supp.).
+Crucially, $g$---the zero-shot ranking rule of Sec.~\ref{sec:predict}---fits
+nothing and so has nothing to hold out; only the anchor $L$ is interpolated from
+data, and only the resulting few-shot absolute predictor is evaluated under
+leakage-safe held-out protocols (Sec.~\ref{sec:absolute}).
+
+\noindent\textbf{Correlation convention.} We report Spearman $\rho$ for every
+\emph{ranking} claim (which source is better---the quantity the selection rule
+acts on) and Pearson $r$ (with MAE) only for \emph{absolute-\pck} prediction
+(Sec.~\ref{sec:absolute}). The pooled scatter (Fig.~\ref{fig:scatter}) shows
+Pearson $r$ on within-context-standardized values for visualization; the
+load-bearing ranking statistic is the Spearman $\rho$ of Table~\ref{tab:law}.
+
+% =====================================================================
+\section{Motion Coverage Predicts Transfer}
+\label{sec:law}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/results/F_coverage_scatter.png}
+\caption{\textbf{Motion coverage predicts transfer.} Within-context z-scored
+transfer \pck{} vs.\ motion coverage ($-\dbt$), pooled across all contexts.
+\textbf{Right:} on the models that learn the task, coverage predicts transfer at
+$r{=}0.55$, and the three learning regimes (scratch real-motion, pretrained
+real-motion, pretrained semantic) lie on a single line ($r{=}0.50$--$0.57$
+each)---one axis wherever the model learns. \textbf{Left:} adding back the
+from-scratch$\times$semantic cells (red ${\times}$), which do not learn the task
+(Sec.~\ref{sec:setup}), is what loosens the cloud ($r{=}0.42$).}
+\label{fig:scatter}
+\end{figure}
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Motion (BFV) predicts transfer, and the predictive part is
+coverage.} Within-context Spearman $\rho$ between peak transfer PCK and each
+\emph{negated} motion distance (mean-NN estimator; positive $\Rightarrow$ a
+larger source--target distance predicts worse transfer), grouped by image
+backbone (trained from scratch vs.\ pretrained) then architecture, and
+split by whether the encoder is trained with the correspondence head
+(\enctrained) or frozen (\encfrozen); in every configuration the head itself is
+trained on the synthetic source.
+Targets are stratified into \emph{real-motion} (KITTI-2012/2015, FlyingThings,
+PointOdyssey, synthetic) and \emph{semantic} (SPair, PF-PASCAL, PF-WILLOW, TSS).
+\textbf{Bold} marks coverage ($\dbt$, recall), the predictor we claim;
+\bst{green} marks the coverage-family distance that correlates \emph{best} in
+each cell, so the reader can see the few cells where a symmetric distance edges
+recall. Configurations that mode-collapse when trained from scratch---every
+architecture on semantic targets, and CATs++ on both strata---learn no usable
+features and are dropped (``--''; identified and motivated in
+Sec.~\ref{sec:setup}). $\dtb$ = off-target mass; sym, W2 = symmetric distances.}
+\label{tab:law}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\input{tables/tab_law}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{\textbf{The identical analysis in appearance (DINO) space: the
+negative control for Table~\ref{tab:law}.} No DINO distance---directed,
+symmetric, or W2---is a usable positive predictor: every cell is
+null-to-wrong-signed, and the best coverage-family appearance distance
+(\bst{green}) never reaches a useful positive value. Whatever predicts transfer
+lives in motion, not in how the frames look. The same configurations dropped in
+Table~\ref{tab:law} are dropped here (``--''). \textbf{Bold}, \bst{green},
+grouping, columns, and stratification as in Table~\ref{tab:law}.}
+\label{tab:lawdino}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\input{tables/tab_law_dino}
+\end{table}
+
+Table~\ref{tab:law} and Fig.~\ref{fig:scatter} present the core finding. For
+every configuration in which the model learns to match, we correlate transfer
+with each directed distance within contexts. One column is the consistent
+positive predictor: \emph{coverage} ($\dbt$, bold), how well the source's motion
+covers the target's. It is positive and strong wherever the encoder learns---up
+to $+0.73$ on real motion, and, under a pretrained backbone, on semantic targets
+too (CATs++ $+0.50$, GLU-Net $+0.80$). The mode-collapsed from-scratch
+configurations (CATs++ on both strata, and every architecture on semantic
+targets) carry no usable signal and are dropped (``--''; identified in
+Sec.~\ref{sec:setup}). Across the kept cells, \bst{green} marks the
+coverage-family distance that actually correlates \emph{best}: it is coverage
+almost everywhere, with a few pretrained-semantic cells where a symmetric distance
+(sym or W2) edges it---honest near-ties within the same direction, not a competing
+law. Off-target mass ($\dtb$) is erratic by comparison. The same analysis in
+DINOv3 appearance space is the negative control (Table~\ref{tab:lawdino}): no
+appearance distance is a usable positive predictor anywhere. The target-selective
+signal lives in motion, not in what the frames look like.
+
+
+\noindent\textbf{Excluding the collapsed cells sharpens, not creates, the
+result.} The law does not hinge on exactly where we draw the exclusion line.
+Keeping every configuration in which the model learns---dropping only
+from-scratch$\times$semantic ($77\%$ of the $1{,}278$ measurements)---gives
+within-context $\rho{=}0.51$; the stricter ``encoder must beat random features''
+criterion ($57\%$ kept; supp.) raises it to $\rho{=}0.57$. A stricter filter
+sharpens the finding; it does not manufacture it. (In the collapsed cells a
+spurious correlation with off-target mass appears---an artifact of a model that
+ignores its input, not a second law; we dissect it in the supplement.)
+
+\noindent\textbf{Why direction-blind matching washed out.} Pooled across
+configurations and strata, coverage's signal is diluted: averaged with the
+off-target direction (near-useless) and with the non-learning
+from-scratch$\times$semantic cells (negative), it collapses toward the muddy
+values that symmetric distribution distances return in this setting. Stratifying
+and excluding the one non-learning regime is what brings it out.
+
+\noindent\textbf{The result is about coverage, not the estimator.} Replacing
+mean-NN with $\epsilon$-radius coverage at 4\,px or 16\,px reproduces the
+coverage signal at comparable strength, and even the noisiest estimator we
+tried---a directional kNN-KL, which never stabilizes under sampling
+(supplement)---shows it attenuated but intact. The support-geometry estimators
+are the principled choice for procedural data (Sec.~\ref{sec:setup}); that all
+three agree shows the finding reflects motion coverage, not an artifact of how
+we measure it.
+
+\noindent\textbf{Not an artifact of our synthetic pool or sampling.} The rule
+survives a battery of controls, reported in full in the supplement (Robustness
+Controls). In brief: dropping any one of the five generator families leaves it
+at $\rho\in[0.43,0.54]$ (baseline $0.51$), so no family is load-bearing;
+fit-free ranking by dataset size or vector count reaches only $\rho\le0.27$, so
+``more data'' does not explain the signal; mean-NN coverage is sampling-invariant
+($\rho\ge0.96$ against the largest budget from just $5{\times}10^4$ flow vectors)
+whereas density-based estimators never stabilize ($\rho\in[0.2,0.5]$), which is
+why we measure support geometry rather than density; and a $200$-permutation
+shuffle null sits at $\rho=0.00$.
+
+% =====================================================================
+\section{Selecting Training Data at the Reproducibility Ceiling}
+\label{sec:predict}
+
+The coverage law licenses a \emph{zero-shot} selection rule with zero fitted
+parameters:
+\begin{equation}
+\text{rank candidate training sets by motion coverage,}\qquad -\dbt .
+\label{eq:rule}
+\end{equation}
+It is zero-shot in the strict sense: no run on the target, no target labels, no
+learned weights, and nothing fit and held out (unlike the absolute predictor of
+Sec.~\ref{sec:absolute}). It is a single directed distance computed from each
+candidate's motion histogram against the target's.
+Ranking is what coverage gives for free; \emph{absolute} \pck{} needs a few
+observed runs as anchors (the few-shot extension, Sec.~\ref{sec:absolute}). The one scope condition is the one of Sec.~\ref{sec:law}: the model
+must be able to learn the task, which excludes only the from-scratch$\times$
+semantic regime (Sec.~\ref{sec:setup}). Within that scope, coverage is
+the best predictor we have, and it ranks candidates at the reproducibility
+ceiling of transfer itself (below). It is also the right
+generator-\emph{design} objective: because off-target motion is nearly free
+(precision $\rho{=}0.14$), one should \emph{add} coverage of the target's
+motion rather than \emph{match} its distribution---the move our render-free
+search exploits (Sec.~\ref{sec:interv}).
+
+\begin{table}[t]
+\centering
+\caption{\textbf{The same five distances, in motion and in appearance.}
+Within-context Spearman $\rho$ between peak transfer and each (negated) distance,
+on the models that learn the task (from-scratch$\times$semantic excluded,
+Sec.~\ref{sec:setup}), split by target stratum (``sem.''\ is the learning,
+backbone configurations). The same five distances---two directed
+(coverage/recall $\dbt$, off-target/precision $\dtb$), the symmetric mean-NN, and
+two distribution distances (sliced Wasserstein-2, FID)---are computed in
+motion (BFV) and appearance (DINO) space, so appearance gets the same battery as
+motion, not a single test. Motion coverage (\textbf{bold}) is the best predictor
+in every column; every appearance distance is null-to-wrong-signed. The
+target-selective signal lives in motion---appearance sets only a source's overall
+quality. The symmetric and distribution distances trail motion coverage because
+they fold in off-target mass ($\dtb$), which carries little independent signal.}
+\label{tab:predictors}
+\small
+\setlength{\tabcolsep}{4.5pt}
+\input{tables/tab_predictors}
+\end{table}
+
+Table~\ref{tab:predictors} runs the same five distances in motion and in
+appearance space, so appearance is stress-tested as thoroughly as motion, not
+given a single shot. Motion coverage ($\dbt$) ranks at $\rho{=}0.51$---the best
+predictor in every column. The symmetric and distribution distances follow at
+$+0.39$--$0.42$ (symmetric mean-NN, sliced Wasserstein-2, FID): they trail
+coverage because each folds in off-target mass ($\dtb$), which on its own carries
+little signal ($+0.14$), so averaging it in is dead weight rather than denoising.
+Appearance is the negative control: every DINO distance is null-to-wrong-signed,
+the appearance \emph{analogue} of coverage included ($-0.20$). The axis
+that selects \emph{which} target a source suits lives in motion; appearance sets
+only the source's overall quality.
+Restricting to models that learn the task sharpens coverage (from $+0.35$ pooled
+over all configurations to $+0.51$) while the symmetric metrics barely move---the
+precision term they carry is unhelpful in every regime, not just the excluded
+one.
+
+\noindent\textbf{Is $\rho{\approx}0.5$ good? It recovers most of the
+data-controllable signal.} Transfer rank varies for two reasons: which
+\emph{source} you train on, the part a dataset descriptor can see, and which
+\emph{model} you train (architecture, initialization, schedule, size), which it
+structurally cannot. We bound the first by how well independent retrainings
+\emph{agree} on the source ordering: two models trained on the same sources rank
+them alike only at $\rho{\approx}0.59$ (mean pairwise rank-agreement across
+independent retrainings---the \emph{empirical oracle}). The variance above that
+agreement is not predictor weakness; it is signal that lives in the model, not
+the data, and is out of scope for any data-only selection rule. Coverage reaches
+$\rho{=}0.51$, \textbf{$86\%$ of this data-controllable ceiling}: ranking
+candidates by one motion distance recovers most of what retraining a sibling
+model would tell you, at zero training cost and without rendering a frame.
+
+We also probed for structure a single coverage distance might miss---learned
+ridges over the full motion descriptor set, a coverage$\times$off-target
+interaction, and a depth-2 gradient-boosted combiner, all fit in-fold and
+applied held-out. None beats fit-free coverage (Table~\ref{tab:predictors}, and
+supplement): there is nothing for a learned combiner to add over the one
+directed distance. Ranking quality translates directly into the decision that
+matters---which single source to train on (Fig.~\ref{fig:gap}).
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.8\linewidth]{figures/results/F4_gap_stratified.png}
+\caption{\textbf{Zero-shot coverage ranking tracks the reproducibility of
+retraining; the wrong direction and appearance do not.} Chance that a fit-free
+score (no target training, no held-out fit) picks the truly better of two
+candidate sources, binned by their true \pck{} gap, against the agreement of two
+independent retrainings (gray). \emph{Restricted to the regimes where the model
+learns the task} (degenerate cells of Sec.~\ref{sec:law} excluded). Motion
+coverage ($-\dbt$, red) rises with the gap and, above $10$ \pck, picks correctly
+$78\%$ of the time---matching an independent cross-architecture retraining
+($81\%$) and approaching the same-architecture ceiling ($89\%$). A direction-blind
+symmetric Wasserstein distance trails ($72\%$); the opposite directed
+distance---off-target mass ($-\dtb$), the \emph{wrong} direction to charge---%
+collapses to a coin flip ($52\%$); and the appearance (DINO) distance is no better
+($48\%$). Errors concentrate on small-gap pairs that retraining itself cannot
+order. Held-out source (LOTO); other splits behave alike (supplement).}
+\label{fig:gap}
+\end{figure}
+
+\noindent\textbf{What a practitioner gains.}
+Translated into decisions, ranking by coverage picks a source within a median
+$0.9$ \pck{} of the best available, versus ${\sim}15$ \pck{} for random selection; on
+the pairs that matter---candidates whose true \pck{} differs by more than
+$10$---it orders them correctly $78\%$ of the time, on par with the agreement of
+an independent cross-architecture retraining ($81\%$; Fig.~\ref{fig:gap}), all
+zero-shot. The wrong directed distance and appearance similarity both stall at
+chance on these pairs ($52\%$ and $48\%$). Below a $2$-\pck{} gap every strategy decays toward chance,
+\emph{and so does retraining}: the residual errors are irreducible measurement
+noise, not predictor deficiency.
+
+% =====================================================================
+\section{From Ranking to Absolute Prediction}
+\label{sec:absolute}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/results/F5_absolute_scatter.png}
+\caption{\textbf{Absolute \pck{} prediction under the three leakage-safe
+protocols} (predicted vs.\ actual peak \pck; dots colored by benchmark, the
+red/blue lines the per-regime fits). Predictions are anchor $+$
+dispersion-calibrated coverage score. With the source held out (LOTO) the target
+benchmark anchors the level and predictions track the diagonal ($r{=}0.86$, MAE
+$10.4$); holding out the benchmark (LOBO) widens the band ($r{=}0.64$); with both
+endpoints unseen (JOINT) a two-way kernel anchor still recovers the level
+($r{=}0.56$). Coverage supplies the ranking throughout
+(Table~\ref{tab:protocols}).}
+\label{fig:abs}
+\end{figure}
+
+Zero-shot coverage orders sources but says nothing about \pck{} in absolute
+units. Recovering those is a \emph{few-shot} problem: observe a handful of runs,
+borrow the transfer \emph{level} from the nearest of them, and let coverage
+supply the \emph{order} within that level. The division of labor is exact---%
+\textbf{anchors buy units; coverage buys order}---and we make it precise with a
+variance bound, then stress-test the anchor under three leakage-safe protocols.
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Few-shot absolute prediction under three leakage-safe
+protocols.} Each protocol hides part of the predicted (source, benchmark) pair
+from the \emph{anchor} fit; the zero-shot coverage rule itself fits nothing and
+is not held out. Coverage $\rho$ is the headline fit-free coverage ranking; because it fits
+nothing it is identical across protocols. $r$ and MAE are pooled absolute \pck{}
+(anchor $+$ coverage). As the anchor is starved from LOTO to LOBO to JOINT,
+absolute error widens but the ranking term holds: anchors buy units, coverage
+buys order.}
+\label{tab:protocols}
+\small
+\input{tables/tab_protocols}
+\end{table}
+
+\noindent\textbf{Leakage-safe evaluation, and what it tests.} Zero-shot ranking
+fits no parameters, so there is nothing to hold out; the few-shot anchor, by
+contrast, is interpolated from observed runs and must be stress-tested for
+leakage. We evaluate it under three protocols of increasing difficulty, defined
+by what is hidden from the anchor fit (Table~\ref{tab:protocols}). \textbf{LOTO}
+(leave-one-training-source-out) hides the source and keeps the target benchmark:
+generalize to an unseen source on a known target. \textbf{LOBO}
+(leave-one-benchmark-out) hides the benchmark and keeps the sources: generalize
+to an unseen target from known sources. \textbf{JOINT} hides both, so nothing
+about the predicted (source, benchmark) pair has been seen: a fully novel pair.
+In every protocol coverage only ranks; the anchor supplies the level.
+
+A rank correlation bounds how much \emph{variance} a predictor can explain: used
+as a linear predictor of within-context transfer, the coverage score's $R^2$
+cannot exceed roughly $\rho^2 \approx 0.25$, so even a predictor at the
+reproducibility ceiling leaves ${\sim}75\%$ of within-context variance
+unexplained---run-to-run training noise no dataset descriptor can see
+(Sec.~\ref{sec:predict}). Absolute accuracy therefore comes from anchors
+(Fig.~\ref{fig:abs}, Table~\ref{tab:protocols}). With the target benchmark seen
+(LOTO), anchors plus coverage predict at $r{=}0.86$, MAE $10.4$; calibrating one
+gain per regime tightens the pretrained regime to $r{=}0.90$, MAE
+$8.2$---accurate enough to budget experiments against. Hiding the benchmark
+(LOBO) costs the level but not the order ($r{=}0.64$, MAE $21.8$). With both
+endpoints unseen (JOINT), a two-way kernel anchor (in-fold cells weighted by
+benchmark-similarity $\times$ source-similarity) plus the dispersion-calibrated
+coverage score still reaches $r{=}0.56$ (MAE $29.6$), the within-context residual
+collapsing toward zero as expected when no nearby cell is observed. Across all
+three protocols the ranking term holds as the anchor degrades; the residual
+magnitude beyond anchors is, per our calibration-ceiling analysis,
+feature-unreachable. The supplement details every anchor and calibration variant,
+including the failure modes.
+
+% =====================================================================
+\section{Interventions: Steering Generation and Stress-Testing Coverage}
+\label{sec:interv}
+
+A correlational principle should be stressed interventionally. Every result so
+far draws on one observational table, so this section asks three questions of
+data that table never touched: a procedurally generated grid (Kubric-derived
+motion interventions \cite{greff2021kubric} plus our SDF-fractal generator),
+constructed after the analysis of Secs.~\ref{sec:law}--\ref{sec:absolute} was
+frozen. \emph{(i)~Is the descriptor meaningful?} Does matching it alone recover
+each target's physically correct motion? \emph{(ii)~Is tuning actionable?} Does
+a source tuned to cover a target beat a generic synthetic baseline?
+\emph{(iii)~Is motion, not appearance, the carrier, and does its coverage
+response have the predicted shape?} For (iii) we build a controlled
+motion-magnitude $\times$ appearance grid under one matched training protocol
+(Fig.~\ref{fig:ladder}). Scaling magnitude moves coverage and off-target mass
+together, so this maps the coverage \emph{response curve} rather than isolating
+coverage at fixed off-target mass; that cleaner isolation remains the one
+experiment we flag as residual (Sec.~\ref{sec:limits}).
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.72\linewidth]{figures/results/F8_bfv_recovery.png}
+\caption{\textbf{The recovered motion is physically meaningful.} Optimizing a
+controllable generator to match \emph{only} the 4-D BFV motion histogram of a
+target (no images, no labels) recovers the target's true motion regime: a
+strong forward camera dolly with grounded objects for KITTI-2015
+(camera-centric), and a near-static camera with high-vertical-fraction object
+motion for FlyingThings (object-centric). The descriptor is crude but
+\emph{valid}.}
+\label{fig:recovery}
+\end{figure}
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Recovered generator parameters $\theta$} from BFV-only
+search. The camera/object decomposition is read directly off $\theta$ and
+matches each target's known physics; full parameter set in supplement.}
+\label{tab:recovery}
+\small
+\input{tables/tab_recovery}
+\end{table}
+
+\noindent\textbf{(i) The recovered motion is physically meaningful
+(construct validity).} A descriptor as crude as a 4-D bag of flow vectors
+invites a natural worry: does it capture anything real? We test this directly.
+We run a render-free search over generator motion parameters, scored only by how
+well the generated motion covers the target's (no images, no training in the
+loop), and ask what motion matching the descriptor actually produces. On a
+controllable Kubric-style generator whose parameters $\theta$ explicitly
+separate camera motion from object motion, optimizing BFV match alone recovers
+the physically correct regime for each target (Fig.~\ref{fig:recovery},
+Table~\ref{tab:recovery}): a strong forward dolly with grounded objects for
+KITTI (camera-centric), a near-static camera with vertically flying objects for
+FlyingThings (object-centric). The recovered camera axis cleanly separates the
+moving-camera target from the static-camera target, with no supervision beyond
+the motion histogram. The recovered KITTI source's flow fingerprint bears this
+out, a coherent radial-expansion field that captures the target's
+forward-ego-motion structure, unlike the isotropic generic anchor
+(Fig.~\ref{fig:intervsplats}). An independent generator, matched on BFV alone,
+lands on the right physical motion: construct validity earned, not asserted. One
+caveat: BFV is by construction blind to the camera-vs-object \emph{decomposition}
+when the two produce identical aggregate flow, since an ego-motion dolly and
+flying objects can share an aggregate fingerprint. We therefore read the
+camera/object split off $\theta$, not off the splat, and treat the ambiguity in
+the supplement.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/results/F_pipeline_closedloop.png}
+\caption{\textbf{Closed-loop, render-free source design.} A generic synthetic
+source (MOVi-F) is tuned by a TPE search whose \emph{only} objective is BFV motion
+coverage ($-\dbt$) against the target---\emph{render-free}: no candidate frame is
+rendered, the search scores only the 4-D motion descriptor (dashed: the target's
+fingerprint is the objective). It returns a parameterization (``KITTI-recovered'')
+whose motion fingerprint matches the target---a coherent forward-dolly
+radial-expansion field (focus of expansion at center) at comparable magnitude
+($|f|{\approx}13$ vs.\ KITTI's $19$), where the generic anchor is near-isotropic
+and low-magnitude ($|f|{\approx}4$). Training on the tuned source then lifts peak
+\pck{} over the MOVi-F baseline across \emph{all} configurations
+(Table~\ref{tab:interv}): $+1.9$ to $+22.5$, e.g.\ the $+16.1$ shown for GLU-Net on
+KITTI-2015. Panels are directional flow splats; color $=$ flow direction (wheel in
+supp.).}
+\label{fig:intervsplats}
+\end{figure*}
+
+\begin{table}[t]
+\centering
+\caption{\textbf{A target-tuned source beats the generic baseline.} Peak \pck{}
+on KITTI of the render-free \emph{tuned} source (the KITTI-recovered generator,
+GSO assets $+$ HDRI) vs.\ the generic MOVi-F baseline \cite{greff2021kubric},
+by architecture and backbone (the \emph{scratch} rows train the backbone from
+scratch; \emph{pretrained} is a frozen ImageNet backbone). $\Delta =$ tuned $-$
+MOVi-F; bold marks a win. The tuned source wins
+all $8$ cells. For the configurations that learn, this is learned-feature
+transfer; even for the degenerate CATs++-scratch config (Sec.~\ref{sec:setup})
+the target-matched source wins, by prior-matching rather than learned features
+(Sec.~\ref{sec:law}).}
+\label{tab:interv}
+\small
+\input{tables/tab_interv}
+\end{table}
+
+\noindent\textbf{(ii) A tuned source beats a generic baseline.}
+The recovered motion is not just physically correct; it also trains well. We
+materialize the KITTI-recovered source (GSO assets, HDRI lighting) and train on
+it. It matches or beats MOVi-F \cite{greff2021kubric}, the standard generic
+Kubric baseline, in \emph{all eight} KITTI settings across two architectures
+(Table~\ref{tab:interv}). CATs++ improves by $+8.3$/$+1.9$ from scratch and
+$+2.7$/$+1.8$ with a pretrained backbone; GLU-Net improves by $+13.3$/$+7.0$
+from scratch and by a striking $+22.5$/$+16.1$ with a pretrained backbone
+(KITTI-2012/2015). The two CATs++-scratch wins come from prior-matching, not
+learned features: that configuration is degenerate (Sec.~\ref{sec:setup}),
+so a source whose motion marginal sits closer to the target transfers better
+even though the encoder never learns (Sec.~\ref{sec:law}). We compare source and
+baseline at their best checkpoint (peak \pck) under matched training, so neither
+is penalized by schedule length. A target-specific source built without a single
+real-target label thus beats a generic synthetic dataset.
+
+\noindent\textbf{(iii) Motion is the carrier, and over-shooting it costs: the
+coverage response is non-monotonic.} The experiments above turn on motion
+\emph{type}; we close by varying motion \emph{amount}. Holding scene, objects, and training protocol
+fixed, we scale the camera-dolly magnitude across five rungs ($0.25\times$ to
+$2\times$ KITTI's) and cross it with texture, training GLU-Net from scratch on
+each of the $20$ sources and reading peak \pck{} on KITTI
+(Fig.~\ref{fig:ladder}). Transfer is \emph{inverted-U} in magnitude, peaking at
+the target-matched rung ($1\!-\!1.5\times$) on every target and texture. The two
+arms are the recall/precision asymmetry made causal: \emph{under-coverage}
+($0.25\times$) leaves the target's larger motions uncovered and transfer is low;
+raising magnitude toward the target lifts coverage and transfer (the recall arm).
+Past the match, magnitude keeps the target covered (coverage at ceiling) while
+adding motion the target never uses, and transfer \emph{falls}---a near-isolated
+read on off-target mass, since coverage is saturated across the over-shoot arm. A
+$2\times$ over-shoot costs $5$--$11$ \pck{} from scratch. Texture is again a fixed
+tax (matte below photoreal at every rung) and the two interact: from scratch matte
+cannot absorb a gross over-shoot (matte/$2\times$ falls to $82.9$ on KITTI-2012
+vs.\ photoreal's $91.6$), though a pretrained backbone restores the tolerance
+(supp.). The controlled response thus \emph{refines} the observational law rather
+than contradicting it---coverage is the lever and off-target mass is near-free
+among plausible (natural) sources, but deliberate over-shoot is the boundary where
+off-target mass begins to bite.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/results/ladder_grid_final.png}
+\caption{\textbf{Controlled motion $\times$ appearance grid $\to$ KITTI
+transfer.} \emph{Left:} subsampled directed motion distances from each source to
+KITTI (log; lower $=$ closer). As the camera-dolly magnitude grows, the coverage
+gap $d_{B\to T}$ (KITTI motion the source fails to cover) falls while the
+off-target mass $d_{T\to B}$ (motion the source adds beyond KITTI) rises; transfer
+peaks at the matched magnitude where both are low. \emph{Right:} peak \pck{}
+(averaged over scratch and pretrained encoders) over source appearance (rows)
+$\times$ motion magnitude relative to KITTI's (columns; $1\times$ matched), per
+benchmark. Appearance crosses two knobs (samples in Fig.~\ref{fig:kubric_appearance}): HDRI vs.\ matte background (with kept
+vs.\ flat materials) and KuBasic vs.\ GSO (Google Scanned Objects) assets. Transfer
+is inverted-U in magnitude---under-coverage ($0.25\times$) and over-shoot
+($2\times$) both lose to the match---and the HDRI-background rows beat matte in
+every cell. Each appearance row lists its DINO coverage gap and off-target
+distance: appearance moves the \emph{coverage gap} only (HDRI ${\approx}0.6$ vs
+matte ${\approx}1.1$) while off-target stays ${\approx}$constant (${\approx}0.72$),
+so appearance is a flat tax---in contrast to motion's two-sided lever. Per-encoder values and the scratch over-shoot collapse are in the
+supplement.}
+\label{fig:ladder}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/results/gallery_kubric_appearance.png}
+\caption{\textbf{Kubric appearance variants} crossed in the motion grid
+(Fig.~\ref{fig:ladder}, Table~\ref{tab:ladder}), at bit-identical motion. Two
+knobs: background/lighting---an HDRI environment with textured materials vs.\ a
+matte background with flat shading---and object assets---KuBasic procedural
+primitives vs.\ GSO (Google Scanned Objects). The DINO appearance distance to
+KITTI is driven by the background/lighting knob (HDRI ${\approx}0.6$ vs.\ matte
+${\approx}1.1$), not the asset knob (KuBasic ${\approx}$ GSO).}
+\label{fig:kubric_appearance}
+\end{figure}
+
+% =====================================================================
+\section{Limitations}
+\label{sec:limits}
+
+We state the coverage law's evidentiary status precisely. \emph{It holds
+wherever the model learns the task} and survives every robustness control we
+ran---estimator replication, leave-one-benchmark-out, self-pair exclusion, and a
+generator-family jackknife (supplement). \emph{The one excluded regime is from
+scratch on semantic targets}, where the model does not learn the task at all
+(Sec.~\ref{sec:setup}); we treat it as an out-of-distribution model regime,
+not a counterexample. That exclusion is observational: we rule out the tempting
+alternative that denser or better-spatially-aligned supervision lifts the cell
+(source-side density and spatial-coverage features are null there, and
+magnitude-equalizing coverage does not move it; supplement), but a clean causal
+test---a label-density training ablation---we have not run. One residual wrinkle
+within scope: from scratch, off-target mass carries a weak secondary signal,
+concentrated in the encoder-degenerate CATs++ (whose trained scratch encoder
+transfers below a random one); where the encoder learns, coverage dominates and
+off-target mass is near-dead (Sec.~\ref{sec:law}). \emph{The causal evidence is a response curve, not a fixed-off-target
+isolation}: the render-free search recovers the correct motion regime and a tuned
+source beats a generic baseline in every setting tested, and a controlled
+motion-magnitude grid (Sec.~\ref{sec:interv}, Fig.~\ref{fig:ladder}) shows
+transfer is inverted-U in magnitude under one matched protocol---coverage lifts
+transfer up to the match, over-shoot lowers it. Because magnitude moves coverage
+and off-target mass together, this maps the response rather than isolating
+coverage at fixed off-target mass; that cleaner isolation---a mirror grid varying
+coverage breadth alone---remains future work our render-free infrastructure
+supports. Absolute accuracy beyond
+anchors is feature-unreachable in our analysis (Sec.~\ref{sec:absolute}).
+Semantic correspondence is the hardest case---a floor from scratch,
+and even under a backbone motion descriptors capture only coverage, not full
+semantic compatibility. One benchmark (Middlebury) was excluded after we
+identified an evaluation-harness defect during analysis; all reported numbers
+use the remaining nine (the supplement documents the exclusion and a
+sensitivity analysis).
+
+% =====================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+
+What predicts synthetic-to-real correspondence transfer is motion
+\emph{coverage}: how well a source covers the target's motion. That a source
+should move like its target is not a new idea; what we add is that the useful
+form of it is directional, and cheap to check. Ranking candidate sources by one
+directed motion distance already sits at the reproducibility ceiling of transfer.
+It beats every symmetric and distribution distance, which only dilute the signal
+with near-useless off-target mass, and it has no appearance-space analogue: how
+the frames look does not tell you which target a source suits. None of this needs
+training a network or rendering a frame.
+
+Because off-target motion is nearly free, coverage does two jobs. To
+\emph{select} among existing sources, rank them by coverage. To \emph{design} new
+data, add coverage of the target instead of matching its distribution, the move
+our render-free search exploits on a real target. The same rule guided two very
+different generators, a 3D scene simulator and a procedural implicit-surface
+generator, so it is a property of the data, not of any one renderer. It does not
+serve models that never learn the task, such as from-scratch semantic matchers,
+and we say so. The recipe is short. Before you improve how you render, measure
+how well your source covers the target's motion; a pretrained backbone is what
+lets the model act on it.
+
+% ---------------------------------------------------------------
+\bibliographystyle{splncs04}
+\bibliography{main}
+
+\end{document}

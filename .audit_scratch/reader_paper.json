@@ -1,0 +1,199 @@
+{
+ "summary": "The ACCV 2026 draft (/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex, 1059 lines, compiles to 23 pp + 9 pp supplement) argues a single thesis: which synthetic training set transfers best to a real correspondence benchmark is regime-conditional, because the training regime determines which of two directed motion-mismatch costs the model pays. In BFV motion space (4-D normalized flow vectors), d_T->B measures off-target mass (precision-analogous) and d_B->T measures missing support (recall-analogous). The \"regime-direction principle\": from-scratch models pay BOTH costs (so candidate utility tracks the sum d_TB+d_BT, which equals the symmetric average), while a pretrained image-feature backbone forgives off-target mass, leaving missing support as the sole cost; because the two distances are anti-correlated across natural sources (mean Spearman ~-0.35, tight-vs-broad tradeoff), averaging the forgiven cost back in actively corrupts pretrained rankings. Argument structure: Sec 1 states the principle and 5 contributions; Sec 2 positions vs Mayer et al. (undirected), transferability estimation (symmetric/classification-only), and precision-recall divergences (diagnostic, not predictive); Sec 3 defines the 99-model / 891-measurement transfer study (CATs++, RAFT, GLU-Net in 9 variants x 11 sources x 9 benchmarks, peak PCK@0.05, Middlebury excluded), the two NN distances, support-vs-density estimator argument, and the anchor+ranking decomposition; Sec 4 establishes the flip (8 of 9 variants, exact permutation p=0.0286, group means scratch rho[dTB]=+0.42 vs pretrained rho[dBT]=+0.61 / rho[dTB]=-0.08), estimator replication, DINO appearance null (p=0.43), and the two-cost mechanism; Sec 5 derives the fit-free regime-aware selection policy (rank by dTB+dBT scratch, dBT pretrained), shows it best on all three hold-out protocols (rho 0.52/0.52/0.50), frames rho~0.5 as the reproducibility ceiling (pretrained fraction 1.08 = parity with retraining a sibling; 73-76% of a 3-architecture consensus at ceiling 0.732), recovers the sign structure with per-regime 2-coefficient OLS, and translates to decisions (median top-1 regret 1.2-2.8 PCK vs 13.9 random); Sec 6 splits absolute prediction into anchors (units) + policy (order), MAE 9.3 / r 0.88 LOTO, pretrained MAE 8.2 / r 0.90; Sec 7 gives interventional support: a pre-registered out-of-sample test on a never-seen generated grid where the off-target cost ranks from-scratch sources on the one benchmark where it varies (FlyingThings rho +0.67, 3.1x spread, vs symmetric -0.28), a closed-loop render-free generator search (+0.93 predicted / +0.87 realized on KITTI-2015, null control -1.6), BFV construct validity (recovered camera-vs-object regimes match target physics), the trial19 case study (scratch rank 1/9 -> pretrained rank 3/9), and a motion x texture 2x2 showing specificity-not-magnitude; Sec 8 Limitations is unusually candid (8/9 flip, pretrained half observational-only and the grid's pretrained arm nominally favors the wrong direction, no interventional test of the scratch missing-support cost, 2 backbone architectures, 3 pre-registered FlowFormer predictions); Sec 9 concludes \"select with the policy, design with the direction.\" All 8 main-text \\input tables and all 11 main + 4 supp figures exist on disk. The biggest audit findings: (1) tab_decomp's two object-motion/matte cells (83.2, 42.1) were harvested at 00:02 Jun 11 from a from-scratch run launched 21:08 Jun 10 that was still training (val CSV last written 23:57, exact in-flight maxima 83.2400 / 42.0822) \u2014 provisional numbers in a main-text table; (2) Sec 7 prose quotes the grid's pretrained-arm point estimates as +0.64/+0.31/+0.43 but the current intervention_oos.csv TT means are +0.64/+0.21/+0.37 (the CSV is explicitly flagged as live in DRAFT_NOTES); (3) the supplement is one reframe behind the main text \u2014 it still says the pretrained grid arm has \"only three sources\", quotes pre-policy rule rhos (0.50/0.51/0.51), says \"1,458 models\" where main says 99, uses the banned \"fine-tuned\" wording, and still makes the \"rank training sets better than retraining\" claim the main text deliberately retracted to \"parity\"; (4) two supp references from main (KuBasic/pretrained 2x2 replication; 95% bootstrap CIs for Table 3) point to content that does not exist in supp_main.tex; (5) smaller presentation bugs: RAFT shown with a backbone checkmark inside the from-scratch block of Tables 1-2, the policy bolded as best in tab_utility's both-held pairwise column where matched-direction is higher (0.79 vs 0.78), and a tab_law caption claim (\"4 of 9 rows... all from-scratch or near-neutral\") whose fourth row is actually pretrained CATs++ frozen.",
+ "claims": [
+  {
+   "claim": "Study scale: 891 transfer evaluations from 3 architectures in 9 training configurations x 11 synthetic training sets x 9 benchmarks; 99 trained models; peak PCK@0.05; each (benchmark, architecture, variant) triple is a context.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex abstract (lines 43-46) and Sec 3 Setup (lines 293-303)",
+   "numbers": "891; 3 architectures; 9 training configurations; 11 synthetic training sets; 9 benchmarks; 99 trained models; PCK@0.05"
+  },
+  {
+   "claim": "Headline pretrained contrast: symmetric distance vs missing-support-alone correlation on the worst-served architecture (pretrained GLU-Net frozen).",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex abstract (lines 52-53); matches tables/tab_law.tex row 'GLU-Net & \\cmark & \\cmark' (sym +0.33, dbt +0.76)",
+   "numbers": "symmetric rho=+0.33 vs +0.76 for missing support alone"
+  },
+  {
+   "claim": "The directional flip holds in 8 of 9 training variants; exact permutation p=0.029 (abstract) / p=0.0286 excluding RAFT from the labeling, p=0.0079 with RAFT in the scratch group (Sec 4); it vanishes in DINO appearance space (flip statistic +0.018, p=0.43).",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex lines 53-56, 439-441, 476-477",
+   "numbers": "8 of 9; p=0.029; p=0.0286; p=0.0079; +0.018; p=0.43"
+  },
+  {
+   "claim": "Group-mean within-context Spearman: scratch rho[dTB]=+0.42 vs rho[dBT]=+0.23; pretrained rho[dBT]=+0.61 vs rho[dTB]=-0.08. Verified arithmetically against tab_law.tex per-variant values (scratch dTB: +0.53,+0.51,+0.31,+0.37,+0.40; pretrained dBT: +0.51,+0.50,+0.67,+0.76).",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex lines 436-438; tables/tab_law.tex",
+   "numbers": "+0.42; +0.23; +0.61; -0.08"
+  },
+  {
+   "claim": "The two directed distances are anti-correlated within contexts across canonical sources (tight-vs-broad tradeoff), the mechanism for why summing is right from scratch and destructive pretrained.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex line 447 (Sec 4); also intro line 166",
+   "numbers": "mean Spearman ~ -0.35"
+  },
+  {
+   "claim": "Scratch regime: symmetric average is the best group-mean predictor (+0.50 vs +0.42 for dTB alone); pretrained: symmetric mean dragged from +0.61 down to +0.39; strongest cells pretrained GLU-Net +0.26/+0.33 (sym) vs +0.67/+0.76 (dBT).",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex lines 453-461; tables/tab_law.tex rows GLU-Net pretrained",
+   "numbers": "+0.50 vs +0.42; +0.61 down to +0.39; +0.26/+0.33 vs +0.67/+0.76"
+  },
+  {
+   "claim": "Estimator replication of the flip: epsilon-radius coverage at 4px/16px gives +0.65/+0.91, directional kNN-KL +0.30, all at the permutation floor p=0.0286.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex lines 470-475",
+   "numbers": "+0.65; +0.91; +0.30; p=0.0286"
+  },
+  {
+   "claim": "Fit-free regime-aware policy (Eq. 3: D=dTB+dBT scratch, D=dBT pretrained) ranks held-out source / benchmark / both at rho 0.52/0.52/0.50, best of 9 predictor families; summed-distance-everywhere 0.44/0.44/0.46; FID/SW2/MMD 0.34/0.44/0.37; 13-feature motion ridge 0.22/0.36/0.23; appearance ridge -0.11/+0.19/-0.07.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/tables/tab_predictors.tex (all rows); main.tex line 576",
+   "numbers": "+0.52/+0.52/+0.50; +0.48/+0.50/+0.49 (matched direction); +0.44/+0.44/+0.46; +0.34/+0.44/+0.37; +0.22/+0.36/+0.23; -0.11/+0.19/-0.07"
+  },
+  {
+   "claim": "Reproducibility-ceiling framing: same-regime retraining agreement (empirical oracle) is rho ~0.56-0.69; policy fraction 1.08 pretrained (0.612 vs oracle 0.564, claimed as parity) and 0.72 scratch (0.499 vs 0.698, headroom in scratch GLU-Net); vs cross-architecture consensus oracle (ceiling 0.732) policy recovers 73-76%. Verified against ceiling_oracles.csv (pretrained rule_rho mean 0.6124, O2 mean 0.5645) and CONSENSUS_POLICY.csv (fractions 0.762803/0.747084/0.727278, cross_arch_consensus_rho 0.732319).",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex lines 592-607; /home/spencer/Projects/OnlineSyntheticCorrespondence/scripts/transfer_analysis_v5/results/ceiling_oracles.csv; /home/spencer/Projects/OnlineSyntheticCorrespondence/scripts/transfer_analysis_v4/results_rule_v5core/CONSENSUS_POLICY.csv",
+   "numbers": "0.56--0.69; 1.08 (0.612 vs 0.564); 0.72 (0.499 vs 0.698); 0.732; 73--76%"
+  },
+  {
+   "claim": "Per-regime 2-coefficient OLS recovers the sign structure: scratch w[dTB]=-7.57, w[dBT]=-1.08; pretrained w[dTB]=-0.82, w[dBT]=-3.22; pooled -4.57/-2.03. Held-out ranking: scratch fit +0.47/+0.56/+0.48 vs fit-free +0.50; pretrained fit +0.29/+0.50/+0.35 vs fit-free +0.61; pooled +0.40/+0.46/+0.41 vs +0.55. Caption explicitly disclaims coefficient ratios as normalization-sensitive.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/tables/tab_regime_linear.tex; main.tex caption lines 611-630",
+   "numbers": "-7.57; -1.08; -0.82; -3.22; -4.57; -2.03; +0.47/+0.56/+0.48 vs +0.50; +0.29/+0.50/+0.35 vs +0.61; +0.40/+0.46/+0.41 vs +0.55"
+  },
+  {
+   "claim": "Leave-one-architecture-out: scratch weights transfer (rho +0.51--0.65); pretrained fitted weights do NOT transfer between the two backbone architectures (held-out +0.25/+0.46 vs fit-free recall rule's +0.44/+0.67 on the same contexts); no nonlinear combiner (interaction, lexicographic, GBM, etc.) beats the 2-coefficient fit held out.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex lines 640-660",
+   "numbers": "+0.51--0.65; +0.25/+0.46; +0.44/+0.67"
+  },
+  {
+   "claim": "Decision utility: policy median top-1 regret 1.2/2.1/2.8 PCK (source/bench/both held out) vs matched-direction 3.9/4.7/3.9, summed 3.1/3.1/2.7, DINO 14.7/8.0/14.2, random 13.9; pairwise accuracy (gap>10) policy 0.77/0.78/0.78 vs retraining same-architecture 0.84 and different-architecture 0.78; per-regime split: pretrained matched-direction regret 0.7--2.1 vs sum's ~3.0, scratch sum 3.9--4.1 vs matched direction 5.2--7.9.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/tables/tab_utility.tex; main.tex caption lines 684-704 and prose lines 711-725",
+   "numbers": "1.2/2.1/2.8; 3.9/4.7/3.9; 3.1/3.1/2.7; 14.7/8.0/14.2; 13.9; 0.77/0.78/0.78; 0.84; 0.78; 0.7--2.1 vs 3.0; 5.2--7.9 vs 3.9--4.1"
+  },
+  {
+   "claim": "Absolute prediction: rho~0.5 caps explainable within-context variance at ~rho^2~0.25; cell-mean anchors + policy: MAE 9.3, r=0.88 (held-out source); per-regime gain calibration: pretrained MAE 8.2, r=0.90; both endpoints unseen: r~0.5 via two-way kernel anchor. (Figure F5 panel stats per DRAFT_NOTES are LOTO r .86/MAE 10.4, LOBO .64/21.8, JOINT .56/29.6.)",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex lines 744-764; DRAFT_NOTES.md Round 7",
+   "numbers": "rho^2 ~ 0.25; MAE 9.3, r=0.88; MAE 8.2, r=0.90; r~0.5"
+  },
+  {
+   "claim": "Pre-registered out-of-sample test (9 never-seen generated sources, from scratch): FlyingThings is the discriminative cell \u2014 off-target mass varies 3.12x and ranks transfer at rho +0.67 while coverage varies 1.26x and gives -0.38; kitti2012 row: 1.04x / +0.92 and 2.63x / +0.30; kitti2015 row: 1.02x / +0.38 and 1.67x / -0.70; KITTI rows declared untestable for motion costs (precision-matched by design, appearance twins). Verified exactly against intervention_oos.csv FF rows (0.6667, -0.3833, spreads 3.1186/1.2623, etc.).",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/tables/tab_oos.tex; main.tex caption lines 798-816; /home/spencer/Projects/OnlineSyntheticCorrespondence/scripts/transfer_analysis_v5/results/intervention_oos.csv",
+   "numbers": "3.12x / +0.67; 1.26x / -0.38; 1.04x / +0.92; 2.63x / +0.30; 1.02x / +0.38; 1.67x / -0.70; n=9"
+  },
+  {
+   "claim": "Abstract/intro/Sec-4 quote the grid contrast as 'FlyingThings: directed +0.67, symmetric -0.28'; -0.28 matches the current CSV's FF flyingthings sym = -0.2833.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex lines 70, 182-184, 467-468; scripts/transfer_analysis_v5/results/intervention_oos.csv row 'FF,flyingthings'",
+   "numbers": "+0.67; -0.28 (CSV: -0.2833333333333333)"
+  },
+  {
+   "claim": "Closed-loop render-free generator search: KITTI-2015 tuned source margin +0.93 predicted, +0.87 realized; FlyingThings null control predicted ~0, realized -1.6.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex lines 854-861",
+   "numbers": "+0.93 predicted, +0.87 realized; ~0 predicted, -1.6 realized"
+  },
+  {
+   "claim": "BFV construct validity: recovered generator parameters \u2014 KITTI-2015 camera dolly Delta 2.18 / object vertical fraction 0.00 (camera-centric); FlyingThings 0.32 / 0.92 (object-centric); full supp table additionally gives # movers 4/2, transl. 0.92/1.41, rot. 0.39/1.36, vert. frac 0.001/0.920.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/tables/tab_recovery.tex; tables/tab_recovery_full.tex",
+   "numbers": "2.18; 0.00; 0.32; 0.92; (full: 0.001; 0.920)"
+  },
+  {
+   "claim": "trial19 case study: rank 1/9 from scratch on KITTI-2015 (+1.2 PCK over the next source), rank 3/9 pretrained inside a <=6 PCK near-ceiling band; grid pretrained transfer band 3--8 PCK vs 15--22 from scratch.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex lines 775-777 (fig:interv caption), 846-848, 935-940",
+   "numbers": "rank 1/9; +1.2 PCK; rank 3/9; <=6 PCK; 3--8 PCK vs 15--22"
+  },
+  {
+   "claim": "Motion x texture 2x2 (GSO assets, from scratch): KITTI-2012 target \u2014 camera/HQ 96.5 (bold), camera/matte 91.1, object/HQ 89.5, object/matte 83.2; FlyingThings target \u2014 camera/HQ 48.9, camera/matte 43.4, object/HQ 54.4 (bold), object/matte 42.1; off-diagonal near-tie on KITTI (91.1 vs 89.5) grounds the specificity-not-magnitude claim. HQ cells verified vs decomp_cells.csv (96.4753, 91.0916, 89.4922, 48.9347, 43.4237, 54.3852); matte/object cells harvested live from an in-flight run (maxima 83.2400 / 42.0822).",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/tables/tab_decomp.tex; main.tex caption lines 943-959; scripts/transfer_analysis_v5/results/decomp_cells.csv; /mnt/nvme_1tb_a/snapshots/transfer_grid/kitti_badmotion_ft_gso_matte_pt0_fz0_2026_06_10_21_08/validation_results.csv",
+   "numbers": "96.5; 91.1; 89.5; 83.2; 48.9; 43.4; 54.4; 42.1"
+  },
+  {
+   "claim": "Appearance-stripped twins (bit-identical motion): transfer moves 2.7--9.4 PCK while appearance distance moves ~70% (F7 caption); twins differ <=10 PCK from scratch and ~3 pretrained while motion-type effects span 10--80 PCK (fig:intervsplats caption).",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex lines 778-780 and 925-928",
+   "numbers": "2.7--9.4 PCK; ~70%; <=10 PCK; ~3; 10--80 PCK"
+  },
+  {
+   "claim": "Size/supervision controls: fit-free ranking by dataset size, vector count, or supervision density reaches at most rho=0.27 vs 0.52 for the rule; supp table gives n samples +0.043, n vectors +0.267, baseline rule rho +0.507, shuffle null -0.000, family drops +0.425..+0.544, drop-any-benchmark range [+0.495, +0.532].",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex lines 506-507; tables/tab_supp_controls.tex; supp_main.tex lines 96-102",
+   "numbers": "rho <= 0.27 vs 0.52; +0.043; +0.267; +0.507; -0.000; [+0.495, +0.532]"
+  },
+  {
+   "claim": "Middlebury exclusion: pretrained variants returned 52.6 +/- 4.7 PCK regardless of source (spread 4.7 vs 10--17 elsewhere; scratch spread 15.3); harness defect identified; sensitivity with Middlebury included: flip statistic +0.82 instead of +0.90, rule rho 0.49/0.50/0.52 instead of 0.50/0.51/0.51; largest effect on pretrained oracle fraction (0.554 -> 0.612 rule rho).",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/supp_main.tex lines 234-244; main.tex Limitations lines 1020-1023",
+   "numbers": "52.6 +/- 4.7; 4.7 vs 10--17; 15.3; +0.82 vs +0.90; 0.49/0.50/0.52 vs 0.50/0.51/0.51; 0.554 -> 0.612"
+  },
+  {
+   "claim": "Sampling stability: mean-NN distances reach rho >= 0.96 by 5x10^4 vectors and 1.000 at the reference budget; kNN-KL plateaus near rho=0.5 (T->B) and rho=0.2 (B->T) and never stabilizes, motivating support-geometry estimators.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/supp_main.tex lines 213-228",
+   "numbers": "rho >= 0.96; 5x10^4; 1.000; 0.5; 0.2; 110 train->benchmark pairs"
+  },
+  {
+   "claim": "Anchor directionality control: directional anchor interpolation loses to symmetric IDW (held-out-benchmark MAE 16.9 symmetric vs 18.9--24.1 directional; held-out-source 8.6 vs 8.7--10.1) \u2014 directionality lives in the ranking term only.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/supp_main.tex lines 168-175",
+   "numbers": "16.9 vs 18.9--24.1; 8.6 vs 8.7--10.1"
+  },
+  {
+   "claim": "DINO negative-control table: all per-variant correlations weak-to-negative in both directions (range -0.14 to -0.35), no regime structure.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/tables/tab_law_dino.tex",
+   "numbers": "-0.19; -0.20; -0.23; -0.22; -0.22; -0.26; -0.28; -0.31; -0.31; -0.20; -0.16; -0.17; -0.26; -0.35; -0.33; -0.29; -0.31; -0.29; -0.27; -0.25; -0.26; -0.19; -0.16; -0.14; -0.18; -0.15; -0.15"
+  },
+  {
+   "claim": "Three pre-registered falsifiable FlowFormer predictions stated in Limitations: from-scratch cells ranked by the summed distance, pretrained cells by missing support alone, and per-regime weights fitted on the three architectures transfer without improving on the fit-free scores.",
+   "source": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex lines 999-1006",
+   "numbers": "none"
+  }
+ ],
+ "red_flags": [
+  {
+   "issue": "Main-text Table 8 (tab_decomp) contains two cells harvested from a training run that was still in flight when the table was rendered. appearance_motion_decomposition.py harvests peak PCK 'live' from grid snapshots; the kitti_badmotion_ft_gso_matte from-scratch run was launched 21:08 Jun 10, its validation_results.csv was last written 23:57 (epoch 50 / step 20000 at last row), and tab_decomp.tex was written 00:02 Jun 11. Peak-so-far values can only rise, so the 83.2 and 42.1 cells (and the caption claims resting on them, e.g. 'HQ > matte in every cell' and the near-tie framing) are provisional.",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/tables/tab_decomp.tex ('object motion ... 83.2', '... 42.1'); /mnt/nvme_1tb_a/snapshots/transfer_grid/kitti_badmotion_ft_gso_matte_pt0_fz0_2026_06_10_21_08/validation_results.csv (kitti2012 max 83.2400, flyingthings max 42.0822, mtime 2026-06-10 23:57); scripts/transfer_analysis_v5/appearance_motion_decomposition.py lines 169-205 ('the new GSO matte cell is not yet in intervention_breakdown.csv')",
+   "severity": "high"
+  },
+  {
+   "issue": "Sec 7(i) prose quotes the grid's pretrained-arm point estimates from a superseded generation of a live artifact. Main.tex says 'dtb +0.64, dbt +0.31, sym +0.43'; the current intervention_oos.csv TT rows give means +0.64 / +0.21 / +0.37 (matching the regenerated-but-unused tab_dirtest.tex column '+0.64 / +0.21 / +0.37'). DRAFT_NOTES explicitly flags intervention_oos.csv as 'LIVE ARTIFACT ... RE-RUN the OOS script + grep prose numbers when the grid finishes/freezes'. The qualitative claim (unstable estimates nominally favor the unmatched direction) survives, but the quoted numbers are stale.",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex line 849 ('$\\dtb$ $+0.64$, $\\dbt$ $+0.31$, sym $+0.43$'); scripts/transfer_analysis_v5/results/intervention_oos.csv TT rows (0.7333/0.8000/0.3833 prec; 0.0833/0.65/-0.10 rec; 0.1333/0.9333/0.0333 sym); ACCV_2026/tables/tab_dirtest.tex ('+0.64 ... +0.21 ... +0.37'); DRAFT_NOTES.md 'LIVE ARTIFACT' section",
+   "severity": "high"
+  },
+  {
+   "issue": "Supplement is one reframe behind the main text and contradicts it in places: (a) supp Sec 3.5 says the pretrained grid arm 'contains only three sources ... excluded from the pre-registered test' while main Sec 7 quotes its correlations over 9 sources; (b) supp Sec 3.1/throughout still uses 'rule' and 'fine-tuned' terminology main removed (DRAFT_NOTES round 2: 'fine-tuning wording removed everywhere'); (c) supp Sec 5 sensitivity quotes rule rho '0.50/0.51/0.51' which matches neither the policy row (+0.52/+0.52/+0.50) nor matched-direction (+0.48/+0.50/+0.49) in tab_predictors; (d) supp Sec 5 says '9 benchmarks, 1,458 models' while main says 99 trained models / 891 measurements; (e) supp Sec 3.1 prose for tab_supp_oracles says the two pretrained GLU-Net variants 'rank training sets better than retraining does there' \u2014 exactly the '>100% / better than retraining' framing DRAFT_NOTES round 2 says was deliberately retracted to 'parity' in main; (f) supp gap section cites 'main-paper Fig. 5' for the gap-stratified figure, which is Fig. 4 in the current main ordering.",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/supp_main.tex lines 177-183 ('only three sources'), 239 ('1{,}458 models'), 240-242 ('rule $\\rho$ $0.49/0.50/0.52$ instead of $0.50/0.51/0.51$'), 121-123 ('better than retraining does there'), 134-135 ('behind main-paper Fig.~5'); main.tex lines 293-302, 846-852; DRAFT_NOTES.md round 2",
+   "severity": "medium"
+  },
+  {
+   "issue": "Two supplement references from main point to content that does not exist in supp_main.tex: the tab_decomp caption claims 'The same 2x2 replicates on basic KuBasic assets and, compressed, with a pretrained backbone (supp.)' \u2014 no KuBasic or pretrained 2x2 table/section exists in the supplement (grep for 'kubasic'/'2x2' finds nothing); and the tab_predictors caption promises '95% bootstrap CIs in supp.' \u2014 no bootstrap-CI table for the predictor families exists there.",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex lines 956-958 and 546-547; supp_main.tex (sections: law, robust, predict, sampling, mid, figs; tables tab_supp_{asym,eps,dino,controls,oracles,gap,featuresets}, tab_recovery_full only)",
+   "severity": "medium"
+  },
+  {
+   "issue": "Tables 1-2 render RAFT with a checkmark in the 'Backbone' column while it sits in the from-scratch block, directly under text stating 'RAFT is trained from scratch by construction'. Known cause (DRAFT_NOTES round 3: RAFT ignores the pretrained flag, variant key relabeled F/F -> T/F), but as printed it visually contradicts the paper's own regime assignment and invites reviewer confusion.",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/tables/tab_law.tex line 11 ('RAFT & \\cmark & --' in the scratch block) and tab_law_dino.tex line 11; main.tex lines 292-294; DRAFT_NOTES.md Round 3 'RAFT FIX'",
+   "severity": "medium"
+  },
+  {
+   "issue": "tab_utility bolds the regime-aware policy as best in every column, but in the 'both held' pairwise-accuracy column matched-direction-everywhere is higher (0.79 vs policy's bolded 0.78), and in the 'source' column they tie at 0.77. The caption's 'It beats both of its ingredients used everywhere' is true for regret but not for pairwise accuracy.",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/tables/tab_utility.tex rows 7-8 ('regime-aware policy ... \\textbf{0.77} & \\textbf{0.78} & \\textbf{0.78}' vs 'matched direction everywhere ... 0.77 & 0.77 & 0.79'); main.tex caption lines 692-695",
+   "severity": "medium"
+  },
+  {
+   "issue": "tab_law caption says the symmetric average is 'the best single number in 4 of 9 rows---all from-scratch or near-neutral rows', but the fourth green-marked symmetric cell is W2 +0.57 in the CATs++ pretrained-frozen row (a pretrained row whose dbt is +0.50), not a from-scratch or near-neutral row; also the green there marks W2, not 'the average'.",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex caption lines 405-408; tables/tab_law.tex row 14 ('CATs++ & \\cmark & \\cmark & +0.14 & \\textbf{+0.50} & +0.56 & \\textcolor{bestgreen}{+0.57}')",
+   "severity": "medium"
+  },
+  {
+   "issue": "Abstract states 'parity with retraining a same-regime sibling variant' without the regime qualifier; the body restricts parity to the pretrained regime (scratch fraction is 0.72 of its oracle, 'headroom concentrated in scratch GLU-Net'). Intro contribution 2 is properly qualified ('at parity ... in the pretrained regime'); only the abstract over-generalizes.",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex lines 64-66 vs lines 594-603",
+   "severity": "low"
+  },
+  {
+   "issue": "Several prose numbers are loose or of ambiguous provenance: (a) 'Pooled across regimes the two directions cancel (+0.6 and -0.2 average to mush)' matches no actual cell pair (group means are +0.42/-0.08 for dTB, +0.23/+0.61 for dBT); (b) Sec 5's 'between +0.26 and +0.76 on the worst-served architecture' pairs the unfrozen GLU-Net sym (+0.26) with the frozen GLU-Net dbt (+0.76) across two different rows (row-consistent contrasts are +0.26/+0.67 and +0.33/+0.76); (c) 'vs. 0.52 for the rule' (Sec 4) vs supp controls baseline '+0.507'; (d) fig:gap caption 'right ~80% of the time' vs table values 0.77-0.78; (e) the '6--10 PCK ... for wrong structure' (Sec 7) and '9--11 PCK' appearance cost (tab:dirtest caption) do not match any single consistent reading of tab_decomp/decomp_2x2.csv (observable motion-structure gaps 7.0/7.9/5.5/-1.3; appearance main effects 9.67/7.21 kubasic, 5.4/6.3 GSO) \u2014 provenance ambiguous; (f) in tab_decomp's FlyingThings/matte column the bad-motion cell beats the good-motion cell (43.4 vs 42.1), hedged only by 'Single seed ... sub-seed-band gaps'.",
+   "evidence": "/home/spencer/Projects/OnlineSyntheticCorrespondence/ACCV_2026/main.tex lines 514-515, 668-669, 506-507, 679-680, 810-811, 979-981; tables/tab_supp_controls.tex line 3; tables/tab_decomp.tex; scripts/transfer_analysis_v5/results/decomp_2x2.csv",
+   "severity": "low"
+  },
+  {
+   "issue": "Paper length and metadata: main.pdf is 23 pages against the 14-page expectation DRAFT_NOTES records ('still over 14 limit \u2014 expected, trim later'); DRAFT_NOTES header still says 'Main: 16 pp'; submission ID is the placeholder '*****'.",
+   "evidence": "pdfinfo main.pdf 'Pages: 23'; ACCV_2026/DRAFT_NOTES.md lines 8, 265 and item 6 ('ID needs the real submission number')",
+   "severity": "low"
+  }
+ ],
+ "open_threads": [
+  "Re-harvest tab_decomp once the kitti_badmotion_ft_gso_matte from-scratch run finishes (cells 83.2/42.1 are in-flight peaks; snapshot /mnt/nvme_1tb_a/snapshots/transfer_grid/kitti_badmotion_ft_gso_matte_pt0_fz0_2026_06_10_21_08).",
+  "Re-run intervention_oos_test.py and re-grep Sec 7(i) prose when the local grid freezes \u2014 the quoted pretrained-arm numbers (+0.64/+0.31/+0.43) already disagree with the current CSV (+0.64/+0.21/+0.37); DRAFT_NOTES marks this artifact as live.",
+  "Bring supp_main.tex up to the Round-7 policy reframe: fix 'only three sources' pretrained-arm description, 'fine-tuned' wording, stale rule rhos (0.50/0.51/0.51), '1,458 models' vs main's 99 models/891 measurements, the retracted 'better than retraining' framing in Sec 3.1, and the 'main-paper Fig. 5' cross-reference (gap figure is Fig. 4).",
+  "Add the promised-but-missing supplement content: KuBasic-asset and pretrained-backbone replications of the 2x2 (referenced in tab_decomp caption) and 95% bootstrap CIs for tab_predictors; tab_dirtest.tex and tab_perregime_ablation.tex are generated but not \\input anywhere (DRAFT_NOTES calls tab_dirtest a supp candidate).",
+  "Pre-registered tests still pending: 3 FlowFormer predictions (64-job grid ready per memory), GLU-Net consumer generality check on the OOS grid (scripts/run_transfer_grid_glunet.py launcher, pre-registration in its docstring), and the mirror grid (coverage-varying at fixed off-target mass) to interventionally test the scratch missing-support cost.",
+  "Middlebury re-evaluation with the repaired harness (middlebury_val_flow cache still needs re-extraction; closed-loop Middlebury cell void per supp fig:supp_loop caption).",
+  "n=3 seed-CI runs (act2_seeds) for the closed-loop +0.93/+0.87 result were still training at draft time \u2014 fold in when harvested (DRAFT_NOTES item 5).",
+  "Fix RAFT's Backbone-checkmark rendering in tab_law/tab_law_dino (or annotate it), and the tab_utility bolding where matched-direction's 0.79 exceeds the policy's 0.78.",
+  "scripts/transfer_analysis_v5/README.md still quotes the old consensus generation (0.79/0.80/0.81) vs the regenerated 0.71-0.76 (DRAFT_NOTES Round 6).",
+  "Trim from 23 pages toward the ACCV limit and insert the real submission ID; decide between the staged F5 color variants (F5_absolute_by_benchmark.png / F5_absolute_by_trainset.png, currently unused)."
+ ]
+}

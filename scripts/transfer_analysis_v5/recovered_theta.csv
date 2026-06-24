@@ -1,0 +1,3 @@
+target,dolly_delta,num_movers,obj_translation,obj_rotation,vertical_frac,regime
+KITTI-2015,2.18,4,0.92,0.39,0.0006,camera-centric (forward dolly)
+FlyingThings,0.32,2,1.41,1.36,0.92,object-centric (flying objects)

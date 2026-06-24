@@ -1,0 +1,81 @@
+% =====================================================================
+\section{From Ranking to Absolute Prediction}
+\label{sec:absolute}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/results/F5_absolute_scatter.png}
+\caption{\textbf{Absolute \pck{} prediction under the three leakage-safe
+protocols} (predicted vs.\ actual peak \pck{} on the configurations we analyze;
+dots colored by benchmark). Predictions are the level estimate $+$ coverage. With the
+source held out (LOTO) the level comes from the target benchmark and predictions
+track the diagonal ($r{=}0.86$, MAE $10.0$); holding out the benchmark (LOBO)
+widens the band ($r{=}0.63$); with both held out (JOINT) the two-way kernel still
+recovers the level ($r{=}0.59$). Coverage supplies the ranking throughout
+(Table~\ref{tab:protocols}).}
+\label{fig:abs}
+\end{figure}
+
+Coverage ranks candidate sources but does not say what absolute \pck{} to expect.
+That number has two parts: a \emph{level} fixed by the target benchmark and the
+model (KITTI sits near $90$, SPair near $20$), and an \emph{offset} that orders
+sources within that level. Coverage supplies the offset for free; the level has to
+be read off a few already-observed runs. We therefore write
+\begin{equation}
+\widehat{\text{\pck}}(i,k,v) \;=\; \underbrace{L(k,v)}_{\text{level}}
+\;+\; \underbrace{g(i \to k)}_{\text{coverage offset}},
+\label{eq:decomp}
+\end{equation}
+where the offset $g(i\to k)=b\,(-\dbt)$ turns the source's coverage into \pck{}
+units through a \emph{single} global slope $b\ge0$ shared across all contexts (the
+fit-free ranking of Sect.~\ref{sec:predict}), and the level $L(k,v)$ for benchmark
+$k$ and configuration $v$ is estimated from observed runs. The slope $b$ is fit
+once, on within-context-demeaned data, so it carries no information about any
+held-out level and---being a positive, monotone rescaling---leaves every ranking of
+Sect.~\ref{sec:predict} unchanged. Only the per-context level $L$ is
+context-specific and can leak; we test it under three protocols that hide
+progressively more from the level estimate.
+
+\noindent\textbf{Estimating the level.} We estimate $L(k,v)$ by feature-weighted
+inverse-distance weighting: the level of the query is a weighted average of the
+observed runs, each weighted by how similar its (benchmark, source) is to the
+query in the same motion-feature space. The protocols differ only in which runs
+are available. \textbf{LOTO} (hold out the source) keeps the target benchmark, so
+the level is essentially the average over the other sources trained on it.
+\textbf{LOBO} (hold out the benchmark) has no run on the target, so it borrows the
+level from similar benchmarks, weighting each by benchmark similarity. \textbf{JOINT}
+(hold out both) has neither, so the level comes from a two-way kernel that weights
+every observed run by benchmark-similarity $\times$ source-similarity. Each step
+starves the level estimate while leaving the coverage offset untouched.
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Few-shot absolute prediction under three leakage-safe
+protocols.} Each protocol hides part of the predicted (source, benchmark) pair
+from the \emph{anchor} fit; the zero-shot coverage rule itself fits nothing and
+is not held out. Coverage $\rho$ is the headline fit-free coverage ranking; because it fits
+nothing it is identical across protocols. $r$ and MAE are pooled absolute \pck{}
+(anchor $+$ coverage). As the anchor is starved from LOTO to LOBO to JOINT,
+absolute error widens but the ranking term holds: anchors buy units, coverage
+buys order.}
+\label{tab:protocols}
+\small
+\input{tables/tab_protocols}
+\end{table}
+
+\noindent\textbf{Results.} The coverage offset is fit-free, so its ranking is
+identical across protocols ($\rho{=}0.57$). Absolute accuracy then tracks how far
+the level estimate has to reach (Fig.~\ref{fig:abs}, Table~\ref{tab:protocols}).
+With the benchmark observed (LOTO), level plus coverage
+predict at $r{=}0.86$, MAE $10.0$, accurate enough to budget experiments against;
+borrowing the level from similar benchmarks (LOBO) widens it to $r{=}0.63$, MAE
+$20.2$; with both source and benchmark held out (JOINT), the two-way kernel still
+recovers $r{=}0.59$, MAE $30.3$. The order holds as the level degrades: what is
+lost is the absolute scale, not the ranking. The remaining error is mostly
+run-to-run training noise that no dataset descriptor can predict; a predictor at
+rank correlation $\rho$ explains at most about $\rho^2$ of the within-context
+spread, and the supplement details every level estimator and calibration variant.
+Tightening the hardest held-out regime (JOINT) would take richer source- and
+model-level descriptors than a motion histogram supplies, which we leave to future
+work.
+

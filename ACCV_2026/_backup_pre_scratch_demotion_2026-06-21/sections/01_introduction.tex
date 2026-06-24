@@ -1,0 +1,103 @@
+% =====================================================================
+\section{Introduction}
+\label{sec:intro}
+
+Dense visual correspondence (optical flow, geometric and semantic matching)
+relies heavily on synthetic training data, because dense ground truth is scarce
+on real images
+\cite{mayer2016FlyingThingsDataset,sintel,greff2021kubric,pointodyssey}. Most
+progress targets \emph{how} to render this data (fidelity, lighting, speed)
+\cite{greff2021kubric,pointodyssey}, on the assumption that closing the
+appearance gap drives transfer. Yet non-photorealistic data often transfers well
+\cite{Baradad2021LookingAtNoise,white2009mandelbulb}, and a logically prior
+question gets far less attention: given a controllable pipeline, \emph{what}
+should it render for a given target? As rendering becomes more efficient and the
+appearance gap narrows, what to generate becomes the binding constraint.
+
+We find that a synthetic dataset's value is not intrinsic but depends on the
+target: the best source for one target is middling for another, so ``best
+dataset'' is meaningful only relative to deployment. Matching a source's
+distribution to a target's is also inherently \emph{directional}. In a shared
+motion-descriptor space a source can place mass on motions the target never uses
+(\textbf{off-target mass}; precision-analogous) or fail to cover the motions it
+needs (\textbf{coverage}, or missing support; recall-analogous); we measure these
+as the two directed nearest-neighbor distances between the datasets' flow-vector
+distributions. Symmetric discrepancies such as FID
+\cite{heusel2018ganstrainedtimescaleupdate} and sliced Wasserstein average the
+two directions, whereas generative-model evaluation separates them for sample
+quality \cite{sajjadi2018assessing_precision_recall,kynkaanniemi2019improved_pr}.
+For \emph{transfer}, we find the separation matters: most of the predictive
+signal sits in one direction.
+
+\begin{quote}
+\textbf{The coverage principle.} \emph{The most reliable single predictor of
+transfer is \emph{coverage}: how well the source's motion covers the target's,
+measured by the directed distance $\dbt$. Off-target mass, motion the source renders but the target never uses,
+contributes comparatively little, so it is usually better to \emph{cover} the
+target's motion than to \emph{match} its full distribution.}
+Two consequences recur: symmetric and distribution distances (FID, Wasserstein)
+trail coverage because they fold the less-useful direction back in; and the
+appearance analogue of coverage carries little target-selective signal, setting a
+source's overall quality rather than which target it suits. Throughout,
+``pretrained'' refers to the \emph{image-feature backbone} (\eg, ImageNet
+ResNet-101), not correspondence-task pre-training; the correspondence head is
+always trained on the synthetic source.
+\end{quote}
+
+We study this on a transfer study of 142 trained correspondence models: four
+architecture families (CATs++ \cite{cho2022cats++}, RAFT \cite{teed2020raft},
+GLU-Net \cite{truong2020glunet}, and FlowFormer \cite{huang2022flowformer}) in 13
+backbone configurations over 11 training sources, evaluated on 9 benchmarks
+($1{,}278$ transfer measurements). We probe it from several angles: replication
+across three distance estimators; a negative control in appearance-feature space;
+a construct-validity check, in which matching the descriptor alone recovers each
+target's expected motion regime; and a controllable grid crossing motion against
+appearance, on which a target-tuned source beats a generic baseline. A controlled
+motion-magnitude grid maps the coverage response (an inverted U, in which both
+under-coverage and over-shoot cost transfer); a cleaner test that isolates
+coverage at fixed off-target mass remains future work.
+
+We make the following contributions:
+\begin{enumerate}
+\item \textbf{A directional coverage signal for correspondence transfer}
+  (Sec.~\ref{sec:law}): of the distances we test, motion coverage ($\dbt$) is the
+  most reliable single predictor of transfer (within-context $\rho{\approx}0.57$,
+  about $92\%$ of the reproducibility ceiling), holding across architectures with
+  each reported in its designed training regime (Sec.~\ref{sec:setup}).
+\item \textbf{A render-free selection rule, zero- and few-shot}
+  (Secs.~\ref{sec:predict}--\ref{sec:absolute}): rank candidate sources by motion
+  coverage $\dbt$, with no target-side run, no labels, no learned weights, and no
+  differentiable renderer. Zero-shot it picks a source within a median $0.6$
+  \pck{} of the best (versus $15.1$ at random, median regret) and orders
+  clearly-separated candidates correctly $79\%$ of the time, close to an
+  independent cross-architecture retraining ($82\%$). Absolute \pck{} is set
+  largely by a source-level realism effect the motion distances cannot see; given
+  a handful of observed runs as anchors, the same score recovers it few-shot (MAE
+  ${\approx}10$ with the benchmark observed, widening to ${\approx}30$ when both
+  source and benchmark are held out) under leakage-safe splits. The anchors fix the absolute scale; coverage fixes the order.
+\item \textbf{Cover, do not match: off-target mass is nearly free}
+  (Secs.~\ref{sec:law}--\ref{sec:predict}): off-target mass adds little predictive
+  signal ($\dtb$, $\rho{\approx}0.03$), so the symmetric and distribution
+  distances (FID, sliced Wasserstein-2) trail coverage by folding it back in, and
+  the appearance analogue of coverage carries little target-selective signal. The
+  practical reading is to \emph{add} coverage of the target's motion rather than
+  \emph{match} its full distribution, which helps explain why broad generic sets
+  such as FlyingThings transfer well, and how a tuned source can improve on them.
+\item \textbf{Interventional support} (Sec.~\ref{sec:interv}): a render-free
+  generator search, scoring each candidate on the flow it produces with no
+  photorealistic rendering and no training in the loop and scored only by motion
+  coverage, recovers each target's expected motion regime (a forward camera dolly
+  for KITTI, object motion for FlyingThings). A source tuned this way matches or
+  beats a generic synthetic baseline in all twelve \emph{KITTI} settings (two
+  benchmarks $\times$ three architectures $\times$ two backbones), and on a
+  controllable grid crossing motion against appearance, motion rather than
+  appearance is the target-specific carrier of transfer.
+\end{enumerate}
+
+The stratification and design partition were fixed before FlowFormer was added
+to the study; its four configurations entered as a held-out fourth architecture
+family and fell in line with the coverage signal on real-motion targets without
+adjustment (pretrained $\dbt$ $+0.70$/$+0.67$, Table~\ref{tab:law}); on semantic
+targets it is a weaker but still positive coverage signal, where a symmetric
+distance is competitive (Sec.~\ref{sec:law}). Either way it entered the analysis
+unchanged, a check that the analysis choices are not fit to the data they explain.

@@ -377,19 +377,25 @@ def kps_from_flow(
         return trg_kps_list[0], src_kps_list[0], n_valid_list[0]
 
 
-def downsample_flow(flow: torch.Tensor, feat_size: int, verbose: bool = False) -> torch.Tensor:
+def downsample_flow(flow: torch.Tensor, feat_size: int, verbose: bool = False,
+                    min_valid_frac: Optional[float] = None) -> torch.Tensor:
     """
     Downsample flow using masked average pooling.
-    
+
     Uses the same approach as FlyingThingsDataset.FlowDownsampler:
     - Only averages over valid (finite) pixels
     - Normalizes to feature grid units
     - Sets regions with no valid pixels to inf
-    
+
     Args:
         flow: Flow tensor [2, H, W] or [B, 2, H, W] in pixel space
         feat_size: Target feature size (e.g., 32 for 32x32 output)
-    
+        min_valid_frac: If None (default), a cell is kept valid when it has more
+            than ~0.5 valid pixels (legacy behavior, unchanged). If set (e.g. 0.5),
+            a cell is marked invalid (inf) unless at least this FRACTION of its
+            source pixels are valid -- used by occlusion-aware downsampling so a
+            mostly-occluded cell becomes inf rather than averaging a few survivors.
+
     Returns:
         Downsampled flow [2, feat_size, feat_size] or [B, 2, feat_size, feat_size]
         in feature grid units. Invalid regions are marked with inf.
@@ -437,7 +443,14 @@ def downsample_flow(flow: torch.Tensor, feat_size: int, verbose: bool = False) -
     flow_downsampled = flow_downsampled / downsampling_factor
     
     # Mark regions with no valid pixels as invalid (set to inf)
-    valid_mask_downsampled = valid_count > 0.5  # At least 0.5 valid pixels
+    if min_valid_frac is None:
+        valid_mask_downsampled = valid_count > 0.5  # At least 0.5 valid pixels
+    else:
+        # Require at least `min_valid_frac` of the source pixels in the cell to be
+        # valid. valid_count is the per-cell count of valid pixels (the average over
+        # the cell was multiplied back by the cell area below).
+        cell_area = scale_factor_h * scale_factor_w
+        valid_mask_downsampled = valid_count >= (float(min_valid_frac) * cell_area)
     flow_downsampled[~valid_mask_downsampled.expand_as(flow_downsampled)] = float('inf')
     
     if verbose:

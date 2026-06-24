@@ -1,0 +1,67 @@
+\documentclass[runningheads]{llncs}
+% ---------------------------------------------------------------
+\usepackage[review,year=2026,ID=*****]{accv}
+%\usepackage{accv} % camera-ready
+\usepackage{accvabbrv}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb}
+\usepackage{multirow}
+\usepackage{pifont}
+\usepackage{makecell}
+\usepackage{colortbl}
+\definecolor{bestgreen}{rgb}{0.0,0.50,0.0}
+\newcommand{\best}[1]{\textbf{\textcolor{bestgreen}{#1}}}
+\newcommand{\cmark}{\ding{51}}
+\usepackage[accsupp]{axessibility}
+\usepackage[pagebackref,breaklinks,colorlinks,citecolor=accvblue]{hyperref}
+\usepackage{orcidlink}
+\usepackage{fontawesome5}
+
+% notation macros
+\newcommand{\dtb}{d_{T\to B}}
+\newcommand{\dbt}{d_{B\to T}}
+\newcommand{\pck}{PCK}
+% encoder-state glyphs: fire = trained, snowflake = frozen
+\newcommand{\enctrained}{\textcolor{orange!90!red}{\faFire}}
+\newcommand{\encfrozen}{\textcolor{cyan!55!blue}{\faSnowflake[regular]}}
+% best coverage-family predictor in a cell (green); bold marks recall (dBT), our claim
+\newcommand{\bst}[1]{\textcolor{green!60!black}{#1}}
+
+\begin{document}
+
+\title{Cover the Motion, Not the Look: Motion Coverage Predicts
+Synthetic-to-Real Correspondence Transfer}
+\titlerunning{Cover the Motion, Not the Look}
+
+\author{Anonymous ACCV 2026 Submission}
+\authorrunning{ACCV-26 submission ID *****}
+\institute{Paper ID *****}
+
+\maketitle
+
+\begin{abstract}
+    Correspondence, the task of matching points across images, underlies a wide range of vision tasks, including optical flow, geometric matching, and semantic matching. Because dense ground truth is prohibitively expensive to annotate on real images, synthetic data, which supplies unlimited exact labels, has become a standard training source. Most progress targets the rendering pipeline itself (faster, more photorealistic, more diverse), yet far less attention has gone to a prior question: given such a pipeline, what should it generate for a particular target? That choice is still often made by intuition, or by training on several candidate datasets and keeping whatever transfers best.
+
+    We study this question for correspondence and find that motion, not appearance, plays a significant role in transfer, and that distribution matching is directional. Decomposing the standard distances, optimal transport (sliced $W_2$) and Fréchet (FID), into a recall analogue (how well a source covers the motions the target uses) and a precision analogue (its off-target mass), we find that coverage is the stable and often sharpest signal, while off-target mass is nearly free and conflates distinct failure modes. Symmetric measurements like FID and $W_2$ average the two directions and so transfer less reliably; appearance distances miss the signal entirely. A single directed distance over a crude histogram of flow vectors captures it, with no target labels and no training. Across 142 trained models spanning four architecture families, ranking sources by this distance is about as reliable as training a second model to find out, picking a source within $0.6$ \pck{} of the best versus ${\sim}15$ at random. Given a few reference runs it also predicts absolute accuracy, and with no appearance render or training in the loop (only the scene's geometry, to read off its motion) it tunes a generator toward a target to beat a generic synthetic dataset. Cover the motion, not the look.
+
+\keywords{Dense correspondence \and Synthetic training data \and Dataset
+selection \and Transferability}
+\end{abstract}
+
+
+\input{sections/01_introduction}
+\input{sections/02_related_work}
+\input{sections/03_setup}
+\input{sections/04_coverage_law}
+\input{sections/05_selecting_data}
+\input{sections/06_absolute_prediction}
+\input{sections/07_interventions}
+\input{sections/08_limitations}
+\input{sections/09_conclusion}
+
+% ---------------------------------------------------------------
+\bibliographystyle{splncs04}
+\bibliography{main}
+
+\end{document}

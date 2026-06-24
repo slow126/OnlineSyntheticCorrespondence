@@ -1,0 +1,28 @@
+\begin{tabular}{lc rrrr rrrr}
+\toprule
+\multicolumn{2}{c}{} & \multicolumn{8}{c}{\footnotesize Spearman $\rho$ (transfer vs.\ $-$distance)} \\
+\cmidrule(lr){3-10}
+ & & \multicolumn{4}{c}{Real-motion Targets} & \multicolumn{4}{c}{Semantic Targets} \\
+\cmidrule(lr){3-6}\cmidrule(lr){7-10}
+Arch. & Encoder & $\dtb$ & $\dbt$ & sym & W2 & $\dtb$ & $\dbt$ & sym & W2 \\
+\midrule
+\multicolumn{10}{@{}l}{\emph{Scratch backbone} (off-design for the backbone-dependent matchers)}\\
+CATs++ & \enctrained & +0.60 & \textbf{+0.16} & +0.46 & +0.47 & +0.49 & \textbf{-0.42} & +0.24 & +0.22 \\
+CATs++ & \encfrozen & +0.70 & \textbf{+0.05} & +0.47 & +0.46 & +0.55 & \textbf{-0.51} & +0.19 & +0.15 \\
+GLU-Net & \enctrained & +0.09 & \textbf{+0.69} & +0.36 & +0.34 & +0.58 & \textbf{+0.07} & +0.59 & +0.45 \\
+GLU-Net & \encfrozen & +0.29 & \textbf{+0.58} & +0.49 & +0.47 & +0.47 & \textbf{+0.05} & +0.69 & +0.46 \\
+FlowFormer & \enctrained & +0.18 & \textbf{+0.45} & +0.36 & +0.40 & +0.23 & \textbf{+0.03} & +0.04 & +0.12 \\
+FlowFormer & \encfrozen & +0.15 & \textbf{+0.53} & +0.32 & +0.41 & +0.53 & \textbf{-0.19} & +0.41 & +0.33 \\
+\midrule
+\multicolumn{10}{@{}l}{\emph{Pretrained backbone}}\\
+CATs++ & \enctrained & +0.10 & \textbf{+0.52} & +0.32 & +0.29 & -0.12 & \textbf{+0.50} & +0.54 & +0.53 \\
+CATs++ & \encfrozen & +0.26 & \textbf{+0.51} & +0.50 & +0.51 & -0.00 & \textbf{+0.50} & +0.64 & +0.66 \\
+GLU-Net & \enctrained & -0.18 & \textbf{+0.65} & +0.25 & +0.26 & -0.30 & \textbf{+0.70} & +0.28 & -0.02 \\
+GLU-Net & \encfrozen & -0.17 & \textbf{+0.73} & +0.24 & +0.19 & -0.28 & \textbf{+0.80} & +0.45 & +0.40 \\
+FlowFormer & \enctrained & +0.11 & \textbf{+0.70} & +0.43 & +0.41 & +0.25 & \textbf{+0.31} & +0.41 & +0.65 \\
+FlowFormer & \encfrozen & +0.18 & \textbf{+0.67} & +0.39 & +0.37 & +0.05 & \textbf{+0.35} & +0.27 & +0.39 \\
+\midrule
+\multicolumn{10}{@{}l}{\emph{From scratch by design}}\\
+RAFT & \enctrained & +0.32 & \textbf{+0.44} & +0.47 & +0.45 & +0.50 & \textbf{+0.13} & +0.62 & +0.52 \\
+\bottomrule
+\end{tabular}

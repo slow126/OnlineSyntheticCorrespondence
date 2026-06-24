@@ -1,0 +1,41 @@
+TRAINING SUMMARY
+==================================================
+Current epoch: 55
+Training time so far: 68146.47 seconds
+Total epochs planned: 200
+Best primary benchmark PCK: 12.8122%
+Best average PCK: 9.8932% (epoch 55)
+Primary benchmark: flyingthings
+
+BEST PERFORMANCE PER BENCHMARK:
+--------------------------------------------------
+flyingthings: 12.81% PCK (epoch 55, epoch_55.pth)
+tss         : 7.92% PCK (epoch 50, epoch_50.pth)
+middlebury  : 16.32% PCK (epoch 55, epoch_55.pth)
+synthetic   : 6.30% PCK (epoch 55, epoch_55.pth)
+pfpascal    : 4.75% PCK (epoch 10, epoch_10.pth)
+pfwillow    : 5.67% PCK (epoch 55, epoch_55.pth)
+spair       : 2.11% PCK (epoch 55, epoch_55.pth)
+kitti2012   : 14.58% PCK (epoch 10, epoch_10.pth)
+kitti2015   : 21.06% PCK (epoch 10, epoch_10.pth)
+pointodyssey: 17.83% PCK (epoch 55, epoch_55.pth)
+
+MOTION-AWARE METRICS (from latest epoch):
+--------------------------------------------------
+Motion-aware PCK and static bias metrics are logged in validation_results.csv
+Metrics include: PCK (motion-aware), PCK by motion bins, zero-flow precision/recall/F1, static bias ratio
+
+TRAINING CONFIGURATION:
+------------------------------
+Train dataset: synthetic
+Learning rate: 1e-5
+Batch size: 8
+Feature size: 32
+Evaluation benchmarks: flyingthings, tss, middlebury, synthetic, pfpascal, pfwillow, spair, kitti2012, kitti2015, pointodyssey
+Evaluation alphas: 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05
+Backbone: resnet101
+Freeze backbone: False
+Pretrained backbone: False
+Augmentation: False
+
+STATUS: Training in progress (epoch 55/200)

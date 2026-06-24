@@ -1,0 +1,16 @@
+\begin{tabular}{l ccc ccc}
+\toprule
+ & \multicolumn{3}{c}{median top-1 regret (PCK) $\downarrow$} & \multicolumn{3}{c}{pairwise acc., gap $>$10 $\uparrow$} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}
+Selection strategy \hfill (held out $\rightarrow$) & source & bench. & both & source & bench. & both \\
+\midrule
+regime-aware policy (ours) & \textbf{1.2} & \textbf{2.1} & \textbf{2.8} & \textbf{0.77} & \textbf{0.78} & \textbf{0.78} \\
+matched direction everywhere & 3.9 & 4.7 & 3.9 & 0.77 & 0.77 & 0.79 \\
+summed distance everywhere & 3.1 & 3.1 & 2.7 & 0.75 & 0.74 & 0.76 \\
+appearance similarity (DINO) & 14.7 & 8.0 & 14.2 & 0.42 & 0.61 & 0.43 \\
+random pick (expected) & 13.9 & 13.9 & 13.9 & 0.50 & 0.50 & 0.50 \\
+\midrule
+\emph{retraining, same architecture} & --- & --- & --- & \multicolumn{3}{c}{0.84} \\
+\emph{retraining, different architecture} & --- & --- & --- & \multicolumn{3}{c}{0.77} \\
+\bottomrule
+\end{tabular}

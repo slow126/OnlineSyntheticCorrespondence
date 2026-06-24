@@ -1,0 +1,15 @@
+\begin{tabular}{l cc}
+\toprule
+ & \multicolumn{2}{c}{texture} \\
+\cmidrule(lr){2-3}
+trained on (from scratch) & HQ \textit{(good)} & matte \textit{(bad)} \\
+\midrule
+\multicolumn{3}{@{}l}{\textit{target:} KITTI-2012 --- ego motion} \\
+\quad camera motion \textit{(good)} & \textbf{96.5} & 91.1 \\
+\quad object motion \textit{(bad)} & 89.5 & 83.2 \\
+\midrule
+\multicolumn{3}{@{}l}{\textit{target:} FlyingThings --- object motion} \\
+\quad camera motion \textit{(bad)} & 48.9 & 43.4 \\
+\quad object motion \textit{(good)} & \textbf{54.4} & 42.1 \\
+\bottomrule
+\end{tabular}

@@ -1,0 +1,26 @@
+\centering
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}[t]{@{}lll@{}}
+\toprule
+Architecture & Backbone & Encoder \\
+\midrule
+CATs++~\cite{cho2022cats++}            & ResNet-101 & \encfrozen\,/\,\enctrained \\
+GLU-Net~\cite{truong2020glunet}        & VGG        & \encfrozen\,/\,\enctrained \\
+FlowFormer~\cite{huang2022flowformer}  & Twins-SVT  & \encfrozen\,/\,\enctrained \\
+RAFT~\cite{teed2020raft}               & none       & end-to-end \\
+\bottomrule
+\end{tabular}\hspace{6mm}%
+\begin{tabular}[t]{@{}ll@{}}
+\toprule
+Real-motion & Semantic \\
+\midrule
+KITTI-12/15~\cite{kitti_flow}                     & SPair-71k~\cite{spair71k} \\
+FlyingThings~\cite{mayer2016FlyingThingsDataset}  & PF-Pascal~\cite{pfpascal} \\
+PointOdyssey~\cite{pointodyssey}                  & PF-Willow~\cite{pfpascal} \\
+synthetic                                         & TSS \\
+\bottomrule
+\end{tabular}
+
+\smallskip
+{\footnotesize Seven configurations $\times$ 11 training sources ($-$1: RAFT not trained on SPair) $=$
+\textbf{76} trained models; \textbf{684} transfer measurements.}

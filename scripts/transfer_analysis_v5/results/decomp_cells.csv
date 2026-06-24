@@ -1,0 +1,38 @@
+arm,benchmark,source,peak_pck,motion,appearance,assets,bench_regime
+FF,flyingthings,lowtex_matte,52.0825,frozen,matte,gso,object
+FF,flyingthings,trial19,56.1591,frozen,hq,gso,object
+FF,flyingthings,kitti_badmotion_ft_gso_hq,54.3852,object,hq,gso,object
+FF,flyingthings,ft_recovered_hq,52.0169,object,hq,kubasic,object
+FF,flyingthings,ft_recovered_matte,41.3874,object,matte,kubasic,object
+FF,flyingthings,kitti_recovered_gso_matte,43.4237,camera,matte,gso,object
+FF,flyingthings,kitti_recovered_gso_hq,48.9347,camera,hq,gso,object
+FF,flyingthings,kitti_recovered_matte,43.5359,camera,matte,kubasic,object
+FF,flyingthings,kitti_recovered_hq,47.6055,camera,hq,kubasic,object
+FF,kitti2012,kitti_recovered_gso_hq,96.4753,camera,hq,gso,ego (camera)
+FF,kitti2012,kitti_recovered_hq,96.1964,camera,hq,kubasic,ego (camera)
+FF,kitti2012,trial19,90.9113,frozen,hq,gso,ego (camera)
+FF,kitti2012,lowtex_matte,90.3973,frozen,matte,gso,ego (camera)
+FF,kitti2012,kitti_recovered_gso_matte,91.0916,camera,matte,gso,ego (camera)
+FF,kitti2012,kitti_recovered_matte,88.6404,camera,matte,kubasic,ego (camera)
+FF,kitti2012,kitti_badmotion_ft_gso_hq,89.4922,object,hq,gso,ego (camera)
+FF,kitti2012,ft_recovered_matte,76.6515,object,matte,kubasic,ego (camera)
+FF,kitti2012,ft_recovered_hq,88.4381,object,hq,kubasic,ego (camera)
+FF,kitti2015,lowtex_matte,85.9858,frozen,matte,gso,mixed
+FF,kitti2015,trial19,87.1496,frozen,hq,gso,mixed
+FF,kitti2015,kitti_recovered_gso_matte,73.7756,camera,matte,gso,mixed
+FF,kitti2015,kitti_recovered_hq,80.2283,camera,hq,kubasic,mixed
+FF,kitti2015,kitti_recovered_gso_hq,83.1569,camera,hq,gso,mixed
+FF,kitti2015,kitti_recovered_matte,76.5533,camera,matte,kubasic,mixed
+FF,kitti2015,kitti_badmotion_ft_gso_hq,84.1955,object,hq,gso,mixed
+FF,kitti2015,ft_recovered_matte,72.4716,object,matte,kubasic,mixed
+FF,kitti2015,ft_recovered_hq,83.223,object,hq,kubasic,mixed
+TT,flyingthings,kitti_badmotion_ft_gso_hq,77.135,object,hq,gso,object
+TT,flyingthings,kitti_recovered_gso_matte,71.5825,camera,matte,gso,object
+TT,flyingthings,kitti_recovered_gso_hq,73.488,camera,hq,gso,object
+TT,kitti2012,kitti_recovered_gso_hq,98.4598,camera,hq,gso,ego (camera)
+TT,kitti2012,kitti_recovered_gso_matte,97.4466,camera,matte,gso,ego (camera)
+TT,kitti2012,kitti_badmotion_ft_gso_hq,95.7896,object,hq,gso,ego (camera)
+TT,kitti2015,kitti_recovered_gso_matte,93.8405,camera,matte,gso,mixed
+TT,kitti2015,kitti_recovered_gso_hq,96.581,camera,hq,gso,mixed
+TT,kitti2015,kitti_badmotion_ft_gso_hq,94.2614,object,hq,gso,mixed
+TT,kitti2015,trial19,96.1158,frozen,hq,gso,mixed

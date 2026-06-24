@@ -1,0 +1,301 @@
+\documentclass[runningheads]{llncs}
+\usepackage[review,year=2026,ID=*****]{accv}
+\usepackage{accvabbrv}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb}
+\usepackage{multirow}
+\usepackage{pifont}
+\newcommand{\cmark}{\ding{51}}
+\usepackage[accsupp]{axessibility}
+\usepackage[pagebackref,breaklinks,colorlinks,citecolor=accvblue]{hyperref}
+
+\newcommand{\dtb}{d_{T\to B}}
+\newcommand{\dbt}{d_{B\to T}}
+\newcommand{\pck}{PCK}
+
+\begin{document}
+
+\title{Supplementary Material:\\Off-Target Mass or Missing Support?}
+\titlerunning{Off-Target Mass or Missing Support? (Supplementary)}
+\author{Anonymous ACCV 2026 Submission}
+\authorrunning{ACCV-26 submission ID *****}
+\institute{Paper ID *****}
+\maketitle
+
+\noindent This supplement provides: the full estimator-replication and
+appearance-control tables for the regime--direction principle
+(Sec.~\ref{supp:law}); robustness controls (Sec.~\ref{supp:robust});
+predictor ablations including the feature-set comparison for the per-regime
+linear models (Sec.~\ref{supp:predict}); sampling-stability measurements
+justifying the choice of support-geometry estimators
+(Sec.~\ref{supp:sampling}); the Middlebury exclusion (Sec.~\ref{supp:mid});
+and additional figures (Sec.~\ref{supp:figs}).
+
+% =====================================================================
+\section{The Principle: Full Per-Variant Evidence}
+\label{supp:law}
+
+\subsection{Asymmetric vs.\ symmetric, all metrics}
+Table~\ref{tab:supp_asym} reports, per variant, the regime-rule correlation
+against both fixed directions and four symmetric baselines (the symmetric
+mean-NN average, FID, sliced Wasserstein-2, and MMD, all computed in the same
+BFV motion space). The rule's margin is largest exactly where the two
+directions disagree most (pretrained GLU-Net), and the symmetric metrics
+hedge everywhere---consistent with the main-paper claim that direction-blind
+distances average the two failure modes away.
+
+\begin{table}[h]
+\centering
+\caption{Per-variant ranking correlations: the regime rule vs.\ fixed
+directions and symmetric baselines. Variants grouped scratch-first.}
+\label{tab:supp_asym}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\input{tables/tab_supp_asym}
+\end{table}
+
+\subsection{Estimator replication: $\epsilon$-radius coverage}
+Table~\ref{tab:supp_eps} replicates the rule with a Monte-Carlo
+$\epsilon$-radius support-overlap estimator at 1, 4, and 16\,px (thresholds
+mapped into the normalized BFV space), in both the rule framing and the
+symmetric framing. At 4--16\,px the rule-over-symmetric margin exceeds the
+mean-NN margin; 1\,px saturates (too strict). The principle concerns the
+direction, not the estimator.
+
+\begin{table}[h]
+\centering
+\caption{$\epsilon$-radius coverage replication of the rule (per variant,
+regime-grouped).}
+\label{tab:supp_eps}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\input{tables/tab_supp_eps}
+\end{table}
+
+\subsection{The appearance-space mirror (negative control)}
+Table~\ref{tab:supp_dino} runs the identical per-variant analysis in DINOv3
+appearance space. Correlations are weak-to-negative in both directions for
+every variant; the flip statistic is $+0.018$ (exact permutation $p{=}0.43$)
+and its leave-one-benchmark-out range crosses zero. The verification verdict
+for the appearance run is ``control confirmed: no appearance-space flip.''
+
+\begin{table}[h]
+\centering
+\caption{The same analysis as main-paper Table~1, in appearance (DINO) space.
+No direction carries signal and no flip exists.}
+\label{tab:supp_dino}
+\scriptsize
+\input{tables/tab_supp_dino}
+\end{table}
+
+% =====================================================================
+\section{Robustness Controls}
+\label{supp:robust}
+
+Table~\ref{tab:supp_controls} summarizes the controls. The shuffle null is
+centered at zero (empirical $p{<}0.005$ for the observed rule); dropping any
+of the five generator families, or any single benchmark, moves the rule by at
+most $0.09$; and fit-free ranking by dataset size, vector count, or
+supervision density reaches at most $\rho{=}0.27$---``more data'' does not
+explain the signal, which also carries the main paper's claim that off-target
+mass is harmful rather than merely wasted.
+
+\begin{table}[h]
+\centering
+\caption{Robustness controls for the fit-free rule.}
+\label{tab:supp_controls}
+\small
+\input{tables/tab_supp_controls}
+\end{table}
+
+% =====================================================================
+\section{Predictor Analyses}
+\label{supp:predict}
+
+\subsection{Reproducibility oracles, per variant}
+Table~\ref{tab:supp_oracles} reports, per variant, the rule's ranking
+correlation against two retraining oracles: $O_2$, the mean pairwise
+rank-agreement with the \emph{other variants of the same regime} (the fair
+oracle), and $O_3$, agreement with the same-regime rank-averaged consensus
+(strictest). Both pretrained GLU-Net variants exceed their oracles
+(fractions $>$1.3): the two distances rank training sets better than
+retraining does there.
+
+\begin{table}[h]
+\centering
+\caption{Rule vs.\ retraining-reproducibility oracles, per variant.}
+\label{tab:supp_oracles}
+\small
+\input{tables/tab_supp_oracles}
+\end{table}
+
+\subsection{Gap-stratified pairwise accuracy}
+Table~\ref{tab:supp_gap} gives the full gap-stratified comparison behind
+main-paper Fig.~5: the probability the rule orders a source pair correctly,
+per true-gap bin and protocol, against the empirical agreement of independent
+retrainings.
+
+\begin{table}[h]
+\centering
+\caption{Pairwise ordering accuracy by true \pck{} gap.}
+\label{tab:supp_gap}
+\small
+\input{tables/tab_supp_gap}
+\end{table}
+
+\subsection{Feature sets for the per-regime linear model}
+Table~\ref{tab:supp_featuresets} swaps the two mean-NN distances for
+$\epsilon$-coverage features (both directions; one or three radii), their
+combination, and---as the control---the same two directed distances measured
+in DINO appearance space. For ranking, mean-NN wins in the scratch regime
+and the coverage features edge it in the pretrained regime, with all motion
+sets far above appearance ($\rho \le 0.16$ under the identical protocol);
+the combined set gives the best absolute error. The practical recipe:
+rank with the rule (or the per-regime mean-NN model from scratch), calibrate
+units with the combined set.
+
+\begin{table}[h]
+\centering
+\caption{Per-regime linear model under different feature sets. MAE is
+held-out-source, anchor $+$ model.}
+\label{tab:supp_featuresets}
+\scriptsize
+\setlength{\tabcolsep}{3.5pt}
+\input{tables/tab_supp_featuresets}
+\end{table}
+
+\subsection{Where directionality does \emph{not} live: the anchor}
+Directional borrowing of the level anchor $L$ (interpolating observed cells
+with regime-matched directed similarities) \emph{loses} to plain symmetric
+inverse-distance weighting on both anchor-interpolation problems
+(held-out-benchmark MAE 16.9 symmetric vs.\ 18.9--24.1 directional;
+held-out-source 8.6 vs.\ 8.7--10.1). Directionality lives where learning
+happens (the ranking term $g$), not where measurement is interpolated---a
+clean separation between the principle and the plumbing.
+
+\subsection{Pretrained arm of the generated grid}
+The pretrained (fine-tuned) arm of the intervention grid contains only three
+sources, whose $\dtb$ and $\dbt$ orderings coincide; it therefore cannot
+discriminate between directions and is excluded from the pre-registered test
+(reported for completeness: all three orderings agree with transfer on 2 of
+3 benchmarks). A coverage-varying pretrained grid is the natural follow-up
+experiment.
+
+\subsection{BFV construct validity: full recovered parameters}
+Table~\ref{tab:recovery_full} gives the complete recovered generator
+parameters behind main-paper Fig.~7. The camera dolly magnitude and the object
+vertical-motion fraction are the two axes that separate the regimes; the
+remaining object-motion parameters (translation, rotation, number of movers)
+are reported for completeness. \textbf{The known blind spot:} BFV aggregates
+flow vectors and is therefore invariant to whether a given aggregate field was
+produced by a moving camera or by correspondingly moving objects---a lateral
+camera pan and a lateral object slide yield near-identical BFV histograms. This
+is a feature of the analysis, not a failure: the descriptor recovers
+\emph{aggregate} motion (the quantity that drives transfer) faithfully, and is
+knowably agnostic to the camera/object factorization that produces it. A
+target whose motion is dominated by camera/object ambiguity (e.g.\ a pure
+lateral pan) is recovered as the corresponding object motion---the same
+aggregate field, a different mechanism. Disentangling the two would require a
+descriptor that encodes scene geometry, which is beyond the scope of this
+motion-only study.
+
+\begin{table}[h]
+\centering
+\caption{Full recovered generator parameters from BFV-only search.}
+\label{tab:recovery_full}
+\small
+\input{tables/tab_recovery_full}
+\end{table}
+
+% =====================================================================
+\section{Sampling Stability of the Estimators}
+\label{supp:sampling}
+
+We recompute every feature at flow-vector budgets from $5{\times}10^4$ to
+$8{\times}10^6$ and correlate each budget's value against the largest
+budget's, across all 110 train$\to$benchmark pairs. Mean-NN distances in both
+directions reach $\rho \ge 0.96$ by $5{\times}10^4$ vectors and $1.000$ at
+the reference budget; $\epsilon$-coverage at 4\,px behaves similarly. In
+contrast, kNN-KL estimators plateau near $\rho{=}0.5$ ($T{\to}B$) and
+$\rho{=}0.2$ ($B{\to}T$) and never stabilize---they measure density, which
+for procedurally generated data is an artifact of the sampling budget rather
+than an intrinsic property. This motivates the main paper's restriction to
+support-geometry estimators. Within the near-tied intervention family, the
+$\dtb$ ranking remains estimator-noise-limited even after 5-seed averaging;
+out-of-sample correlations there are attenuated (conservative), and the
+canonical training sets, whose spreads are an order of magnitude wider, are
+unaffected.
+
+% =====================================================================
+\section{The Middlebury Exclusion}
+\label{supp:mid}
+
+During analysis we observed that for pretrained variants the Middlebury
+evaluation returned $52.6 \pm 4.7$ \pck{} regardless of training source
+(within-context spread 4.7 vs.\ 10--17 on other benchmarks), while
+from-scratch variants spread normally (15.3). Inspection identified a defect
+in our Middlebury evaluation harness; pending re-evaluation, all reported
+numbers exclude Middlebury (9 benchmarks, 1{,}458 models). Sensitivity: with
+Middlebury included, every headline conclusion is unchanged (flip statistic
+$+0.82$ instead of $+0.90$; rule $\rho$ $0.49/0.50/0.52$ instead of
+$0.50/0.51/0.51$); the largest single effect of the exclusion is on the
+pretrained-regime oracle fraction ($0.554\!\to\!0.612$ rule $\rho$), because
+near-invariant contexts are unrankable and dilute within-context averages.
+
+% =====================================================================
+\section{Additional Figures}
+\label{supp:figs}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\linewidth]{figures/results/F5supp_decomposition.png}
+\caption{\textbf{Decomposing the absolute predictor into ranking and level.}
+Each panel shows the same predicted-vs-actual points; the lines are
+per-context linear fits. \textbf{Top row, one fit per benchmark:} each
+benchmark forms its own diagonal band whose slope is the \emph{within-context
+ranking} correlation (median slope $0.43$--$0.51 \approx \rho$, the
+reproducibility ceiling)---this is the rule ``buying order.'' The bands persist
+even when the benchmark is held out (LOBO/JOINT), which is exactly the
+within-context claim surviving leakage-safe evaluation. \textbf{Bottom row,
+one fit per training set:} each training set instead cuts \emph{across}
+benchmark levels, so its slope is ${\approx}1$ (median $0.93$--$0.96$)---this
+is the level anchor ``buying units.'' The two groupings are orthogonal: the
+ranking signal lives within a benchmark, the level signal across them.}
+\label{fig:supp_decomp}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\linewidth]{figures/results/F5grid_color_views.png}
+\caption{\textbf{The ranking signal, two color stories.} Identical panels
+(rule score vs.\ actual-minus-anchor, both z-scored within context; columns
+$=$ the three protocols); top row colored by benchmark, bottom row by
+training set. No single benchmark forms its own stripe (the Middlebury
+defect, before exclusion, was visible here as exactly such a stripe), and
+the far-off-target sources (SPair, 2D-warp family) are correctly scored
+low-and-land-low.}
+\label{fig:supp_grid}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\linewidth]{figures/results/F5supp_lobo_joint.png}
+\caption{\textbf{Full calibrated predictor, colored by benchmark} (anchor
+$+$ dispersion-calibrated rule score). The both-held-out panel stands on the
+two-way kernel anchor: in-fold cells weighted by benchmark-similarity
+$\times$ source-similarity jointly.}
+\label{fig:supp_abs}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.55\linewidth]{figures/results/F6_closed_loop.png}
+\caption{\textbf{Closed-loop intervention.} Predicted vs.\ realized margin of
+the motion-tuned generator over its anchor; the null control realizes no
+gain, as predicted. The Middlebury cell of this experiment is void pending
+the re-evaluation of Sec.~\ref{supp:mid}.}
+\label{fig:supp_loop}
+\end{figure}
+
+\end{document}
