@@ -23,7 +23,8 @@
   "camera_motion": "orbit",
   "camera_motion_choices": [
     "orbit",
-    "dolly"
+    "dolly",
+    "lateral"
   ],
   "start_distance": 8.0,
   "start_distance_std": 0.4,
@@ -39,5 +40,7 @@
   "focal_length": 40.0,
   "focal_length_std": 4.0,
   "temporal_gap": 0.5,
-  "temporal_gap_std": 0.2
+  "temporal_gap_std": 0.2,
+  "dolly_span": 1.788,
+  "camera_baseline": 0.447
 }
