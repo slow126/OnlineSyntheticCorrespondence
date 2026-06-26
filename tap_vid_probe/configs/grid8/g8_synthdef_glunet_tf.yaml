@@ -108,7 +108,7 @@ training:
   mmd_every_n_epochs: 0
   momentum: 0.9
   n_threads: 2
-  scheduler: step
+  scheduler: cosine
   seed: 2021
   step: '[70, 80, 90]'
   step_gamma: 0.5

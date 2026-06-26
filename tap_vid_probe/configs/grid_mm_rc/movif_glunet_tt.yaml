@@ -30,7 +30,7 @@ training:
   check_val_every_n_epoch: 1
   eval_initial: true
   momentum: 0.9
-  scheduler: step
+  scheduler: cosine
   step: '[70, 80, 90]'
   step_gamma: 0.5
   augmentation: false
@@ -39,6 +39,8 @@ training:
   max_flow_length: null
   n_threads: 2
   seed: 2021
+  lr: 0.001
+  lr_backbone: 1.0e-05
 paths:
   snapshots: /home/slow1/Projects/OnlineSyntheticCorrespondence/snapshots_mm_rc/movif_glunet_tt
   pretrained: null
