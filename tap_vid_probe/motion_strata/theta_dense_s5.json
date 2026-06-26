@@ -1,0 +1,43 @@
+{
+  "resolution": [
+    512,
+    512
+  ],
+  "asset_source": "gso",
+  "background_mode": "hdri",
+  "keep_asset_materials": true,
+  "num_assets": 12,
+  "asset_scale": 1.2,
+  "spawn_mode": "floor",
+  "keep_floor": true,
+  "spawn_xy_extent": 4.0,
+  "spawn_z_min": 0.3,
+  "spawn_z_max": 3.0,
+  "num_moving": 12,
+  "motion_translation": 0.8,
+  "motion_translation_std": 0.4,
+  "motion_rotation": 0.32,
+  "motion_rotation_std": 0.24,
+  "motion_vertical_frac": 0.25,
+  "motion_seed": 0,
+  "camera_motion": "orbit",
+  "camera_motion_choices": [
+    "orbit",
+    "dolly"
+  ],
+  "start_distance": 8.0,
+  "start_distance_std": 0.4,
+  "end_distance": 8.0,
+  "end_distance_std": 0.4,
+  "orbit_azimuth_span": 0.9329,
+  "orbit_elevation_span": 0.3265,
+  "camera_azimuth": 2.0,
+  "camera_azimuth_std": 0.6,
+  "camera_elevation": 0.4,
+  "camera_elevation_std": 0.15,
+  "target_z": 1.2,
+  "focal_length": 40.0,
+  "focal_length_std": 4.0,
+  "temporal_gap": 0.5,
+  "temporal_gap_std": 0.2
+}

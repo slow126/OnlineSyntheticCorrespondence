@@ -19,8 +19,8 @@
 \end{subfigure}
 \caption{\textbf{Motion fingerprints (BFV splats) and RGB samples.}
 \subref{fig:splats:motion}~Each panel aggregates a dataset's joint flow vectors
-$[\hat x,\hat y,\Delta\hat x,\Delta\hat y]$ into spatial clusters rendered as
-directional splats: color $=$ dominant flow direction (legend), extent $=$
+$[\hat x,\hat y,\Delta\hat x,\Delta\hat y]$ (a bag-of-flow-vectors, BFV) into
+spatial clusters rendered as directional splats: color $=$ dominant flow direction (legend), extent $=$
 spread; training sets (upper row) above benchmarks (lower row). The first three
 columns show the same dataset in both rows, confirming the fingerprint is
 dataset-intrinsic rather than split-dependent.
@@ -61,9 +61,7 @@ As an appearance control we represent each dataset using DINOv3 patch
 features~\cite{simeoni2025dinov3}, reduced by PCA and $\ell_2$-normalized.
 DINOv3 is trained by self-supervision on natural images with no exposure to any
 of our correspondence tasks, so its feature space is not shaped by transfer
-outcomes---though it naturally reflects the texture, illumination, and material
-statistics of the images it was trained on rather than providing a neutral
-decomposition of scene properties.
+outcomes.
 We apply the same distance framework to both descriptors so that
 any difference in predictive power reflects the descriptor's content, not the
 measurement procedure.
@@ -73,18 +71,14 @@ measure how often two same-family models trained under different backbone
 configurations (frozen vs.\ fine-tuned) agree on which training source is better,
 bounding what any data-only predictor could achieve on these benchmarks.
 Motion coverage accounts for $\approx$78\% of this ceiling within our study; the
-remaining gap reflects a combination of architectural sensitivity to the backbone
-freeze choice and any factors our benchmarks do not cleanly separate---including
-appearance effects that DINOv3 features aggregated over large natural-image
-corpora may not resolve for synthetic training sets.
+remainder is model-specific variance that lives in the model, not the data, and is
+out of reach of any data-only predictor (Sect.~\ref{sec:predict}).
 
 \noindent\textbf{Distribution distances.}
 We evaluate several standard distribution distances---symmetric Chamfer,
 FID~\cite{heusel2018ganstrainedtimescaleupdate}, and sliced Wasserstein-2---and
 find that decomposing the Chamfer into its two directed halves is the more
-reliable choice on aggregate; on individual benchmarks, particularly semantic
-targets, symmetric distances remain competitive and for FlowFormer on semantic
-targets are clearly stronger (Sect.~\ref{sec:law}).
+reliable choice on aggregate (Sect.~\ref{sec:law}).
 Writing $d_{A \to B}$ for the directed distance from a training cloud $A$ to a
 target cloud $B$,
 \begin{equation}
@@ -93,13 +87,14 @@ d_{A \to B} \;=\; \frac{1}{|A|}\sum_{a \in A}\; \min_{b \in B}\,
 \label{eq:dirdist}
 \end{equation}
 this is the one-sided Chamfer distance~\cite{fan2017pointcloud}.
-Writing $\dtb$ for the train-to-target direction and $\dbt$ for the reverse,
-$\dtb$ is large when much of the training distribution lies far from anything
-the target uses (\textbf{off-target mass}), and $\dbt$ is large when target
-motions have no nearby training example (\textbf{missing support}).
-Whether a symmetric measure meaningfully conflates these two cases is an empirical
-question; we find the directed split to be the more reliable predictor on balance
-(Table~\ref{tab:predictors}).
+Writing $\dtb$ for the train-to-target direction and $\dbt$ for the reverse:
+$\dtb$ is large when much of the training distribution lies far from anything the
+target uses (\textbf{off-target mass}, a precision-analogue), and $\dbt$ is large
+when target motions have no nearby training example (poor \textbf{coverage}, a
+recall-analogue). We report coverage as $-\dbt$, so larger means better-covered,
+and use \emph{coverage} and \emph{off-target mass} for the two directions and
+\emph{(symmetric) Chamfer} for their average throughout. The directed split is the
+more reliable predictor (Table~\ref{tab:predictors}).
 
 We use support-geometry estimators rather than density-based divergences (e.g., KL): on procedurally generated clouds, rendering more frames changes estimated density without changing support geometry, so KL does not converge; support-geometry estimators are stable, and the alternatives we evaluate all agree on the central finding (supp., Sect.~\ref{sec:law}).
 
@@ -123,38 +118,36 @@ synthetic) and \emph{semantic} (sparse keypoint ground truth) sets.}
 We study four architecture families over 11 synthetic and real training sources,
 evaluated on 9 benchmarks (Table~\ref{tab:study}). Six of the nine targets are
 real images (KITTI-2012/2015, SPair-71K, PF-Pascal, PF-Willow, TSS); FlyingThings,
-PointOdyssey, and the procedural split are synthetic targets, included for their
-controlled motion and exact labels. These have real 3D geometry and look markedly
+PointOdyssey, and a held-out split of our procedural SDF-fractal generator are
+synthetic targets, included for their controlled motion and exact labels. These have real 3D geometry and look markedly
 different from one another and from the sources, so coverage-predictable
 cross-transfer among them is itself a test of the motion-over-appearance thesis.
-Among \emph{real} images, dense-motion transfer is carried mainly by KITTI---real
-dense flow labels are scarce, which is the premise of this work.
+Among \emph{real} images, dense-motion transfer is carried mainly by KITTI, since
+real dense flow labels are scarce---the practical reason controllable synthetic
+sources matter.
 The coverage score depends only on the (source, target) pair, but a source's
 realized transfer also depends on the model, so we evaluate every ranking claim
 within a fixed (benchmark, architecture, configuration) \emph{context}; this
 same context indexes the level term of the absolute predictor
-(Sect.~\ref{sec:absolute}). We report \emph{peak} \pck{} (the best checkpoint per
-run) so data quality is not confounded with convergence speed: peak selection is a
-constant, monotone treatment that leaves source rankings untouched while affecting
-only the absolute level, which we predict separately. Throughout, coverage is
+(Sect.~\ref{sec:absolute}). We report \emph{peak} \pck@0.05 (PCK: the fraction of
+predicted correspondences within $5\%$ of image size of the true match, higher is
+better; \emph{peak} $=$ the best checkpoint per run) so data quality is not
+confounded with convergence speed: peak selection is a constant, monotone treatment
+that leaves source rankings untouched while affecting only the absolute level,
+which we predict separately. Throughout, coverage is
 stratified into \emph{real-motion} and \emph{semantic} targets
 (Table~\ref{tab:study}), as the two strata behave differently (Sect.~\ref{sec:law}).
-We use Spearman $\rho$ for all \emph{ranking} claims and Pearson $r$ (with MAE)
-for \emph{absolute-\pck} prediction (Sect.~\ref{sec:absolute}); the pooled scatter
+All \emph{ranking} claims use the Spearman rank correlation $\rho$ between a
+distance's predicted ordering of the sources and their realized peak-\pck{}
+ordering, taken within each context so that benchmark and model effects cannot
+inflate it ($\rho{=}1$: perfect source ordering; $\rho{=}0$: chance). Absolute-\pck{}
+prediction uses Pearson $r$ and mean absolute error (MAE, in \pck{} points;
+Sect.~\ref{sec:absolute}). The bar for $\rho$ is not $1.0$: transfer is itself only
+so reproducible---two same-family models under different backbone configurations
+agree on the better source only up to $\rho{\approx}0.62$
+(Sect.~\ref{sec:predict})---so this reproducibility ceiling is what a label-free
+predictor should be judged against. The pooled scatter
 (Fig.~\ref{fig:coverage_law_a}) shows Pearson $r$ on within-context-standardized
 values for visualization, but the load-bearing statistic throughout is Spearman
 $\rho$.
-
-\noindent\textbf{From-scratch training (out-of-distribution probe).}
-We also trained each backbone matcher with randomly-initialized feature extractors
-to probe whether appearance becomes a stronger signal when pretrained semantics are
-absent.
-The from-scratch encoders collapse to a near-static prior that ignores the image
-pair entirely, so neither descriptor is a meaningful source-ranking predictor
-there: a model insensitive to its input provides no data-selection signal for
-either modality.
-We treat this regime as out-of-distribution, report it in full in the supplement,
-and note that the null result for appearance here is a consequence of input-blindness
-rather than an independent test of the appearance hypothesis.
-The configurations were fixed before any motion distance was measured.
 

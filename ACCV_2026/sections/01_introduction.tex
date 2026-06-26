@@ -2,17 +2,27 @@
 \section{Introduction}
 \label{sec:intro}
 
-Dense visual correspondence (optical flow, geometric and semantic matching)
-relies heavily on synthetic training data, because dense ground truth is scarce
-on real images
+Visual correspondence---dense optical flow, dense geometric matching, and sparse
+semantic (keypoint) matching---relies heavily on synthetic training data, because
+ground-truth correspondence is scarce on real images
 \cite{mayer2016FlyingThingsDataset,sintel,greff2021kubric,pointodyssey}. Most
 progress targets \emph{how} to render this data (fidelity, lighting, speed)
 \cite{greff2021kubric,pointodyssey}, on the assumption that closing the
-appearance gap drives transfer. Yet non-photorealistic data often transfers well
+appearance gap---photorealism, and scenes filled with realistic, target-like
+objects---drives transfer. Yet non-photorealistic data often transfers well
 \cite{Baradad2021LookingAtNoise,white2009mandelbulb}, and a logically prior
-question gets far less attention: given a controllable pipeline, \emph{what}
-should it render for a given target? As rendering becomes more efficient and the
-appearance gap narrows, what to generate becomes the binding constraint.
+question gets far less attention: given a controllable pipeline, what
+\emph{motion} should its scenes contain for a given target---not which objects
+appear, but how they move? As rendering becomes more efficient and the
+appearance gap narrows, the motion a source generates becomes the binding constraint.
+
+Across our study, appearance carries little \emph{target-selective} signal. In a
+strong self-supervised feature space---DINOv3~\cite{simeoni2025dinov3}, which
+encodes object identity, texture, and semantic category---appearance similarity
+does not predict which source suits which target, and the most realistic renders
+(photorealistic lighting with real scanned objects) give no transfer edge over
+flat-shaded procedural shapes. Appearance sets a source's overall quality, not
+which target it serves.
 
 \begin{figure}[t]
 \centering
@@ -28,52 +38,56 @@ occurred; a symmetric distance is nearly identical for both.}
 \label{fig:concept}
 \end{figure}
 
-We find that the match between source and target is inherently directional,
-and that the two directions are not equivalent.
-A source may fail to cover motions the target needs
-(\textbf{coverage}; recall-analogous) or render motion the target never uses
-(\textbf{off-target mass}; precision-analogous); we measure these as the two
-directed nearest-neighbor distances between each dataset's flow-vector
-distributions (Fig.~\ref{fig:concept}).
-Coverage is the signal: it is the consistent predictor of transfer across
-architectures, benchmarks, and distance estimators.
-Off-target mass is nearly free---a source can render motion the target never uses
-at negligible transfer cost---so symmetric distances such as
-FID~\cite{heusel2018ganstrainedtimescaleupdate} and sliced Wasserstein, which
-average both directions, dilute the signal rather than adding information.
+By contrast, motion predicts transfer: how well a source's motion matches the
+target's tracks how well it transfers. We measure that match with standard
+distribution distances---sliced Wasserstein, FID~\cite{heusel2018ganstrainedtimescaleupdate},
+and the (symmetric) Chamfer distance---but the sharpest signal comes from
+\emph{decomposing} the Chamfer into its two directed halves and keeping only one.
+That half is \textbf{coverage}---how well the source's motion covers the target's
+(a recall-analogue)---and it is the consistent predictor of transfer across
+architectures, benchmarks, and estimators (Fig.~\ref{fig:concept}). The other half,
+\textbf{off-target mass} (motion the source renders but the target never uses, a
+precision-analogue), carries little signal and only dilutes it---which is why all
+three symmetric distances, each of which folds it back in, track transfer more
+weakly than coverage alone.
 
 Our evidence comes from 76 trained correspondence models: four architecture
-families (CATs++ \cite{cho2022cats++}, RAFT \cite{teed2020raft},
-GLU-Net \cite{truong2020glunet}, and FlowFormer \cite{huang2022flowformer}) in
-seven backbone configurations, trained over 11 sources and evaluated on 9
-benchmarks ($684$ transfer measurements). We stress-test the coverage finding
+families---the semantic matcher CATs++ \cite{cho2022cats++}, the dense matcher
+GLU-Net \cite{truong2020glunet}, and the optical-flow networks RAFT
+\cite{teed2020raft} and FlowFormer \cite{huang2022flowformer}---in
+seven backbone configurations, trained over 11 real and synthetic sources and
+evaluated on 9 real and synthetic benchmarks ($684$ transfer measurements). We
+stress-test the coverage finding
 from several angles: replication across three distance estimators, a negative
-control in appearance-feature space, a render-free construct-validity check in
+control in appearance-feature space, a geometry-only construct-validity check in
 which matching the motion descriptor alone recovers each target's expected motion
 regime, and a controllable grid crossing motion against appearance on which a
 target-tuned source beats a generic baseline.
 
-We make the following contributions:
+We make four contributions:
 \begin{enumerate}
-\item \textbf{Coverage is the signal} (Sect.~\ref{sec:law}): motion coverage
-  ($\dbt$) is the most reliable predictor of correspondence transfer across all
-  four architecture families and nine benchmarks, consistently outperforming
-  symmetric distances and appearance-based alternatives.
-\item \textbf{A render-free selection rule} (Sects.~\ref{sec:predict}--\ref{sec:absolute}):
-  ranking candidate sources by $\dbt$ requires no target labels, no training, and
-  no differentiable renderer, yet picks a source close to the best at zero shot.
-  A few-shot extension given a handful of anchor runs also predicts absolute \pck{}.
-\item \textbf{Off-target mass is nearly free} (Sects.~\ref{sec:law}--\ref{sec:predict}):
-  a source can render motions the target never uses at little transfer cost.
-  Symmetric distances fold off-target mass back in and dilute the coverage signal;
-  the practical rule is to \emph{cover} the target's motion rather than match its
-  full distribution.
-\item \textbf{Interventional support} (Sect.~\ref{sec:interv}): a render-free
-  generator search scored only on motion coverage recovers each target's expected
-  motion regime---a forward camera dolly for KITTI, a near-static camera for the
-  semantic TSS benchmark---and the tuned source beats a generic Kubric baseline on
-  both (all fourteen KITTI settings and all three TSS). A controlled
-  motion-vs-appearance grid confirms that motion, not appearance, is the
-  target-specific carrier of transfer.
+\item \textbf{A broad transfer study} (Sect.~\ref{sec:setup}): correspondence
+  transfer between real and synthetic datasets, across four architecture families in
+  seven backbone configurations, over 11 training sources and 9 benchmarks spanning
+  dense, geometric, and semantic matching ($684$ transfer measurements).
+\item \textbf{Motion coverage predicts transfer} (Sects.~\ref{sec:law}--\ref{sec:absolute}):
+  how well a source's motion \emph{covers} the target's---one direction of a Chamfer
+  distance between their flow distributions---is the most reliable zero-shot
+  predictor of transfer we find, ranking sources near the ceiling set by transfer's
+  own reproducibility. Appearance similarity carries little target-selective signal,
+  and because rendering off-target motion is nearly free, symmetric distances that
+  average it back in only dilute the signal.
+\item \textbf{A lightweight, renderer-agnostic way to tune a source}
+  (Sect.~\ref{sec:interv}): because motion coverage can be scored from a
+  geometry-only pass (the scene's motion, with no textures or lighting) without
+  training a network, a cheap derivative-free search over generator parameters
+  aligns a controllable source's motion to a target. We do not claim a global
+  optimum---only that the coverage objective is informative enough for local search
+  to reach a good candidate---and the same objective steers two structurally
+  different generators.
+\item \textbf{Tuning improves downstream transfer} (Sect.~\ref{sec:interv}): the
+  motion-tuned source reliably beats a generic Kubric baseline across architectures
+  and benchmarks, on both a camera-motion target (KITTI) and a semantic one (TSS),
+  with no real target labels.
 \end{enumerate}
 

@@ -233,3 +233,8 @@ tap_vid_probe/**/__pycache__/
 # TensorBoard event logs (training artifacts)
 events.out.tfevents.*
 *.tfevents.*
+
+# Apptainer/Singularity container images (large)
+*.sif
+# Kubric render driver logs
+tap_vid_probe/motion_strata/*.log

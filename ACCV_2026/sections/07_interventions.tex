@@ -4,7 +4,9 @@
 
 A correlational principle should be stressed interventionally. We probe three
 questions on a procedurally generated grid (Kubric-derived motion interventions
-\cite{greff2021kubric} plus our SDF-fractal generator), constructed after the
+\cite{greff2021kubric} plus our SDF-fractal generator, an asset-free procedural
+implicit-surface pipeline that shares no rendering code or asset library with
+Kubric), constructed after the
 analysis of Secs.~\ref{sec:law}--\ref{sec:absolute} was frozen: \emph{(i)}
 construct validity, \emph{(ii)} whether a tuned source beats a generic baseline,
 and \emph{(iii)} whether motion (not appearance) is the target-specific carrier
@@ -21,14 +23,13 @@ matches each target's known physics; full parameter set in supplement.}
 \end{table}
 
 \noindent\textbf{(i) The recovered motion is physically plausible
-(construct validity).} A descriptor as crude as a 4-D bag of flow vectors
-invites a natural worry: does it capture anything real? We test this directly.
-We run a render-free search over generator motion parameters, scored only by how
+(construct validity).}
+We run a geometry-only search over generator motion parameters, scored only by how
 well the generated motion covers the target's, and ask what motion matching the
-descriptor actually produces (\emph{render-free}: each candidate costs only a
-geometry-only flow pass---the scene's motion field, with no texture or lighting
-render---and no training; only the winning source is later materialized in full,
-with appearance, to train on and verify in (ii)).
+descriptor actually produces (\emph{geometry-only}: each candidate costs only a
+flow pass over the scene's motion field, with no texture or lighting render and no
+network training; only the winning source is later materialized in full, with
+appearance, to train on and verify in (ii)).
 On a
 controllable Kubric-style generator whose parameters $\theta$ explicitly
 separate camera motion from object motion, optimizing BFV match alone recovers
@@ -41,22 +42,17 @@ the motion histogram. The recovered KITTI source's flow fingerprint bears this
 out, a coherent radial-expansion field that captures the target's
 forward-ego-motion structure, unlike the isotropic generic anchor
 (Fig.~\ref{fig:intervsplats}). An independent generator, matched on BFV alone,
-lands on the right physical motion: construct validity earned, not asserted---and
-not circular, since the objective fixes only the aggregate motion histogram, yet
-the regime it selects is the physically correct one, with its real test in (ii). One
-caveat: BFV is by construction blind to the camera-vs-object \emph{decomposition}
-when the two produce identical aggregate flow, since an ego-motion dolly and
-flying objects can share an aggregate fingerprint. We therefore read the
-camera/object split off $\theta$, not off the splat, and treat the ambiguity in
-the supplement.
+lands on the right physical motion (Table~\ref{tab:recovery}); because the
+objective fixes only the aggregate motion histogram, we read the camera/object
+split off the recovered $\theta$, with its real test following in (ii).
 
 \begin{figure*}[t]
 \centering
 \includegraphics[width=\linewidth]{figures/results/F_pipeline_closedloop.png}
-\caption{\textbf{Closed-loop, render-free source design.} A generic source
-(MOVi-F) is tuned by a TPE search whose only objective is BFV coverage ($-\dbt$)
-against the target, scored from geometry-only flow passes with no texture render
-and no training. The recovered ``KITTI-recovered'' source has a coherent
+\caption{\textbf{Closed-loop, geometry-only source design.} A generic source
+(MOVi-F) is tuned by a derivative-free search (TPE, a black-box optimizer) whose
+only objective is BFV coverage ($-\dbt$) against the target, scored from
+geometry-only flow passes with no texture render and no training. The recovered ``KITTI-recovered'' source has a coherent
 forward-dolly fingerprint ($|f|{\approx}13$) vs.\ the near-isotropic generic
 anchor ($|f|{\approx}4$); training on it beats MOVi-F across every architecture
 (Table~\ref{tab:interv}). Panels are directional flow splats; color $=$ flow
@@ -67,16 +63,14 @@ direction (wheel in supp.).}
 \begin{table*}[t]
 \centering
 \caption{\textbf{A target-tuned source beats the generic baseline.} Peak \pck{}
-of the render-free \emph{tuned} source (the KITTI-recovered generator,
+of the geometry-only \emph{tuned} source (the KITTI-recovered generator,
 GSO assets $+$ HDRI) vs.\ the generic MOVi-F baseline \cite{greff2021kubric},
 by architecture. $\Delta =$ tuned $-$ MOVi-F; bold marks a win. The tuned source
 wins all eight KITTI cells. On the semantic \textsc{tss} benchmark, the
 target-matched source is instead \emph{near-static}, and it too beats MOVi-F on
 all three architectures (RAFT, an optical-flow network, is not run on the
-semantic benchmarks). The full grid including the from-scratch backbone
-configurations---an out-of-distribution probe, where the tuned source still wins
-by prior-matching rather than learned features---is reported in full in the
-supplement.}
+semantic benchmarks). The full grid, including additional backbone
+configurations, is reported in the supplement.}
 % TODO(DAVIS): describe the TAP-Vid-DAVIS columns here once the intervention run
 %              lands; cells are \tbd placeholders for now.
 \label{tab:interv}
@@ -89,11 +83,27 @@ The recovered motion also trains well. Materializing the KITTI-recovered source
 (GSO assets, HDRI lighting) and training on it beats MOVi-F~\cite{greff2021kubric}
 in \emph{all eight} KITTI settings, with gains of $+1.8$ to $+22.5$ \pck{}
 across the four architectures (Table~\ref{tab:interv}). A target-specific source
-built without a single real-target label beats a generic synthetic dataset. (The
-from-scratch backbone configurations, where the tuned source still wins by
-prior-matching rather than learned features---a source whose motion marginal sits
-closer to the target transfers better even without a trained encoder---are an
-out-of-distribution probe deferred to the supplement.)
+built without a single real-target label beats a generic synthetic dataset.
+
+\begin{table}[t]
+\centering
+\caption{\textbf{The coverage objective is renderer-agnostic (KITTI).} Peak \pck{}
+of the SDF-fractal generator's coverage-tuned vs.\ default source, under a
+pretrained backbone. \textbf{Bold} $=$ tuned improves on default (five of six
+cells).}
+\label{tab:interv_fractal}
+\small
+\input{tables/tab_interv_fractal}
+\end{table}
+
+\noindent\textbf{The objective is renderer-agnostic.}
+The same geometry-only coverage search, run on our SDF-fractal generator (which
+shares no rendering code or assets with Kubric), produces a KITTI source whose
+tuned motion matches or improves on the generator's default in five of six backbone
+cells and lands on par with the best tuned Kubric source
+(Table~\ref{tab:interv_fractal}). Two structurally unrelated generators, tuned to
+the same target by the same motion-coverage objective, arrive at the same place---so
+the rule is a property of the motion, not of any one renderer.
 
 \noindent\textbf{(iii) Motion is the carrier, and the coverage response is
 inverted-U.} Scaling camera-dolly magnitude across five rungs ($0.25\times$ to
@@ -105,13 +115,12 @@ the matched rung for both KITTI splits and every texture variant; missing the
 match costs $5$--$11$ \pck. Off-target mass ($\dtb$) stays flat across the ladder
 while coverage ($\dbt$) tracks the PCK curve directly---coverage is the operative
 lever. Because magnitude moves both directions together, this maps the coverage
-\emph{response} rather than isolating it; the flat $\dtb$ nonetheless indicates
-the off-target direction is not what drives the curve, and a clean fixed-off-target
-isolation remains future work. Appearance leaves the curve's shape unchanged, with no
-consistent edge for higher visual fidelity (Fig.~\ref{fig:ladder}), confirming
-motion as the target-specific carrier. (The one exception is scratch robustness
-to a gross over-shoot: matte/$2\times$ falls to $82.9$ on KITTI-2012
-vs.\ photoreal's $91.6$, but a pretrained backbone restores the tolerance; supp.)
+\emph{response} rather than isolating it; the flat $\dtb$ indicates the off-target
+direction is not what drives the curve. Appearance leaves the curve's shape
+unchanged: even the most realistic variant---HDRI lighting with real scanned (GSO)
+objects---gives no consistent edge over flat-shaded procedural primitives
+(Fig.~\ref{fig:ladder}), confirming motion, not realism or object content, as the
+target-specific carrier.
 
 \begin{figure}[t]
 \centering

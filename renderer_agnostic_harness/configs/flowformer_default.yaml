@@ -1,0 +1,83 @@
+dataset:
+  dataset_name: synthetic
+  debug: false
+  dense_kps_use_all: true
+  downsample_flow: null
+  geometry_config_overrides: null
+  geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
+  max_kps: null
+  normalize_images: false
+  opengl_device_index: null
+  processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
+  size:
+  - 512
+  - 512
+  split: train
+  verbose: false
+evaluation:
+  datapath: ./models/Datasets_CATs
+  eval_alphas:
+  - 0.05
+  - 0.05
+  eval_benchmarks:
+  - kitti2015
+  - kitti2012
+  flyingthings_root: /home/spencer/Data/FlyingThings3D_tiny
+  kitti_root: /home/spencer/Data/correspondence/kitti
+  kitti_val_use_full_training: true
+  middlebury_root: /home/spencer/Data/middlebury/all
+  min_motion_pixels: 5.0
+  pointodyssey_root: /home/spencer/Data/PointOdyssey
+  prefetch_factor: 2
+  split_to_use_for_validation: test
+  thres: img
+  tss_root: /home/spencer/Data/correspondence/TSS_CVPR2016
+  use_motion_aware: false
+  val_batch_size: 32
+  val_datasets:
+    kitti2015:
+      split: val
+      normalize_images: true
+    kitti2012:
+      split: val
+      normalize_images: true
+  val_num_workers: 8
+  zero_threshold: 0.5
+  tapvid_davis_root: /mnt/nvme_1tb_a/tapvid/probe_cache
+model:
+  freeze: true
+  iters: 12
+  pretrain: true
+  pretrained_path: null
+  type: flowformer
+paths:
+  pretrained: null
+  snapshots: /mnt/nvme_1tb_a/renderer_agnostic
+  start_epoch: 0
+  save_epoch_checkpoints: true
+  run_name: flowformer_default
+training:
+  accumulate_grad_batches: 8
+  augmentation: false
+  batch_size: 1
+  check_val_every_n_epoch: 1
+  debug_visualization_benchmarks: None
+  debug_visualization_persist: true
+  enable_debug: false
+  epochs: 50
+  eval_initial: false
+  gradient_clip_algorithm: norm
+  gradient_clip_val: 1.0
+  lr: 0.00025
+  lr_backbone: 2.5e-06
+  max_flow_length: null
+  min_flow_length: null
+  mmd_every_n_epochs: 0
+  momentum: 0.9
+  n_threads: 0
+  scheduler: step
+  seed: 2021
+  step: '[70, 80, 90]'
+  step_gamma: 0.5
+  steps_per_epoch: 100
+  weight_decay: 0.0001

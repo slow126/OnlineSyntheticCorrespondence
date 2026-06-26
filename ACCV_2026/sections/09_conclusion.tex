@@ -2,7 +2,7 @@
 \section{Conclusion}
 \label{sec:conclusion}
 
-What predicts synthetic-to-real correspondence transfer is motion
+What predicts correspondence transfer is motion
 \emph{coverage}: how well a source covers the target's motion. That a source
 should move like its target is not a new idea; what we add is that the useful
 form of it is directional, and cheap to check. Ranking candidate sources by one
@@ -19,9 +19,13 @@ training a network or rendering a frame.
 Because off-target motion is nearly free, coverage does two jobs. To
 \emph{select} among existing sources, rank them by coverage. To \emph{design} new
 data, add coverage of the target instead of matching its distribution, the move
-our render-free search exploits on a real target. The same rule guided two very
+our geometry-only search exploits on a real target. The same rule guided two very
 different generators, a 3D scene simulator and a procedural implicit-surface
-generator, so it is a property of the data, not of any one renderer. The recipe
+generator, so it is a property of the data, not of any one renderer.
+Two extensions follow naturally from the same geometry-only infrastructure: resolving
+the camera-versus-object factorization that an aggregate motion descriptor folds
+together, and steering coverage and off-target mass independently to map their
+separate contributions to transfer. The recipe
 is short: before you improve how you render, measure how well your source covers
 the target's motion.
 

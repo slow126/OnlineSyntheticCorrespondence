@@ -32,7 +32,7 @@
 \begin{document}
 
 \title{Cover the Motion, Not the Look: Motion Coverage Predicts
-Synthetic-to-Real Correspondence Transfer}
+Correspondence Transfer}
 \titlerunning{Cover the Motion, Not the Look}
 
 \author{Anonymous ACCV 2026 Submission}
@@ -42,24 +42,25 @@ Synthetic-to-Real Correspondence Transfer}
 \maketitle
 
 \begin{abstract}
-Correspondence tasks---dense optical flow, geometric matching, and semantic
-matching---rely heavily on synthetic training data, but relatively little
-attention has gone to a prior question: given a synthetic generator,
-\emph{what} should it render for a particular target?
-We study this across dense, geometric, and semantic correspondence and find
-that motion coverage---how
-well a source covers the motions a target uses---is the most reliable predictor
-of transfer, while appearance similarity carries little target-selective signal.
-Standard symmetric distances (FID, sliced Wasserstein) blend two asymmetric
-failure modes: missing coverage and excess off-target mass.
-Decomposing into the two directed halves recovers sharper and more stable signal,
-with the coverage half driving the finding.
-Across 76 trained models spanning four architecture families, a single directed
-distance over a compact flow-vector representation ranks training sources about
-as reliably as training a second model from scratch.
-Given a few reference runs it also predicts absolute performance.
-A render-free generator search, scored only on motion, tunes a synthetic source
-to outperform a generic Kubric baseline on target benchmarks.
+Dense correspondence---optical flow, geometric and semantic matching---relies
+heavily on synthetic training data. Most effort targets \emph{how} realistically a
+source renders; we study a prior question about its \emph{motion} for a given
+target---not which objects a scene contains, but how they move. Across dense,
+geometric, and semantic correspondence we find that motion, not appearance, is the
+reliable predictor of transfer: how well a
+source's motion \emph{covers} the motions a target uses predicts transfer, while
+appearance similarity carries little target-selective signal. Coverage is one
+direction of a Chamfer distance between the datasets' flow distributions; the other
+direction---rendering motion the target never uses---costs almost nothing, so
+symmetric distances (FID, sliced Wasserstein) that average the two only dilute the
+signal. Across 76 trained models spanning four architecture families and 684
+transfer measurements, ranking sources by this single directed distance is about as
+reliable as training a second model to rank them, and given a few reference runs it
+also predicts absolute accuracy. Because coverage can be scored from a
+geometry-only pass---the scene's motion, with no textures or lighting---and without
+training a network, a cheap derivative-free search tunes a controllable generator's
+motion to a target and beats a generic Kubric baseline; the same objective steers
+two structurally different generators, so it is renderer-agnostic.
 Cover the motion, not the look.
 
 \keywords{Dense correspondence \and Synthetic training data \and Dataset
@@ -74,7 +75,6 @@ selection \and Transferability}
 \input{sections/05_selecting_data}
 \input{sections/06_absolute_prediction}
 \input{sections/07_interventions}
-%\input{sections/08_limitations}
 \input{sections/09_conclusion}
 
 % ---------------------------------------------------------------
