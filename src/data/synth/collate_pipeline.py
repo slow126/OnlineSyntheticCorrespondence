@@ -123,26 +123,42 @@ def ensure_flow_and_kps(
     return sample
 
 
-def normalize_images(sample: CommonSample, enable: bool) -> CommonSample:
+def normalize_images(sample: CommonSample, enable: bool, mode: str = "imagenet") -> CommonSample:
+    """Normalize images.
+
+    mode='imagenet' (default): subtract fixed ImageNet mean/std -- faithful but PRESERVES
+        a render's absolute brightness (so bright kubric renders end up at +0.69 mean,
+        OOD vs the ~0-mean real eval images that GLU-Net never matches at test time).
+    mode='per_image': standardize each image to zero-mean/unit-std per channel, so a
+        render's brightness/contrast is removed -- aligns bright kubric with natural
+        synthetic/real images. Test fix for the synthetic->real appearance gap.
+    """
     if not enable or sample.src_img is None:
         return sample
-    mean = torch.tensor([0.485, 0.456, 0.406], device=sample.src_img.device).view(1, 3, 1, 1)
-    std = torch.tensor([0.229, 0.224, 0.225], device=sample.src_img.device).view(1, 3, 1, 1)
-    
+
     # First, normalize to 0-1 range
     if sample.src_img.max() > 1.0:
         sample.src_img = sample.src_img / 255.0
     sample.src_img = torch.clamp(sample.src_img, 0.0, 1.0)
-    
     if sample.trg_img is not None:
         if sample.trg_img.max() > 1.0:
             sample.trg_img = sample.trg_img / 255.0
         sample.trg_img = torch.clamp(sample.trg_img, 0.0, 1.0)
-    
-    # Then, standardize with ImageNet statistics
-    sample.src_img = (sample.src_img - mean) / std
-    if sample.trg_img is not None:
-        sample.trg_img = (sample.trg_img - mean) / std
+
+    if mode == "per_image":
+        def _std(img):
+            m = img.mean(dim=(-2, -1), keepdim=True)
+            s = img.std(dim=(-2, -1), keepdim=True).clamp_min(1e-6)
+            return (img - m) / s
+        sample.src_img = _std(sample.src_img)
+        if sample.trg_img is not None:
+            sample.trg_img = _std(sample.trg_img)
+    else:
+        mean = torch.tensor([0.485, 0.456, 0.406], device=sample.src_img.device).view(1, 3, 1, 1)
+        std = torch.tensor([0.229, 0.224, 0.225], device=sample.src_img.device).view(1, 3, 1, 1)
+        sample.src_img = (sample.src_img - mean) / std
+        if sample.trg_img is not None:
+            sample.trg_img = (sample.trg_img - mean) / std
     return sample
 
 

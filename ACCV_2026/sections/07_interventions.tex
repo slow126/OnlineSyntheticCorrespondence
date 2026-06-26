@@ -58,7 +58,7 @@ the supplement.
 against the target, scored from geometry-only flow passes with no texture render
 and no training. The recovered ``KITTI-recovered'' source has a coherent
 forward-dolly fingerprint ($|f|{\approx}13$) vs.\ the near-isotropic generic
-anchor ($|f|{\approx}4$); training on it beats MOVi-F across all configurations
+anchor ($|f|{\approx}4$); training on it beats MOVi-F across every architecture
 (Table~\ref{tab:interv}). Panels are directional flow splats; color $=$ flow
 direction (wheel in supp.).}
 \label{fig:intervsplats}
@@ -67,16 +67,18 @@ direction (wheel in supp.).}
 \begin{table*}[t]
 \centering
 \caption{\textbf{A target-tuned source beats the generic baseline.} Peak \pck{}
-on KITTI of the render-free \emph{tuned} source (the KITTI-recovered generator,
+of the render-free \emph{tuned} source (the KITTI-recovered generator,
 GSO assets $+$ HDRI) vs.\ the generic MOVi-F baseline \cite{greff2021kubric},
-by architecture and backbone (the \emph{scratch} rows train the backbone from
-scratch; \emph{pretrained} is a frozen pretrained backbone). $\Delta =$ tuned $-$
-MOVi-F; bold marks a win. The tuned source wins
-all $14$ KITTI cells. On the semantic \textsc{tss} benchmark (right; pretrained
-backbone), the target-matched source is instead \emph{near-static}, and it too
-beats MOVi-F on all three architectures. For the configurations that learn, this is learned-feature
-transfer; even for the from-scratch CATs++ config (an out-of-distribution probe, supp.)
-the target-matched source wins, by prior-matching rather than learned features.}
+by architecture. $\Delta =$ tuned $-$ MOVi-F; bold marks a win. The tuned source
+wins all eight KITTI cells. On the semantic \textsc{tss} benchmark, the
+target-matched source is instead \emph{near-static}, and it too beats MOVi-F on
+all three architectures (RAFT, an optical-flow network, is not run on the
+semantic benchmarks). The full grid including the from-scratch backbone
+configurations---an out-of-distribution probe, where the tuned source still wins
+by prior-matching rather than learned features---is reported in full in the
+supplement.}
+% TODO(DAVIS): describe the TAP-Vid-DAVIS columns here once the intervention run
+%              lands; cells are \tbd placeholders for now.
 \label{tab:interv}
 \setlength{\tabcolsep}{5pt}
 \resizebox{\textwidth}{!}{\input{tables/tab_interv}}
@@ -85,12 +87,13 @@ the target-matched source wins, by prior-matching rather than learned features.}
 \noindent\textbf{(ii) A tuned source beats a generic baseline.}
 The recovered motion also trains well. Materializing the KITTI-recovered source
 (GSO assets, HDRI lighting) and training on it beats MOVi-F~\cite{greff2021kubric}
-in \emph{all fourteen} KITTI settings, with gains of $+1.8$ to $+22.5$ \pck{}
-across architectures and backbone configurations (Table~\ref{tab:interv}). The
-CATs++-scratch wins come from prior-matching rather than learned
-features---a source whose motion marginal sits closer to the target transfers
-better even without a trained encoder. A target-specific source built without a
-single real-target label beats a generic synthetic dataset.
+in \emph{all eight} KITTI settings, with gains of $+1.8$ to $+22.5$ \pck{}
+across the four architectures (Table~\ref{tab:interv}). A target-specific source
+built without a single real-target label beats a generic synthetic dataset. (The
+from-scratch backbone configurations, where the tuned source still wins by
+prior-matching rather than learned features---a source whose motion marginal sits
+closer to the target transfers better even without a trained encoder---are an
+out-of-distribution probe deferred to the supplement.)
 
 \noindent\textbf{(iii) Motion is the carrier, and the coverage response is
 inverted-U.} Scaling camera-dolly magnitude across five rungs ($0.25\times$ to

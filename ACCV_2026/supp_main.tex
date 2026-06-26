@@ -159,6 +159,33 @@ ranking signal in any regime.}
 \input{tables/tab_law_dino_full}
 \end{table}
 
+\noindent\textbf{The intervention grid, every configuration.} Main-paper
+Table~\ref{tab:interv} shows that a target-tuned source beats the generic MOVi-F
+baseline for the pretrained-backbone matchers and end-to-end RAFT.
+Table~\ref{tab:interv_full} gives the complete grid, adding the from-scratch
+backbone rows of this section. The tuned source wins every KITTI cell in
+\emph{both} regimes; from scratch the win is by prior-matching rather than
+learned features (the encoder never learns to match, above), yet a source whose
+motion marginal sits closer to the target still transfers better. We report these
+rows here rather than in the main table: they corroborate the coverage claim, but
+as out-of-distribution-probe results they would otherwise invite the reader to
+read a learned-feature story into a regime that learns no features.
+
+\begin{table}[h]
+\centering
+\caption{\textbf{A target-tuned source beats the generic baseline, every
+configuration.} Full version of main-paper Table~\ref{tab:interv}, adding the
+from-scratch backbone rows (the OOD probe of this section). Peak \pck{} of the
+render-free \emph{tuned} KITTI-recovered source vs.\ the generic MOVi-F baseline,
+by architecture and backbone (\emph{scratch} $=$ backbone trained from scratch;
+\emph{pretrained} $=$ frozen pretrained backbone; RAFT is end-to-end). $\Delta =$
+tuned $-$ MOVi-F; bold marks a win.}
+\label{tab:interv_full}
+\small
+\setlength{\tabcolsep}{5pt}
+\resizebox{\linewidth}{!}{\input{tables/tab_interv_full}}
+\end{table}
+
 % =====================================================================
 \section{Per-Configuration Evidence and the Pooled Flip}
 \label{supp:law}

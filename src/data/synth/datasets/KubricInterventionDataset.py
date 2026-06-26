@@ -73,6 +73,8 @@ class KubricInterventionDataset(Dataset):
         seed: Optional[int] = None,
         mirror_flip: float = 0.0,
         occlusion_mask: bool = False,
+        background_mask: bool = False,
+        negate_flow: bool = True,
         **_,
     ):
         super().__init__()
@@ -85,6 +87,21 @@ class KubricInterventionDataset(Dataset):
         # then turns mostly-occluded feature cells into inf so the sparse endpoint
         # loss skips them. Default False keeps the flow byte-identical to before.
         self.occlusion_mask = bool(occlusion_mask)
+        # background_mask: when True, drop the background (floor + sky) from the flow by
+        # setting it to inf, so the EPE loss is supervised ONLY on the GSO objects -- the
+        # dense, unmatchable/shortcut-able background was what sank dense models on kubric.
+        # Uses segmentation_00001.png (target frame): ids 0=sky, 1=floor are background;
+        # ids>=2 are objects. Requires renders made with emit_segmentation. Applied LAST
+        # (after the finite-flow occlusion check) so inf never poisons the round-trip.
+        self.background_mask = bool(background_mask)
+        # negate_flow: multiply the decoded Kubric flow by -1. The scene is rendered with
+        # src->trg motion but the flow is read as trg->src, so Kubric's stored sign is the
+        # OPPOSITE of the project convention (target->source [dx,dy]) that FlyingThings/
+        # synthetic use -- verified by warp reconstruction (negated flow rebuilds frame1).
+        # Default True (corrected): aligns Kubric with FlyingThings/synthetic/eval convention.
+        # Set False only to reproduce the old raw-PNG sign (the bug). NOTE: any cached BFV/coverage
+        # vectors extracted before this default flipped are in the OLD sign and must be regenerated.
+        self.negate_flow = bool(negate_flow)
         # mirror_flip: fraction of pairs replaced by (frame0, horizontal-mirror(frame0))
         # with the corresponding mirror flow (W-1-2x, 0). This injects unnatural,
         # strongly OFF-TARGET motion at FIXED appearance (a mirrored frame has the
@@ -205,6 +222,10 @@ class KubricInterventionDataset(Dataset):
         sec_range = np.array([ranges[sec_name]["min"], ranges[sec_name]["max"]], dtype=np.float32)
         primary = _to_flow_tensor(_decode_flow_png(prim_path, prim_range)).numpy()
         secondary = _to_flow_tensor(_decode_flow_png(sec_path, sec_range)).numpy()
+        if self.negate_flow:
+            # Keep the fwd/bwd round-trip geometry consistent with the negated flow.
+            primary = -primary
+            secondary = -secondary
         return self._occlusion_mask_from_flows(primary, secondary)
 
     @classmethod
@@ -236,6 +257,10 @@ class KubricInterventionDataset(Dataset):
 
         flow_range = np.array([ranges[flow_name]["min"], ranges[flow_name]["max"]], dtype=np.float32)
         flow = _to_flow_tensor(_decode_flow_png(flow_path, flow_range))
+        if self.negate_flow:
+            # Align Kubric's sign with the target->source convention (see __init__).
+            # Done on the freshly-decoded finite flow, before any inf masking below.
+            flow = -flow
 
         # rgba is optional for flow-only (geometry-only) renders. When absent,
         # return zero images shaped like the flow so collation/extraction still
@@ -261,5 +286,18 @@ class KubricInterventionDataset(Dataset):
             if occ is not None:
                 flow = flow.clone()
                 flow[:, torch.from_numpy(occ)] = float("inf")
+
+        # Drop the background (floor + sky) from the loss -- applied LAST so the inf
+        # above never contaminated the occlusion round-trip. objects = seg>=2,
+        # background = seg<=1 (0=sky, 1=floor). No-op if the seg PNG is absent.
+        if self.background_mask and not flipped:
+            seg_path = scene_dir / "segmentation_00001.png"
+            if seg_path.exists():
+                seg = np.asarray(imageio.imread(seg_path))
+                if seg.ndim == 3:
+                    seg = seg[..., 0]
+                bg = torch.from_numpy(np.ascontiguousarray(seg <= 1))
+                flow = flow.clone()
+                flow[:, bg] = float("inf")
 
         return {"src_img": src_img, "trg_img": trg_img, "flow": flow}

@@ -1,18 +1,19 @@
-\begin{tabular}{ll rrr rrr rrr}
+% Main-paper intervention transfer grid. Pretrained-backbone matchers + end-to-end
+% RAFT; the from-scratch OOD-probe rows and the backbone column moved to the
+% supplement (tab_interv_full.tex, \ref{tab:interv_full}).
+% TODO: replace each \tbd with the TAP-Vid-DAVIS intervention numbers
+%       (tuned / MOVi-F / Delta). \tbd renders as a bold ? placeholder; grep \tbd
+%       to find every cell still to fill.
+\providecommand{\tbd}{\textbf{?}}
+\begin{tabular}{l rrr rrr rrr rrr}
 \toprule
- & & \multicolumn{3}{c}{KITTI-2012} & \multicolumn{3}{c}{KITTI-2015} & \multicolumn{3}{c}{TSS (semantic)} \\
-\cmidrule(lr){3-5}\cmidrule(lr){6-8}\cmidrule(lr){9-11}
-Arch. & backbone & tuned & MOVi-F & $\Delta$ & tuned & MOVi-F & $\Delta$ & tuned & MOVi-F & $\Delta$ \\
+ & \multicolumn{3}{c}{KITTI-2012} & \multicolumn{3}{c}{KITTI-2015} & \multicolumn{3}{c}{TSS (semantic)} & \multicolumn{3}{c}{TAP-Vid-DAVIS} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}\cmidrule(lr){11-13}
+Arch. & tuned & MOVi-F & $\Delta$ & tuned & MOVi-F & $\Delta$ & tuned & MOVi-F & $\Delta$ & tuned & MOVi-F & $\Delta$ \\
 \midrule
-CATs++  & scratch     & 90.8 & 82.5 & \textbf{+8.3}  & 82.4 & 80.5 & \textbf{+1.9}  & 23.1 & 15.0 & \textbf{+8.0} \\
-CATs++  & pretrained  & 98.5 & 95.8 & \textbf{+2.7}  & 96.6 & 94.8 & \textbf{+1.8}  & 60.3 & 57.0 & \textbf{+3.3} \\
-\midrule
-GLU-Net & scratch     & 96.6 & 83.3 & \textbf{+13.3} & 78.6 & 71.5 & \textbf{+7.0}  & 18.4 & 19.4 & $-1.1$ \\
-GLU-Net & pretrained  & 96.4 & 73.9 & \textbf{+22.5} & 77.9 & 61.8 & \textbf{+16.1} & 27.3 & 19.7 & \textbf{+7.6} \\
-\midrule
-FlowFormer & scratch    & 96.8 & 85.9 & \textbf{+10.9} & 78.9 & 75.4 & \textbf{+3.5}  & 17.2 & 16.0 & \textbf{+1.1} \\
-FlowFormer & pretrained & 94.6 & 75.9 & \textbf{+18.7} & 73.2 & 63.1 & \textbf{+10.1} & 16.0 & 14.1 & \textbf{+1.9} \\
-\midrule
-RAFT       & scratch     & 96.6 & 81.5 & \textbf{+15.1} & 78.8 & 70.5 & \textbf{+8.3} & -- & -- & -- \\
+CATs++     & 98.5 & 95.8 & \textbf{+2.7}  & 96.6 & 94.8 & \textbf{+1.8}  & 60.3 & 57.0 & \textbf{+3.3} & \tbd & \tbd & \tbd \\
+GLU-Net    & 96.4 & 73.9 & \textbf{+22.5} & 77.9 & 61.8 & \textbf{+16.1} & 27.3 & 19.7 & \textbf{+7.6} & \tbd & \tbd & \tbd \\
+FlowFormer & 94.6 & 75.9 & \textbf{+18.7} & 73.2 & 63.1 & \textbf{+10.1} & 16.0 & 14.1 & \textbf{+1.9} & \tbd & \tbd & \tbd \\
+RAFT       & 96.6 & 81.5 & \textbf{+15.1} & 78.8 & 70.5 & \textbf{+8.3}  & --   & --   & --            & \tbd & \tbd & \tbd \\
 \bottomrule
 \end{tabular}

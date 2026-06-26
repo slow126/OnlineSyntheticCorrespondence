@@ -141,6 +141,7 @@ class MoviFSimpleDataset(Dataset):
         kubric_dir: str = _DEFAULT_KUBRIC_DIR,
         config: str = "512x512",
         shuffle_buffer: int = 16,
+        negate_flow: bool = True,
         **_,
     ):
         super().__init__()
@@ -148,6 +149,7 @@ class MoviFSimpleDataset(Dataset):
         self.split        = split
         self.reverse_flow = reverse_flow
         self.shuffle_buffer = shuffle_buffer
+        self.negate_flow = bool(negate_flow)
 
         self.shards = _list_shards(self.shard_dir, split)
         if not self.shards:
@@ -220,4 +222,13 @@ class MoviFSimpleDataset(Dataset):
         return self._iter
 
     def __getitem__(self, _idx: int) -> Dict[str, torch.Tensor]:
-        return next(self._get_iter())
+        pair = next(self._get_iter())
+        if self.negate_flow:
+            # Kubric backward_flow's stored sign is the OPPOSITE of the project's
+            # target->source [dx,dy] convention -- verified by warp reconstruction
+            # (negated flow rebuilds frame1; 50/50 scenes). _make_pair's "(trg->src) ✓"
+            # was wrong. Default True corrects it to match KubricInterventionDataset /
+            # FlyingThings / synthetic. movi-f is narrow so the numerical effect is tiny,
+            # but this keeps the sign convention consistent across loaders.
+            pair["flow"] = -pair["flow"]
+        return pair

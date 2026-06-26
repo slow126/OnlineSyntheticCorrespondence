@@ -437,6 +437,8 @@ class KubricInterventionAdapter(BaseAdapter):
             seed=kwargs.get("seed", None),
             mirror_flip=kwargs.get("mirror_flip", 0.0),
             occlusion_mask=kwargs.get("occlusion_mask", False),
+            background_mask=kwargs.get("background_mask", False),
+            negate_flow=kwargs.get("negate_flow", True),
         )
 
     def __len__(self):

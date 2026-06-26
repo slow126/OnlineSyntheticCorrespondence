@@ -127,6 +127,14 @@ def endpoint_error(pred_flow: torch.Tensor, target_flow: torch.Tensor, sparse: b
         mask = target_flow.ne(float('inf')).all(dim=-1, keepdim=True).expand_as(pred_flow)
         pred_flow = pred_flow[mask].reshape(-1, 2)
         target_flow = target_flow[mask].reshape(-1, 2)
+        if pred_flow.numel() == 0:
+            # No valid (non-inf) targets at this scale -- e.g. a coarse pyramid level
+            # of a heavily background-/occlusion-masked sample where every cell is inf.
+            # Contribute a grad-connected zero instead of a NaN mean (empty .mean()) or
+            # a 0/0 division. No-op for flow without inf (numel>0 there).
+            if reduction in ('mean', 'sum', 'batch_sum'):
+                return pred_flow.sum() * 0.0
+            return target_flow.new_zeros(mask.shape[0])
 
     error = torch.norm(target_flow - pred_flow, p=2, dim=1)
 

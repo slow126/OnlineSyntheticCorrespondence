@@ -1,0 +1,22 @@
+% Full intervention transfer grid, INCLUDING the from-scratch backbone rows
+% (the OOD probe) and the backbone column. Archived from the pre-DAVIS main-paper
+% Table 8; now lives in the supplement (\ref{tab:interv_full}). The slimmed
+% pretrained+RAFT main version is in tab_interv.tex.
+\begin{tabular}{ll rrr rrr rrr}
+\toprule
+ & & \multicolumn{3}{c}{KITTI-2012} & \multicolumn{3}{c}{KITTI-2015} & \multicolumn{3}{c}{TSS (semantic)} \\
+\cmidrule(lr){3-5}\cmidrule(lr){6-8}\cmidrule(lr){9-11}
+Arch. & backbone & tuned & MOVi-F & $\Delta$ & tuned & MOVi-F & $\Delta$ & tuned & MOVi-F & $\Delta$ \\
+\midrule
+CATs++  & scratch     & 90.8 & 82.5 & \textbf{+8.3}  & 82.4 & 80.5 & \textbf{+1.9}  & 23.1 & 15.0 & \textbf{+8.0} \\
+CATs++  & pretrained  & 98.5 & 95.8 & \textbf{+2.7}  & 96.6 & 94.8 & \textbf{+1.8}  & 60.3 & 57.0 & \textbf{+3.3} \\
+\midrule
+GLU-Net & scratch     & 96.6 & 83.3 & \textbf{+13.3} & 78.6 & 71.5 & \textbf{+7.0}  & 18.4 & 19.4 & $-1.1$ \\
+GLU-Net & pretrained  & 96.4 & 73.9 & \textbf{+22.5} & 77.9 & 61.8 & \textbf{+16.1} & 27.3 & 19.7 & \textbf{+7.6} \\
+\midrule
+FlowFormer & scratch    & 96.8 & 85.9 & \textbf{+10.9} & 78.9 & 75.4 & \textbf{+3.5}  & 17.2 & 16.0 & \textbf{+1.1} \\
+FlowFormer & pretrained & 94.6 & 75.9 & \textbf{+18.7} & 73.2 & 63.1 & \textbf{+10.1} & 16.0 & 14.1 & \textbf{+1.9} \\
+\midrule
+RAFT       & scratch     & 96.6 & 81.5 & \textbf{+15.1} & 78.8 & 70.5 & \textbf{+8.3} & -- & -- & -- \\
+\bottomrule
+\end{tabular}

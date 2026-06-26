@@ -1,0 +1,424 @@
+representation: dino
+encoder: dinov2_vitg14
+flow_count_logging: true
+batch_size: 4
+num_workers: 4
+sampling:
+  max_vectors: 8000000
+  vectors_per_image: 1024
+  seed: 42
+  shuffle: true
+spaces:
+  enabled:
+  - features
+calibration:
+  enabled: false
+flow_normalization:
+  enabled: false
+pca:
+  enabled: true
+  output_dim: 256
+  fit_on: train
+  whiten: false
+  l2_normalize: true
+  streaming: true
+  max_train_vectors: 500000
+faiss:
+  index_factory: IVF4096,Flat
+  metric: l2
+  use_gpu: true
+  nprobe: 1
+  batch_size: 10000
+coverage:
+  self_radius_k: 5
+  radius_quantile: 0.95
+  neighbor_agg: kth
+  k_max: 5
+  k_values:
+  - 1
+  - 5
+  compute_qnorm: true
+  compute_rnorm: true
+  compute_curves: true
+  curve_quantiles:
+  - 0.8
+  - 0.9
+  - 0.95
+  - 0.99
+kl:
+  enabled: false
+  method: knn
+  spaces:
+  - features
+  k_values:
+  - 5
+  - 10
+  - 20
+  - 40
+  eps: 1e-12
+  nprobe: 16
+  filter_duplicates: true
+  cache_self_dists: true
+  cache_self_dists_disk: true
+  resume: true
+  flush_each_pair: true
+  streaming: true
+distance_metric:
+  name: sqL2
+  description: Squared L2 on L2-normalized vectors (equivalent to cosine distance)
+cache:
+  dir: /mnt/nvme_1tb_b/coverage_vectors
+  mode: read_write
+  format: npy
+  mmap: false
+  lazy_load: true
+output:
+  results_file: analysis/coverage_davis_stride_dino_interv.csv
+  curves_file: analysis/coverage_v2_dino_curves_davisinterv.csv
+  save_curves_to_main: false
+  kl_results_file: analysis/kl_v2_dino_features_davisinterv.csv
+dataset_params:
+  size:
+  - 512
+  - 512
+  downsample_flow: 32
+  max_kps: null
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: null
+  kitti_val_use_full_training: true
+dataset_overrides:
+  sintel:
+    sintel_root: /home/spencer/Data
+    normalize_images: true
+  spair:
+    datapath: ./models/Datasets_CATs
+    normalize_images: null
+  pfpascal:
+    datapath: ./models/Datasets_CATs
+    normalize_images: null
+  pfwillow:
+    datapath: ./models/Datasets_CATs
+    normalize_images: null
+  synthetic:
+    geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
+    processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
+    normalize_images: null
+    device: cuda
+  synthetic_2d_warp:
+    geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
+    processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
+    normalize_images: null
+    synthetic_flow_warp: true
+    synthetic_flow_warp_swap: true
+    device: cuda
+  imagenet2dwarp:
+    datapath: hf://ILSVRC/imagenet-1k
+    hf_streaming: false
+    hf_max_samples: 5000
+    hf_cache_dir: /home/spencer/.cache/huggingface/datasets
+    normalize_images: null
+    rotation_range:
+    - -30.0
+    - 30.0
+    scale_range:
+    - 0.5
+    - 2.5
+    translation_range:
+    - -0.1
+    - 0.1
+    shear_range:
+    - -0.2
+    - 0.2
+    cache_warp_params: true
+    cache_dir: ./cache/imagenet2dwarp
+    seed: 42
+  pointodyssey:
+    dataset_location: /home/spencer/Data/PointOdyssey
+    normalize_images: null
+    pointodyssey_sequence_length: 2
+    pointodyssey_num_pts_to_track: 32
+    use_all_valid: true
+  kitti2012:
+    datapath: /home/spencer/Data/correspondence/kitti
+    normalize_images: null
+  kitti2015:
+    datapath: /home/spencer/Data/correspondence/kitti
+    normalize_images: null
+  flyingthings:
+    datapath: /home/spencer/Data/FlyingThings3D_10k
+    normalize_images: null
+  tss:
+    datapath: /home/spencer/Data/correspondence/TSS_CVPR2016
+    normalize_images: null
+  middlebury:
+    datapath: /home/spencer/Data/middlebury/all
+    normalize_images: null
+  tapvid_davis:
+    cache_dir: /mnt/nvme_1tb_a/tapvid/probe_cache
+    normalize_images: true
+    reverse_flow: true
+    thres: img
+    tapvid_frame_step: 5
+    tapvid_min_pts: 1
+datasets:
+- name: kitti_m025_hq
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/ladder/kitti_m025_hq
+- name: kitti_m050_hq
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/ladder/kitti_m050_hq
+- name: kitti_m100_hq
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/ladder/kitti_m100_hq
+- name: kitti_m150_hq
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/ladder/kitti_m150_hq
+- name: kitti_m200_hq
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/ladder/kitti_m200_hq
+- name: kitti_m025_matte
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/ladder/kitti_m025_matte
+- name: kitti_m050_matte
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/ladder/kitti_m050_matte
+- name: kitti_m100_matte
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/ladder/kitti_m100_matte
+- name: kitti_m150_matte
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/ladder/kitti_m150_matte
+- name: kitti_m200_matte
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/ladder/kitti_m200_matte
+- name: kitti_m025_gsohq
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/ladder/kitti_m025_gsohq
+- name: kitti_m050_gsohq
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/ladder/kitti_m050_gsohq
+- name: kitti_m100_gsohq
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/ladder/kitti_m100_gsohq
+- name: kitti_m150_gsohq
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/ladder/kitti_m150_gsohq
+- name: kitti_m200_gsohq
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/ladder/kitti_m200_gsohq
+- name: kitti_m025_gsomatte
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/ladder/kitti_m025_gsomatte
+- name: kitti_m050_gsomatte
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/ladder/kitti_m050_gsomatte
+- name: kitti_m100_gsomatte
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/ladder/kitti_m100_gsomatte
+- name: kitti_m150_gsomatte
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/ladder/kitti_m150_gsomatte
+- name: kitti_m200_gsomatte
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/ladder/kitti_m200_gsomatte
+- name: kitti_recovered_hq
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/datasets/kitti_recovered_hq_5000
+- name: kitti_recovered_matte
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/datasets/kitti_recovered_matte_5000
+- name: kitti_recovered_gso_hq
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/datasets/kitti_recovered_gso_hq_5000
+- name: kitti_recovered_gso_matte
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/datasets/kitti_recovered_gso_matte_5000
+- name: kitti_badmotion_ft_gso_hq
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/datasets/kitti_badmotion_ft_gso_hq_5000
+- name: kitti_badmotion_ft_gso_matte
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/datasets/kitti_badmotion_ft_gso_matte_5000
+- name: kitti_deplete_d05
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/datasets/kitti_deplete_d05_5000
+- name: kitti_deplete_d10
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/datasets/kitti_deplete_d10_5000
+- name: kitti_deplete_d15
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/datasets/kitti_deplete_d15_5000
+- name: flyingthings_recovered_hq
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/datasets/flyingthings_recovered_hq_5000
+- name: flyingthings_recovered_matte
+  split: train
+  representation: dino
+  is_eval: false
+  overrides:
+    dataset_name: kubric_intervention
+    datapath: /mnt/nvme_1tb_a/kubric_interventions/datasets/flyingthings_recovered_matte_5000
+- name: tapvid_davis_s1
+  split: test
+  representation: dino
+  is_eval: true
+  overrides:
+    dataset_name: tapvid_davis
+    tapvid_stride: 1
+- name: tapvid_davis_s2
+  split: test
+  representation: dino
+  is_eval: true
+  overrides:
+    dataset_name: tapvid_davis
+    tapvid_stride: 2
+- name: tapvid_davis_s4
+  split: test
+  representation: dino
+  is_eval: true
+  overrides:
+    dataset_name: tapvid_davis
+    tapvid_stride: 4
+- name: tapvid_davis_s8
+  split: test
+  representation: dino
+  is_eval: true
+  overrides:
+    dataset_name: tapvid_davis
+    tapvid_stride: 8
+- name: tapvid_davis_s16
+  split: test
+  representation: dino
+  is_eval: true
+  overrides:
+    dataset_name: tapvid_davis
+    tapvid_stride: 16
+- name: tapvid_davis_s25
+  split: test
+  representation: dino
+  is_eval: true
+  overrides:
+    dataset_name: tapvid_davis
+    tapvid_stride: 25

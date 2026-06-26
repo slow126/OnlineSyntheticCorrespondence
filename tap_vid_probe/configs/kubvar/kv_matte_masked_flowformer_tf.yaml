@@ -1,0 +1,83 @@
+dataset:
+  datapath: /mnt/nvme_1tb_a/kubric_interventions/datasets/tss_matte_masked_1000
+  dataset_name: kubric_intervention
+  debug: false
+  dense_kps_use_all: true
+  downsample_flow: null
+  kubric_max_pairs: 2500
+  max_kps: null
+  mirror_flip: 0.0
+  normalize_images: true
+  reverse_flow: false
+  background_mask: true
+  size:
+  - 512
+  - 512
+  split: train
+  verbose: false
+evaluation:
+  datapath: ./models/Datasets_CATs
+  eval_alphas:
+  - 0.05
+  - 0.03
+  eval_benchmarks:
+  - tss
+  - tapvid_davis
+  min_motion_pixels: 5.0
+  prefetch_factor: 2
+  split_to_use_for_validation: test
+  thres: img
+  tss_root: /home/spencer/Data/correspondence/TSS_CVPR2016
+  use_motion_aware: false
+  val_batch_size: 2
+  val_num_workers: 2
+  zero_threshold: 0.5
+  kitti_root: /home/spencer/Data/correspondence/kitti
+  kitti_val_use_full_training: true
+  tapvid_davis_root: /mnt/nvme_1tb_a/tapvid/probe_cache
+  val_datasets:
+    tapvid_davis:
+      tapvid_stride: 6
+      tapvid_frame_step: 5
+      tapvid_min_pts: 1
+      reverse_flow: true
+      normalize_images: true
+    kitti2015:
+      split: val
+      normalize_images: true
+    kitti2012:
+      split: val
+      normalize_images: true
+model:
+  freeze: false
+  iters: 12
+  pretrain: true
+  pretrained_path: null
+  type: flowformer
+paths:
+  pretrained: null
+  save_epoch_checkpoints: false
+  snapshots: /mnt/nvme_1tb_a/snapshots/kubvar/matte_masked_flowformer_tf
+  start_epoch: 0
+training:
+  accumulate_grad_batches: 8
+  augmentation: false
+  batch_size: 1
+  check_val_every_n_epoch: 1
+  epochs: 80
+  eval_initial: true
+  gradient_clip_algorithm: norm
+  gradient_clip_val: 1.0
+  lr: 0.00025
+  lr_backbone: 2.5e-06
+  max_flow_length: null
+  min_flow_length: null
+  mmd_every_n_epochs: 0
+  momentum: 0.9
+  n_threads: 2
+  scheduler: step
+  seed: 2021
+  step: '[70, 80, 90]'
+  step_gamma: 0.5
+  steps_per_epoch: 400
+  weight_decay: 0.0001

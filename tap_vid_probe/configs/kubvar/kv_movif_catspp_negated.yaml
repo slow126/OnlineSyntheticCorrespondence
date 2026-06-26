@@ -1,0 +1,65 @@
+dataset:
+  datapath: /mnt/nvme_1tb_a/kubric_interventions/datasets/movif_1000_extracted
+  dataset_name: kubric_intervention
+  debug: false
+  dense_kps_use_all: true
+  downsample_flow: 32
+  kubric_max_pairs: 2500
+  max_kps: null
+  mirror_flip: 0.0
+  normalize_images: true
+  reverse_flow: false
+  negate_flow: true
+  size:
+  - 512
+  - 512
+  split: train
+  verbose: false
+evaluation:
+  datapath: ./models/Datasets_CATs
+  eval_alphas:
+  - 0.05
+  - 0.05
+  - 0.05
+  eval_benchmarks:
+  - tss
+  - pfpascal
+  - pfwillow
+  min_motion_pixels: 5.0
+  prefetch_factor: 2
+  split_to_use_for_validation: test
+  thres: img
+  tss_root: /home/spencer/Data/correspondence/TSS_CVPR2016
+  use_motion_aware: false
+  val_batch_size: 8
+  val_num_workers: 8
+  zero_threshold: 0.5
+model:
+  backbone: resnet101
+  freeze: false
+  pretrained_backbone: false
+paths:
+  pretrained: null
+  save_epoch_checkpoints: false
+  snapshots: /mnt/nvme_1tb_a/snapshots/kubvar/movif_catspp_negated
+  start_epoch: 0
+training:
+  accumulate_grad_batches: 4
+  augmentation: false
+  batch_size: 2
+  check_val_every_n_epoch: 1
+  epochs: 15
+  eval_initial: true
+  lr: 3.0e-05
+  lr_backbone: 3.0e-06
+  max_flow_length: null
+  min_flow_length: null
+  mmd_every_n_epochs: 0
+  momentum: 0.9
+  n_threads: 8
+  scheduler: step
+  seed: 2021
+  step: '[70, 80, 90]'
+  step_gamma: 0.5
+  steps_per_epoch: 100
+  weight_decay: 0.05

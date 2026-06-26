@@ -1,0 +1,121 @@
+dataset:
+  dataset_name: synthetic
+  debug: false
+  dense_kps_use_all: true
+  downsample_flow: null
+  geometry_config_overrides: null
+  geometry_config_path: src/configs/online_synth_configs/OnlineGeometryConfig.yaml
+  max_kps: null
+  normalize_images: false
+  opengl_device_index: null
+  processor_config_path: src/configs/online_synth_configs/OnlineProcessorConfig.yaml
+  size:
+  - 512
+  - 512
+  split: train
+  verbose: false
+model:
+  freeze: false
+  glunet:
+    decoder_dense_connect: false
+    local_window_size: 9
+    model_name: resnet50
+  pretrained_backbone: true
+  type: glunet
+evaluation:
+  eval_benchmarks:
+  - tss_a10
+  - tss_a05
+  - tss_a03
+  - tapvid_davis_s1
+  - tapvid_davis_s2
+  - tapvid_davis_s4
+  - tapvid_davis_s8
+  - tapvid_davis_s16
+  eval_alphas:
+  - 0.1
+  - 0.05
+  - 0.03
+  - 0.05
+  - 0.05
+  - 0.05
+  - 0.05
+  - 0.05
+  thres: img
+  split_to_use_for_validation: test
+  val_batch_size: 2
+  val_num_workers: 2
+  prefetch_factor: 2
+  use_motion_aware: false
+  min_motion_pixels: 5.0
+  zero_threshold: 0.5
+  datapath: ./models/Datasets_CATs
+  tss_root: /home/spencer/Data/correspondence/TSS_CVPR2016
+  kitti_root: /home/spencer/Data/correspondence/kitti
+  kitti_val_use_full_training: true
+  tapvid_davis_root: /mnt/nvme_1tb_a/tapvid/probe_cache
+  val_datasets:
+    tss_a10:
+      reverse_flow: false
+      normalize_images: true
+    tss_a05:
+      reverse_flow: false
+      normalize_images: true
+    tss_a03:
+      reverse_flow: false
+      normalize_images: true
+    tapvid_davis_s1:
+      tapvid_stride: 1
+      tapvid_frame_step: 5
+      tapvid_min_pts: 1
+      reverse_flow: true
+      normalize_images: true
+    tapvid_davis_s2:
+      tapvid_stride: 2
+      tapvid_frame_step: 5
+      tapvid_min_pts: 1
+      reverse_flow: true
+      normalize_images: true
+    tapvid_davis_s4:
+      tapvid_stride: 4
+      tapvid_frame_step: 5
+      tapvid_min_pts: 1
+      reverse_flow: true
+      normalize_images: true
+    tapvid_davis_s8:
+      tapvid_stride: 8
+      tapvid_frame_step: 5
+      tapvid_min_pts: 1
+      reverse_flow: true
+      normalize_images: true
+    tapvid_davis_s16:
+      tapvid_stride: 16
+      tapvid_frame_step: 5
+      tapvid_min_pts: 1
+      reverse_flow: true
+      normalize_images: true
+training:
+  accumulate_grad_batches: 1
+  augmentation: false
+  batch_size: 8
+  check_val_every_n_epoch: 2
+  epochs: 40
+  eval_initial: true
+  lr: 0.001
+  lr_backbone: 1.0e-05
+  max_flow_length: null
+  min_flow_length: null
+  mmd_every_n_epochs: 0
+  momentum: 0.9
+  n_threads: 2
+  scheduler: step
+  seed: 2021
+  step: '[70, 80, 90]'
+  step_gamma: 0.5
+  steps_per_epoch: 100
+  weight_decay: 0.0005
+paths:
+  snapshots: /mnt/nvme_1tb_a/snapshots/grid8/synthdef_glunet_tf
+  save_epoch_checkpoints: false
+  start_epoch: 0
+  pretrained: null

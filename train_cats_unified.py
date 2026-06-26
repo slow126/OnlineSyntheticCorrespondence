@@ -396,7 +396,9 @@ def create_validation_datasets(config, device=None):
             # renderer): see scripts/precompute_synthetic_val.py + CachedSyntheticAdapter.
             val_dataset_config['synthetic_val_cache'] = val_datasets_config.get('synthetic_val_cache', None)
         
-        elif benchmark == 'tss':
+        elif benchmark.startswith('tss'):
+            # 'tss' or per-alpha entries 'tss_a10'/'tss_a05'/'tss_a03' (same data,
+            # different PCK alpha via eval_alphas zip) all use the TSS adapter.
             val_dataset_config['datapath'] = eval_config['tss_root']
             val_dataset_config['reverse_flow'] = val_datasets_config.get('reverse_flow', False)
             val_dataset_config['thres'] = eval_config['thres']
@@ -450,8 +452,10 @@ def create_validation_datasets(config, device=None):
             val_dataset_config['pass_name'] = val_datasets_config.get('pass_name', 'clean')
             val_dataset_config['reverse_flow'] = val_datasets_config.get('reverse_flow', True)
 
-        elif benchmark == 'tapvid_davis':
+        elif benchmark.startswith('tapvid_davis'):
             # tap_vid_probe (quarantined): sparse real-motion benchmark, mirrors pointodyssey.
+            # benchmark may be 'tapvid_davis' or a per-stride entry 'tapvid_davis_s{N}'
+            # (all route to the tapvid_davis adapter; stride comes from this entry's config).
             # `tapvid_davis_root` points at the preprocess_davis.py mmap cache dir.
             val_dataset_config['cache_dir'] = eval_config['tapvid_davis_root']
             val_dataset_config['tapvid_stride'] = val_datasets_config.get('tapvid_stride', val_datasets_config.get('stride', 5))
@@ -472,8 +476,13 @@ def create_validation_datasets(config, device=None):
             else:
                 val_dataset_config['split'] = split_to_use
         
-        # Create dataset using CorrespondenceDataset - it handles all the parameter mapping
-        dataset = CorrespondenceDataset(benchmark, **val_dataset_config)
+        # Create dataset using CorrespondenceDataset - it handles all the parameter mapping.
+        # Per-stride tapvid_davis_s{N} entries all map to the 'tapvid_davis' adapter;
+        # per-alpha tss_a{NN} entries all map to the 'tss' adapter.
+        adapter_name = ('tapvid_davis' if benchmark.startswith('tapvid_davis')
+                        else 'tss' if benchmark.startswith('tss')
+                        else benchmark)
+        dataset = CorrespondenceDataset(adapter_name, **val_dataset_config)
         
         # Subsample FlyingThings dataset if val_dataset_fraction is specified
         original_collate_fn = dataset.collate_fn  # Save collate_fn before wrapping

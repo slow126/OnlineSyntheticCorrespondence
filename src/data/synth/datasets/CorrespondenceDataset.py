@@ -64,6 +64,11 @@ class CorrespondenceDataset(Dataset):
         # occlusion_mask: keep occluded feature cells as inf so the sparse
         # endpoint-error loss skips them (Kubric flow only). Default off.
         self.occlusion_mask: bool = bool(kwargs.get("occlusion_mask", False))
+        # background_mask: drop floor+sky from the loss (objects-only supervision) by
+        # marking them inf in the dataset; same "keep inf" collate path as occlusion.
+        self.background_mask: bool = bool(kwargs.get("background_mask", False))
+        # Either source of inf must be preserved through downsample/collate.
+        self._keep_inf: bool = self.occlusion_mask or self.background_mask
 
         # Device policy: synthetic prefers GPU, others default to CPU for worker safety
         target_device_str = kwargs.get("target_device", None)
@@ -82,6 +87,8 @@ class CorrespondenceDataset(Dataset):
             self.normalize_images_flag = dataset_name not in already_normalized
         else:
             self.normalize_images_flag = normalize_flag
+        # 'imagenet' (fixed stats) or 'per_image' (zero-mean/unit-std per image, brightness-invariant)
+        self.normalize_mode = kwargs.get("normalize_mode", "imagenet")
 
         # Build adapter (handles dataset-specific loading)
         adapter_excludes = {
@@ -91,6 +98,7 @@ class CorrespondenceDataset(Dataset):
             "dense_kps_use_all",
             "target_device",
             "normalize_images",
+            "normalize_mode",
             "debug",
             "verbose",
             "synthetic_flow_warp",
@@ -317,15 +325,15 @@ class CorrespondenceDataset(Dataset):
                 max_kps=self.max_kps,
                 downsample_feat_size=self.downsample_feat_size,
                 prefer_all_dense=self.prefer_all_dense,
-                occlusion_mask=self.occlusion_mask,
+                occlusion_mask=self._keep_inf,
             )
-            sample = normalize_images(sample, self.normalize_images_flag)
+            sample = normalize_images(sample, self.normalize_images_flag, self.normalize_mode)
             processed_samples.append(sample)
 
         batch_out = collate_common_samples(
             processed_samples,
             max_kps=self.max_kps,
             target_device=self.target_device,
-            occlusion_mask=self.occlusion_mask,
+            occlusion_mask=self._keep_inf,
         )
         return batch_out
