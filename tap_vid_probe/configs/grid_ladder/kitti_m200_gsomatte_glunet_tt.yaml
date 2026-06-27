@@ -1,0 +1,124 @@
+dataset:
+  dataset_name: kubric_intervention
+  datapath: /home/slow1/Data/ladder/kitti_m200_gsomatte
+  kubric_dir: /home/spencer/Projects/kubric
+  movi_f_config: 512x512
+  movi_f_shuffle_buffer: 16
+  size:
+  - 512
+  - 512
+  downsample_flow: null
+  dense_kps_use_all: true
+  max_kps: null
+  normalize_images: true
+  reverse_flow: false
+  split: train
+  debug: false
+  verbose: false
+  occlusion_mask: true
+  negate_flow: true
+  kubric_max_pairs: null
+  mirror_flip: 0.0
+model:
+  type: glunet
+  pretrained_backbone: true
+  freeze: true
+  glunet:
+    model_name: resnet50
+    local_window_size: 9
+    decoder_dense_connect: false
+training:
+  epochs: 25
+  steps_per_epoch: 400
+  batch_size: 8
+  check_val_every_n_epoch: 1
+  eval_initial: true
+  momentum: 0.9
+  scheduler: cosine
+  step: '[70, 80, 90]'
+  step_gamma: 0.5
+  augmentation: false
+  mmd_every_n_epochs: 0
+  min_flow_length: null
+  max_flow_length: null
+  n_threads: 2
+  seed: 2021
+  lr: 0.001
+  lr_backbone: 1.0e-05
+paths:
+  snapshots: /home/slow1/Projects/OnlineSyntheticCorrespondence/snapshots_ladder/kitti_m200_gsomatte_glunet_tt
+  pretrained: null
+  start_epoch: 0
+  save_epoch_checkpoints: false
+evaluation:
+  eval_benchmarks:
+  - tss_a10
+  - tss_a05
+  - tss_a03
+  - tapvid_davis_s1
+  - tapvid_davis_s2
+  - tapvid_davis_s4
+  - tapvid_davis_s8
+  - tapvid_davis_s16
+  eval_alphas:
+  - 0.1
+  - 0.05
+  - 0.03
+  - 0.05
+  - 0.05
+  - 0.05
+  - 0.05
+  - 0.05
+  thres: img
+  split_to_use_for_validation: test
+  val_batch_size: 2
+  val_num_workers: 2
+  prefetch_factor: 2
+  use_motion_aware: false
+  min_motion_pixels: 5.0
+  zero_threshold: 0.5
+  datapath: ./models/Datasets_CATs
+  tss_root: /home/slow1/Data/correspondence/TSS_CVPR2016
+  kitti_root: /home/slow1/Data/correspondence/kitti
+  kitti_val_use_full_training: true
+  tapvid_davis_root: /home/slow1/Data/tapvid/probe_cache
+  val_datasets:
+    tss_a10:
+      reverse_flow: false
+      normalize_images: true
+    tss_a05:
+      reverse_flow: false
+      normalize_images: true
+    tss_a03:
+      reverse_flow: false
+      normalize_images: true
+    tapvid_davis_s1:
+      tapvid_stride: 1
+      tapvid_frame_step: 5
+      tapvid_min_pts: 1
+      reverse_flow: true
+      normalize_images: true
+    tapvid_davis_s2:
+      tapvid_stride: 2
+      tapvid_frame_step: 5
+      tapvid_min_pts: 1
+      reverse_flow: true
+      normalize_images: true
+    tapvid_davis_s4:
+      tapvid_stride: 4
+      tapvid_frame_step: 5
+      tapvid_min_pts: 1
+      reverse_flow: true
+      normalize_images: true
+    tapvid_davis_s8:
+      tapvid_stride: 8
+      tapvid_frame_step: 5
+      tapvid_min_pts: 1
+      reverse_flow: true
+      normalize_images: true
+    tapvid_davis_s16:
+      tapvid_stride: 16
+      tapvid_frame_step: 5
+      tapvid_min_pts: 1
+      reverse_flow: true
+      normalize_images: true
