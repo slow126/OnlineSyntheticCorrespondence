@@ -75,6 +75,7 @@ class KubricInterventionDataset(Dataset):
         occlusion_mask: bool = False,
         background_mask: bool = False,
         negate_flow: bool = True,
+        src_tgt_flip: float = 0.0,
         **_,
     ):
         super().__init__()
@@ -110,6 +111,11 @@ class KubricInterventionDataset(Dataset):
         # (mirror of the camera-dolly coverage ladder). Flipped pairs are the first
         # f-fraction of the (seed-shuffled) scene order -> deterministic & reproducible.
         self.mirror_flip = float(mirror_flip)
+        # src_tgt_flip: per-sample probability of swapping source and target frames
+        # (and reading the opposite-direction flow). A zoom-in pair then becomes a
+        # zoom-out pair, so the model learns scale-up AND scale-down matching from a
+        # zoom-in-only render. 0.0 = off (byte-identical to before).
+        self.src_tgt_flip = float(src_tgt_flip)
 
         split_root = self.root / split
         self.scene_root = split_root if split_root.exists() else self.root
@@ -123,7 +129,9 @@ class KubricInterventionDataset(Dataset):
         # (rare generation artifacts: a missing data_ranges flow-range key or flow
         # PNG). Filtering here means one bad scene can't KeyError mid-epoch.
         self.scene_dirs = [d for d in self.scene_dirs
-                           if self._scene_has_flow(d, self.reverse_flow)]
+                           if self._scene_has_flow(d, self.reverse_flow)
+                           and (self.src_tgt_flip <= 0.0
+                                or self._scene_has_flow(d, not self.reverse_flow))]
 
         if seed is not None:
             rng = np.random.default_rng(seed)
@@ -198,12 +206,14 @@ class KubricInterventionDataset(Dataset):
         occ = out_of_frame | (err2 > 0.01 * (mag_primary2 + mag_secondary2) + 0.5)
         return occ
 
-    def _compute_occlusion(self, scene_dir: Path, ranges: dict) -> Optional[np.ndarray]:
+    def _compute_occlusion(self, scene_dir: Path, ranges: dict,
+                           reverse: Optional[bool] = None) -> Optional[np.ndarray]:
         """Decode the opposite-direction flow and compute the occlusion mask.
 
         Returns boolean [H, W] (True == occluded) or None if the secondary flow
         for this scene is unavailable (occlusion left disabled for that scene)."""
-        if not self.reverse_flow:
+        rev = self.reverse_flow if reverse is None else reverse
+        if not rev:
             # primary = backward (frame1->0); secondary = forward (frame0->1)
             sec_name = "forward_flow"
             sec_path = scene_dir / "forward_flow_00000.png"
@@ -241,7 +251,13 @@ class KubricInterventionDataset(Dataset):
         with (scene_dir / "data_ranges.json").open() as f:
             ranges = json.load(f)
 
-        if not self.reverse_flow:
+        # Per-sample source/target swap: with probability src_tgt_flip, read the
+        # opposite direction so a zoom-in pair is presented as zoom-out (and back).
+        reverse = self.reverse_flow
+        if self.src_tgt_flip > 0.0 and float(torch.rand(())) < self.src_tgt_flip:
+            reverse = not reverse
+
+        if not reverse:
             src_name, trg_name = "rgba_00000.png", "rgba_00001.png"
             flow_name = "backward_flow"
             flow_path = scene_dir / "backward_flow_00001.png"
@@ -282,7 +298,7 @@ class KubricInterventionDataset(Dataset):
             flow = torch.stack([(w - 1) - 2.0 * xs, torch.zeros(h, w)], dim=0).contiguous()
         elif self.occlusion_mask:
             # Mark occluded target-frame pixels invalid (inf) via fwd/bwd round-trip.
-            occ = self._compute_occlusion(scene_dir, ranges)
+            occ = self._compute_occlusion(scene_dir, ranges, reverse)
             if occ is not None:
                 flow = flow.clone()
                 flow[:, torch.from_numpy(occ)] = float("inf")

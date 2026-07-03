@@ -2,98 +2,125 @@
 \section{Motion Coverage Predicts Transfer}
 \label{sec:law}
 
-\begin{figure*}[t]
+\noindent\textbf{Transfer Study.}
+We train four architectures, each in two \emph{configurations} with the backbone
+frozen or fine-tuned (RAFT has no pre-trained backbone and trains end-to-end), on 11 training
+sources and evaluate transfer to 9 target benchmarks (Table~\ref{tab:study}). Six target benchmarks are real images:
+KITTI-2012/2015, SPair-71K, PF-Pascal, PF-Willow, and TSS. Three are
+synthetic: FlyingThings, PointOdyssey, and a held-out split of our SDF-Fractals3D. 
+
+We measure transfer as peak \pck{} at $\alpha{=}5\%$, the fraction of predicted
+correspondences within $5\%$ of image size of the true match. 
+Coverage depends only on the (source, target) pair, while realized transfer also
+depends on the model, so we evaluate every ranking within a fixed (target,
+architecture, configuration) \emph{context}. We build each dataset's distributions from up to 8000 sampled scenes. For motion we
+take 2000 flow vectors per scene, up to 16M in total, subsampling the dense datasets
+to this budget while the sparse targets (SPair, PF-Pascal, PF-Willow, TSS) fall under
+it and keep every vector. For appearance we take a $32\times32$ patch grid per scene,
+up to 8M appearance vectors.
+
+We score a distance's predicted source ordering against the realized one with the
+Spearman rank correlation $\rho$ ($+1$ identical order, $0$ unrelated, $-1$ reversed),
+computed within each context so benchmark and model effects cannot inflate it. For
+absolute prediction we report the Pearson correlation $r$ between predicted and actual
+\pck{}, with the mean absolute error in \pck{} points. For selection we report the
+median top-1 regret, measured within each context as the \pck{} that the distance's
+top-ranked source gives up against the true best source, and reported as the median
+of that gap across contexts. Throughout we stratify targets into \emph{real-motion} and
+\emph{semantic} sets (Table~\ref{tab:study}).
+
+\begin{figure}[tbp]
 \centering
-\begin{subfigure}[b]{0.42\textwidth}
+\begin{subfigure}[b]{0.33\textwidth}
 \centering
 \includegraphics[width=\linewidth]{figures/results/F_covlaw_a.png}
 \caption{Coverage predicts transfer.}
 \label{fig:coverage_law_a}
-\end{subfigure}\hfill
-\begin{subfigure}[b]{0.56\textwidth}
+\end{subfigure}\hspace{0.02\textwidth}%
+\begin{subfigure}[b]{0.44\textwidth}
 \centering
 \includegraphics[width=\linewidth]{figures/results/F_covlaw_b.png}
 \caption{Ranking vs.\ the retraining ceiling/floor.}
 \label{fig:coverage_law_b}
 \end{subfigure}
-\caption{\textbf{Motion coverage predicts transfer, near the reproducibility
-ceiling.}
+\caption{\textbf{Motion coverage predicts transfer, near the upper bound.}
 \subref{fig:coverage_law_a}~Within-context $z$-scored \pck{} vs.\ coverage
-($-\dbt$) across all analyzed configurations; Pearson $r{=}0.53$, Spearman
-$\rho{=}0.57$.
+($-\dbt$), one point per (source, target) pair, colored by training source
+(dashed least-squares fit); $r{=}0.53$, $\rho{=}0.57$.
 \subref{fig:coverage_law_b}~Chance of picking the better source per true-\pck-gap
-bin, against same-family retraining agreement (gray ceiling). Above a
-$10$-\pck{} gap: coverage ($79\%$) matches cross-architecture retraining ($82\%$)
-and approaches the same-architecture ceiling ($91\%$); $W_2$ trails ($71\%$),
-off-target is a coin flip ($51\%$), appearance (DINO) is worse than chance
-($30\%$, wrong-signed). (Ceiling $=$ agreement between frozen and fine-tuned
-variants of the same family---the pairwise-decision view of the rank-correlation
-ceiling $\rho{\approx}0.62$ used in the text; conservative for a fixed-config
-setting but appropriate for a config-agnostic predictor.)}
+bin, vs.\ same-family retraining agreement (gray upper bound). Above a $10$-\pck{} gap,
+coverage ($79\%$) matches cross-architecture retraining ($82\%$) and nears the
+same-architecture upper bound ($91\%$); $W_2$ trails ($71\%$), off-target is at chance
+($51\%$), appearance is wrong-signed ($30\%$).}
 \label{fig:coverage_law}
-\end{figure*}
+\end{figure}
 
-\begin{table}[!tb]
+\begin{table}[tbp]
 \centering
-\caption{\textbf{Motion (BFV) predicts transfer, and the predictive part is
-coverage.} Within-context Spearman $\rho$ between peak transfer and each negated
-motion distance (larger distance $=$ worse transfer), grouped by backbone
-(pretrained matchers; RAFT end-to-end) and encoder state (\enctrained{} trained,
-\encfrozen{} frozen).
-\textbf{Bold} $=$ coverage ($\dbt$); \bst{green} $=$ best coverage-family
-distance per cell; ``--'' $=$ RAFT not evaluated on semantic targets.
-$\dtb$ $=$ off-target mass; target strata as in Table~\ref{tab:study}.}
-\label{tab:law}
-\footnotesize
-\setlength{\tabcolsep}{4pt}
-\input{tables/tab_law}
-\end{table}
-
-\begin{table}[!tb]
-\centering
-\caption{\textbf{Appearance (DINO) space: negative control for
-Table~\ref{tab:law}.} No DINO distance is a usable positive predictor: every
-cell is null-to-wrong-signed. Grouping, columns, and stratification as in
-Table~\ref{tab:law}.}
+\caption{\textbf{Appearance (DINO) space.}
+Within-context Spearman $\rho$ between peak transfer and each negated appearance
+distance (the two directed distances $\dtb$, $\dbt$, the Chamfer, and sliced $W_2$),
+across architectures and encoder states (\enctrained{} trained, \encfrozen{} frozen;
+RAFT trains end-to-end). \textbf{Bold} $=$ best distance per cell. Every cell is
+near zero or anti-correlated, the bold included. Target strata as in Table~\ref{tab:study};
+the motion analysis is Table~\ref{tab:law}.}
 \label{tab:lawdino}
-\footnotesize
+\scriptsize
 \setlength{\tabcolsep}{4pt}
 \input{tables/tab_law_dino}
 \end{table}
 
-Table~\ref{tab:law} and Fig.~\ref{fig:coverage_law_a} present the core finding.
-\emph{Coverage} ($\dbt$) is the consistent positive predictor, up to $+0.73$ on
-real motion and on semantic targets too (CATs++ $+0.50$, GLU-Net $+0.80$). It is the best
-predictor in every backbone real-motion cell and stays positive on semantic targets
-($+0.31$ to $+0.80$); only end-to-end RAFT ties a symmetric distance, and there the
-parity is the recall that distance shares with coverage, not its off-target term. On semantic targets coverage no longer dominates: a
-symmetric or sliced-$W_2$ distance is competitive there, and strongest for
-FlowFormer (Table~\ref{tab:law}), since semantic matching also rewards the
-full-distribution compatibility those distances partly carry. Across the whole
-table coverage remains the reliable default: positive in every cell,
-best-or-tied in the large majority, and the one distance worth reaching for without
-knowing the configuration, whereas off-target mass ($\dtb$) is erratic and near-zero on
-its own. The source
-ranking this produces for every target, set against realized transfer, is laid
-out in Fig.~\ref{fig:consensus} below. In DINOv3 appearance space the identical
-analysis is null throughout (Table~\ref{tab:lawdino}): the target-selective signal
-lives in motion, not in how the frames look.
+\begin{table}[tbp]
+\centering
+\caption{\textbf{Motion (BFV) space.} The same analysis as Table~\ref{tab:lawdino}.
+\bst{Green} $=$ coverage, our claim; \textbf{bold} $=$ best distance per cell;
+``--'' $=$ RAFT not evaluated on semantic targets. $\dbt$ $=$ coverage distance,
+$\dtb$ $=$ off-target mass; target strata as in Table~\ref{tab:study}.}
+\label{tab:law}
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\input{tables/tab_law}
+\end{table}
 
+We evaluate both motion and appearance representations on this transfer study,
+scoring every (source, target) pair with each distance (Tables~\ref{tab:lawdino}
+and~\ref{tab:law}). In DINOv3 feature space, every distance is near zero or negative (Table~\ref{tab:lawdino}). Negating these distances
+does not recover a usable predictor; the weak negative trend means only that visually
+dissimilar sources transfer marginally better, an effect too incidental to guide
+selection. Appearance offers no consistent, actionable signal for which source best suits a given target.
 
-\noindent\textbf{Robustness.} Coverage's lead replicates across distance
-estimators and generator families, and is not explained by dataset size (ranking
-by \#samples or \#vectors reaches only $\rho\le0.27$). Jackknifing coverage's
-correlation---leaving out each training source ($\times 11$) and each
-generator family ($\times 5$) in turn---holds it within
-$[{+}0.57,{+}0.65]$, with no single family load-bearing. The directed distances
-are also sampling-stable, reaching $\rho\ge0.96$ by $5{\times}10^4$ flow
-vectors and $1.000$ at our reference budget, whereas density-based (KL) estimators
-never converge---motivating our restriction to support-geometry estimators.
-FlowFormer entered the
-study as a held-out fourth architecture after the analysis was frozen and
-reproduces the coverage signal on real-motion targets without adjustment
-(Table~\ref{tab:law}), a check that the analysis was not tuned to the data.
-The supplement gives the full per-configuration tables and all ablations: the two
-alternative estimators ($\epsilon$-radius coverage and a density kNN-KL),
-generator and sampling controls, and the direction-blind pooling analysis.
+However, motion presents a consistent, actionable signal. A source whose motion covers
+the target's tends to transfer better, and the pattern holds across every architecture and
+encoder state (Table~\ref{tab:law}, Fig.~\ref{fig:coverage_law_a}), with coverage
+($\dbt$) being either the best predictor or positively correlated in every cell. This implies the signal is directional, and concentrated in
+the coverage term of the Chamfer distance, while the off-target half ($\dtb$) stays near zero. Symmetric
+distances (Chamfer, sliced $W_2$) mix these two directions which generally results in a weaker signal.
+Notably, most motion distances correlate positively with transfer, and coverage most consistent of all. This holds even on semantic keypoint targets, where a source's motion
+statistics have no obvious reason to predict matching, though in the semantic cases the symmetric
+distances (Chamfer, $W_2$) become competitive with coverage.
+
+We do not test the mechanism directly, but the pattern suggests a simple one. A model
+trained on a source whose motion covers the target's has seen the target's
+displacement patterns during training, so its matching head is exposed to the
+correspondences the target demands, and motion coverage measures that overlap. The same
+logic extends to the semantic targets, whose keypoint correspondences are also
+displacements, so a source that spans them trains a matcher that handles them, even
+without photorealism or semantic content in the source. Concretely, our asset-free SDF-Fractals3D shares no objects or textures with any semantic target, yet outranks the real-image training sources on them (full transfer grid in the supplementary material, Table~\ref{S-tab:transfergrid}). 
+
+\noindent\textbf{Robustness.} To ensure the effect does not hinge on any one source, model, or
+estimator we perform a series of robustness checks. We find the effect holds for all four architectures and both encoder states
+(Table~\ref{tab:law}) and across two alternative distance estimators (epsilon radius, and k-means clustering, see supplementary Sect.~\ref{S-supp:law}). 
+
+We also perform jackknife ablations by dropping each
+training source individually, and then entire training source families (Kubric, realflow, SDF-Fractals3D, semantic, and 2D-warps). We find the
+spearman correlation remains within $[{+}0.43,{+}0.54]$, so no single source or family is load-bearing (see supplementary Sect.~\ref{S-supp:robust}).
+
+We also test whether the BFV is a proxy for dataset size or the density of supervised
+flow vectors, by ranking sources by each. Dataset size ranks sources at
+$\rho{\approx}0.04$ and flow-vector density at $\rho{\le}0.27$, both well below motion
+coverage (see supplementary Sect.~\ref{S-supp:robust}).
+
+We further test sampling sensitivity by ablating through different sample budgets (50K, 100K, 500K, 1M, 8M, 16M). The directed distances converge by 50K samples and stay stable through our budget range. Whereas the density-based KNN-KL divergence never converges.
+Per-configuration tables, the two estimators, and the sampling and pooling controls
+are in the supplement (Sect.~\ref{S-supp:law} and~\ref{S-supp:sampling}).
 

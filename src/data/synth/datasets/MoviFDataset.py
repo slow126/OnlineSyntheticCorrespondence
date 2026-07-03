@@ -35,6 +35,7 @@ Args (passed from adapter / dataset config):
 
 import importlib.util
 import sys
+import zlib
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -103,6 +104,22 @@ def _to_flow_tensor(flow_hw2: np.ndarray) -> torch.Tensor:
     return torch.from_numpy(flow_hw2).permute(2, 0, 1)[[1, 0]]
 
 
+def _pair_motion_per_t(example: dict, reverse_flow: bool) -> np.ndarray:
+    """Mean flow magnitude for each candidate pair t in [0, T-2], vectorized over
+    the whole clip. Used by the 'max_motion' size-match selector to pick each
+    video's highest-motion pair (a clean 'select for motion' operation)."""
+    meta = example["metadata"]
+    if not reverse_flow:
+        arr = example["backward_flow"]; rng = meta["backward_flow_range"]
+        dec = arr.astype(np.float32) / 65535.0 * (float(rng[1]) - float(rng[0])) + float(rng[0])
+        mag = np.sqrt((dec ** 2).sum(-1)).mean(axis=(1, 2))  # per-frame [T]
+        return mag[1:]   # pair t uses backward_flow[t+1]
+    arr = example["forward_flow"]; rng = meta["forward_flow_range"]
+    dec = arr.astype(np.float32) / 65535.0 * (float(rng[1]) - float(rng[0])) + float(rng[0])
+    mag = np.sqrt((dec ** 2).sum(-1)).mean(axis=(1, 2))
+    return mag[:-1]      # pair t uses forward_flow[t]
+
+
 def _make_pair(example: dict, t: int, reverse_flow: bool) -> Dict[str, torch.Tensor]:
     video = example["video"]          # [T, H, W, 3] uint8
     meta  = example["metadata"]
@@ -142,6 +159,9 @@ class MoviFSimpleDataset(Dataset):
         config: str = "512x512",
         shuffle_buffer: int = 16,
         negate_flow: bool = True,
+        max_videos: Optional[int] = None,
+        pairs_per_video: Optional[int] = None,
+        pair_select: str = "random",
         **_,
     ):
         super().__init__()
@@ -150,6 +170,18 @@ class MoviFSimpleDataset(Dataset):
         self.reverse_flow = reverse_flow
         self.shuffle_buffer = shuffle_buffer
         self.negate_flow = bool(negate_flow)
+        # Optional dataset-size matching: cap the number of unique videos drawn
+        # (total across workers) and the number of frame pairs taken per video.
+        # e.g. max_videos=4691, pairs_per_video=1 yields 4691 unique pairs from
+        # 4691 distinct scenes -- one pair per scene -- to size-match a rendered
+        # source that has one pair per scene. None = unlimited (full MOVi-F).
+        self.max_videos = int(max_videos) if max_videos else None
+        self.pairs_per_video = int(pairs_per_video) if pairs_per_video else None
+        # How to pick the pair(s) per video in size-match mode:
+        #   'random'     -> frozen pseudo-random pair (motion-representative): generic
+        #   'max_motion' -> the highest-motion pair(s) of each clip: large-motion tuned
+        self.pair_select = str(pair_select)
+        self._num_workers = 1
 
         self.shards = _list_shards(self.shard_dir, split)
         if not self.shards:
@@ -197,12 +229,36 @@ class MoviFSimpleDataset(Dataset):
             .map(features.deserialize_example, num_parallel_calls=1)
             .map(_project, num_parallel_calls=tf.data.AUTOTUNE)
             .shuffle(buffer_size=self.shuffle_buffer)
-            .repeat()
         )
+        # Size-match: take a fixed pool of unique videos (split evenly across
+        # workers) BEFORE repeat(), so the run cycles those videos only.
+        if self.max_videos is not None:
+            per_worker = max(1, -(-self.max_videos // max(1, self._num_workers)))
+            raw_ds = raw_ds.take(per_worker)
+        raw_ds = raw_ds.repeat()
         for example in raw_ds.as_numpy_iterator():
             T = example["video"].shape[0]
             indices = list(range(T - 1))
-            np.random.shuffle(indices)
+            if self.pairs_per_video is not None and self.pair_select == "max_motion":
+                # Large-motion ("tuned") subset: deterministically take each clip's
+                # highest-motion pair(s). Same renderer/appearance as the random
+                # subset, so a tuned-vs-generic comparison at equal size isolates
+                # motion magnitude.
+                mot = _pair_motion_per_t(example, self.reverse_flow)
+                indices = list(np.argsort(-mot)[:self.pairs_per_video])
+            elif self.pairs_per_video is not None:
+                # Representative ("generic") subset: a frozen pseudo-random pair per
+                # video, seeded by video name so it is fixed across repeat() cycles.
+                # NOT t=0: the first frame pair carries ~1.3x the average motion
+                # (objects are thrown in and settle), which would bias a size match.
+                name = example["metadata"]["video_name"]
+                if isinstance(name, bytes):
+                    name = name.decode("utf-8", "ignore")
+                seed = zlib.crc32(str(name).encode("utf-8")) & 0xFFFFFFFF
+                np.random.RandomState(seed).shuffle(indices)
+                indices = indices[:self.pairs_per_video]
+            else:
+                np.random.shuffle(indices)
             for t in indices:
                 yield _make_pair(example, t, self.reverse_flow)
 
@@ -213,6 +269,7 @@ class MoviFSimpleDataset(Dataset):
         num_workers = worker_info.num_workers if worker_info else 1
 
         if self._iter is None or self._iter_worker_id != worker_id:
+            self._num_workers = num_workers
             my_shards = self.shards[worker_id::num_workers]
             if not my_shards:
                 my_shards = self.shards  # fallback: more workers than shards

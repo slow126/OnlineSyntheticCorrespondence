@@ -1,0 +1,31 @@
+\begin{tabular}{ll rr rr rrr}
+\toprule
+ &  & \multicolumn{2}{c}{KITTI @1\%} & \multicolumn{2}{c}{TSS} & \multicolumn{3}{c}{TAP-Vid-DAVIS} \\
+\cmidrule(lr){3-4}\cmidrule(lr){5-6}\cmidrule(lr){7-9}
+Model & Source & K12 & K15 & @5\% & @3\% & $s2$ & $s8$ & $s16$ \\
+\midrule
+\multirow{4}{*}{CATs++}
+ & Kubric, generic & \textbf{45.5} & \textbf{44.4} & \textbf{61.9} & \textbf{44.6} & \textbf{98.5} & \textbf{89.6} & \textbf{83.9} \\
+ & Kubric, matched & 37.8 & 37.0 & 54.1 & 35.2 & 98.3 & 87.4 & 80.7 \\
+ & SDF, generic    & 40.2 & 44.5 & 67.0 & 49.8 & 98.1 & 89.4 & 83.2 \\
+ & SDF, matched    & \textbf{89.1} & \textbf{76.3} & \textbf{67.1} & \textbf{51.0} & \textbf{98.4} & \textbf{90.6} & \textbf{84.1} \\
+\addlinespace[3pt]
+\multirow{4}{*}{GLU-Net}
+ & Kubric, generic & 15.5 & 22.6 & \textbf{32.8} & \textbf{18.3} & 96.2 & 73.0 & 55.3 \\
+ & Kubric, matched & \textbf{46.8} & \textbf{30.7} & 30.8 & 16.3 & \textbf{96.6} & \textbf{76.0} & \textbf{60.8} \\
+ & SDF, generic    & 22.3 & 26.5 & 31.8 & 16.9 & 91.8 & 76.7 & \textbf{63.8} \\
+ & SDF, matched    & \textbf{89.1} & \textbf{81.0} & \textbf{41.1} & \textbf{25.8} & \textbf{96.7} & \textbf{76.8} & 60.2 \\
+\addlinespace[3pt]
+\multirow{4}{*}{FlowFormer}
+ & Kubric, generic & 13.8 & 20.8 & \textbf{28.3} & \textbf{15.5} & \textbf{94.7} & 64.4 & 47.4 \\
+ & Kubric, matched & \textbf{29.5} & \textbf{25.8} & 26.6 & 12.8 & 94.4 & \textbf{67.7} & \textbf{52.8} \\
+ & SDF, generic    &  6.2 &  9.7 & 32.7 & 15.8 & 93.3 & 66.4 & 50.1 \\
+ & SDF, matched    & \textbf{62.7} & \textbf{56.0} & \textbf{37.3} & \textbf{22.7} & \textbf{96.0} & \textbf{70.4} & \textbf{52.0} \\
+\addlinespace[3pt]
+\multirow{4}{*}{RAFT}
+ & Kubric, generic & 25.9 & 30.2 & \textbf{21.8} & \textbf{10.0} & 94.0 & 61.5 & 45.2 \\
+ & Kubric, matched & \textbf{49.4} & \textbf{32.4} & 19.6 &  8.2 & 94.0 & \textbf{66.4} & \textbf{48.6} \\
+ & SDF, generic    & -- & -- & -- & -- & -- & -- & -- \\
+ & SDF, matched    & -- & -- & -- & -- & -- & -- & -- \\
+\bottomrule
+\end{tabular}

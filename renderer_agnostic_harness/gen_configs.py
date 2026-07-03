@@ -44,7 +44,7 @@ LOCAL_ROOTS = {
 # Common training overrides for a bounded, comparable re-run (matches the CATs
 # trial76 recipe: 50 epochs, validate every epoch, constant LR within the window).
 COMMON_TRAIN = {
-    'epochs': 50,
+    'epochs': 30,                  # matched across all archs: 30 ep x 100 steps = 3000 train steps
     'check_val_every_n_epoch': 1,
     'steps_per_epoch': 100,
     'eval_initial': False,
@@ -113,6 +113,10 @@ def build_cell(arch, source):
     ev['use_motion_aware'] = False
     ev['eval_benchmarks'] = ['kitti2015', 'kitti2012']
     ev['eval_alphas'] = [0.05, 0.05]
+    # FlowFormer at 512^2 OOMs on batched validation (template ships val_batch_size=32);
+    # force a tiny val batch. Training stays batch1+accum8.
+    if arch == 'flowformer':
+        ev['val_batch_size'] = 1
     ev['val_datasets'] = {
         'kitti2015': {'split': 'val', 'normalize_images': True},
         'kitti2012': {'split': 'val', 'normalize_images': True},

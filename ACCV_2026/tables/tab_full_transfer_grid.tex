@@ -1,0 +1,22 @@
+\begin{tabular}{l rrrrr rrrr}
+\toprule
+ & \multicolumn{5}{c}{Real-motion targets} & \multicolumn{4}{c}{Semantic targets} \\
+\cmidrule(lr){2-6}\cmidrule(lr){7-10}
+Training source & \multicolumn{1}{c}{K12} & \multicolumn{1}{c}{K15} & \multicolumn{1}{c}{FlyThings} & \multicolumn{1}{c}{PointOdy} & \multicolumn{1}{c}{SDF-F3D} & \multicolumn{1}{c}{SPair} & \multicolumn{1}{c}{PF-Pas} & \multicolumn{1}{c}{PF-Wil} & \multicolumn{1}{c}{TSS} \\
+\midrule
+\multicolumn{10}{l}{\emph{SDF-Fractals3D (asset-free, ours)}} \\
+SDF-Fractals3D & 97.9 & 95.9 & 78.3 & 79.0 & 40.2 & 14.7 & 39.4 & 42.2 & 59.7 \\
+\quad + 2D-warp & 97.4 & 96.6 & 80.0 & 73.2 & 40.2 & \textbf{20.7} & \textbf{51.2} & \textbf{52.8} & \textbf{67.0} \\
+\quad + large-zoom & 98.7 & 96.4 & 69.6 & 73.3 & 30.8 & 9.3 & 28.6 & 30.4 & 45.1 \\
+\quad + small-zoom & \textbf{98.9} & \textbf{97.3} & 74.7 & 74.9 & 35.6 & 9.8 & 32.4 & 33.6 & 51.2 \\
+\quad + flip & 96.6 & 94.1 & 75.1 & 76.5 & \textbf{52.5} & 14.7 & 29.8 & 31.9 & 58.5 \\
+\midrule
+\multicolumn{10}{l}{\emph{Real-image and other sources}} \\
+FlyingThings & 98.7 & 96.3 & \textbf{84.2} & 82.2 & 28.7 & 10.0 & 32.9 & 35.3 & 49.7 \\
+PointOdyssey & 96.6 & 94.1 & 75.6 & \textbf{86.2} & 27.5 & 11.2 & 34.2 & 36.9 & 51.7 \\
+Sintel & 98.0 & 93.9 & 73.5 & 83.3 & 24.5 & 8.4 & 28.7 & 31.8 & 46.9 \\
+MOVi-F & 75.7 & 70.8 & 47.7 & 70.9 & 16.5 & 7.5 & 20.1 & 21.4 & 28.9 \\
+ImageNet-2D & 66.6 & 67.7 & 50.7 & 46.8 & 21.9 & 10.7 & 26.8 & 29.8 & 40.7 \\
+SPair & 48.0 & 53.8 & 37.0 & 35.9 & 22.0 & 15.5 & 25.3 & 28.7 & 38.6 \\
+\bottomrule
+\end{tabular}

@@ -1,7 +1,7 @@
-"""Compose the closed-loop, render-free source-design figure (fig:intervsplats)
+"""Compose the closed-loop, geometry-only source-design figure (fig:intervsplats)
 as a single matplotlib render: rounded panels around the directional-splat
 fingerprints, labelled arrows, a dashed feedback arc (the closed loop), a
-render-free annotation, and a measured-gain badge.
+geometry-only annotation, and a measured-gain badge.
 
 Output: ACCV_2026/figures/results/F_pipeline_closedloop.png
 """
@@ -38,7 +38,7 @@ stages = [
     dict(img="train__movi-f__directional_splat.png",        asp=1.00,
          role="generic source",  name="MOVi-F",          fill=PANEL,  edge=GRAYE),
     dict(img="train__kitti-recovered__directional_splat.png", asp=1.00,
-         role="tuned source",    name="KITTI-recovered", fill=PANEL,  edge=GRAYE),
+         role="tuned source",    name="KITTI-tuned",     fill=PANEL,  edge=GRAYE),
     dict(img="benchmark__kitti2015__directional_splat.png", asp=1.30,
          role="target",          name="KITTI-2015",      fill=TARGET, edge=TARGETE),
 ]
@@ -82,16 +82,16 @@ for s in stages:
 
 ymid = (YB + YT) / 2
 
-# arrow 1: MOVi-F -> recovered  (the render-free TPE search)
+# arrow 1: MOVi-F -> recovered  (the geometry-only TPE search)
 a1x0, a1x1 = stages[0]["x1"] + PAD + 0.8, stages[1]["x0"] - PAD - 0.8
 arrow(a1x0, a1x1, ymid, lw=2.6)
 acx = (a1x0 + a1x1) / 2
 ax.text(acx, ymid + 2.6, "TPE search", ha="center", va="bottom",
         fontsize=11, color=INK, weight="bold")
-ax.text(acx, ymid - 3.0, "render-free", ha="center", va="top",
+ax.text(acx, ymid - 3.0, "geometry-only", ha="center", va="top",
         fontsize=8.8, color="#b5670f", weight="bold")
-ax.text(acx, ymid - 5.4, "(scores BFV, no RGB)", ha="center", va="top",
-        fontsize=8.0, color="#9a5a10")
+ax.text(acx, ymid - 5.2, "(BFV only,\nno lighting pass)", ha="center", va="top",
+        fontsize=8.0, color="#9a5a10", linespacing=1.35)
 
 # arrow 2: recovered -> target  (fingerprint match)
 a2x0, a2x1 = stages[1]["x1"] + PAD + 0.8, stages[2]["x0"] - PAD - 0.8
@@ -111,7 +111,7 @@ ax.text((a3x0 + a3x1) / 2, ymid + 2.4, "train", ha="center", va="bottom",
 rrect(badge_x0, YB - PAD, badge_x1, YT + PAD, GREEN, GREENE, lw=1.6)
 bcx = (badge_x0 + badge_x1) / 2
 ax.text(bcx, YT - 2.2, "peak PCK", ha="center", va="top", fontsize=9, color="#2f6b48")
-ax.text(bcx, ymid + 1.4, "+16.1", ha="center", va="center", fontsize=21,
+ax.text(bcx, ymid + 1.4, "+10.7", ha="center", va="center", fontsize=21,
         color="#1f5b39", weight="bold")
 ax.text(bcx, YB + 3.7, "GLU-Net, KITTI-2015", ha="center", va="center",
         fontsize=8.2, color="#2f6b48")

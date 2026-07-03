@@ -1,5 +1,8 @@
 \centering
-\setlength{\tabcolsep}{5pt}
+\setlength{\tabcolsep}{4pt}
+% Two panels side by side. Nesting them in one outer tabular prevents the
+% inter-panel glue from becoming a line break (which would stack them).
+\begin{tabular}{@{}c@{\hspace{3mm}}c@{}}
 \begin{tabular}[t]{@{}lll@{}}
 \toprule
 Architecture & Backbone & Encoder \\
@@ -9,16 +12,18 @@ GLU-Net~\cite{truong2020glunet}        & VGG        & \encfrozen\,/\,\enctrained
 FlowFormer~\cite{huang2022flowformer}  & Twins-SVT  & \encfrozen\,/\,\enctrained \\
 RAFT~\cite{teed2020raft}               & none       & end-to-end \\
 \bottomrule
-\end{tabular}\hspace{6mm}%
+\end{tabular}
+&
 \begin{tabular}[t]{@{}ll@{}}
 \toprule
 Real-motion & Semantic \\
 \midrule
-KITTI-12/15~\cite{kitti_flow}                     & SPair-71k~\cite{spair71k} \\
+KITTI-12/15~\cite{kitti2012,kitti2015}            & SPair-71k~\cite{spair71k} \\
 FlyingThings~\cite{mayer2016FlyingThingsDataset}  & PF-Pascal~\cite{pfpascal} \\
 PointOdyssey~\cite{pointodyssey}                  & PF-Willow~\cite{pfpascal} \\
-synthetic                                         & TSS \\
+SDF-Fractals3D                                    & TSS~\cite{taniai2016tss} \\
 \bottomrule
+\end{tabular}
 \end{tabular}
 
 \smallskip

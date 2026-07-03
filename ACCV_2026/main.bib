@@ -73,171 +73,180 @@
 
 % Name: FlyingThings
 % Type: optical flow
+
+
 @inproceedings{mayer2016FlyingThingsDataset,
-  title={A large dataset to train convolutional networks for disparity, optical flow, and scene flow estimation},
-  author={Mayer, Nikolaus and Ilg, Eddy and Hausser, Philip and Fischer, Philipp and Cremers, Daniel and Dosovitskiy, Alexey and Brox, Thomas},
-  booktitle={CVPR},
-  pages={4040--4048},
-  year={2016}
+   title={A Large Dataset to Train Convolutional Networks for Disparity, Optical Flow, and Scene Flow Estimation},
+   url={http://dx.doi.org/10.1109/CVPR.2016.438},
+   DOI={10.1109/cvpr.2016.438},
+   booktitle={2016 IEEE Conference on Computer Vision and Pattern Recognition (CVPR)},
+   publisher={IEEE},
+   author={Mayer, Nikolaus and Ilg, Eddy and Hausser, Philip and Fischer, Philipp and Cremers, Daniel and Dosovitskiy, Alexey and Brox, Thomas},
+   year={2016},
+   month={June}, pages={4040–4048} }
+
+@InProceedings{sintel,
+author="Butler, Daniel J.
+and Wulff, Jonas
+and Stanley, Garrett B.
+and Black, Michael J.",
+editor="Fitzgibbon, Andrew
+and Lazebnik, Svetlana
+and Perona, Pietro
+and Sato, Yoichi
+and Schmid, Cordelia",
+title="A Naturalistic Open Source Movie for Optical Flow Evaluation",
+booktitle="Computer Vision -- ECCV 2012",
+year="2012",
+publisher="Springer Berlin Heidelberg",
+address="Berlin, Heidelberg",
+pages="611--625",
+abstract="Ground truth optical flow is difficult to measure in real scenes with natural motion. As a result, optical flow data sets are restricted in terms of size, complexity, and diversity, making optical flow algorithms difficult to train and test on realistic data. We introduce a new optical flow data set derived from the open source 3D animated short film Sintel. This data set has important features not present in the popular Middlebury flow evaluation: long sequences, large motions, specular reflections, motion blur, defocus blur, and atmospheric effects. Because the graphics data that generated the movie is open source, we are able to render scenes under conditions of varying complexity to evaluate where existing flow algorithms fail. We evaluate several recent optical flow algorithms and find that current highly-ranked methods on the Middlebury evaluation have difficulty with this more complex data set suggesting further research on optical flow estimation is needed. To validate the use of synthetic data, we compare the image- and flow-statistics of Sintel to those of real films and videos and show that they are similar. The data set, metrics, and evaluation website are publicly available.",
+isbn="978-3-642-33783-3"
 }
 
-% Name: Sintel
-% Type: optical flow
-@inproceedings{sintel,
-  title={A naturalistic open source movie for optical flow evaluation},
-  author={Butler, Daniel J and Wulff, Jonas and Stanley, Garrett B and Black, Michael J},
-  booktitle={ECCV},
-  pages={611--625},
-  year={2012},
-  organization={Springer}
-}
-
-% Name: Kitti
-% Type: optical flow
 @article{kitti_flow,
-  title={{Vision Meets Robotics: The KITTI Dataset}},
-  author={Geiger, Andreas and Lenz, Philip and Stiller, Christoph and Urtasun, Raquel},
-  journal={{The International Journal of Robotics Research}},
-  volume={32},
-  number={11},
-  pages={1231--1237},
-  year={2013},
-  publisher={Sage Publications Sage UK: London, England}
+author = {Geiger, A and Lenz, P and Stiller, C and Urtasun, R},
+title = {Vision meets robotics: The KITTI dataset},
+year = {2013},
+issue_date = {September 2013},
+publisher = {Sage Publications, Inc.},
+address = {USA},
+volume = {32},
+number = {11},
+issn = {0278-3649},
+url = {https://doi.org/10.1177/0278364913491297},
+doi = {10.1177/0278364913491297},
+abstract = {We present a novel dataset captured from a VW station wagon for use in mobile robotics and autonomous driving research. In total, we recorded 6 hours of traffic scenarios at 10-100 Hz using a variety of sensor modalities such as high-resolution color and grayscale stereo cameras, a Velodyne 3D laser scanner and a high-precision GPS/IMU inertial navigation system. The scenarios are diverse, capturing real-world traffic situations, and range from freeways over rural areas to inner-city scenes with many static and dynamic objects. Our data is calibrated, synchronized and timestamped, and we provide the rectified and raw image sequences. Our dataset also contains object labels in the form of 3D tracklets, and we provide online benchmarks for stereo, optical flow, object detection and other tasks. This paper describes our recording platform, the data format and the utilities that we provide.},
+journal = {Int. J. Rob. Res.},
+month = sep,
+pages = {1231–1237},
+numpages = {7},
+keywords = {tracking, stereo, optical flow, object detection, mobile robotics, laser, field robotics, computer vision, cameras, benchmarks, autonomous driving, SLAM, KITTI, GPS, Dataset}
 }
 
-
-% Name: PF-PASCAL
-% Type: semantic correspondence
-% This is journal version of Proposal Flow (2016), but introduces the PF-Pascal dataset
-@article{pfpascal,
-  title={{Proposal Flow: Semantic Correspondences from Object Proposals}},
-  author={Ham, Bumsub and Cho, Minsu and Schmid, Cordelia and Ponce, Jean},
-  journal={TPAMI},
-  volume={40},
-  number={7},
-  pages={1711--1725},
-  year={2017},
-  publisher={IEEE}
+@misc{pfpascal,
+      title={Proposal Flow: Semantic Correspondences from Object Proposals}, 
+      author={Bumsub Ham and Minsu Cho and Cordelia Schmid and Jean Ponce},
+      year={2017},
+      eprint={1703.07144},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/1703.07144}, 
 }
 
-% Name: SPair-71k
-% Type: Semantic correspondence with keypoints, bounding boxes
-@article{spair71k,
-  title={{Spair-71k: A Large-scale Benchmark for Semantic Correspondence}},
-  author={Min, Juhong and Lee, Jongmin and Ponce, Jean and Cho, Minsu},
-  journal={arXiv preprint arXiv:1908.10543},
-  year={2019}
+@misc{spair71k,
+      title={SPair-71k: A Large-scale Benchmark for Semantic Correspondence}, 
+      author={Juhong Min and Jongmin Lee and Jean Ponce and Minsu Cho},
+      year={2019},
+      eprint={1908.10543},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/1908.10543}, 
 }
 
-% Name: AwA-Pose
-% Type: Keypoints for quadruped animals
 @article{banik2021awa-pose-keypoint-quadruped,
-  title={A novel dataset for keypoint detection of quadruped animals from images},
-  author={Banik, Prianka and Li, Lin and Dong, Xishuang},
-  journal={arXiv preprint arXiv:2108.13958},
-  year={2021}
+  author       = {Prianka Banik and
+                  Lin Li and
+                  Xishuang Dong},
+  title        = {A Novel Dataset for Keypoint Detection of quadruped Animals from Images},
+  journal      = {CoRR},
+  volume       = {abs/2108.13958},
+  year         = {2021},
+  url          = {https://arxiv.org/abs/2108.13958},
+  eprinttype   = {arXiv},
+  eprint       = {2108.13958},
+  timestamp    = {Fri, 03 Sep 2021 10:51:17 +0200},
+  biburl       = {https://dblp.org/rec/journals/corr/abs-2108-13958.bib},
+  bibsource    = {dblp computer science bibliography, https://dblp.org}
 }
 
-% Name: HPatches
-% Type: geometric correspondence
-@InProceedings{hpatches_2017_cvpr,
-author={Vassileios Balntas and Karel Lenc and Andrea Vedaldi and Krystian Mikolajczyk},
-title = {HPatches: A benchmark and evaluation of handcrafted and learned local descriptors},
-booktitle = {CVPR},
-year = {2017}}
-
-% Name: MegaDepth
-@inProceedings{MegaDepthLi18,
-  title={MegaDepth: Learning Single-View Depth Prediction from Internet Photos},
-  author={Zhengqi Li and Noah Snavely},
-  booktitle={Computer Vision and Pattern Recognition (CVPR)},
-  year={2018}
+@misc{hpatches_2017_cvpr,
+      title={HPatches: A benchmark and evaluation of handcrafted and learned local descriptors}, 
+      author={Vassileios Balntas and Karel Lenc and Andrea Vedaldi and Krystian Mikolajczyk},
+      year={2017},
+      eprint={1704.05939},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/1704.05939}, 
 }
 
-% Name: RobotCar
+@misc{MegaDepthLi18,
+      title={MegaDepth: Learning Single-View Depth Prediction from Internet Photos}, 
+      author={Zhengqi Li and Noah Snavely},
+      year={2018},
+      eprint={1804.00607},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/1804.00607}, 
+}
+
 @article{RobotCarDatasetIJRR,
-  Author = {Will Maddern and Geoff Pascoe and Chris Linegar and Paul Newman},
-  Title = {{1 Year, 1000km: The Oxford RobotCar Dataset}},
-  Journal = {The International Journal of Robotics Research (IJRR)},
-  Volume = {36},
-  Number = {1},
-  Pages = {3-15},
-  Year = {2017},
-  doi = {10.1177/0278364916679498},
-  URL =
-{http://dx.doi.org/10.1177/0278364916679498},
-  eprint =
-{http://ijr.sagepub.com/content/early/2016/11/28/0278364916679498.full.pdf+html},
-  Pdf = {http://robotcar-dataset.robots.ox.ac.uk/images/robotcar_ijrr.pdf}}
-
-
-
-@InProceedings{kubric,
-    author    = {Greff, Klaus and Belletti, Francois and Beyer, Lucas and Doersch, Carl and Du, Yilun and Duckworth, Daniel and Fleet, David J. and Gnanapragasam, Dan and Golemo, Florian and Herrmann, Charles and Kipf, Thomas and Kundu, Abhijit and Lagun, Dmitry and Laradji, Issam and Liu, Hsueh-Ti (Derek) and Meyer, Henning and Miao, Yishu and Nowrouzezahrai, Derek and Oztireli, Cengiz and Pot, Etienne and Radwan, Noha and Rebain, Daniel and Sabour, Sara and Sajjadi, Mehdi S. M. and Sela, Matan and Sitzmann, Vincent and Stone, Austin and Sun, Deqing and Vora, Suhani and Wang, Ziyu and Wu, Tianhao and Yi, Kwang Moo and Zhong, Fangcheng and Tagliasacchi, Andrea},
-    title     = {{Kubric: A Scalable Dataset Generator}},
-    booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
-    month     = {June},
-    year      = {2022},
-    pages     = {3749-3761}
+author = {Maddern, Will and Pascoe, Geoffrey and Linegar, Chris and Newman, Paul},
+title = {1 year, 1000 km: The Oxford RobotCar dataset},
+year = {2017},
+issue_date = {Jan 2017},
+publisher = {Sage Publications, Inc.},
+address = {USA},
+volume = {36},
+number = {1},
+issn = {0278-3649},
+url = {https://doi.org/10.1177/0278364916679498},
+doi = {10.1177/0278364916679498},
+abstract = {We present a challenging new dataset for autonomous driving: the Oxford RobotCar Dataset. Over the period of May 2014 to December 2015 we traversed a route through central Oxford twice a week on average using the Oxford RobotCar platform, an autonomous Nissan LEAF. This resulted in over 1000 km of recorded driving with almost 20 million images collected from 6 cameras mounted to the vehicle, along with LIDAR, GPS and INS ground truth. Data was collected in all weather conditions, including heavy rain, night, direct sunlight and snow. Road and building works over the period of a year significantly changed sections of the route from the beginning to the end of data collection. By frequently traversing the same route over the period of a year we enable research investigating long-term localization and mapping for autonomous vehicles in real-world, dynamic urban environments. The full dataset is available for download at:},
+journal = {Int. J. Rob. Res.},
+month = jan,
+pages = {3–15},
+numpages = {13},
+keywords = {RobotCar, SLAM, mapping, localization, stereo, GPS, LIDAR, cameras, computer vision, mobile robotics, long-term autonomy, autonomous vehicles, Dataset}
 }
 
 @article{mmd,
-    author = {Borgwardt, Karsten M. and Gretton, Arthur and Rasch, Malte J. and Kriegel, Hans-Peter and Schölkopf, Bernhard and Smola, Alex J.},
-    title = {{Integrating structured biological data by Kernel Maximum Mean Discrepancy}},
-    journal = {Bioinformatics},
-    volume = {22},
-    number = {14},
-    pages = {e49-e57},
-    year = {2006},
-    month = {07},
-    abstract = {Motivation: Many problems in data integration in bioinformatics can be posed as one common question: Are two sets of observations generated by the same distribution? We propose a kernel-based statistical test for this problem, based on the fact that two distributions are different if and only if there exists at least one function having different expectation on the two distributions. Consequently we use the maximum discrepancy between function means as the basis of a test statistic.The Maximum Mean Discrepancy (MMD) can take advantage of the kernel trick, which allows us to apply it not only to vectors, but strings, sequences, graphs, and other common structured data types arising in molecular biology.Results: We study the practical feasibility of an MMD-based test on three central data integration tasks: Testing cross-platform comparability of microarray data, cancer diagnosis, and data-content based schema matching for two different protein function classification schemas. In all of these experiments, including high-dimensional ones, MMD is very accurate in finding samples that were generated from the same distribution, and outperforms its best competitors.Conclusions: We have defined a novel statistical test of whether two samples are from the same distribution, compatible with both multivariate and structured data, that is fast, easy to implement, and works well, as confirmed by our experiments.Availability:  Contact:  kb@dbs.ifi.lmu.de},
-    issn = {1367-4803},
-    doi = {10.1093/bioinformatics/btl242},
-    url = {https://doi.org/10.1093/bioinformatics/btl242},
-    eprint = {https://academic.oup.com/bioinformatics/article-pdf/22/14/e49/48838711/bioinformatics_22_14_e49.pdf},
+author = {Borgwardt, Karsten M. and Gretton, Arthur and Rasch, Malte J. and Kriegel, Hans-Peter and Sch\"{o}lkopf, Bernhard and Smola, Alex J.},
+title = {Integrating structured biological data by Kernel Maximum Mean Discrepancy},
+year = {2006},
+issue_date = {July 2006},
+publisher = {Oxford University Press, Inc.},
+address = {USA},
+volume = {22},
+number = {14},
+issn = {1367-4803},
+url = {https://doi.org/10.1093/bioinformatics/btl242},
+doi = {10.1093/bioinformatics/btl242},
+abstract = {Motivation: Many problems in data integration in bioinformatics can be posed as one common question: Are two sets of observations generated by the same distribution? We propose a kernel-based statistical test for this problem, based on the fact that two distributions are different if and only if there exists at least one function having different expectation on the two distributions. Consequently we use the maximum discrepancy between function means as the basis of a test statistic.The Maximum Mean Discrepancy (MMD) can take advantage of the kernel trick, which allows us to apply it not only to vectors, but strings, sequences, graphs, and other common structured data types arising in molecular biology.Results: We study the practical feasibility of an MMD-based test on three central data integration tasks: Testing cross-platform comparability of microarray data, cancer diagnosis, and data-content based schema matching for two different protein function classification schemas. In all of these experiments, including high-dimensional ones, MMD is very accurate in finding samples that were generated from the same distribution, and outperforms its best competitors.Conclusions: We have defined a novel statistical test of whether two samples are from the same distribution, compatible with both multivariate and structured data, that is fast, easy to implement, and works well, as confirmed by our experiments. Availability: Contact: kb@dbs.ifi.lmu.de},
+journal = {Bioinformatics},
+month = jul,
+pages = {e49–e57}
 }
 
-@inproceedings{zhang2025ufm,
- title={UFM: A Simple Path towards Unified Dense Correspondence with Flow},
- author={Zhang, Yuchen and Keetha, Nikhil and Lyu, Chenwei and Jhamb, Bhuvan and Chen, Yutian and Qiu, Yuheng and Karhade, Jay and Jha, Shreyas and Hu, Yaoyu and Ramanan, Deva and Scherer, Sebastian and Wang, Wenshan},
- booktitle={arXiV},
- year={2025}
+@misc{zhang2025ufm,
+      title={UFM: A Simple Path towards Unified Dense Correspondence with Flow}, 
+      author={Yuchen Zhang and Nikhil Keetha and Chenwei Lyu and Bhuvan Jhamb and Yutian Chen and Yuheng Qiu and Jay Karhade and Shreyas Jha and Yaoyu Hu and Deva Ramanan and Sebastian Scherer and Wenshan Wang},
+      year={2026},
+      eprint={2506.09278},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2506.09278}, 
 }
 
-@article{greff2021kubric,
-    title = {Kubric: a scalable dataset generator}, 
-    author = {Klaus Greff and Francois Belletti and Lucas Beyer and Carl Doersch and
-              Yilun Du and Daniel Duckworth and David J Fleet and Dan Gnanapragasam and
-              Florian Golemo and Charles Herrmann and Thomas Kipf and Abhijit Kundu and
-              Dmitry Lagun and Issam Laradji and Hsueh-Ti (Derek) Liu and Henning Meyer and
-              Yishu Miao and Derek Nowrouzezahrai and Cengiz Oztireli and Etienne Pot and
-              Noha Radwan and Daniel Rebain and Sara Sabour and Mehdi S. M. Sajjadi and Matan Sela and
-              Vincent Sitzmann and Austin Stone and Deqing Sun and Suhani Vora and Ziyu Wang and
-              Tianhao Wu and Kwang Moo Yi and Fangcheng Zhong and Andrea Tagliasacchi},
-    booktitle = {Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)},
-    year = {2022},
-}
-
-@inproceedings{Butler:ECCV:2012,
-title = {A naturalistic open source movie for optical flow evaluation},
-author = {Butler, D. J. and Wulff, J. and Stanley, G. B. and Black, M. J.},
-booktitle = {European Conf. on Computer Vision (ECCV)},
-editor = {{A. Fitzgibbon et al. (Eds.)}},
-publisher = {Springer-Verlag},
-series = {Part IV, LNCS 7577},
-month = oct,
-pages = {611--625},
-year = {2012}
+@misc{greff2021kubric,
+      title={Kubric: A scalable dataset generator}, 
+      author={Klaus Greff and Francois Belletti and Lucas Beyer and Carl Doersch and Yilun Du and Daniel Duckworth and David J. Fleet and Dan Gnanapragasam and Florian Golemo and Charles Herrmann and Thomas Kipf and Abhijit Kundu and Dmitry Lagun and Issam Laradji and Hsueh-Ti and Liu and Henning Meyer and Yishu Miao and Derek Nowrouzezahrai and Cengiz Oztireli and Etienne Pot and Noha Radwan and Daniel Rebain and Sara Sabour and Mehdi S. M. Sajjadi and Matan Sela and Vincent Sitzmann and Austin Stone and Deqing Sun and Suhani Vora and Ziyu Wang and Tianhao Wu and Kwang Moo Yi and Fangcheng Zhong and Andrea Tagliasacchi},
+      year={2022},
+      eprint={2203.03570},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2203.03570}, 
 }
 
 @misc{simeoni2025dinov3,
-  title={{DINOv3}},
-  author={Sim{\'e}oni, Oriane and Vo, Huy V. and Seitzer, Maximilian and Baldassarre, Federico and Oquab, Maxime and Jose, Cijo and Khalidov, Vasil and Szafraniec, Marc and Yi, Seungeun and Ramamonjisoa, Micha{\"e}l and Massa, Francisco and Haziza, Daniel and Wehrstedt, Luca and Wang, Jianyuan and Darcet, Timoth{\'e}e and Moutakanni, Th{\'e}o and Sentana, Leonel and Roberts, Claire and Vedaldi, Andrea and Tolan, Jamie and Brandt, John and Couprie, Camille and Mairal, Julien and J{\'e}gou, Herv{\'e} and Labatut, Patrick and Bojanowski, Piotr},
-  year={2025},
-  eprint={2508.10104},
-  archivePrefix={arXiv},
-  primaryClass={cs.CV},
-  url={https://arxiv.org/abs/2508.10104},
+      title={DINOv3}, 
+      author={Oriane Siméoni and Huy V. Vo and Maximilian Seitzer and Federico Baldassarre and Maxime Oquab and Cijo Jose and Vasil Khalidov and Marc Szafraniec and Seungeun Yi and Michaël Ramamonjisoa and Francisco Massa and Daniel Haziza and Luca Wehrstedt and Jianyuan Wang and Timothée Darcet and Théo Moutakanni and Leonel Sentana and Claire Roberts and Andrea Vedaldi and Jamie Tolan and John Brandt and Camille Couprie and Julien Mairal and Hervé Jégou and Patrick Labatut and Piotr Bojanowski},
+      year={2025},
+      eprint={2508.10104},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2508.10104}, 
 }
 
 @misc{DINOv2,
@@ -258,43 +267,60 @@ year = {2012}
   url = {https://github.com/Genesis-Embodied-AI/Genesis}
 }
 
-@inproceedings{huang2023self,
-  title={Self-supervised AutoFlow},
-  author={Huang, Hsin-Ping and Herrmann, Charles and Hur, Junhwa and Lu, Erika
-	and Sargent, Kyle and Stone, Austin and Yang, Ming-Hsuan and Sun, Deqing}, 
-  booktitle={CVPR},
-  year={2023}
+@misc{huang2023self,
+      title={Self-supervised AutoFlow}, 
+      author={Hsin-Ping Huang and Charles Herrmann and Junhwa Hur and Erika Lu and Kyle Sargent and Austin Stone and Ming-Hsuan Yang and Deqing Sun},
+      year={2023},
+      eprint={2212.01762},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2212.01762}, 
 }
 
 @misc{puig2023habitat3,
-      title  = {Habitat 3.0: A Co-Habitat for Humans, Avatars and Robots},
-      author = {Xavi Puig and Eric Undersander and Andrew Szot and Mikael Dallaire Cote and Ruslan Partsey and Jimmy Yang and Ruta Desai and Alexander William Clegg and Michal Hlavac and Tiffany Min and Theo Gervet and Vladimír Vondruš and Vincent-Pierre Berges and John Turner and Oleksandr Maksymets and Zsolt Kira and Mrinal Kalakrishnan and Jitendra Malik and Devendra Singh Chaplot and Unnat Jain and Dhruv Batra and Akshara Rai and Roozbeh Mottaghi},
+      title={Habitat 3.0: A Co-Habitat for Humans, Avatars and Robots}, 
+      author={Xavier Puig and Eric Undersander and Andrew Szot and Mikael Dallaire Cote and Tsung-Yen Yang and Ruslan Partsey and Ruta Desai and Alexander William Clegg and Michal Hlavac and So Yeon Min and Vladimír Vondruš and Theophile Gervet and Vincent-Pierre Berges and John M. Turner and Oleksandr Maksymets and Zsolt Kira and Mrinal Kalakrishnan and Jitendra Malik and Devendra Singh Chaplot and Unnat Jain and Dhruv Batra and Akshara Rai and Roozbeh Mottaghi},
       year={2023},
+      eprint={2310.13724},
       archivePrefix={arXiv},
+      primaryClass={cs.HC},
+      url={https://arxiv.org/abs/2310.13724}, 
 }
 
-@inproceedings{szot2021habitat,
-  title     =     {Habitat 2.0: Training Home Assistants to Rearrange their Habitat},
-  author    =     {Andrew Szot and Alex Clegg and Eric Undersander and Erik Wijmans and Yili Zhao and John Turner and Noah Maestre and Mustafa Mukadam and Devendra Chaplot and Oleksandr Maksymets and Aaron Gokaslan and Vladimir Vondrus and Sameer Dharur and Franziska Meier and Wojciech Galuba and Angel Chang and Zsolt Kira and Vladlen Koltun and Jitendra Malik and Manolis Savva and Dhruv Batra},
-  booktitle =     {Advances in Neural Information Processing Systems (NeurIPS)},
-  year      =     {2021}
+@misc{szot2021habitat,
+      title={Habitat 2.0: Training Home Assistants to Rearrange their Habitat}, 
+      author={Andrew Szot and Alex Clegg and Eric Undersander and Erik Wijmans and Yili Zhao and John Turner and Noah Maestre and Mustafa Mukadam and Devendra Chaplot and Oleksandr Maksymets and Aaron Gokaslan and Vladimir Vondrus and Sameer Dharur and Franziska Meier and Wojciech Galuba and Angel Chang and Zsolt Kira and Vladlen Koltun and Jitendra Malik and Manolis Savva and Dhruv Batra},
+      year={2022},
+      eprint={2106.14405},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2106.14405}, 
 }
 
-@inproceedings{habitat19iccv,
-  title     =     {Habitat: {A} {P}latform for {E}mbodied {AI} {R}esearch},
-  author    =     {Manolis Savva and Abhishek Kadian and Oleksandr Maksymets and Yili Zhao and Erik Wijmans and Bhavana Jain and Julian Straub and Jia Liu and Vladlen Koltun and Jitendra Malik and Devi Parikh and Dhruv Batra},
-  booktitle =     {Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)},
-  year      =     {2019}
-}
-
-@misc{rocco2017convolutionalneuralnetworkarchitecture,
-      title={Convolutional neural network architecture for geometric matching}, 
-      author={Ignacio Rocco and Relja Arandjelović and Josef Sivic},
-      year={2017},
-      eprint={1703.05593},
+@misc{habitat19iccv,
+      title={Habitat: A Platform for Embodied AI Research}, 
+      author={Manolis Savva and Abhishek Kadian and Oleksandr Maksymets and Yili Zhao and Erik Wijmans and Bhavana Jain and Julian Straub and Jia Liu and Vladlen Koltun and Jitendra Malik and Devi Parikh and Dhruv Batra},
+      year={2019},
+      eprint={1904.01201},
       archivePrefix={arXiv},
       primaryClass={cs.CV},
-      url={https://arxiv.org/abs/1703.05593}, 
+      url={https://arxiv.org/abs/1904.01201}, 
+}
+
+@article{rocco2017convolutionalneuralnetworkarchitecture,
+  author       = {Ignacio Rocco and
+                  Relja Arandjelovic and
+                  Josef Sivic},
+  title        = {Convolutional neural network architecture for geometric matching},
+  journal      = {CoRR},
+  volume       = {abs/1703.05593},
+  year         = {2017},
+  url          = {http://arxiv.org/abs/1703.05593},
+  eprinttype   = {arXiv},
+  eprint       = {1703.05593},
+  timestamp    = {Mon, 13 Aug 2018 16:46:17 +0200},
+  biburl       = {https://dblp.org/rec/journals/corr/RoccoAS17.bib},
+  bibsource    = {dblp computer science bibliography, https://dblp.org}
 }
 
 @misc{heusel2018ganstrainedtimescaleupdate,
@@ -317,42 +343,29 @@ year = {2012}
       url={https://arxiv.org/abs/0805.2368}, 
 }
 
-
 @article{kendall1938,
- ISSN = {00063444},
- URL = {http://www.jstor.org/stable/2332226},
- author = {M. G. Kendall},
- journal = {Biometrika},
- number = {1/2},
- pages = {81--93},
- publisher = {[Oxford University Press, Biometrika Trust]},
- title = {A New Measure of Rank Correlation},
- urldate = {2026-03-05},
- volume = {30},
- year = {1938}
+    author = {KENDALL, M. G.},
+    title = {A NEW MEASURE OF RANK CORRELATION},
+    journal = {Biometrika},
+    volume = {30},
+    number = {1-2},
+    pages = {81-93},
+    year = {1938},
+    month = {06},
+    issn = {0006-3444},
+    doi = {10.1093/biomet/30.1-2.81},
+    url = {https://doi.org/10.1093/biomet/30.1-2.81},
+    eprint = {https://academic.oup.com/biomet/article-pdf/30/1-2/81/423380/30-1-2-81.pdf},
 }
 
-@article{kendall1983,
- ISSN = {00063444},
- URL = {http://www.jstor.org/stable/2332226},
- author = {M. G. Kendall},
- journal = {Biometrika},
- number = {1/2},
- pages = {81--93},
- publisher = {[Oxford University Press, Biometrika Trust]},
- title = {A New Measure of Rank Correlation},
- urldate = {2026-03-05},
- volume = {30},
- year = {1938}
-}
-
-@InProceedings{dosovitskiy2015Flownet-FlyingChairsDataset,
-  author    = "A. Dosovitskiy and P. Fischer and E. Ilg and P. H{\"a}usser and C. Haz{\i}rba{\c{s}} and V. Golkov and P. v.d. Smagt and D. Cremers and T. Brox",
-  title     = "FlowNet: Learning Optical Flow with Convolutional Networks",
-  booktitle = "IEEE International Conference on Computer Vision (ICCV)",
-  month     = " ",
-  year      = "2015",
-  url       = "http://lmb.informatik.uni-freiburg.de/Publications/2015/DFIB15"
+@misc{dosovitskiy2015Flownet-FlyingChairsDataset,
+      title={FlowNet: Learning Optical Flow with Convolutional Networks}, 
+      author={Philipp Fischer and Alexey Dosovitskiy and Eddy Ilg and Philip Häusser and Caner Hazırbaş and Vladimir Golkov and Patrick van der Smagt and Daniel Cremers and Thomas Brox},
+      year={2015},
+      eprint={1504.06852},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/1504.06852}, 
 }
 
 @inproceedings{teed2020raft,
@@ -372,37 +385,22 @@ booktitle = "Computer Vision – ECCV 2020 - 16th European Conference, 2020, Pro
 address = "Germany",
 }
 
-@InProceedings{truong2020glu,
-author = {Truong, Prune and Danelljan, Martin and Timofte, Radu},
-title = {GLU-Net: Global-Local Universal Network for Dense Flow and Correspondences},
-booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
-month = {June},
-year = {2020}
+@misc{melekhov2019dgc-net,
+      title={DGC-Net: Dense Geometric Correspondence Network}, 
+      author={Iaroslav Melekhov and Aleksei Tiulpin and Torsten Sattler and Marc Pollefeys and Esa Rahtu and Juho Kannala},
+      year={2018},
+      eprint={1810.08393},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/1810.08393}, 
 }
 
-@INPROCEEDINGS {melekhov2019dgc-net,
-author = { Melekhov, Iaroslav and Tiulpin, Aleksei and Sattler, Torsten and Pollefeys, Marc and Rahtu, Esa and Kannala, Juho },
-booktitle = { 2019 IEEE Winter Conference on Applications of Computer Vision (WACV) },
-title = {{ DGC-Net: Dense Geometric Correspondence Network }},
-year = {2019},
-volume = {},
-ISSN = {1550-5790},
-pages = {1034-1042},
-abstract = { This paper addresses the challenge of dense pixel correspondence estimation between two images. This problem is closely related to optical flow estimation task where ConvNets (CNNs) have recently achieved significant progress. While optical flow methods produce very accurate results for the small pixel translation and limited appearance variation scenarios, they hardly deal with the strong geometric transformations that we consider in this work. In this paper, we propose a coarse-to-fine CNN-based framework that can leverage the advantages of optical flow approaches and extend them to the case of large transformations providing dense and subpixel accurate estimates. It is trained on synthetic transformations and demonstrates very good performance to unseen, realistic, data. Further, we apply our method to the problem of relative camera pose estimation and demonstrate that the model outperforms existing dense approaches. },
-keywords = {Correlation;Optical imaging;Decoding;Task analysis;Geometrical optics;Estimation;Cameras},
-doi = {10.1109/WACV.2019.00115},
-url = {https://doi.ieeecomputersociety.org/10.1109/WACV.2019.00115},
-publisher = {IEEE Computer Society},
-address = {Los Alamitos, CA, USA},
-month =Jan}
-
-@InProceedings{luo2024flowdiffuser,
-    author    = {Luo, Ao and Li, Xin and Yang, Fan and Liu, Jiangyu and Fan, Haoqiang and Liu, Shuaicheng},
-    title     = {FlowDiffuser: Advancing Optical Flow Estimation with Diffusion Models},
-    booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
-    month     = {June},
-    year      = {2024},
-    pages     = {19167-19176}
+@inproceedings{luo2024flowdiffuser,
+  title={FlowDiffuser: Advancing Optical Flow Estimation with Diffusion Models},
+  author={Luo, Ao and Li, Xin and Yang, Fan and Liu, Jiangyu and Fan, Haoqiang and Liu, Shuaicheng},
+  booktitle={Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition},
+  pages={19167--19176},
+  year={2024}
 }
 
 @INPROCEEDINGS{roth_opt_flow,
@@ -416,13 +414,14 @@ month =Jan}
   keywords={Image motion analysis;Layout;Higher order statistics;Optical computing;Image databases;Spatial databases;Cameras;Video sequences;Statistical analysis;Learning systems},
   doi={10.1109/ICCV.2005.180}}
 
-
-
-@article{sd_dino_tale_of_two_features,
-  title={A Tale of Two Features: Stable Diffusion Complements DINO for Zero-Shot Semantic Correspondence},
-  author={Zhang, Junyi and Herrmann, Charles and Hur, Junhwa and Cabrera, Luisa Polania and Jampani, Varun and Sun, Deqing and Yang, Ming-Hsuan},
-  booktitle={arXiv preprint arxiv:2305.15347},
-  year={2023}
+@misc{sd_dino_tale_of_two_features,
+      title={A Tale of Two Features: Stable Diffusion Complements DINO for Zero-Shot Semantic Correspondence}, 
+      author={Junyi Zhang and Charles Herrmann and Junhwa Hur and Luisa Polania Cabrera and Varun Jampani and Deqing Sun and Ming-Hsuan Yang},
+      year={2023},
+      eprint={2305.15347},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2305.15347}, 
 }
 
 @INPROCEEDINGS{laptev2008,
@@ -436,14 +435,14 @@ month =Jan}
   keywords={Humans;Motion pictures;Image recognition;Video sharing;Layout;Text categorization;Object recognition;Robustness;Clothing;Cameras},
   doi={10.1109/CVPR.2008.4587756}}
 
-
-@InProceedings{pervfi_cvpr2024,
-    author    = {Wu, Guangyang and Tao, Xin and Li, Changlin and Wang, Wenyi and Liu, Xiaohong and Zheng, Qingqing},
-    title     = {Perception-Oriented Video Frame Interpolation via Asymmetric Blending},
-    booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
-    month     = {June},
-    year      = {2024},
-    pages     = {2753-2762}
+@misc{pervfi_cvpr2024,
+      title={Perception-Oriented Video Frame Interpolation via Asymmetric Blending}, 
+      author={Guangyang Wu and Xin Tao and Changlin Li and Wenyi Wang and Xiaohong Liu and Qingqing Zheng},
+      year={2024},
+      eprint={2404.06692},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2404.06692}, 
 }
 
 @InProceedings{when_nn,
@@ -484,9 +483,7 @@ isbn="978-3-540-49257-3"
   keywords={Multidimensional systems;Partitioning algorithms;Mutual information;Frequency estimation;Convergence;Information theory;Neuroscience;Probability distribution;Density measurement;Laboratories;Divergence;information measure;Kullback–Leibler;nearest-neighbor;partition;random vector;universal estimation},
   doi={10.1109/TIT.2009.2016060}}
 
-
-
- @misc{dlss4_2025,
+@misc{dlss4_2025,
           author       = {NVIDIA Corporation},
           title        = {{DLSS 4: Transforming Real-Time Graphics with AI}},
           howpublished = {\url{https://research.nvidia.com/labs/adlr/DLSS4/}},
@@ -494,184 +491,155 @@ isbn="978-3-540-49257-3"
           year         = {2025}
         }
 
-
-@InProceedings{autoflow,
-    author    = {Sun, Deqing and Vlasic, Daniel and Herrmann, Charles and Jampani, Varun and Krainin, Michael and Chang, Huiwen and Zabih, Ramin and Freeman, William T. and Liu, Ce},
-    title     = {AutoFlow: Learning a Better Training Set for Optical Flow},
-    booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
-    month     = {June},
-    year      = {2021},
-    pages     = {10093-10102}
+@misc{pointodyssey,
+      title={PointOdyssey: A Large-Scale Synthetic Dataset for Long-Term Point Tracking}, 
+      author={Yang Zheng and Adam W. Harley and Bokui Shen and Gordon Wetzstein and Leonidas J. Guibas},
+      year={2023},
+      eprint={2307.15055},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2307.15055}, 
 }
 
-
-@inproceedings{pointodyssey,
-author = {Yang Zheng and Adam W. Harley and Bokui Shen and Gordon Wetzstein and Leonidas J. Guibas},
-title = {PointOdyssey: A Large-Scale Synthetic Dataset for Long-Term Point Tracking},
-booktitle = {ICCV},
-year = {2023}
+@misc{Kataoka2020Pre-trainingImages,
+      title={Pre-training without Natural Images}, 
+      author={Hirokatsu Kataoka and Kazushige Okayasu and Asato Matsumoto and Eisuke Yamagata and Ryosuke Yamada and Nakamasa Inoue and Akio Nakamura and Yutaka Satoh},
+      year={2021},
+      eprint={2101.08515},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2101.08515}, 
 }
 
-@InProceedings{Kataoka2020Pre-trainingImages,
-    author    = {Kataoka, Hirokatsu and Okayasu, Kazushige and Matsumoto, Asato and Yamagata, Eisuke and Yamada, Ryosuke and Inoue, Nakamasa and Nakamura, Akio and Satoh, Yutaka},
-    title     = {Pre-training without Natural Images},
-    booktitle = {Proceedings of the Asian Conference on Computer Vision (ACCV)},
-    month     = {November},
-    year      = {2020}
+@misc{Baradad2021LookingAtNoise,
+      title={Learning to See by Looking at Noise}, 
+      author={Manel Baradad and Jonas Wulff and Tongzhou Wang and Phillip Isola and Antonio Torralba},
+      year={2022},
+      eprint={2106.05963},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2106.05963}, 
 }
 
-@inproceedings{Baradad2021LookingAtNoise,
-  title={Learning to See by Looking at Noise},
-  author={Manel Baradad and Jonas Wulff and Tongzhou Wang and Phillip Isola and Antonio Torralba},
-  booktitle={Advances in Neural Information Processing Systems},
-  year={2021}
+@misc{Anderson2022ImprovingFractal,
+      title={Improving Fractal Pre-training}, 
+      author={Connor Anderson and Ryan Farrell},
+      year={2021},
+      eprint={2110.03091},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2110.03091}, 
 }
 
-@InProceedings{Anderson2022ImprovingFractal,
-    author    = {Anderson, Connor and Farrell, Ryan},
-    title     = {Improving Fractal Pre-Training},
-    booktitle = {Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision (WACV)},
-    month     = {January},
-    year      = {2022},
-    pages     = {1300-1309}
+@misc{shinoda2023segrcdb-semantic-seg-fdsl,
+      title={SegRCDB: Semantic Segmentation via Formula-Driven Supervised Learning}, 
+      author={Risa Shinoda and Ryo Hayamizu and Kodai Nakashima and Nakamasa Inoue and Rio Yokota and Hirokatsu Kataoka},
+      year={2023},
+      eprint={2309.17083},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2309.17083}, 
 }
 
-
-@InProceedings{shinoda2023segrcdb-semantic-seg-fdsl,
-    author    = {Shinoda, Risa and Hayamizu, Ryo and Nakashima, Kodai and Inoue, Nakamasa and Yokota, Rio and Kataoka, Hirokatsu},
-    title     = {SegRCDB: Semantic Segmentation via Formula-Driven Supervised Learning},
-    booktitle = {Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)},
-    month     = {October},
-    year      = {2023},
-    pages     = {20054-20063}
+@misc{actionvlad_citation,
+      title={ActionVLAD: Learning spatio-temporal aggregation for action classification}, 
+      author={Rohit Girdhar and Deva Ramanan and Abhinav Gupta and Josef Sivic and Bryan Russell},
+      year={2017},
+      eprint={1704.02895},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/1704.02895}, 
 }
 
-@InProceedings{actionvlad_citation,
-author = {Girdhar, Rohit and Ramanan, Deva and Gupta, Abhinav and Sivic, Josef and Russell, Bryan},
-title = {ActionVLAD: Learning Spatio-Temporal Aggregation for Action Classification},
-booktitle = {Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)},
-month = {July},
-year = {2017}
+@misc{sajjadi2018assessing_precision_recall,
+      title={Assessing Generative Models via Precision and Recall}, 
+      author={Mehdi S. M. Sajjadi and Olivier Bachem and Mario Lucic and Olivier Bousquet and Sylvain Gelly},
+      year={2018},
+      eprint={1806.00035},
+      archivePrefix={arXiv},
+      primaryClass={stat.ML},
+      url={https://arxiv.org/abs/1806.00035}, 
 }
 
-@inproceedings{sajjadi2018assessing_precision_recall,
- author = {Sajjadi, Mehdi S. M. and Bachem, Olivier and Lucic, Mario and Bousquet, Olivier and Gelly, Sylvain},
- booktitle = {Advances in Neural Information Processing Systems},
- editor = {S. Bengio and H. Wallach and H. Larochelle and K. Grauman and N. Cesa-Bianchi and R. Garnett},
- pages = {},
- publisher = {Curran Associates, Inc.},
- title = {Assessing Generative Models via Precision and Recall},
- url = {https://proceedings.neurips.cc/paper_files/paper/2018/file/f7696a9b362ac5a51c3dc8f098b73923-Paper.pdf},
- volume = {31},
- year = {2018}
-}
-
-
-@inproceedings{kynkaanniemi2019improved_pr,
- author = {Kynk\"{a}\"{a}nniemi, Tuomas and Karras, Tero and Laine, Samuli and Lehtinen, Jaakko and Aila, Timo},
- booktitle = {Advances in Neural Information Processing Systems},
- editor = {H. Wallach and H. Larochelle and A. Beygelzimer and F. d\textquotesingle Alch\'{e}-Buc and E. Fox and R. Garnett},
- pages = {},
- publisher = {Curran Associates, Inc.},
- title = {Improved Precision and Recall Metric for Assessing Generative Models},
- url = {https://proceedings.neurips.cc/paper_files/paper/2019/file/0234c510bc6d908b28c70ff313743079-Paper.pdf},
- volume = {32},
- year = {2019}
+@misc{kynkaanniemi2019improved_pr,
+      title={Improved Precision and Recall Metric for Assessing Generative Models}, 
+      author={Tuomas Kynkäänniemi and Tero Karras and Samuli Laine and Jaakko Lehtinen and Timo Aila},
+      year={2019},
+      eprint={1904.06991},
+      archivePrefix={arXiv},
+      primaryClass={stat.ML},
+      url={https://arxiv.org/abs/1904.06991}, 
 }
 
 @article{Ma2021,
-  author  = {Ma, Jiayi and Jiang, Xingyu and Fan, Aoxiang and Jiang, Junjun and Yan, Junchi},
-  title   = {Image Matching from Handcrafted to Deep Features: A Survey},
+  author = {Ma, Jiayi and Jiang, Xingyu and Fan, Aoxiang and Jiang, Junjun and Yan, Junchi},
+  title = {Image Matching from Handcrafted to Deep Features: A Survey},
   journal = {International Journal of Computer Vision},
-  volume  = {129},
-  number  = {1},
-  pages   = {23--79},
-  year    = {2021},
-  doi     = {10.1007/s11263-020-01359-2},
-  url     = {https://doi.org/10.1007/s11263-020-01359-2},
-  issn    = {1573-1405}
+  year = {2021},
+  volume = {129},
+  number = {1},
+  pages = {23--79},
+  doi = {10.1007/s11263-020-01359-2},
+  issn = {1573-1405}
 }
 
-@ARTICLE{slam,
-  author={Cadena, Cesar and Carlone, Luca and Carrillo, Henry and Latif, Yasir and Scaramuzza, Davide and Neira, José and Reid, Ian and Leonard, John J.},
-  journal={IEEE Transactions on Robotics}, 
-  title={Past, Present, and Future of Simultaneous Localization and Mapping: Toward the Robust-Perception Age}, 
-  year={2016},
-  volume={32},
-  number={6},
-  pages={1309-1332},
-  keywords={Graph theory;Simultaneous location and mapping;Service robots;Robustness;Localization;Factor graphs;localization;mapping;maximum a posteriori estimation;perception;robots;sensing;simultaneous localization and mapping (SLAM)},
-  doi={10.1109/TRO.2016.2624754}}
+@article{slam,
+   title={Past, Present, and Future of Simultaneous Localization and Mapping: Toward the Robust-Perception Age},
+   volume={32},
+   ISSN={1941-0468},
+   url={http://dx.doi.org/10.1109/TRO.2016.2624754},
+   DOI={10.1109/tro.2016.2624754},
+   number={6},
+   journal={IEEE Transactions on Robotics},
+   publisher={Institute of Electrical and Electronics Engineers (IEEE)},
+   author={Cadena, Cesar and Carlone, Luca and Carrillo, Henry and Latif, Yasir and Scaramuzza, Davide and Neira, Jose and Reid, Ian and Leonard, John J.},
+   year={2016},
+   month={Dec}, pages={1309–1332} }
 
 @article{tracking,
-  author       = {Seyed Mojtaba Marvasti{-}Zadeh and
-                  Li Cheng and
-                  Hossein Ghanei{-}Yakhdan and
-                  Shohreh Kasaei},
-  title        = {Deep Learning for Visual Tracking: {A} Comprehensive Survey},
-  journal      = {CoRR},
-  volume       = {abs/1912.00535},
-  year         = {2019},
-  url          = {http://arxiv.org/abs/1912.00535},
-  eprinttype    = {arXiv},
-  eprint       = {1912.00535},
-  timestamp    = {Wed, 21 Jul 2021 08:03:41 +0200},
-  biburl       = {https://dblp.org/rec/journals/corr/abs-1912-00535.bib},
-  bibsource    = {dblp computer science bibliography, https://dblp.org}
+   title={Deep Learning for Visual Tracking: A Comprehensive Survey},
+   volume={23},
+   ISSN={1558-0016},
+   url={http://dx.doi.org/10.1109/TITS.2020.3046478},
+   DOI={10.1109/tits.2020.3046478},
+   number={5},
+   journal={IEEE Transactions on Intelligent Transportation Systems},
+   publisher={Institute of Electrical and Electronics Engineers (IEEE)},
+   author={Marvasti-Zadeh, Seyed Mojtaba and Cheng, Li and Ghanei-Yakhdan, Hossein and Kasaei, Shohreh},
+   year={2022},
+   month={May}, pages={3943–3968} }
+
+@misc{cho2022cats++,
+      title={CATs++: Boosting Cost Aggregation with Convolutions and Transformers}, 
+      author={Seokju Cho and Sunghwan Hong and Seungryong Kim},
+      year={2022},
+      eprint={2202.06817},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2202.06817}, 
 }
 
-@article{cho2022cats++,
-  title={CATs++: Boosting Cost Aggregation with Convolutions and Transformers},
-  author={Cho, Seokju and Hong, Sunghwan and Kim, Seungryong},
-  journal={arXiv preprint arXiv:2202.06817},
-  year={2022}
+@misc{nguyen2020leep,
+      title={LEEP: A New Measure to Evaluate Transferability of Learned Representations}, 
+      author={Cuong V. Nguyen and Tal Hassner and Matthias Seeger and Cedric Archambeau},
+      year={2020},
+      eprint={2002.12462},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2002.12462}, 
 }
 
-@article{nguyen2020leep,
-  author       = {Cuong V. Nguyen and
-                  Tal Hassner and
-                  C{\'{e}}dric Archambeau and
-                  Matthias W. Seeger},
-  title        = {{LEEP:} {A} New Measure to Evaluate Transferability of Learned Representations},
-  journal      = {CoRR},
-  volume       = {abs/2002.12462},
-  year         = {2020},
-  url          = {https://arxiv.org/abs/2002.12462},
-  eprinttype    = {arXiv},
-  eprint       = {2002.12462},
-  timestamp    = {Tue, 05 May 2020 15:58:39 +0200},
-  biburl       = {https://dblp.org/rec/journals/corr/abs-2002-12462.bib},
-  bibsource    = {dblp computer science bibliography, https://dblp.org}
+@misc{COTFNT,
+      title={Computational Optimal Transport}, 
+      author={Gabriel Peyré and Marco Cuturi},
+      year={2020},
+      eprint={1803.00567},
+      archivePrefix={arXiv},
+      primaryClass={stat.ML},
+      url={https://arxiv.org/abs/1803.00567}, 
 }
 
-@article{COTFNT,
-  year = {2019},
-  volume = {11},
-  journal = {Foundations and Trends in Machine Learning},
-  title = {Computational Optimal Transport},
-  number = {5-6},
-  pages = {355--607},
-  author = {Gabriel Peyr\'e and Marco Cuturi}
-}
-
-
-@inproceedings{10.1145/74333.74337,
-author = {Musgrave, F. K. and Kolb, C. E. and Mace, R. S.},
-title = {The synthesis and rendering of eroded fractal terrains},
-year = {1989},
-isbn = {0897913124},
-publisher = {Association for Computing Machinery},
-address = {New York, NY, USA},
-url = {https://doi.org/10.1145/74333.74337},
-doi = {10.1145/74333.74337},
-abstract = {In standard fractal terrain models based on fractional Brownian motion the statistical character of the surface is, by design, the same everywhere. A new approach to the synthesis of fractal terrain height fields is presented which, in contrast to previous techniques, features locally independent control of the frequencies composing the surface, and thus local control of fractal dimension and other statistical characteristics. The new technique, termed noise synthesis, is intermediate in difficulty of implementation, between simple stochastic subdivision and Fourier filtering or generalized stochastic subdivision, and does not suffer the drawbacks of creases or periodicity. Varying the local crossover scale of fractal character or the fractal dimension with altitude or other functions yields more realistic first approximations to eroded landscapes. A simple physical erosion model is then suggested which simulates hydraulic and thermal erosion processes to create gloabl stream/valley networks and talus slopes. Finally, an efficient ray tracing algorithm for general height fields, of which most fractal terrains are a subset, is presented.},
-booktitle = {Proceedings of the 16th Annual Conference on Computer Graphics and Interactive Techniques},
-pages = {41–50},
-numpages = {10},
-series = {SIGGRAPH '89}
-}
-
-@article{fbm,
+@article{10.1145/74333.74337,
 author = {Musgrave, F. K. and Kolb, C. E. and Mace, R. S.},
 title = {The synthesis and rendering of eroded fractal terrains},
 year = {1989},
@@ -710,20 +678,14 @@ numpages = {7},
 keywords = {Fractal dimension, Invariant surface, Iteration, Quaternions, Surface determination}
 }
 
-@article{faiss,
-  author       = {Jeff Johnson and
-                  Matthijs Douze and
-                  Herv{\'{e}} J{\'{e}}gou},
-  title        = {Billion-scale similarity search with GPUs},
-  journal      = {CoRR},
-  volume       = {abs/1702.08734},
-  year         = {2017},
-  url          = {http://arxiv.org/abs/1702.08734},
-  eprinttype    = {arXiv},
-  eprint       = {1702.08734},
-  timestamp    = {Fri, 02 Jul 2021 16:07:49 +0200},
-  biburl       = {https://dblp.org/rec/journals/corr/JohnsonDJ17.bib},
-  bibsource    = {dblp computer science bibliography, https://dblp.org}
+@misc{faiss,
+      title={Billion-scale similarity search with GPUs}, 
+      author={Jeff Johnson and Matthijs Douze and Hervé Jégou},
+      year={2017},
+      eprint={1702.08734},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/1702.08734}, 
 }
 
 @misc{white2009mandelbulb,
@@ -733,94 +695,264 @@ keywords = {Fractal dimension, Invariant surface, Iteration, Quaternions, Surfac
   howpublished = {\url{https://www.skytopia.com/project/fractal/mandelbulb.html}},
   note = {Accessed: 2026-03-11}
 }
-% ===== ACCV 2026 additions =====
+
 @article{mayer2018what,
-  title={What Makes Good Synthetic Training Data for Learning Disparity and Optical Flow Estimation?},
-  author={Mayer, Nikolaus and Ilg, Eddy and Fischer, Philipp and Hazirbas, Caner and Cremers, Daniel and Dosovitskiy, Alexey and Brox, Thomas},
-  journal={International Journal of Computer Vision},
-  volume={126}, pages={942--960}, year={2018}
+   title={What Makes Good Synthetic Training Data for Learning Disparity and Optical Flow Estimation?},
+   volume={126},
+   ISSN={1573-1405},
+   url={http://dx.doi.org/10.1007/s11263-018-1082-6},
+   DOI={10.1007/s11263-018-1082-6},
+   number={9},
+   journal={International Journal of Computer Vision},
+   publisher={Springer Science and Business Media LLC},
+   author={Mayer, Nikolaus and Ilg, Eddy and Fischer, Philipp and Hazirbas, Caner and Cremers, Daniel and Dosovitskiy, Alexey and Brox, Thomas},
+   year={2018},
+   month={Apr}, pages={942–960} }
+
+@InProceedings{sun2021autoflow,
+    author    = {Sun, Deqing and Vlasic, Daniel and Herrmann, Charles and Jampani, Varun and Krainin, Michael and Chang, Huiwen and Zabih, Ramin and Freeman, William T. and Liu, Ce},
+    title     = {AutoFlow: Learning a Better Training Set for Optical Flow},
+    booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+    month     = {June},
+    year      = {2021},
+    pages     = {10093-10102}
 }
-@inproceedings{sun2021autoflow,
-  title={AutoFlow: Learning a Better Training Set for Optical Flow},
-  author={Sun, Deqing and Vlasic, Daniel and Herrmann, Charles and Jampani, Varun and Krainin, Michael and Chang, Huiwen and Zabih, Ramin and Freeman, William T and Liu, Ce},
-  booktitle={CVPR}, year={2021}
-}
+
 @inproceedings{im2022dflow,
-  title={DFlow: Learning to Synthesize Better Optical Flow Datasets via a Differentiable Pipeline},
-  author={Im, Kwon Byung and Cho, Sangdoo and Lee, Junhyug and others},
-  booktitle={ICLR}, year={2023}
-}
-@inproceedings{sorscher2022beyond,
-  title={Beyond Neural Scaling Laws: Beating Power Law Scaling via Data Pruning},
-  author={Sorscher, Ben and Geirhos, Robert and Shekhar, Shashank and Ganguli, Surya and Morcos, Ari S},
-  booktitle={NeurIPS}, year={2022}
-}
-@inproceedings{hanneke2019value,
-  title={On the Value of Target Data in Transfer Learning},
-  author={Hanneke, Steve and Kpotufe, Samory},
-  booktitle={NeurIPS}, year={2019}
-}
-@inproceedings{you2021logme,
-  title={LogME: Practical Assessment of Pre-trained Models for Transfer Learning},
-  author={You, Kaichao and Liu, Yong and Wang, Jianmin and Long, Mingsheng},
-  booktitle={ICML}, year={2021}
-}
-@inproceedings{tran2019transferability,
-  title={Transferability and Hardness of Supervised Classification Tasks},
-  author={Tran, Anh T and Nguyen, Cuong V and Hassner, Tal},
-  booktitle={ICCV}, year={2019}
-}
-@inproceedings{bao2019information,
-  title={An Information-Theoretic Approach to Transferability in Task Transfer Learning},
-  author={Bao, Yajie and Li, Yang and Huang, Shao-Lun and Zhang, Lin and Zheng, Lizhong and Zamir, Amir and Guibas, Leonidas},
-  booktitle={ICIP}, year={2019}
-}
-@inproceedings{tan2021otce,
-  title={OTCE: A Transferability Metric for Cross-Domain Cross-Task Representations},
-  author={Tan, Yang and Li, Yang and Huang, Shao-Lun},
-  booktitle={CVPR}, year={2021}
-}
-@inproceedings{alvarez2020geometric,
-  title={Geometric Dataset Distances via Optimal Transport},
-  author={Alvarez-Melis, David and Fusi, Nicolo},
-  booktitle={NeurIPS}, year={2020}
-}
-@inproceedings{xie2023data,
-  title={Data Selection for Language Models via Importance Resampling},
-  author={Xie, Sang Michael and Santurkar, Shibani and Ma, Tengyu and Liang, Percy},
-  booktitle={NeurIPS}, year={2023}
-}
-@inproceedings{xie2023doremi,
-  title={DoReMi: Optimizing Data Mixtures Speeds Up Language Model Pretraining},
-  author={Xie, Sang Michael and Pham, Hieu and Dong, Xuanyi and Du, Nan and Liu, Hanxiao and Lu, Yifeng and Liang, Percy and Le, Quoc V and Ma, Tengyu and Yu, Adams Wei},
-  booktitle={NeurIPS}, year={2023}
-}
-@inproceedings{naeem2020reliable,
-  title={Reliable Fidelity and Diversity Metrics for Generative Models},
-  author={Naeem, Muhammad Ferjad and Oh, Seong Joon and Uh, Youngjung and Choi, Yunjey and Yoo, Jaejun},
-  booktitle={ICML}, year={2020}
-}
-@inproceedings{alaa2022faithful,
-  title={How Faithful is your Synthetic Data? Sample-level Metrics for Evaluating and Auditing Generative Models},
-  author={Alaa, Ahmed and Van Breugel, Boris and Saveliev, Evgeny S and van der Schaar, Mihaela},
-  booktitle={ICML}, year={2022}
-}
-@inproceedings{truong2020glunet,
-  title={{GLU-Net}: Global-Local Universal Network for Dense Flow and Correspondences},
-  author={Truong, Prune and Danelljan, Martin and Timofte, Radu},
-  booktitle={CVPR}, year={2020}
+title={{DF}low: Learning to Synthesize Better Optical Flow Datasets via a Differentiable Pipeline},
+author={Kwon Byung-Ki and Nam Hyeon-Woo and Ji-Yun Kim and Tae-Hyun Oh},
+booktitle={The Eleventh International Conference on Learning Representations },
+year={2023},
+url={https://openreview.net/forum?id=5O2uzDusEN5}
 }
 
-@inproceedings{huang2022flowformer,
-  title={{FlowFormer}: A Transformer Architecture for Optical Flow},
-  author={Huang, Zhaoyang and Shi, Xiaoyu and Zhang, Chao and Wang, Qiang and Cheung, Ka Chun and Qin, Hongwei and Dai, Jifeng and Li, Hongsheng},
-  booktitle={European Conference on Computer Vision (ECCV)},
-  year={2022}
+@misc{sorscher2022beyond,
+      title={Beyond neural scaling laws: beating power law scaling via data pruning}, 
+      author={Ben Sorscher and Robert Geirhos and Shashank Shekhar and Surya Ganguli and Ari S. Morcos},
+      year={2023},
+      eprint={2206.14486},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2206.14486}, 
 }
 
-@inproceedings{fan2017pointcloud,
-  title={A Point Set Generation Network for 3{D} Object Reconstruction from a Single Image},
-  author={Fan, Haoqiang and Su, Hao and Guibas, Leonidas J.},
-  booktitle={IEEE Conference on Computer Vision and Pattern Recognition (CVPR)},
-  year={2017}
+@misc{hanneke2019value,
+      title={On the Value of Target Data in Transfer Learning}, 
+      author={Steve Hanneke and Samory Kpotufe},
+      year={2020},
+      eprint={2002.04747},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2002.04747}, 
+}
+
+@misc{you2021logme,
+      title={LogME: Practical Assessment of Pre-trained Models for Transfer Learning}, 
+      author={Kaichao You and Yong Liu and Jianmin Wang and Mingsheng Long},
+      year={2021},
+      eprint={2102.11005},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2102.11005}, 
+}
+
+@misc{tran2019transferability,
+      title={Transferability and Hardness of Supervised Classification Tasks}, 
+      author={Anh T. Tran and Cuong V. Nguyen and Tal Hassner},
+      year={2019},
+      eprint={1908.08142},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/1908.08142}, 
+}
+
+@misc{bao2019information,
+      title={An Information-Theoretic Approach to Transferability in Task Transfer Learning}, 
+      author={Yajie Bao and Yang Li and Shao-Lun Huang and Lin Zhang and Lizhong Zheng and Amir Zamir and Leonidas Guibas},
+      year={2022},
+      eprint={2212.10082},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2212.10082}, 
+}
+
+@misc{tan2021otce,
+      title={OTCE: A Transferability Metric for Cross-Domain Cross-Task Representations}, 
+      author={Yang Tan and Yang Li and Shao-Lun Huang},
+      year={2021},
+      eprint={2103.13843},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2103.13843}, 
+}
+
+@misc{alvarez2020geometric,
+      title={Geometric Dataset Distances via Optimal Transport}, 
+      author={David Alvarez-Melis and Nicolò Fusi},
+      year={2020},
+      eprint={2002.02923},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2002.02923}, 
+}
+
+@misc{xie2023data,
+      title={Data Selection for Language Models via Importance Resampling}, 
+      author={Sang Michael Xie and Shibani Santurkar and Tengyu Ma and Percy Liang},
+      year={2023},
+      eprint={2302.03169},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2302.03169}, 
+}
+
+@misc{xie2023doremi,
+      title={DoReMi: Optimizing Data Mixtures Speeds Up Language Model Pretraining}, 
+      author={Sang Michael Xie and Hieu Pham and Xuanyi Dong and Nan Du and Hanxiao Liu and Yifeng Lu and Percy Liang and Quoc V. Le and Tengyu Ma and Adams Wei Yu},
+      year={2023},
+      eprint={2305.10429},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2305.10429}, 
+}
+
+@misc{naeem2020reliable,
+      title={Reliable Fidelity and Diversity Metrics for Generative Models}, 
+      author={Muhammad Ferjad Naeem and Seong Joon Oh and Youngjung Uh and Yunjey Choi and Jaejun Yoo},
+      year={2020},
+      eprint={2002.09797},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2002.09797}, 
+}
+
+@misc{alaa2022faithful,
+      title={How Faithful is your Synthetic Data? Sample-level Metrics for Evaluating and Auditing Generative Models}, 
+      author={Ahmed M. Alaa and Boris van Breugel and Evgeny Saveliev and Mihaela van der Schaar},
+      year={2022},
+      eprint={2102.08921},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2102.08921}, 
+}
+
+@misc{truong2020glunet,
+      title={GLU-Net: Global-Local Universal Network for Dense Flow and Correspondences}, 
+      author={Prune Truong and Martin Danelljan and Radu Timofte},
+      year={2021},
+      eprint={1912.05524},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/1912.05524}, 
+}
+
+@misc{huang2022flowformer,
+      title={FlowFormer: A Transformer Architecture for Optical Flow}, 
+      author={Zhaoyang Huang and Xiaoyu Shi and Chao Zhang and Qiang Wang and Ka Chun Cheung and Hongwei Qin and Jifeng Dai and Hongsheng Li},
+      year={2022},
+      eprint={2203.16194},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2203.16194}, 
+}
+
+@misc{fan2017pointcloud,
+      title={A Point Set Generation Network for 3D Object Reconstruction from a Single Image}, 
+      author={Haoqiang Fan and Hao Su and Leonidas Guibas},
+      year={2016},
+      eprint={1612.00603},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/1612.00603}, 
+}
+
+@misc{doersch2022tapvid,
+      title={TAP-Vid: A Benchmark for Tracking Any Point in a Video}, 
+      author={Carl Doersch and Ankush Gupta and Larisa Markeeva and Adrià Recasens and Lucas Smaira and Yusuf Aytar and João Carreira and Andrew Zisserman and Yi Yang},
+      year={2023},
+      eprint={2211.03726},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2211.03726}, 
+}
+
+@inproceedings{kitti2012,
+author = {Geiger, Andreas},
+title = {Are we ready for autonomous driving? The KITTI vision benchmark suite},
+year = {2012},
+isbn = {9781467312264},
+publisher = {IEEE Computer Society},
+address = {USA},
+abstract = {Today, visual recognition systems are still rarely employed in robotics applications. Perhaps one of the main reasons for this is the lack of demanding benchmarks that mimic such scenarios. In this paper, we take advantage of our autonomous driving platform to develop novel challenging benchmarks for the tasks of stereo, optical flow, visual odometry/SLAM and 3D object detection. Our recording platform is equipped with four high resolution video cameras, a Velodyne laser scanner and a state-of-the-art localization system. Our benchmarks comprise 389 stereo and optical flow image pairs, stereo visual odometry sequences of 39.2 km length, and more than 200k 3D object annotations captured in cluttered scenarios (up to 15 cars and 30 pedestrians are visible per image). Results from state-of-the-art algorithms reveal that methods ranking high on established datasets such as Middlebury perform below average when being moved outside the laboratory to the real world. Our goal is to reduce this bias by providing challenging benchmarks with novel difficulties to the computer vision community. Our benchmarks are available online at: www.cvlibs.net/datasets/kitti},
+booktitle = {Proceedings of the 2012 IEEE Conference on Computer Vision and Pattern Recognition (CVPR)},
+pages = {3354–3361},
+numpages = {8},
+keywords = {Benchmark testing, Cameras, Measurement, Optical imaging, Optical sensors, Visualization},
+series = {CVPR '12}
+}
+
+@INPROCEEDINGS{kitti2015,
+  author={Menze, Moritz and Geiger, Andreas},
+  booktitle={2015 IEEE Conference on Computer Vision and Pattern Recognition (CVPR)}, 
+  title={Object scene flow for autonomous vehicles}, 
+  year={2015},
+  volume={},
+  number={},
+  pages={3061-3070},
+  keywords={Three-dimensional displays;Solid modeling;Benchmark testing;Design automation;Optical imaging;Optical sensors;Vehicle dynamics},
+  doi={10.1109/CVPR.2015.7298925}}
+
+@INPROCEEDINGS{taniai2016tss,
+  author={Taniai, Tatsunori and Sinha, Sudipta N. and Sato, Yoichi},
+  booktitle={2016 IEEE Conference on Computer Vision and Pattern Recognition (CVPR)}, 
+  title={Joint Recovery of Dense Correspondence and Cosegmentation in Two Images}, 
+  year={2016},
+  volume={},
+  number={},
+  pages={4246-4255},
+  keywords={Estimation;Image segmentation;Labeling;Optimization;Standards;Two dimensional displays;Optical imaging},
+  doi={10.1109/CVPR.2016.460}}
+
+@inproceedings{bergstra2011tpe,
+ author = {Bergstra, James and Bardenet, R\'{e}mi and Bengio, Yoshua and K\'{e}gl, Bal\'{a}zs},
+ booktitle = {Advances in Neural Information Processing Systems},
+ editor = {J. Shawe-Taylor and R. Zemel and P. Bartlett and F. Pereira and K. Weinberger},
+ pages = {},
+ publisher = {Curran Associates, Inc.},
+ title = {Algorithms for Hyper-Parameter Optimization},
+ url = {https://proceedings.neurips.cc/paper_files/paper/2011/file/86e8f7ab32cfd12577bc2619bc635690-Paper.pdf},
+ volume = {24},
+ year = {2011}
+}
+
+@article{bendavid2010theory,
+  author = {Ben-David, Shai and Blitzer, John and Crammer, Koby and Kulesza, Alex and Pereira, Fernando and Vaughan, Jennifer Wortman},
+  title = {A theory of learning from different domains},
+  journal = {Machine Learning},
+  year = {2010},
+  volume = {79},
+  number = {1},
+  pages = {151--175},
+  doi = {10.1007/s10994-009-5152-4},
+  issn = {1573-0565}
+}
+
+@article{bonneel2015sliced,
+author = {Bonneel, Nicolas and Rabin, Julien and Peyr\'{e}, Gabriel and Pfister, Hanspeter},
+title = {Sliced and Radon Wasserstein Barycenters of Measures},
+year = {2015},
+issue_date = {January   2015},
+publisher = {Kluwer Academic Publishers},
+address = {USA},
+volume = {51},
+number = {1},
+issn = {0924-9907},
+url = {https://doi.org/10.1007/s10851-014-0506-3},
+doi = {10.1007/s10851-014-0506-3},
+abstract = {This article details two approaches to compute barycenters of measures using 1-D Wasserstein distances along radial projections of the input measures. The first method makes use of the Radon transform of the measures, and the second is the solution of a convex optimization problem over the space of measures. We show several properties of these barycenters and explain their relationship. We show numerical approximation schemes based on a discrete Radon transform and on the resolution of a non-convex optimization problem. We explore the respective merits and drawbacks of each approach on applications to two image processing problems: color transfer and texture mixing.},
+journal = {J. Math. Imaging Vis.},
+month = jan,
+pages = {22–45},
+numpages = {24},
+keywords = {Wasserstein distance, Radon transform, Optimal transport, Barycenter of measures}
 }

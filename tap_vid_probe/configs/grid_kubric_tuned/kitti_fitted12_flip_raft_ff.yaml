@@ -1,0 +1,153 @@
+dataset:
+  dataset_name: kubric_intervention
+  datapath: /home/slow1/fsl_groups/grp_farrell/slow1/Data/kitti_fitted12
+  kubric_dir: /home/spencer/Projects/kubric
+  movi_f_config: 512x512
+  movi_f_shuffle_buffer: 16
+  size:
+  - 512
+  - 512
+  downsample_flow: null
+  dense_kps_use_all: true
+  max_kps: null
+  normalize_images: true
+  reverse_flow: false
+  split: train
+  debug: false
+  verbose: false
+  negate_flow: true
+  occlusion_mask: true
+  src_tgt_flip: 0.5
+model:
+  type: raft
+  small: false
+  freeze: false
+  pretrained_backbone: false
+  iters: 12
+training:
+  epochs: 40
+  steps_per_epoch: 250
+  batch_size: 8
+  check_val_every_n_epoch: 1
+  eval_initial: true
+  lr: 3e-5
+  lr_backbone: 3e-6
+  weight_decay: 0.05
+  momentum: 0.9
+  scheduler: step
+  step: '[70, 80, 90]'
+  step_gamma: 0.5
+  augmentation: false
+  mmd_every_n_epochs: 0
+  min_flow_length: null
+  max_flow_length: null
+  n_threads: 2
+  seed: 2021
+  enable_debug: false
+paths:
+  snapshots: /home/slow1/Projects/OnlineSyntheticCorrespondence/snapshots_kubric_tuned/kitti_fitted12_flip_raft_ff
+  pretrained: null
+  start_epoch: 0
+  save_epoch_checkpoints: false
+evaluation:
+  datapath: ./models/Datasets_CATs
+  eval_benchmarks:
+  - tss_a10
+  - tss_a05
+  - tss_a03
+  - tapvid_davis_s1
+  - tapvid_davis_s2
+  - tapvid_davis_s4
+  - tapvid_davis_s8
+  - tapvid_davis_s16
+  - kitti2012_a05
+  - kitti2012_a03
+  - kitti2012_a01
+  - kitti2015_a05
+  - kitti2015_a03
+  - kitti2015_a01
+  eval_alphas:
+  - 0.1
+  - 0.05
+  - 0.03
+  - 0.05
+  - 0.05
+  - 0.05
+  - 0.05
+  - 0.05
+  - 0.05
+  - 0.03
+  - 0.01
+  - 0.05
+  - 0.03
+  - 0.01
+  thres: img
+  split_to_use_for_validation: test
+  use_motion_aware: false
+  min_motion_pixels: 5.0
+  zero_threshold: 0.5
+  prefetch_factor: 2
+  val_batch_size: 2
+  val_num_workers: 4
+  kitti_root: /home/slow1/Data/correspondence/kitti
+  kitti_val_use_full_training: true
+  tss_root: /home/slow1/Data/correspondence/TSS_CVPR2016
+  tapvid_davis_root: /home/slow1/Data/tapvid/probe_cache
+  val_datasets:
+    tss_a10:
+      normalize_images: true
+      reverse_flow: false
+    tss_a05:
+      normalize_images: true
+      reverse_flow: false
+    tss_a03:
+      normalize_images: true
+      reverse_flow: false
+    tapvid_davis_s1:
+      tapvid_stride: 1
+      tapvid_frame_step: 5
+      tapvid_min_pts: 1
+      reverse_flow: true
+      normalize_images: true
+    tapvid_davis_s2:
+      tapvid_stride: 2
+      tapvid_frame_step: 5
+      tapvid_min_pts: 1
+      reverse_flow: true
+      normalize_images: true
+    tapvid_davis_s4:
+      tapvid_stride: 4
+      tapvid_frame_step: 5
+      tapvid_min_pts: 1
+      reverse_flow: true
+      normalize_images: true
+    tapvid_davis_s8:
+      tapvid_stride: 8
+      tapvid_frame_step: 5
+      tapvid_min_pts: 1
+      reverse_flow: true
+      normalize_images: true
+    tapvid_davis_s16:
+      tapvid_stride: 16
+      tapvid_frame_step: 5
+      tapvid_min_pts: 1
+      reverse_flow: true
+      normalize_images: true
+    kitti2012_a05:
+      split: val
+      normalize_images: true
+    kitti2012_a03:
+      split: val
+      normalize_images: true
+    kitti2012_a01:
+      split: val
+      normalize_images: true
+    kitti2015_a05:
+      split: val
+      normalize_images: true
+    kitti2015_a03:
+      split: val
+      normalize_images: true
+    kitti2015_a01:
+      split: val
+      normalize_images: true

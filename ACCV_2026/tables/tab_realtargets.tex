@@ -1,0 +1,31 @@
+\begin{tabular}{ll rr rr rrr}
+\toprule
+ &  & \multicolumn{2}{c}{KITTI @1\%} & \multicolumn{2}{c}{TSS} & \multicolumn{3}{c}{TAP-Vid-DAVIS} \\
+\cmidrule(lr){3-4}\cmidrule(lr){5-6}\cmidrule(lr){7-9}
+Model & Source & K12 & K15 & @5\% & @3\% & $s{=}2$ & $s{=}8$ & $s{=}16$ \\
+\midrule
+\multirow{4}{*}{CATs++}
+ & MOVi-F, generic & 45.9 & 46.2 & \textbf{61.1} & \textbf{44.1} & 98.5 & \textbf{89.7} & \textbf{84.0} \\
+ & MOVi-F, MC-tuned & \textbf{46.1} & \textbf{46.8} & 60.9 & 43.5 & 98.5 & 89.5 & 83.2 \\
+ & SDF, generic    & 40.2 & 44.5 & 67.0 & 49.8 & 98.1 & 89.4 & 83.2 \\
+ & SDF, MC-tuned    & \textbf{89.1} & \textbf{76.3} & \textbf{67.1} & \textbf{51.0} & \textbf{98.4} & \textbf{90.6} & \textbf{84.1} \\
+\addlinespace[3pt]
+\multirow{4}{*}{GLU-Net}
+ & MOVi-F, generic & 89.0 & 83.8 & 38.7 & 21.7 & 97.3 & 77.0 & 59.7 \\
+ & MOVi-F, MC-tuned & \textbf{91.5} & \textbf{85.2} & \textbf{44.9} & \textbf{26.6} & \textbf{97.9} & \textbf{80.6} & \textbf{65.5} \\
+ & SDF, generic    & 22.3 & 26.5 & 31.8 & 16.9 & 91.8 & 76.7 & \textbf{63.8} \\
+ & SDF, MC-tuned    & \textbf{89.1} & \textbf{81.0} & \textbf{41.1} & \textbf{25.8} & \textbf{96.7} & \textbf{76.8} & 60.2 \\
+\addlinespace[3pt]
+\multirow{4}{*}{FlowFormer}
+ & MOVi-F, generic & 58.4 & \textbf{56.1} & 30.1 & 16.9 & 95.2 & 65.7 & 48.8 \\
+ & MOVi-F, MC-tuned & \textbf{59.8} & 53.2 & \textbf{32.9} & \textbf{18.5} & \textbf{95.6} & \textbf{68.3} & \textbf{51.0} \\
+ & \textit{SDF, generic}$^{*}$ & \textit{6.2} & \textit{9.7} & \textit{32.7} & \textit{15.8} & \textit{93.3} & \textit{66.4} & \textit{50.1} \\
+ & SDF, MC-tuned    & \textbf{62.7} & \textbf{56.0} & \textbf{37.3} & \textbf{22.7} & \textbf{96.0} & \textbf{70.4} & \textbf{52.0} \\
+\addlinespace[3pt]
+\multirow{4}{*}{RAFT}
+ & MOVi-F, generic & \textbf{64.1} & 55.0 & \textbf{27.6} & \textbf{13.8} & 94.8 & 67.9 & 51.1 \\
+ & MOVi-F, MC-tuned & 61.7 & 55.0 & 25.6 & 12.4 & \textbf{95.3} & \textbf{71.6} & \textbf{53.5} \\
+ & \textit{SDF, generic}$^{*}$ & \textit{0.6} & \textit{0.6} & \textit{9.6} & \textit{3.5} & \textit{10.3} & \textit{12.6} & \textit{14.9} \\
+ & SDF, MC-tuned    & \textbf{40.0} & \textbf{37.3} & \textbf{31.6} & \textbf{16.4} & \textbf{93.8} & \textbf{67.7} & \textbf{48.1} \\
+\bottomrule
+\end{tabular}

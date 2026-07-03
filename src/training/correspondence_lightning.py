@@ -231,10 +231,30 @@ class CorrespondenceLightningModule(pl.LightningModule):
         scheduler_type = self.training_config.get('scheduler', 'step')
         epochs = self.training_config.get('epochs', 50)
         
+        scheduler_interval = 'epoch'
         if scheduler_type == 'cosine':
             scheduler = lr_scheduler.CosineAnnealingLR(
                 optimizer, T_max=epochs, eta_min=1e-6
             )
+        elif scheduler_type == 'onecycle':
+            # RAFT-style schedule: linear warmup then anneal, stepped per optimizer
+            # step. Needs the true optimizer-step count; limit_train_batches caps
+            # batches/epoch and accumulate_grad_batches divides them down.
+            steps_per_epoch = int(self.training_config.get('steps_per_epoch', 250))
+            accum = max(1, int(self.training_config.get('accumulate_grad_batches', 1)))
+            opt_steps_per_epoch = max(1, steps_per_epoch // accum)
+            # small buffer so a boundary off-by-one never overruns OneCycle's hard cap
+            total_steps = opt_steps_per_epoch * int(epochs) + 8
+            pct_start = _to_float(self.training_config.get('onecycle_pct_start', 0.05), 'onecycle_pct_start')
+            scheduler = lr_scheduler.OneCycleLR(
+                optimizer,
+                max_lr=[lr, lr_backbone],
+                total_steps=total_steps,
+                pct_start=pct_start,
+                anneal_strategy='linear',
+                cycle_momentum=False,
+            )
+            scheduler_interval = 'step'
         else:
             step_raw = self.training_config.get('step', '[70, 80, 90]')
             if isinstance(step_raw, (list, tuple)):
@@ -245,12 +265,12 @@ class CorrespondenceLightningModule(pl.LightningModule):
             scheduler = lr_scheduler.MultiStepLR(
                 optimizer, milestones=milestones, gamma=step_gamma
             )
-        
+
         return {
             'optimizer': optimizer,
             'lr_scheduler': {
                 'scheduler': scheduler,
-                'interval': 'epoch',
+                'interval': scheduler_interval,
             }
         }
     

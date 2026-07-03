@@ -20,9 +20,9 @@ REAL = ['kitti2012','kitti2015','flyingthings','pointodyssey','synthetic']
 SEM  = ['spair','pfpascal','pfwillow','tss']
 BENCH = REAL + SEM
 COV  = 'flow_mean_nn_eval_to_train_k1'
-PREDS = [("coverage ($-d_{B\\to T}$)",'flow_mean_nn_eval_to_train_k1',"#7c3aed",'D',2.6,8),
+PREDS = [("coverage ($-d_{T\\to S}$)",'flow_mean_nn_eval_to_train_k1',"#7c3aed",'D',2.6,8),
          ("symmetric $W_2$",          'flow_sliced_w2',                "#2563eb",'s',1.8,5),
-         ("off-target ($-d_{T\\to B}$)",'flow_mean_nn_train_to_eval_k1',"#dc2626",'v',1.8,5),
+         ("off-target ($-d_{S\\to T}$)",'flow_mean_nn_train_to_eval_k1',"#dc2626",'v',1.8,5),
          ("appearance (DINO)",        'dino_mean_nn_eval_to_train_k1', "#059669",'^',1.8,5)]
 GAP_BINS=[0.0,1.0,2.0,5.0,10.0,np.inf]; GAP_LABELS=["0-1","1-2","2-5","5-10",">10"]
 def binlab(g): return GAP_LABELS[min(np.searchsorted(GAP_BINS,g,side="right")-1,4)]
@@ -103,17 +103,34 @@ plt.rcParams.update({"font.size":10,"axes.spines.top":False,"axes.spines.right":
                      "figure.dpi":200,"savefig.dpi":200})
 OUTA=f"{ROOT}/ACCV_2026/figures/results/F_covlaw_a.png"
 OUTB=f"{ROOT}/ACCV_2026/figures/results/F_covlaw_b.png"
-# (a) scatter -- sized so it matches (b)'s height at subfigure widths 0.42 / 0.56
-figA,axA=plt.subplots(figsize=(4.5,4.0))
-for rg in ['pre_real','pre_sem','raft']:
-    s=P[P.regime==rg]
-    axA.scatter(s.zcov,s.zpck,s=9,alpha=0.45,c=RCOL[rg],lw=0,label=RLAB[rg])
-xs=np.array([P.zcov.min(),P.zcov.max()]); b,a=np.polyfit(P.zcov,P.zpck,1)
-axA.plot(xs,b*xs+a,'k--',lw=1.3)
-axA.annotate(f"$r{{=}}{rA:.2f}$",(0.04,0.94),xycoords="axes fraction",fontsize=10,color="#222")
-axA.set_xlabel("motion coverage ($-\\,d_{B\\to T}$, within-context $z$)")
-axA.set_ylabel("transfer PCK (within-context $z$)")
-axA.legend(fontsize=7.5,loc='lower right',framealpha=0.9)
+# (a) scatter -- SQUARE axes, colored by TRAINING-SOURCE FAMILY (pooled for legibility)
+# pool only the SDF variants into one group; keep every other source distinct
+NAME={'flyingthings':'FlyingThings','pointodyssey':'PointOdyssey','sintel':'Sintel',
+      'movi_f':'MOVi-F','imagenet2dwarp':'ImageNet-2D','spair':'SPair',
+      'synthetic':'SDF (ours)','synthetic_2d_warp':'SDF (ours)','synthetic_large_zoom':'SDF (ours)',
+      'synthetic_random_flipping':'SDF (ours)','synthetic_small_zoom':'SDF (ours)'}
+ORDER=['SDF (ours)','FlyingThings','PointOdyssey','Sintel','MOVi-F','ImageNet-2D','SPair']
+COL={'SDF (ours)':'#dc2626','FlyingThings':'#2563eb','PointOdyssey':'#0891b2',
+     'Sintel':'#16a34a','MOVi-F':'#f59e0b','ImageNet-2D':'#7c3aed','SPair':'#db2777'}
+P['grp']=P.source.map(NAME)
+# pool points: average the per-context z over all model variants AND over source-variants
+# that share a display group (the 5 SDF configs collapse to one SDF dot per target), so
+# every source family contributes one dot per (family, target) -- equal visual weight.
+agg=P.groupby(['grp','benchmark'],as_index=False).agg(
+        zcov=('zcov','mean'),zpck=('zpck','mean'))
+rAg=pearsonr(agg.zcov,agg.zpck)[0]
+figA,axA=plt.subplots(figsize=(4.4,4.4))
+for g in ORDER:
+    d=agg[agg.grp==g]
+    if not len(d): continue
+    axA.scatter(d.zcov,d.zpck,s=26,alpha=0.85,color=COL[g],lw=0,label=g)
+lim=float(np.nanmax(np.abs([agg.zcov.min(),agg.zcov.max(),agg.zpck.min(),agg.zpck.max()])))*1.1
+b,a=np.polyfit(agg.zcov,agg.zpck,1)
+axA.plot([-lim,lim],[b*-lim+a,b*lim+a],'k--',lw=1.3,zorder=1)  # least-squares fit (explained in caption; no slope label to avoid clashing with the n=685 stat)
+axA.set_xlim(-lim,lim); axA.set_ylim(-lim,lim); axA.set_aspect('equal','box')
+axA.set_xlabel("Motion coverage ($-\\,d_{T\\to S}$, within-context $z$)")
+axA.set_ylabel("Transfer PCK (within-context $z$)")
+axA.legend(fontsize=6.6,loc='lower right',framealpha=0.9,labelspacing=0.3)
 figA.tight_layout(); figA.savefig(OUTA,bbox_inches="tight"); plt.close(figA)
 # (b) gap curves
 figB,axB=plt.subplots(figsize=(6.0,4.0))
@@ -123,8 +140,8 @@ for name,col,c,mk,lw,ms in PREDS:
     axB.plot(GAP_LABELS,pacc[name],marker=mk,color=c,ms=ms,lw=lw,label=name)
 axB.axhline(0.5,color="#9ca3af",lw=0.8,ls=':')
 axB.annotate("coin flip (floor)",(0.02,0.505),xycoords=("axes fraction","data"),fontsize=8,color=GRAY,va="bottom")
-axB.set_xlabel("true peak-PCK difference between the two candidate sources")
-axB.set_ylabel("chance of picking the better source")
+axB.set_xlabel("True peak-PCK difference between the two candidate sources")
+axB.set_ylabel("Chance of picking the better source")
 axB.set_ylim(0.24,0.98); axB.legend(fontsize=7.5,loc='upper left',framealpha=0.92)
 figB.tight_layout(); figB.savefig(OUTB,bbox_inches="tight"); plt.close(figB)
 print(f"(a) scatter r={rA:.3f} n={len(P)} -> {OUTA}")

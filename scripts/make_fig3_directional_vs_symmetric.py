@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 """
-Make Fig. 3 conceptual diagram:
-- Case A: under-coverage (eval has unsupported mode)
-- Case B: extra mass (train has unsupported mode)
-- Symmetric MMD stays unchanged under direction swap
+Fig. 1 conceptual diagram (directional vs. symmetric distances).
+
+- (a) Under-coverage: the target places mass on a mode the source never renders,
+  so the coverage distance d_{T->S} (target -> source) rises.
+- (b) Off-target mass: the mirror case; the off-target distance d_{S->T} (source ->
+  target) rises while coverage is perfect.
+- (c) The two directed distances swap between the cases, while a symmetric
+  distance (their average) stays essentially unchanged.
+
+Everything in panel (c) is in the same distance units (directed mean 1-NN),
+so the bars are directly comparable.
 """
 
 from __future__ import annotations
@@ -11,8 +18,14 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 import numpy as np
+
+# Color semantics kept consistent across all three panels.
+C_SOURCE = "#1f77b4"   # Source / Train (blue)
+C_TARGET = "#ff7f0e"   # Target (orange)
+C_SYM = "#8c8c8c"      # Symmetric distance (grey)
 
 
 def _sample_mixture(
@@ -33,44 +46,40 @@ def _directed_mean_nn(query: np.ndarray, reference: np.ndarray) -> float:
     return float(np.mean(np.sqrt(np.min(d2, axis=1))))
 
 
-def _rbf_kernel(x: np.ndarray, y: np.ndarray, gamma: float) -> np.ndarray:
-    d2 = np.sum((x[:, None, :] - y[None, :, :]) ** 2, axis=-1)
-    return np.exp(-gamma * d2)
-
-
-def _mmd2_biased(x: np.ndarray, y: np.ndarray, gamma: float = 1.0) -> float:
-    # Biased MMD^2 estimator (symmetric by construction).
-    k_xx = _rbf_kernel(x, x, gamma).mean()
-    k_yy = _rbf_kernel(y, y, gamma).mean()
-    k_xy = _rbf_kernel(x, y, gamma).mean()
-    return float(k_xx + k_yy - 2.0 * k_xy)
+def _panel_caption(ax: plt.Axes, letter: str, text: str) -> None:
+    """subcaption-style '(a) text' placed UNDER the panel, per the ACCV style guide."""
+    ax.text(
+        0.5, -0.235, rf"$\mathbf{{({letter})}}$ {text}",
+        transform=ax.transAxes, ha="center", va="top", fontsize=11,
+    )
 
 
 def _style_scatter_panel(
     ax: plt.Axes,
-    train: np.ndarray,
-    eval_: np.ndarray,
-    title: str,
-    e2t: float,
-    t2e: float,
+    source: np.ndarray,
+    target: np.ndarray,
+    letter: str,
+    caption: str,
+    d_bt: float,
+    d_tb: float,
 ) -> None:
-    ax.scatter(train[:, 0], train[:, 1], s=10, alpha=0.55, c="#1f77b4", label="Train")
-    ax.scatter(eval_[:, 0], eval_[:, 1], s=10, alpha=0.55, c="#ff7f0e", label="Target")
-    ax.set_title(title, fontsize=11, pad=8)
+    ax.scatter(source[:, 0], source[:, 1], s=10, alpha=0.55, c=C_SOURCE, label="Source (train)")
+    ax.scatter(target[:, 0], target[:, 1], s=10, alpha=0.55, c=C_TARGET, label="Target")
+    _panel_caption(ax, letter, caption)
     ax.set_xlim(-2.25, 2.25)
     ax.set_ylim(-1.2, 2.4)
     ax.set_aspect("equal", adjustable="box")
     ax.grid(alpha=0.25, linewidth=0.6)
-    ax.set_xlabel("Feature Axis 1")
-    ax.set_ylabel("Feature Axis 2")
+    ax.set_xlabel("Feature axis 1")
+    ax.set_ylabel("Feature axis 2")
     ax.text(
         0.03,
         0.97,
-        f"Target->Train mean NN: {e2t:.3f}\nTrain->Target mean NN: {t2e:.3f}",
+        f"Coverage  $d_{{T\\to S}}$: {d_bt:.3f}\nOff-target $d_{{S\\to T}}$: {d_tb:.3f}",
         transform=ax.transAxes,
         va="top",
         ha="left",
-        fontsize=9,
+        fontsize=8.5,
         bbox={"boxstyle": "round,pad=0.25", "facecolor": "white", "alpha": 0.85, "edgecolor": "#cccccc"},
     )
 
@@ -78,106 +87,102 @@ def _style_scatter_panel(
 def make_figure(seed: int, out_dir: Path, stem: str) -> tuple[Path, Path]:
     rng = np.random.default_rng(seed)
 
-    # Case A: under-coverage (eval has one extra mode absent from train)
-    train_a = _sample_mixture(
-        rng,
-        centers=[(-1.0, 0.0), (1.0, 0.0)],
-        n_per_center=[260, 260],
-    )
-    eval_a = _sample_mixture(
-        rng,
-        centers=[(-1.0, 0.0), (1.0, 0.0), (0.0, 1.7)],
-        n_per_center=[170, 170, 170],
+    # Case A: under-coverage (target has one extra mode absent from source)
+    source_a = _sample_mixture(rng, centers=[(-1.0, 0.0), (1.0, 0.0)], n_per_center=[260, 260])
+    target_a = _sample_mixture(
+        rng, centers=[(-1.0, 0.0), (1.0, 0.0), (0.0, 1.7)], n_per_center=[170, 170, 170]
     )
 
-    # Case B: extra mass (swap train/eval roles of Case A)
-    train_b = eval_a.copy()
-    eval_b = train_a.copy()
+    # Case B: off-target mass (swap source/target roles of Case A)
+    source_b = target_a.copy()
+    target_b = source_a.copy()
 
-    e2t_a = _directed_mean_nn(eval_a, train_a)
-    t2e_a = _directed_mean_nn(train_a, eval_a)
-    e2t_b = _directed_mean_nn(eval_b, train_b)
-    t2e_b = _directed_mean_nn(train_b, eval_b)
+    # Directed coverage distances. d_{T->S} = target -> source (coverage gap);
+    # d_{S->T} = source -> target (off-target mass).
+    dbt_a = _directed_mean_nn(target_a, source_a)
+    dtb_a = _directed_mean_nn(source_a, target_a)
+    dbt_b = _directed_mean_nn(target_b, source_b)
+    dtb_b = _directed_mean_nn(source_b, target_b)
 
-    mmd_a = _mmd2_biased(train_a, eval_a, gamma=0.8)
-    mmd_b = _mmd2_biased(train_b, eval_b, gamma=0.8)
+    # Symmetric distance = average of the two directed terms (stays put under swap).
+    sym_a = 0.5 * (dbt_a + dtb_a)
+    sym_b = 0.5 * (dbt_b + dtb_b)
 
-    fig = plt.figure(figsize=(13.2, 4.4), constrained_layout=True)
+    fig = plt.figure(figsize=(13.2, 4.1))
     gs = fig.add_gridspec(1, 3, width_ratios=[1.1, 1.1, 1.0])
     ax1 = fig.add_subplot(gs[0, 0])
     ax2 = fig.add_subplot(gs[0, 1])
     ax3 = fig.add_subplot(gs[0, 2])
 
     _style_scatter_panel(
-        ax1,
-        train=train_a,
-        eval_=eval_a,
-        title="A. Under-coverage (missing support)",
-        e2t=e2t_a,
-        t2e=t2e_a,
+        ax1, source_a, target_a, "a",
+        "Under-coverage: target mode missing from source", dbt_a, dtb_a
     )
     _style_scatter_panel(
-        ax2,
-        train=train_b,
-        eval_=eval_b,
-        title="B. Extra mass (train-only regions)",
-        e2t=e2t_b,
-        t2e=t2e_b,
+        ax2, source_b, target_b, "b",
+        "Off-target mass: source-only regions absent from target", dbt_b, dtb_b
     )
-
     handles, labels = ax1.get_legend_handles_labels()
     ax1.legend(handles, labels, loc="lower right", fontsize=8, framealpha=0.9)
 
-    x = np.arange(2)
-    labels = ["Case A", "Case B"]
+    # ---- Panel (c): grouped distance bars ----------------------------------
+    group_x = np.array([0.0, 1.0])
+    w = 0.26
+    dbt_vals = [dbt_a, dbt_b]
+    dtb_vals = [dtb_a, dtb_b]
+    sym_vals = [sym_a, sym_b]
 
-    ax3.bar(x, [mmd_a, mmd_b], width=0.55, color="#8c8c8c", alpha=0.9, label="Symmetric MMD^2")
-    ax3.set_xticks(x, labels)
-    ax3.set_ylabel("MMD^2 (symmetric)", color="#3a3a3a")
-    ax3.set_title("C. Symmetric Collapse vs Directional Split", fontsize=11, pad=8)
+    ax3.bar(group_x - w, dbt_vals, width=w, color=C_TARGET, alpha=0.9,
+            label=r"Coverage  $d_{T\to S}$ (target$\to$source)")
+    ax3.bar(group_x, dtb_vals, width=w, color=C_SOURCE, alpha=0.9,
+            label=r"Off-target $d_{S\to T}$ (source$\to$target)")
+    bars_sym = ax3.bar(group_x + w, sym_vals, width=w, color=C_SYM, alpha=0.9,
+                       hatch="//", edgecolor="white", label="Symmetric (average)")
+
+    ax3.set_xticks(group_x, ["Case (a)\nUnder-coverage", "Case (b)\nOff-target mass"], fontsize=9)
+    ax3.set_ylabel("Directed mean 1-NN distance")
     ax3.grid(axis="y", alpha=0.25, linewidth=0.6)
 
-    ax3r = ax3.twinx()
-    ax3r.plot(x, [e2t_a, e2t_b], "o-", color="#ff7f0e", linewidth=2.0, markersize=6, label="Target->Train")
-    ax3r.plot(x, [t2e_a, t2e_b], "s-", color="#1f77b4", linewidth=2.0, markersize=6, label="Train->Target")
-    ax3r.set_ylabel("Directed mean 1-NN distance", color="#3a3a3a")
+    ymax = max(max(dbt_vals), max(dtb_vals), max(sym_vals))
+    ax3.set_ylim(0, ymax * 1.45)
 
-    ax3.text(
-        0.5,
-        0.98,
-        "MMD nearly unchanged;\ndirectional terms swap.",
-        transform=ax3.transAxes,
-        va="top",
-        ha="center",
-        fontsize=9,
-        bbox={"boxstyle": "round,pad=0.25", "facecolor": "white", "alpha": 0.85, "edgecolor": "#cccccc"},
-    )
+    # Dotted reference line across the two grey bars: they sit at the same level.
+    grey_level = float(np.mean(sym_vals))
+    ax3.plot([group_x[0] + w, group_x[1] + w], [sym_vals[0], sym_vals[1]],
+             linestyle=":", color="#555555", linewidth=1.2, zorder=5)
 
-    h1, l1 = ax3.get_legend_handles_labels()
-    h2, l2 = ax3r.get_legend_handles_labels()
-    leg_bars = ax3.legend(
-        h1,
-        l1,
-        loc="lower center",
-        bbox_to_anchor=(0.5, 0.03),
-        fontsize=8,
-        framealpha=0.9,
-    )
-    ax3.add_artist(leg_bars)
-    ax3r.legend(
-        h2,
-        l2,
-        loc="lower center",
-        bbox_to_anchor=(0.5, 0.15),
-        fontsize=8,
-        framealpha=0.9,
-        ncol=2,
+    # Annotation moved low, in a small translucent box, with arrows to the grey bars.
+    txt = ax3.annotate(
+        "Symmetric distance stays\nsimilar (grey); the directed\nterms swap between cases.",
+        xy=(0.5, 0.20), xycoords="axes fraction",
+        ha="center", va="center", fontsize=8.5, style="italic",
+        bbox={"boxstyle": "round,pad=0.35", "facecolor": "white",
+              "alpha": 0.6, "edgecolor": "#999999"},
     )
 
-    fig.suptitle(
-        "Conceptual two-mode mismatch: directional metrics separate failure modes, symmetric MMD does not",
-        fontsize=12,
-    )
+    ax3.legend(loc="upper right", fontsize=9,
+               framealpha=0.9, ncol=1, handlelength=1.6, borderpad=0.5)
+
+    _panel_caption(ax3, "c", "Directed terms swap; symmetric stays flat")
+
+    fig.subplots_adjust(left=0.045, right=0.99, top=0.98, bottom=0.27, wspace=0.22)
+
+    # Realize the text box patch so the arrow tails can clip to its edge (patchA),
+    # rather than starting at the box center and crossing over the text.
+    fig.canvas.draw()
+    box_patch = txt.get_bbox_patch()
+    for bar in bars_sym:
+        ann = ax3.annotate(
+            "", xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
+            xytext=(0.5, 0.20), textcoords="axes fraction",
+            arrowprops={"arrowstyle": "->", "color": "#333333", "lw": 1.3,
+                        "connectionstyle": "arc3,rad=0.15", "shrinkB": 4,
+                        "patchA": box_patch},
+        )
+        # White halo so the arrow stays legible where it crosses the grey bars.
+        ann.arrow_patch.set_path_effects(
+            [pe.withStroke(linewidth=3.0, foreground="white")]
+        )
 
     out_dir.mkdir(parents=True, exist_ok=True)
     png_path = out_dir / f"{stem}.png"
@@ -189,18 +194,18 @@ def make_figure(seed: int, out_dir: Path, stem: str) -> tuple[Path, Path]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate conceptual Fig. 3 for Section 4.")
+    parser = argparse.ArgumentParser(description="Generate the conceptual Fig. 1.")
     parser.add_argument("--seed", type=int, default=7, help="Random seed.")
     parser.add_argument(
         "--out-dir",
         type=Path,
-        default=Path("figures/section4"),
+        default=Path("ACCV_2026/figures"),
         help="Output directory.",
     )
     parser.add_argument(
         "--stem",
         type=str,
-        default="fig3_directional_vs_symmetric_concept",
+        default="concept_directional_vs_symmetric",
         help="Output filename stem (without extension).",
     )
     args = parser.parse_args()

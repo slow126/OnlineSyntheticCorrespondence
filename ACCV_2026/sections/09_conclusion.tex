@@ -2,30 +2,17 @@
 \section{Conclusion}
 \label{sec:conclusion}
 
-What predicts correspondence transfer is motion
-\emph{coverage}: how well a source covers the target's motion. That a source
-should move like its target is not a new idea; what we add is that the useful
-form of it is directional, and cheap to check. Ranking candidate sources by one
-directed motion distance already sits near the reproducibility ceiling of transfer
-($92\%$ of it).
-As a single default it matches or leads every symmetric and distribution distance,
-which dilute the signal with near-useless off-target mass; where a symmetric distance
-is competitive (some semantic targets, and end-to-end RAFT), it is the recall it shares
-with coverage, not its off-target term, that carries the signal; and it has no
-appearance-space analogue: how the frames look does not tell you which target a
-source suits. None of this needs
-training a network or rendering a frame.
-
-Because off-target motion is nearly free, coverage does two jobs. To
-\emph{select} among existing sources, rank them by coverage. To \emph{design} new
-data, add coverage of the target instead of matching its distribution, the move
-our geometry-only search exploits on a real target. The same rule guided two very
-different generators, a 3D scene simulator and a procedural implicit-surface
-generator, so it is a property of the data, not of any one renderer.
-Two extensions follow naturally from the same geometry-only infrastructure: resolving
-the camera-versus-object factorization that an aggregate motion descriptor folds
-together, and steering coverage and off-target mass independently to map their
-separate contributions to transfer. The recipe
-is short: before you improve how you render, measure how well your source covers
-the target's motion.
+A single directed motion distance is enough to choose training data. Ranking
+candidate sources by how well their motion covers the target's recovers $92\%$ of
+transfer's reproducibility ceiling ($\rho{=}0.57$), and its top pick surrenders only
+$0.6$ \pck{} to the oracle best source, against $11.5$ for an appearance ranking and
+$15.1$ for a random one. The coverage direction carries this signal on its own, the
+off-target half is nearly inert, and appearance is target-agnostic, so the symmetric
+distances that blend directions never lead. A few reference runs turn the ranking into
+an absolute estimate accurate to $9.0$ \pck{}. Because the objective reads off motion
+geometry with nothing rendered and no model trained, it also \emph{designs} data, and
+the same coverage search steered two very different generators toward a target,
+lifting SDF-Fractals3D's KITTI accuracy at the strict $1\%$ threshold from at most
+$40$ to $89$. Before improving how a source renders, measure how well its motion
+covers the target's.
 

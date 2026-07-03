@@ -33,7 +33,7 @@ evaluation:
   thres: img
   tss_root: /home/spencer/Data/correspondence/TSS_CVPR2016
   use_motion_aware: false
-  val_batch_size: 32
+  val_batch_size: 1
   val_datasets:
     kitti2015:
       split: val
@@ -64,7 +64,7 @@ training:
   debug_visualization_benchmarks: None
   debug_visualization_persist: true
   enable_debug: false
-  epochs: 50
+  epochs: 30
   eval_initial: false
   gradient_clip_algorithm: norm
   gradient_clip_val: 1.0

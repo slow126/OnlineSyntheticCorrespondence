@@ -1,0 +1,80 @@
+model:
+  backbone: resnet101
+  freeze: true
+  pretrained_backbone: true
+training:
+  epochs: 50
+  batch_size: 8
+  n_threads: 4
+  seed: 2021
+  lr: 3e-5
+  lr_backbone: 3e-6
+  weight_decay: 0.05
+  momentum: 0.9
+  scheduler: step
+  step: '[70, 80, 90]'
+  step_gamma: 0.5
+  steps_per_epoch: 100
+  check_val_every_n_epoch: 1
+  augmentation: false
+  min_flow_length: null
+  max_flow_length: null
+  mmd_every_n_epochs: 0
+  eval_initial: false
+  enable_debug: false
+  debug_visualization_benchmarks: null
+  debug_visualization_persist: false
+dataset:
+  dataset_name: kubric_intervention
+  split: train
+  size:
+  - 512
+  - 512
+  downsample_flow: 32
+  max_kps: null
+  dense_kps_use_all: true
+  verbose: false
+  debug: false
+  normalize_images: true
+  datapath: /mnt/nvme_1tb_a/kubric_interventions/datasets/kitti_fitted_gso_hq_5000
+  reverse_flow: false
+evaluation:
+  eval_benchmarks:
+  - kitti2015
+  - kitti2012
+  - flyingthings
+  eval_alphas:
+  - 0.05
+  - 0.05
+  - 0.05
+  thres: img
+  split_to_use_for_validation: test
+  val_batch_size: 8
+  val_num_workers: 8
+  prefetch_factor: 2
+  use_motion_aware: false
+  min_motion_pixels: 5.0
+  zero_threshold: 0.5
+  datapath: ./models/Datasets_CATs
+  tss_root: /home/spencer/Data/correspondence/TSS_CVPR2016
+  kitti_root: /home/spencer/Data/correspondence/kitti
+  kitti_val_use_full_training: true
+  pointodyssey_root: /home/spencer/Data/PointOdyssey
+  flyingthings_root: /home/spencer/Data/FlyingThings3D_tiny
+  middlebury_root: /home/spencer/Data/middlebury/all
+  val_datasets:
+    kitti2012:
+      split: val
+      normalize_images: true
+    kitti2015:
+      split: val
+      normalize_images: true
+    flyingthings:
+      split: test
+      normalize_images: true
+      val_dataset_fraction: 0.2
+paths:
+  snapshots: /mnt/nvme_1tb_a/snapshots/kitti_fitted/catspp_tt
+  pretrained: null
+  start_epoch: 0
+  save_epoch_checkpoints: false

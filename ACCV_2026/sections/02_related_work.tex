@@ -3,22 +3,22 @@
 \label{sec:related}
 
 \noindent\textbf{Synthetic data for correspondence.}
-FlyingChairs/FlyingThings \cite{mayer2016FlyingThingsDataset}, Sintel
+FlyingChairs/FlyingThings \cite{dosovitskiy2015Flownet-FlyingChairsDataset,mayer2016FlyingThingsDataset}, Sintel
 \cite{sintel}, Kubric/MOVi \cite{greff2021kubric}, and PointOdyssey
 \cite{pointodyssey} established synthetic pre-training as the default for
 dense matching; AutoFlow \cite{sun2021autoflow} and DFlow \cite{im2022dflow}
 \emph{learn} data parameters with training in the loop. Closest to our
 premise, Mayer~\etal~\cite{mayer2018what} showed that matching target
 displacement statistics improves flow training. That result is undirected;
-our finding is the part it could not see. The match is
-\emph{directional}: coverage of the target's motion is the half that predicts
-transfer, and a pretrained backbone is what lets a model use it. A large, active
+our finding makes the match \emph{directional}. Coverage of the target's motion is
+the half that predicts transfer, and a pretrained backbone is what lets a model use
+it. A large, active
 line of work improves the \emph{rendering} side of these pipelines (photorealism,
 lighting, scale, speed) \cite{greff2021kubric,pointodyssey}; this is complementary:
 we take the renderer as given and instead supply a target-conditioned signal for
 what \emph{motion} to generate, which is why the same rule guides two structurally
 different generators (Sect.~\ref{sec:interv}).
-Procedural abstraction \cite{Baradad2021LookingAtNoise,white2009mandelbulb}
+Procedural abstraction \cite{Baradad2021LookingAtNoise,Kataoka2020Pre-trainingImages,Anderson2022ImprovingFractal,white2009mandelbulb}
 supports our use of non-photorealistic, motion-controllable generators.
 
 \noindent\textbf{Transferability estimation.}
@@ -26,13 +26,12 @@ LEEP \cite{nguyen2020leep}, LogME \cite{you2021logme}, NCE
 \cite{tran2019transferability}, H-score \cite{bao2019information}, and OTCE
 \cite{tan2021otce} predict transfer from model outputs or target labels,
 almost exclusively for classification. OTDD \cite{alvarez2020geometric} is,
-like ours, a fit-free dataset distance, but symmetric and label-dependent---its
-label-to-label optimal transport assumes a discrete class space, which dense
-correspondence lacks, so it does not directly apply here. Our sliced-$W_2$ baseline
-is itself a (label-free) optimal-transport distance, so the OT family \emph{is}
-represented among our symmetric comparisons. None of these methods address dense
+like ours, a fit-free dataset distance, but symmetric: its label-to-label optimal
+transport assumes a discrete class space, which dense correspondence lacks, so it
+does not apply here. Our sliced-$W_2$ baseline needs no such class space, so the OT
+family \emph{is} represented among our symmetric comparisons. None of these methods address dense
 correspondence, and none are directional; our experiments show the symmetric,
-direction-averaging choice---not the discrepancy itself---is why such signals wash
+direction-averaging choice, not the discrepancy itself, is why such signals wash
 out.
 
 \noindent\textbf{Precision/recall divergences.}
@@ -48,13 +47,13 @@ examples flips with data abundance; pretraining-data selection methods such
 as DSIR \cite{xie2023data} and DoReMi \cite{xie2023doremi} match
 distributions symmetrically. Our result is a new instance of
 context-conditional data value: a source's worth is set by how well its motion
-\emph{covers} a given target's---a directed quantity, not the symmetric
-distribution match those methods optimize. On the theory side, asymmetric transfer exponents
-\cite{hanneke2019value} and covariate-shift support conditions anticipate the
-headline---coverage of the target's support predicts transfer---but not how cheaply
-it can be measured (a crude motion histogram, no training) or that off-target mass
-is nearly free. Our dataset-size controls (Sect.~\ref{sec:law}) rule out a trivial
-``more data'' explanation.
+\emph{covers} a given target's, a directed quantity rather than the symmetric
+distribution match those methods optimize. On the theory side, asymmetric transfer
+exponents \cite{hanneke2019value} and covariate-shift support conditions \cite{bendavid2010theory} anticipate
+the headline (coverage of the target's support predicts transfer), but not how
+cheaply it can be measured (a crude motion histogram, no training) or that the
+off-target half carries almost none of the signal. Our dataset-size controls
+(Sect.~\ref{sec:law}) rule out a trivial ``more data'' explanation.
 
 \noindent\textbf{Architectures and backbones.}
 We span semantic matching (CATs++ \cite{cho2022cats++}), recurrent flow (RAFT
@@ -62,6 +61,6 @@ We span semantic matching (CATs++ \cite{cho2022cats++}), recurrent flow (RAFT
 \cite{truong2020glunet}); appearance descriptors use DINOv3
 \cite{simeoni2025dinov3}, whose strong zero-shot matching
 \cite{sd_dino_tale_of_two_features} motivates appearance as a serious
-competing hypothesis---which our controls reject for within-context dataset
+competing hypothesis that our controls reject for within-context dataset
 ranking.
 

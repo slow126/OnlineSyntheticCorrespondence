@@ -88,7 +88,12 @@ class CorrespondenceDataModule(pl.LightningDataModule):
             shuffle=True,
             collate_fn=self.train_dataset.collate_fn,
             prefetch_factor=batch_size if train_num_workers > 0 else None,
-            pin_memory=True if train_num_workers > 0 else False
+            pin_memory=True if train_num_workers > 0 else False,
+            # Keep workers (and their TF iterators) alive across epochs. Streaming
+            # datasets like MOVi-F build a tf.data pipeline per worker; without this
+            # the workers respawn every epoch and rebuild/re-trace that pipeline,
+            # which intermittently fails deep in TF autograph after many rebuilds.
+            persistent_workers=True if train_num_workers > 0 else False,
         )
     
     def val_dataloader(self) -> DataLoader:

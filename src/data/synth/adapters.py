@@ -411,6 +411,9 @@ class MoviFAdapter(BaseAdapter):
             kubric_dir=kwargs.get("kubric_dir", "/home/spencer/Projects/kubric"),
             config=kwargs.get("movi_f_config", "512x512"),
             shuffle_buffer=kwargs.get("movi_f_shuffle_buffer", 64),
+            max_videos=kwargs.get("movi_f_max_videos", None),
+            pairs_per_video=kwargs.get("movi_f_pairs_per_video", None),
+            pair_select=kwargs.get("movi_f_pair_select", "random"),
         )
 
     def __len__(self):
@@ -439,6 +442,7 @@ class KubricInterventionAdapter(BaseAdapter):
             occlusion_mask=kwargs.get("occlusion_mask", False),
             background_mask=kwargs.get("background_mask", False),
             negate_flow=kwargs.get("negate_flow", True),
+            src_tgt_flip=kwargs.get("src_tgt_flip", 0.0),
         )
 
     def __len__(self):

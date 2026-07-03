@@ -1,15 +1,17 @@
-\begin{tabular}{l rrr rrr c}
+\begin{tabular}{l rrr c rrr c}
 \toprule
- & \multicolumn{3}{c}{Motion (BFV) $\rho$} & \multicolumn{3}{c}{Appearance (DINO) $\rho$} & Regret \\
-\cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-8}
-Distance & real & sem. & all & real & sem. & all & med.$\downarrow$ \\
+ & \multicolumn{4}{c}{Appearance (DINO)} & \multicolumn{4}{c}{Motion (BFV)} \\
+\cmidrule(lr){2-5}\cmidrule(lr){6-9}
+ & \multicolumn{3}{c}{$\rho$} & Reg.$\downarrow$ & \multicolumn{3}{c}{$\rho$} & Reg.$\downarrow$ \\
+\cmidrule(lr){2-4}\cmidrule(lr){6-8}
+Distance & real & sem. & all & (med.) & real & sem. & all & (med.) \\
 \midrule
-Coverage / recall ($\dbt$)      & \textbf{+0.60} & \textbf{+0.53} & \textbf{+0.57} & -0.19 & -0.35 & -0.26 & \textbf{0.6} \\
-Off-target / precision ($\dtb$) & +0.09 & -0.07 & +0.03 & -0.16 & -0.37 & -0.24 & 7.6 \\
-Chamfer               & +0.37 & +0.43 & +0.40 & -0.19 & -0.34 & -0.25 & 3.0 \\
-Sliced $W_2$                    & +0.35 & +0.43 & +0.39 & -0.15 & -0.37 & -0.24 & 1.6 \\
-FID                             & +0.38 & +0.43 & +0.40 & -0.21 & -0.35 & -0.27 & 1.6 \\
+Coverage ($\dbt$)   & -0.19 & -0.35 & -0.26 & \textbf{11.5} & \cellcolor{green!15}\textbf{+0.60} & \cellcolor{green!15}\textbf{+0.53} & \cellcolor{green!15}\textbf{+0.57} & \textbf{0.6} \\
+Off-target ($\dtb$) & -0.16 & -0.37 & \textbf{-0.24} & 12.3 & +0.09 & -0.07 & +0.03 & 7.6 \\
+Chamfer             & -0.19 & \textbf{-0.34} & -0.25 & 12.3 & +0.37 & +0.43 & +0.40 & 3.0 \\
+Sliced $W_2$        & \textbf{-0.15} & -0.37 & \textbf{-0.24} & 12.3 & +0.35 & +0.43 & +0.39 & 1.6 \\
+FID                 & -0.21 & -0.35 & -0.27 & 12.3 & +0.38 & +0.43 & +0.40 & 1.6 \\
 \midrule
-\emph{Random source pick}       & \multicolumn{6}{c}{\emph{(no signal)}} & 15.1 \\
+\emph{Random}       & $\approx$0 & $\approx$0 & $\approx$0 & 15.1 & $\approx$0 & $\approx$0 & $\approx$0 & 15.1 \\
 \bottomrule
 \end{tabular}

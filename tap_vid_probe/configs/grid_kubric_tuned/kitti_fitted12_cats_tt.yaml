@@ -1,0 +1,156 @@
+dataset:
+  datapath: /home/slow1/fsl_groups/grp_farrell/slow1/Data/kitti_fitted12
+  dataset_name: kubric_intervention
+  debug: false
+  dense_kps_use_all: true
+  downsample_flow: 32
+  kubric_dir: /home/spencer/Projects/kubric
+  kubric_max_pairs: null
+  max_kps: null
+  mirror_flip: 0.0
+  movi_f_config: 512x512
+  movi_f_shuffle_buffer: 16
+  negate_flow: true
+  normalize_images: true
+  occlusion_mask: true
+  reverse_flow: false
+  size:
+  - 512
+  - 512
+  split: train
+  verbose: false
+evaluation:
+  datapath: ./models/Datasets_CATs
+  eval_benchmarks:
+  - tss_a10
+  - tss_a05
+  - tss_a03
+  - tapvid_davis_s1
+  - tapvid_davis_s2
+  - tapvid_davis_s4
+  - tapvid_davis_s8
+  - tapvid_davis_s16
+  - kitti2012_a05
+  - kitti2012_a03
+  - kitti2012_a01
+  - kitti2015_a05
+  - kitti2015_a03
+  - kitti2015_a01
+  eval_alphas:
+  - 0.1
+  - 0.05
+  - 0.03
+  - 0.05
+  - 0.05
+  - 0.05
+  - 0.05
+  - 0.05
+  - 0.05
+  - 0.03
+  - 0.01
+  - 0.05
+  - 0.03
+  - 0.01
+  thres: img
+  split_to_use_for_validation: test
+  use_motion_aware: false
+  min_motion_pixels: 5.0
+  zero_threshold: 0.5
+  prefetch_factor: 2
+  val_batch_size: 2
+  val_num_workers: 4
+  kitti_root: /home/slow1/Data/correspondence/kitti
+  kitti_val_use_full_training: true
+  tss_root: /home/slow1/Data/correspondence/TSS_CVPR2016
+  tapvid_davis_root: /home/slow1/Data/tapvid/probe_cache
+  val_datasets:
+    tss_a10:
+      normalize_images: true
+      reverse_flow: false
+    tss_a05:
+      normalize_images: true
+      reverse_flow: false
+    tss_a03:
+      normalize_images: true
+      reverse_flow: false
+    tapvid_davis_s1:
+      tapvid_stride: 1
+      tapvid_frame_step: 5
+      tapvid_min_pts: 1
+      reverse_flow: true
+      normalize_images: true
+    tapvid_davis_s2:
+      tapvid_stride: 2
+      tapvid_frame_step: 5
+      tapvid_min_pts: 1
+      reverse_flow: true
+      normalize_images: true
+    tapvid_davis_s4:
+      tapvid_stride: 4
+      tapvid_frame_step: 5
+      tapvid_min_pts: 1
+      reverse_flow: true
+      normalize_images: true
+    tapvid_davis_s8:
+      tapvid_stride: 8
+      tapvid_frame_step: 5
+      tapvid_min_pts: 1
+      reverse_flow: true
+      normalize_images: true
+    tapvid_davis_s16:
+      tapvid_stride: 16
+      tapvid_frame_step: 5
+      tapvid_min_pts: 1
+      reverse_flow: true
+      normalize_images: true
+    kitti2012_a05:
+      split: val
+      normalize_images: true
+    kitti2012_a03:
+      split: val
+      normalize_images: true
+    kitti2012_a01:
+      split: val
+      normalize_images: true
+    kitti2015_a05:
+      split: val
+      normalize_images: true
+    kitti2015_a03:
+      split: val
+      normalize_images: true
+    kitti2015_a01:
+      split: val
+      normalize_images: true
+model:
+  backbone: resnet101
+  freeze: true
+  pretrained_backbone: true
+  type: cats
+paths:
+  pretrained: null
+  save_epoch_checkpoints: false
+  snapshots: /home/slow1/Projects/OnlineSyntheticCorrespondence/snapshots_kubric_tuned/kitti_fitted12_cats_tt
+  start_epoch: 0
+training:
+  accumulate_grad_batches: 4
+  augmentation: false
+  batch_size: 2
+  check_val_every_n_epoch: 1
+  debug_visualization_benchmarks: null
+  debug_visualization_persist: false
+  enable_debug: false
+  epochs: 30
+  eval_initial: true
+  lr: 3e-5
+  lr_backbone: 3e-6
+  max_flow_length: null
+  min_flow_length: null
+  mmd_every_n_epochs: 0
+  momentum: 0.9
+  n_threads: 4
+  scheduler: step
+  seed: 2021
+  step: '[70, 80, 90]'
+  step_gamma: 0.5
+  steps_per_epoch: 400
+  weight_decay: 0.05

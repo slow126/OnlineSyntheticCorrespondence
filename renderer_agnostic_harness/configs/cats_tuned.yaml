@@ -75,7 +75,7 @@ training:
   debug_visualization_benchmarks: null
   debug_visualization_persist: false
   enable_debug: false
-  epochs: 50
+  epochs: 30
   eval_initial: false
   lr: 3e-4
   lr_backbone: 3e-6

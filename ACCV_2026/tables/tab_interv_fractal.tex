@@ -1,17 +1,34 @@
-% Renderer-agnostic check: the SAME geometry-only coverage search, run on the
-% SDF-fractal generator (asset-free implicit-surface; shares no code/assets with
-% Kubric), produces a KITTI source (trial76) vs. the generator's default source.
-% Pretrained-backbone (TT) arm; peak PCK@0.05. RAFT excluded (no pretrained
-% backbone). KITTI@0.05 is near-saturated under a backbone, so gains are small;
-% the point is parity-or-better on a structurally unrelated generator.
-\begin{tabular}{l rrr rrr}
+\begin{tabular}{ll rrrrrrrr}
 \toprule
- & \multicolumn{3}{c}{KITTI-2012} & \multicolumn{3}{c}{KITTI-2015} \\
-\cmidrule(lr){2-4}\cmidrule(lr){5-7}
-Arch. & default & tuned & $\Delta$ & default & tuned & $\Delta$ \\
+ &  & \multicolumn{3}{c}{TSS ($\alpha$)} & \multicolumn{5}{c}{TAP-Vid-DAVIS (stride)} \\
+\cmidrule(lr){3-5}\cmidrule(lr){6-10}
+Model & Source & @10\% & @5\% & @3\% & 1 & 2 & 4 & 8 & 16 \\
 \midrule
-CATs++     & 97.2 & 98.8 & \textbf{+1.6} & 96.1 & 98.1 & \textbf{+2.0} \\
-GLU-Net    & 98.2 & 99.2 & \textbf{+1.0} & 97.4 & 96.8 & $-0.6$ \\
-FlowFormer & 98.3 & 98.7 & \textbf{+0.4} & 94.3 & 95.7 & \textbf{+1.4} \\
+\multicolumn{10}{l}{\emph{Kubric generator}} \\
+\addlinespace[1pt]
+% Kubric "tuned" rows = pooled tss_dense (12-obj, 4690 scenes), peak over epochs; all 4 runs FINAL.
+% GLU-Net/FlowFormer tuned beat MOVi-F (and the SDF-fractal bar) on DAVIS s8/s16; CATs++ overfit early. 2026-06-27.
+\multirow{2}{*}{CATs++} & MOVi-F & \textbf{79.0} & \textbf{61.9} & \textbf{44.6} & \textbf{100.0} & \textbf{98.5} & \textbf{95.4} & \textbf{89.6} & \textbf{83.9} \\
+ & tuned & 76.2 & 54.1 & 35.2 & 99.9 & 98.3 & 94.5 & 87.4 & 80.7 \\
+\addlinespace[2pt]
+\multirow{2}{*}{GLU-Net} & MOVi-F & \textbf{61.3} & \textbf{32.8} & \textbf{18.3} & 99.4 & 96.2 & 87.4 & 73.0 & 55.3 \\
+ & tuned & 59.9 & 30.8 & 16.3 & \textbf{99.6} & \textbf{96.6} & \textbf{88.6} & \textbf{76.0} & \textbf{60.8} \\
+\addlinespace[2pt]
+\multirow{2}{*}{FlowFormer} & MOVi-F & \textbf{55.0} & \textbf{28.3} & \textbf{15.5} & \textbf{98.7} & \textbf{94.7} & \textbf{82.6} & 64.4 & 47.4 \\
+ & tuned & 53.4 & 26.6 & 12.8 & 98.4 & 94.4 & 82.2 & \textbf{67.7} & \textbf{52.8} \\
+\addlinespace[2pt]
+\multirow{2}{*}{RAFT} & MOVi-F & \textbf{52.0} & \textbf{21.8} & \textbf{10.0} & 98.5 & 94.0 & 80.3 & 61.5 & 45.2 \\
+ & tuned & 49.8 & 19.6 & 8.2 & \textbf{98.6} & 94.0 & \textbf{81.6} & \textbf{66.4} & \textbf{48.6} \\
+\midrule
+\multicolumn{10}{l}{\emph{SDF-Fractals3D generator}} \\
+\addlinespace[1pt]
+\multirow{2}{*}{CATs++} & default & \textbf{83.5} & 67.0 & 49.8 & 99.9 & 98.1 & 94.9 & 89.4 & 83.2 \\
+ & tuned & 82.5 & \textbf{67.1} & \textbf{51.0} & \textbf{100.0} & \textbf{98.4} & \textbf{95.2} & \textbf{90.6} & \textbf{84.1} \\
+\addlinespace[2pt]
+\multirow{2}{*}{GLU-Net} & default & 58.0 & 31.8 & 16.9 & 92.0 & 91.8 & 85.6 & 76.7 & \textbf{63.8} \\
+ & tuned & \textbf{65.6} & \textbf{41.1} & \textbf{25.8} & \textbf{99.3} & \textbf{96.7} & \textbf{89.3} & \textbf{76.8} & 60.2 \\
+\addlinespace[2pt]
+\multirow{2}{*}{FlowFormer} & default & \textbf{61.2} & 32.7 & 15.8 & 97.9 & 93.3 & 83.0 & 66.4 & 50.1 \\
+ & tuned & 61.0 & \textbf{37.3} & \textbf{22.7} & \textbf{99.5} & \textbf{96.0} & \textbf{86.8} & \textbf{70.4} & \textbf{52.0} \\
 \bottomrule
 \end{tabular}

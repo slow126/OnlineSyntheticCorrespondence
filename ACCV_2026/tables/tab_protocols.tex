@@ -1,9 +1,9 @@
-\begin{tabular}{l l c c}
+\begin{tabular}{l l c c c}
 \toprule
-Protocol & Generalizes to & coverage $\rho$ & $r$ / MAE \\
+Held-out split & Generalizes to & Ranking $\rho$ & $r$ & MAE \\
 \midrule
-LOTO (hold source)    & unseen source, known target  & $0.57$ & $0.86$ / $10.0$ \\
-LOBO (hold benchmark) & unseen target, known sources & $0.57$ & $0.63$ / $20.2$ \\
-JOINT (hold both)     & fully novel pair             & $0.57$ & $0.59$ / $30.3$ \\
+LOSO (hold source)  & unseen source, known target  & $0.57$ & $0.89$ & $9.0$ \\
+LOTO (hold target)  & unseen target, known sources & $0.57$ & $0.73$ & $16.6$ \\
+LOSTO (hold both)   & fully novel pair             & $0.57$ & $0.68$ & $19.4$ \\
 \bottomrule
 \end{tabular}

@@ -1,0 +1,16 @@
+\begin{tabular}{l rrrrr}
+\toprule
+Estimator & 50k & 200k & 1M & 4M & 8M \\
+\cmidrule(lr){1-1}\cmidrule(lr){2-6}
+\multicolumn{6}{@{}l}{\textit{support geometry (used)}}\\
+mean-NN coverage $\dbt$ & 0.940 & 0.957 & 0.980 & 0.996 & 0.999 \\
+mean-NN off-target $\dtb$ & 0.962 & 0.984 & 0.996 & 0.999 & 1.000 \\
+mean-NN symmetric & 0.953 & 0.983 & 0.996 & 0.999 & 1.000 \\
+$\epsilon$-coverage 4\,px $\dbt$ & 0.753 & 0.825 & 0.920 & 0.975 & 0.993 \\
+$\epsilon$-coverage 4\,px $\dtb$ & 0.911 & 0.960 & 0.980 & 0.995 & 0.999 \\
+\midrule
+\multicolumn{6}{@{}l}{\textit{density (kNN-KL, discarded)}}\\
+kNN-KL ($k{=}20$) $\dbt$ & -0.018 & 0.040 & 0.113 & 0.189 & 0.206 \\
+kNN-KL ($k{=}20$) $\dtb$ & 0.469 & 0.479 & 0.489 & 0.495 & 0.492 \\
+\bottomrule
+\end{tabular}

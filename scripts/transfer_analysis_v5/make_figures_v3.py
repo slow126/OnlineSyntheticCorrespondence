@@ -37,6 +37,24 @@ RED = "#c0392b"    # pretrained / recall d(B->T)
 GRAY = "#6b7280"
 LGRAY = "#c4c8cf"
 
+# canonical display names for legends (match the names used in the paper text)
+DISP = {
+    "synthetic": "SDF-Fractals3D", "synthetic_2d_warp": "SDF-2D-warp",
+    "synthetic_large_zoom": "SDF-large-zoom", "synthetic_small_zoom": "SDF-small-zoom",
+    "synthetic_random_flipping": "SDF-flip",
+    "flyingthings": "FlyingThings", "kitti2012": "KITTI-2012", "kitti2015": "KITTI-2015",
+    "pointodyssey": "PointOdyssey", "sintel": "Sintel", "movi_f": "MOVi-F",
+    "imagenet2dwarp": "ImageNet-2D", "spair": "SPair-71k", "pfpascal": "PF-Pascal",
+    "pfwillow": "PF-Willow", "tss": "TSS",
+}
+def disp_name(k): return DISP.get(k, k)
+# Display label for the held-out protocol. Internal data keys / CSV filenames
+# stay LOTO/LOBO/JOINT (unchanged, so numbers are identical); only the rendered
+# acronym changes to the S=source / T=target scheme:
+#   LOTO (source held out)  -> LOSO,  LOBO (target held out) -> LOTO,
+#   JOINT (both held out)   -> LOSTO.
+def split_label(s): return {"LOTO": "LOSO", "LOBO": "LOTO", "JOINT": "LOSTO"}.get(s, s)
+
 plt.rcParams.update({
     "figure.dpi": 200, "savefig.dpi": 200,
     "font.size": 10.5, "axes.titlesize": 11.5, "axes.labelsize": 10.5,
@@ -239,6 +257,27 @@ def _calibrated_rows(split, head=None):
     return rows
 
 
+def _logit_pred(rows, split):
+    """Bounded absolute prediction: fit level + a single global coverage slope
+    in the log-odds of PCK/100, then map back through a sigmoid, so every
+    prediction stays in (0,100) with no clipping. The link is monotone, so the
+    within-context source ranking is unchanged."""
+    EPS = 0.5
+    def lz(v):
+        vc = np.clip(v, EPS, 100 - EPS)
+        return np.log(vc / (100 - vc))
+    lvl = rows["L2K"] if split == "JOINT" else rows["L"]
+    Llog = lz(lvl.values)
+    ylog = lz(rows["actual"].values)
+    g = rows["g"].values
+    cid = rows["context_id"].values
+    cm = lambda a: pd.Series(a).groupby(cid).transform("mean").values
+    gc = g - cm(g)
+    rc = (ylog - Llog) - cm(ylog - Llog)
+    b = float((gc * rc).sum() / (gc * gc).sum())
+    return 100.0 / (1.0 + np.exp(-(Llog + b * g)))
+
+
 def f5_absolute(fname="F5_absolute_scatter.png", color_by="hybrid"):
     fig, axes = plt.subplots(1, 3, figsize=(12.5, 4.5), sharey=True)
     panels = []
@@ -262,6 +301,7 @@ def f5_absolute(fname="F5_absolute_scatter.png", color_by="hybrid"):
         arch = rows.variant.str.split("|").str[0]
         rows["regime"] = np.where((pre == "False") | (arch == "raft"),
                                   "scratch", "pretrained")
+        rows["pred"] = _logit_pred(rows, split)  # bounded logit-link prediction
         # "hybrid" (default): dots colored by benchmark to show the LOTO
         # clustering / LOBO striation, with red/blue regime calibration lines
         # on top so the regime story stays legible.
@@ -280,32 +320,37 @@ def f5_absolute(fname="F5_absolute_scatter.png", color_by="hybrid"):
         for key, c in groups:
             s = rows[rows[gcol] == key]
             ax.scatter(s.pred, s.actual, s=8, alpha=dot_alpha, color=c, lw=0,
-                       label=key)
-        # per-regime linear fits on top of the benchmark-colored dots
+                       label=disp_name(key))
+        # per-benchmark short fit: a light dotted segment in each benchmark's
+        # own color, centered on that benchmark's cluster, so the per-dataset
+        # trend is visible without long lines crossing the whole panel.
         if color_by != "regime":
-            for reg, c in [("scratch", BLUE), ("pretrained", RED)]:
-                s = rows[rows.regime == reg]
-                if len(s) < 12:
+            for key, c in groups:
+                s = rows[rows[gcol] == key]
+                if len(s) < 6 or float(s.pred.std()) < 1e-6:
                     continue
                 z = np.polyfit(s.pred, s.actual, 1)
-                xs = np.linspace(s.pred.quantile(0.02), s.pred.quantile(0.98), 10)
-                ax.plot(xs, np.polyval(z, xs), color=c, lw=2.8, zorder=5,
-                        label=f"{reg} fit")
+                xc = float(s.pred.median())
+                hw = max(4.0, 0.7 * float(s.pred.std()))
+                xs = np.array([xc - hw, xc + hw])
+                ax.plot(xs, np.polyval(z, xs), color=c, lw=1.4,
+                        ls=(0, (1, 1)), alpha=0.75, zorder=4)
         ax.plot([0, 100], [0, 100], color="#9ca3af", lw=1, ls="--", zorder=1)
         r = pearsonr(rows.pred, rows.actual)[0]
         mae = float(np.mean(np.abs(rows.pred - rows.actual)))
-        ax.set_title(f"{split}   r = {r:+.2f}   MAE = {mae:.1f}", loc="left")
+        ax.set_title(f"{split_label(split)}    r = {r:+.2f}    MAE = {mae:.1f}",
+                     loc="center")
         ax.annotate(sub, (0.03, 0.965), xycoords="axes fraction", fontsize=8.5,
                     color=GRAY, va="top")
-        ax.set_xlabel("predicted peak PCK")
+        ax.set_xlabel(r"Predicted PCK@$\alpha{=}5\%$")
         ax.set_xlim(-3, 103), ax.set_ylim(-3, 103)
         ax.set_aspect("equal")
-    axes[0].set_ylabel("actual peak PCK")
+    axes[0].set_ylabel(r"Actual PCK@$\alpha{=}5\%$")
     if color_by == "regime":
         axes[0].legend(fontsize=9, loc="lower right", markerscale=2.2)
         fig.tight_layout()
     else:
-        # dedup legend (benchmark dots from panel 0 + the two regime lines)
+        # dedup legend (benchmark dots from panel 0)
         h, l = axes[0].get_legend_handles_labels()
         seen, hh, ll = set(), [], []
         for handle, lab in zip(h, l):
@@ -331,23 +376,26 @@ def f5supp_full_calibrated(head="g_shrink_gain"):
     benches = sorted(b for b in rows0.benchmark.unique() if b != "middlebury")
     bench_c = {b: plt.cm.tab10(i % 10) for i, b in enumerate(benches)}
     for ax, split in zip(axes, ["LOTO", "LOBO", "JOINT"]):
-        rows = _calibrated_rows(split, head)
+        rows = _calibrated_rows(split, head).copy()
+        disp = lambda b: "SDF-Fractals3D" if b == "synthetic" else b
+        rows["pred"] = _logit_pred(rows, split)
         for b in benches:
             s = rows[rows.benchmark == b]
             ax.scatter(s.pred, s.actual, s=9, alpha=0.5, color=bench_c[b],
-                       lw=0, label=b)
+                       lw=0, label=disp(b))
         ax.plot([0, 100], [0, 100], color="#9ca3af", lw=1, ls="--", zorder=1)
         r = pearsonr(rows.pred, rows.actual)[0]
         mae = float(np.mean(np.abs(rows.pred - rows.actual)))
-        ax.set_title(f"{split}   r = {r:+.2f}   MAE = {mae:.1f}", loc="left")
-        ax.set_xlabel("predicted peak PCK  (L + calibrated g)")
+        ax.set_title(f"{split_label(split)}   r = {r:+.2f}   MAE = {mae:.1f}",
+                     loc="left")
+        ax.set_xlabel(r"predicted PCK@$\alpha{=}5\%$  ($100\,\sigma(L+g)$)")
         ax.set_xlim(-3, 103), ax.set_ylim(-3, 103)
         ax.set_aspect("equal")
         if split == "JOINT":
-            ax.annotate("two-way kernel anchor + profilesim-calibrated g",
+            ax.annotate("two-way kernel level + logit link",
                         (0.04, 0.97), xycoords="axes fraction", fontsize=8.5,
                         color=GRAY, va="top")
-    axes[0].set_ylabel("actual peak PCK")
+    axes[0].set_ylabel(r"actual PCK@$\alpha{=}5\%$")
     fig.legend(*axes[0].get_legend_handles_labels(), loc="center left",
                bbox_to_anchor=(0.91, 0.5), fontsize=8.5, markerscale=2.2)
     fig.tight_layout(rect=(0, 0, 0.91, 1))
@@ -375,7 +423,8 @@ def f5supp_decomposition(head="g_shrink_gain"):
                 else {k: plt.cm.tab20(i % 20) for i, k in enumerate(keys)})
         for cidx, split in enumerate(["LOTO", "LOBO", "JOINT"]):
             ax = axes[r, cidx]
-            rows = _calibrated_rows(split, head)
+            rows = _calibrated_rows(split, head).copy()
+            rows["pred"] = _logit_pred(rows, split)
             ax.scatter(rows.pred, rows.actual, s=7, alpha=0.25, color="#c9ccd1",
                        lw=0, zorder=1)
             slopes = []
@@ -392,7 +441,7 @@ def f5supp_decomposition(head="g_shrink_gain"):
             ax.annotate(f"median slope = {ms:.2f}", (0.04, 0.93),
                         xycoords="axes fraction", fontsize=10, color="#374151")
             if r == 0:
-                ax.set_title(split, loc="left", fontsize=12)
+                ax.set_title(split_label(split), loc="left", fontsize=12)
             ax.set_xlim(-3, 103), ax.set_ylim(-3, 103), ax.set_aspect("equal")
             if r == 1:
                 ax.set_xlabel("predicted peak PCK")
@@ -448,7 +497,7 @@ def f5grid_color_views():
             ax.plot(xs, np.polyval(z, xs), color="#333", lw=1.6, ls="--",
                     zorder=3)
             if r == 0:
-                ax.set_title(f"{split}   mean within-context ρ = {rho:+.2f}",
+                ax.set_title(f"{split_label(split)}   mean within-context ρ = {rho:+.2f}",
                              loc="left")
             ax.set_xlim(-2.8, 2.8), ax.set_ylim(-2.8, 2.8)
             ax.set_aspect("equal")

@@ -1,0 +1,17 @@
+% Renderer-agnostic check: the SAME geometry-only coverage search, run on the
+% SDF-fractal generator (asset-free implicit-surface; shares no code/assets with
+% Kubric), produces a KITTI source (trial76) vs. the generator's default source.
+% Pretrained-backbone (TT) arm; peak PCK@0.05. RAFT excluded (no pretrained
+% backbone). KITTI@0.05 is near-saturated under a backbone, so gains are small;
+% the point is parity-or-better on a structurally unrelated generator.
+\begin{tabular}{l rrr rrr}
+\toprule
+ & \multicolumn{3}{c}{KITTI-2012} & \multicolumn{3}{c}{KITTI-2015} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}
+Arch. & default & tuned & $\Delta$ & default & tuned & $\Delta$ \\
+\midrule
+CATs++     & 97.2 & 98.8 & \textbf{+1.6} & 96.1 & 98.1 & \textbf{+2.0} \\
+GLU-Net    & 98.2 & 99.2 & \textbf{+1.0} & 97.4 & 96.8 & $-0.6$ \\
+FlowFormer & 98.3 & 98.7 & \textbf{+0.4} & 94.3 & 95.7 & \textbf{+1.4} \\
+\bottomrule
+\end{tabular}

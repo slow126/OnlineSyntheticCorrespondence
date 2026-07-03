@@ -1,0 +1,146 @@
+% =====================================================================
+% Section 7 -- ALTERNATE (v2): matched-vs-generic / motion-coverage narrative.
+% A/B candidate against 07_interventions.tex. Main results table is
+% tables/tab_realtargets.tex; the appearance gallery lives in the supplement.
+% Swap by editing main.tex -> \input{sections/07_interventions_v2}
+% =====================================================================
+\section{Interventions: Motion Coverage and Visual Realism}
+\label{sec:interv}
+
+Section~\ref{sec:law} found that the motion coverage of a source is a strong
+predictor of its transfer to a target. We examine this relationship through
+controlled experiments on two procedural generators with very different rendering.
+One is Kubric~\cite{greff2021kubric}, a controllable generator that produces
+photorealistic scenes from scanned assets and physically-based lighting. The other,
+SDF-Fractals3D, is asset-free, built from procedural implicit surfaces, and shares
+no objects, materials, or rendering with Kubric nor any benchmark datasets. We run two studies. The first is a
+controlled grid that crosses five source-motion magnitudes with four appearance
+variants over a fixed set of scenes, separating motion from appearance on KITTI-12 and KITTI-15. The
+second compares, for each generator, a \emph{generic} target-agnostic configuration
+against a \emph{motion-coverage-tuned} one across several real benchmarks and architectures.
+The generic source is each generator's strongest single configuration. For Kubric, it
+is the standard MOVi-F setup~\cite{greff2021kubric}. For SDF-Fractals3D, it is the best
+configuration from a large generate-and-train grid search over the generator, found
+independently of any coverage objective. The motion-coverage-tuned source instead
+fits the generator's motion to the target using a search over motion coverage, training nothing. Across both studies, matching the source motion
+to the target generally improves transfer, and the gains follow motion rather than
+appearance.
+
+\noindent\textbf{Motion magnitude drives transfer; appearance has little effect.}
+This controlled grid uses Kubric, whose generator lets us re-render the same content
+under different motion and appearance. We hold a fixed set of 5{,}000 scenes, each
+with its own objects and layout, and vary only two factors across that set, the
+source camera-motion magnitude across five settings and the visual appearance across
+four variants spanning background, lighting, and object style. The scene content is
+identical everywhere, so only these two axes change. Training a model on each of the
+twenty resulting sources and evaluating on KITTI yields the transfer surface in
+Fig.~\ref{fig:ladder:heatmaps}. Along the motion axis, transfer peaks where the source motion
+best covers the target's and drops by $5$ to $11$ \pck{} as the magnitude moves away
+from that match in either direction (Fig.~\ref{fig:ladder:heatmaps}), following the
+coverage gap while off-target motion stays flat (Fig.~\ref{fig:ladder:coverage}).
+Along the appearance axis, at identical motion, transfer is nearly flat. The most
+photorealistic variant offers no consistent advantage over flat-shaded primitives,
+even though its appearance distance to KITTI changes by roughly a factor of two
+(Fig.~\ref{fig:ladder:heatmaps}). In this grid, transfer tracks coverage of the
+target motion and varies little with appearance.
+
+\begin{figure}[tbp]
+\centering
+\begin{subfigure}[t]{0.37\linewidth}
+  \centering
+  \includegraphics[height=3.0cm]{figures/results/ladder_panel_a.png}
+  \caption{Directed motion distance ($\dbt$, $\dtb$) vs.\ source magnitude.}
+  \label{fig:ladder:coverage}
+\end{subfigure}%
+\hfill%
+\begin{subfigure}[t]{0.61\linewidth}
+  \centering
+  \includegraphics[height=3.0cm]{figures/results/ladder_panel_bc.png}
+  \caption{Transfer to KITTI-2012 and KITTI-2015 (peak \pck{}).}
+  \label{fig:ladder:heatmaps}
+\end{subfigure}
+
+\vspace{3pt}
+\begin{subfigure}[b]{\linewidth}
+  \centering
+  \includegraphics[width=\linewidth]{figures/results/ladder_panel_d.png}
+  \caption{Coverage gap ($\dbt$) resolved across the image frame, per source magnitude.}
+  \label{fig:ladder:spatial}
+\end{subfigure}
+\caption{\textbf{Controlled motion and appearance grid evaluated on KITTI.}
+Columns scale source motion magnitude to sweep coverage; rows vary appearance.
+\emph{(a)} Coverage gap ($\dbt$, blue; lower is better) dips at the match and grows
+on either side, while off-target motion ($\dtb$, red) stays flat.
+\emph{(b)} \pck{} tracks coverage (columns) and is nearly constant across
+appearance (rows). It peaks at the match and falls on either side, while higher
+visual fidelity gives no consistent advantage. The rows
+span about a factor of two in appearance distance to KITTI (\textbf{bold}).
+\emph{(c)} The same coverage gap resolved across the KITTI frame, each region
+colored relative to the best coverage it reaches across the sweep (green is that
+best, red is worse). The match is best frame-wide and degrades on either side, most
+in the high-magnitude lower half of the motion flow field. The per-variant appearance breakdown is shown in supplementary Fig.~\ref{S-fig:kubric_appearance}.}
+\label{fig:ladder}
+\end{figure}
+
+\noindent\textbf{A geometry-only search finds an improved source.}
+We search the generator's motion parameters with a Tree-structured Parzen Estimator
+(TPE)~\cite{bergstra2011tpe}, using zero-shot motion coverage as the objective. Because the objective needs
+only the candidate's and target's motion statistics, the search renders only lightweight
+geometry passes, skipping the expensive texturing and lighting, and it trains no
+model. The target's motion statistics come from a representative sample of the
+benchmark. Only the selected configuration is later realized in full
+(Fig.~\ref{fig:intervsplats}). We then train on each coverage-tuned source and compare
+with the generic configuration. A construct-validity check that the coverage-tuned
+parameters match each target's known motion regime is in the supplement
+(Sect.~\ref{S-supp:recovery}).
+
+\begin{figure}[tbp]
+\centering
+\includegraphics[width=\linewidth]{figures/results/F_pipeline_closedloop.png}
+\caption{\textbf{Source design from motion alone.} A derivative-free search refines a
+generic source with a single objective, motion coverage of the target, scored from
+the motion field with no appearance rendered and no model trained. The coverage-tuned
+source shows a coherent forward-motion field versus the generic source's
+near-isotropic one, and training on it improves transfer (Table~\ref{tab:interv}).
+Panels show directional motion fields; color $=$ direction.}
+\label{fig:intervsplats}
+\end{figure}
+
+We evaluate the motion-coverage-tuned and generic sources on three real targets: KITTI and TSS
+from the main study, and TAP-Vid-DAVIS~\cite{doersch2022tapvid}, a point-tracking
+benchmark on real video held out from Sections~\ref{sec:setup}--\ref{sec:absolute}.
+We read TAP-Vid-DAVIS at frame strides $s\in\{2,8,16\}$; a larger stride spaces the
+two frames farther apart and increases the motion between them, so a single
+benchmark spans small to large displacements.
+
+
+We find that with SDF-Fractals3D the motion-coverage-tuned source improves on the generic one across nearly every
+target, including the semantic benchmark TSS (Table~\ref{tab:interv}), and the gain is largest at the strict
+KITTI threshold, where \pck{}@$1\%$ rises from at most $40$, the grid-searched
+generic's best, to as high as $89$. With
+Kubric the motion-coverage-tuned source improves the real-motion benchmarks, KITTI and
+TAP-Vid-DAVIS, for most architectures. Its generic configuration is the standard
+MOVi-F setup, a physics-based source whose broad motion already covers the semantic
+target well, so on TSS the motion-coverage-tuned source has little room to improve and the two
+stay close. This suggests that using motion coverage as an objective that predicts transfer can guide the design of a source datasets to improve transfer.
+
+\begin{table}[tbp]
+\centering
+\caption{\textbf{Motion-coverage-tuned versus generic sources, in two generators.} Peak
+\pck{} (\%) at discriminating thresholds: KITTI at $1\%$, TSS at $5\%$ and $3\%$,
+and TAP-Vid-DAVIS at strides $s\in\{2,8,16\}$. The two generators are the
+photorealistic Kubric generator (generic $=$ standard MOVi-F~\cite{greff2021kubric})
+and our asset-free SDF-Fractals3D (generic $=$ best config from a large
+generate-and-train grid search); \emph{MC-tuned} denotes the motion-coverage-tuned
+configuration. \textbf{Bold} marks the better configuration
+within each generator. Full thresholds and strides are in the supplement
+(Tables~\ref{S-tab:interv_kitti_full} and~\ref{S-tab:interv_davis_full}).}
+\label{tab:interv}
+\setlength{\tabcolsep}{6pt}
+\resizebox{\textwidth}{!}{\input{tables/tab_realtargets}}
+\par\vspace{3pt}
+\begin{minipage}{\textwidth}
+\footnotesize $^{*}$\,SDF-generic on FlowFormer and RAFT did not converge and is
+uncharacteristically poor, though the same source trains CATs++ and GLU-Net normally.
+\end{minipage}
+\end{table}

@@ -8,6 +8,7 @@ import csv
 import os
 import pickle
 import random
+import re
 import time
 import yaml
 from os import path as osp
@@ -426,7 +427,9 @@ def create_validation_datasets(config, device=None):
             max_kps_val = val_datasets_config.get('max_kps', val_datasets_config.get('max_pts', None))
             val_dataset_config['max_kps'] = max_kps_val  # CorrespondenceDataset will handle None correctly
         
-        elif benchmark in ['kitti2012', 'kitti2015']:
+        elif re.sub(r'_a\d{2,3}$', '', benchmark) in ['kitti2012', 'kitti2015']:
+            # 'kitti2012'/'kitti2015' or per-alpha entries 'kitti2012_a05'/'_a03'/'_a01'
+            # (same data, different PCK alpha via eval_alphas zip) all use the KITTI adapter.
             val_dataset_config['datapath'] = eval_config['kitti_root']
             # Handle special case for kitti_val_use_full_training
             if eval_config.get('kitti_val_use_full_training', False):
@@ -478,9 +481,11 @@ def create_validation_datasets(config, device=None):
         
         # Create dataset using CorrespondenceDataset - it handles all the parameter mapping.
         # Per-stride tapvid_davis_s{N} entries all map to the 'tapvid_davis' adapter;
-        # per-alpha tss_a{NN} entries all map to the 'tss' adapter.
+        # per-alpha tss_a{NN} entries all map to the 'tss' adapter; per-alpha
+        # kitti20{12,15}_a{NN} entries strip the suffix to the 'kitti20{12,15}' adapter.
         adapter_name = ('tapvid_davis' if benchmark.startswith('tapvid_davis')
                         else 'tss' if benchmark.startswith('tss')
+                        else re.sub(r'_a\d{2,3}$', '', benchmark) if re.sub(r'_a\d{2,3}$', '', benchmark) in ('kitti2012', 'kitti2015')
                         else benchmark)
         dataset = CorrespondenceDataset(adapter_name, **val_dataset_config)
         
